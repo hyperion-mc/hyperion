@@ -3,6 +3,49 @@ on:
   push:
     branches: [ main ]
 jobs:
+  antithesis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push hyperion-proxy
+        uses: depot/build-push-action@v1
+        with:
+          project: qln0fqqvvd
+          token: ${{ secrets.DEPOT_TOKEN }}
+          context: .
+          target: antithesis-hyperion-proxy
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/antithesis-hyperion-proxy:latest
+            ghcr.io/${{ github.repository }}/antithesis-hyperion-proxy:${{ github.sha }}
+      - name: Build and push tag
+        uses: depot/build-push-action@v1
+        with:
+          project: qln0fqqvvd
+          token: ${{ secrets.DEPOT_TOKEN }}
+          context: .
+          target: antithesis-tag
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/antithesis-tag:latest
+            ghcr.io/${{ github.repository }}/antithesis-tag:${{ github.sha }}
   publish:
     runs-on: ubuntu-latest
     permissions:
@@ -49,4 +92,5 @@ jobs:
       - name: Update test server
         env:
           KEY: ${{ secrets.TEST_SERVER_KEY }}
-        run: curl -X POST -H "Key: $KEY" https://hyperion-test.duckdns.org
+        run: |
+          curl -X POST -H "Key: $KEY" https://hyperion-test.duckdns.org

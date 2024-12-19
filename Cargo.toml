@@ -33,6 +33,7 @@ members = [
     'crates/hyperion-proto',
     'crates/hyperion-proxy',
     'crates/hyperion-rank-tree',
+    'crates/hyperion-respawn',
     'crates/hyperion-scheduled',
     'crates/hyperion-stats',
     'crates/hyperion-text',
@@ -41,7 +42,7 @@ members = [
     'crates/system-order',
     'events/tag',
     'tools/packet-inspector',
-    'crates/hyperion-respawn',
+    'tools/rust-mc-bot',
 ]
 resolver = '2'
 
@@ -79,10 +80,12 @@ kanal = '0.1.0-pre8'
 libc = '0.2.155'
 libdeflater = '1.20.0'
 memmap2 = '0.9.5'
+mio = { version = '1.0.3', features = ['os-poll', 'net'] }
 more-asserts = '0.3.1'
 no_denormals = '0.1.2'
 num-derive = '0.4.2'
 num-traits = '0.2.19'
+num_cpus = "1.16.0"
 once_cell = '1.19.0'
 ordered-float = '4.2.0'
 ouroboros = '0.18.4'
@@ -300,6 +303,8 @@ print_stdout = 'deny'
 single_match_else = 'allow'
 too_long_first_doc_paragraph = 'allow'
 too_many_lines = 'allow'
+
+upper_case_acronyms = 'deny'
 
 [workspace.lints.clippy.complexity]
 level = 'deny'
