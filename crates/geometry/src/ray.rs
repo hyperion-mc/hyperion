@@ -56,16 +56,16 @@ impl Ray {
         self.origin + self.direction * t
     }
 
-    /// Efficiently traverse through grid cells that the ray intersects using an optimized DDA algorithm.
+    /// Efficiently traverse through grid cells that the ray intersects using the Amanatides and Woo algorithm.
     /// Returns an iterator over the grid cells ([`IVec3`]) that the ray passes through.
     pub fn voxel_traversal(&self, bounds_min: IVec3, bounds_max: IVec3) -> VoxelTraversal {
         let current_pos = self.origin.as_ivec3();
 
         // Determine stepping direction for each axis
         let step = IVec3::new(
-            self.direction.x.signum() as i32,
-            self.direction.y.signum() as i32,
-            self.direction.z.signum() as i32,
+            if self.direction.x > 0.0 { 1 } else { -1 },
+            if self.direction.y > 0.0 { 1 } else { -1 },
+            if self.direction.z > 0.0 { 1 } else { -1 },
         );
 
         // Calculate distance to next voxel boundary for each axis
