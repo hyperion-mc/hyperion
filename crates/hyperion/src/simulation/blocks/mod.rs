@@ -18,7 +18,7 @@ use rayon::iter::ParallelIterator;
 use roaring::RoaringBitmap;
 use rustc_hash::FxBuildHasher;
 use shared::WorldShared;
-use tracing::error;
+use tracing::{debug, error};
 use valence_generated::block::BlockState;
 use valence_server::layer::chunk::Chunk;
 
@@ -61,6 +61,7 @@ pub enum TrySetBlockDeltaError {
 pub struct RayCollision {
     pub distance: f32,
     pub location: IVec3,
+    pub point: Vec3,
     pub normal: Vec3,
     pub block: BlockState,
 }
@@ -120,58 +121,49 @@ impl Blocks {
 
     #[must_use]
     pub fn first_collision(&self, ray: Ray) -> Option<RayCollision> {
-        // Calculate exact start position (the block we're in)
-        let start_pos = ray.origin();
+        // Define bounds for the voxel traversal
+        let bounds_min = IVec3::new(i32::MIN / 2, -64, i32::MIN / 2);
+        let bounds_max = IVec3::new(i32::MAX / 2, 320, i32::MAX / 2);
 
-        // Calculate end position with a small offset to handle edge cases
-        let end_pos = ray.origin() + ray.direction();
+        // Use voxel traversal to efficiently walk through blocks
+        for cell in ray.voxel_traversal(bounds_min, bounds_max) {
+            if let Some(block) = self.get_block(cell) {
+                debug!("Checking block at {:?}", cell);
+                let origin = cell.as_vec3();
 
-        // Convert to block coordinates, expanding bounds to ensure we catch all blocks
-        let min_block = start_pos.min(end_pos).floor().as_ivec3();
-        let max_block = start_pos.max(end_pos).ceil().as_ivec3();
+                // Check collision with block shapes
+                let collision = block
+                    .collision_shapes()
+                    .map(|shape| {
+                        let aabb =
+                            geometry::aabb::Aabb::new(shape.min().as_vec3(), shape.max().as_vec3());
+                        debug!("Checking shape AABB: {:?}", aabb);
+                        aabb
+                    })
+                    .map(|shape| {
+                        let translated_shape = shape + origin;
+                        debug!("Translated shape AABB: {:?}", translated_shape);
+                        translated_shape
+                    })
+                    .filter_map(|shape| {
+                        let intersection = shape.intersect_ray(&ray);
+                        debug!("Intersection result: {:?}", intersection);
+                        intersection
+                    })
+                    .min();
+                debug!("Final collision result: {:?}", collision);
 
-        // Set up voxel traversal through the blocks
-        let traversal = ray.voxel_traversal(min_block, max_block);
+                if let Some(distance) = collision {
+                    let distance = distance.into_inner();
+                    let collision_point = ray.origin() + ray.direction() * distance;
+                    let collision_normal = (collision_point - origin).normalize();
 
-        let mut min: Option<RayCollision> = None;
+                    debug!("Collision point: {:?}", collision_point);
 
-        for cell in traversal {
-            // if there is no block at this cell, return None
-            let block = self.get_block(cell)?;
-
-            let origin = Vec3::new(cell.x as f32, cell.y as f32, cell.z as f32);
-
-            let min_dist = block
-                .collision_shapes()
-                .map(|shape| {
-                    geometry::aabb::Aabb::new(shape.min().as_vec3(), shape.max().as_vec3())
-                })
-                .map(|shape| shape + origin)
-                .filter_map(|shape| shape.intersect_ray(&ray))
-                .min();
-
-            let Some(min_dist) = min_dist else {
-                continue;
-            };
-
-            let collision_point = ray.origin() + ray.direction() * min_dist.into_inner();
-            let collision_normal = (collision_point - origin).normalize();
-
-            match &min {
-                Some(current_min) => {
-                    if min_dist.into_inner() < current_min.distance {
-                        min = Some(RayCollision {
-                            distance: min_dist.into_inner(),
-                            location: cell,
-                            normal: collision_normal,
-                            block,
-                        });
-                    }
-                }
-                None => {
-                    min = Some(RayCollision {
-                        distance: min_dist.into_inner(),
+                    return Some(RayCollision {
+                        distance,
                         location: cell,
+                        point: collision_point,
                         normal: collision_normal,
                         block,
                     });
@@ -179,7 +171,7 @@ impl Blocks {
             }
         }
 
-        min
+        None
     }
 
     #[must_use]

@@ -5,6 +5,7 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
+use itertools::Either;
 use tracing::{debug, error};
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
@@ -20,9 +21,12 @@ use crate::{
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
+        event,
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
+    spatial::get_first_collision,
+    storage::Events,
 };
 
 #[derive(Component)]
@@ -413,45 +417,70 @@ impl Module for EntityStateSyncModule {
                 return;
             }
 
-            let world = it.system().world();
+            let system = it.system();
+            let world = system.world();
             let _entity = it.entity(row);
 
             if velocity.0 != Vec3::ZERO {
-                position.x += velocity.0.x;
-                position.y += velocity.0.y;
-                position.z += velocity.0.z;
                 // let (new_yaw, new_pitch) = get_rotation_from_velocity(velocity.0);
-
                 let center = **position;
 
-                let ray = geometry::ray::Ray::new(center, velocity.0);
+                // getting max distance
+                let distance = velocity.0.length();
 
-                #[allow(clippy::excessive_nesting)]
-                world.get::<&mut Blocks>(|blocks| {
-                    let Some(collision) = blocks.first_collision(ray) else {
-                        // Drag (0.99 / 20.0)
-                        // 1.0 - (0.99 / 20.0) * 0.05
-                        velocity.0 *= 0.997_525;
+                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
-                        // Gravity (20 MPSS)
-                        velocity.0.y -= 0.05;
+                let Some(collision) = get_first_collision(ray, &world) else {
+                    // Drag (0.99 / 20.0)
+                    // 1.0 - (0.99 / 20.0) * 0.05
+                    velocity.0 *= 0.997_525;
 
-                        // Terminal Velocity (100.0)
-                        velocity.0 = velocity.0.clamp_length(0.0, 100.0);
-                        return;
-                    };
+                    // Gravity (20 MPSS)
+                    velocity.0.y -= 0.05;
 
-                    debug!("collision = {collision:?}");
+                    // Terminal Velocity max (100.0)
+                    velocity.0 = velocity.0.clamp_length_max(100.0);
 
-                    velocity.0 = Vec3::ZERO;
+                    position.x += velocity.0.x;
+                    position.y += velocity.0.y;
+                    position.z += velocity.0.z;
+                    return;
+                };
 
-                    // Set arrow position to the collision location
-                    **position = collision.normal;
+                match collision {
+                    Either::Left(entity) => {
+                        let entity = entity.entity_view(world);
+                        // send event
+                        world.get::<&mut Events>(|events| events.push(
+                            event::ProjectileEntityEvent {
+                                client: *entity,
+                                projectile: *_entity,
+                            },
+                            &world
+                        ));
+                    }
+                    Either::Right(collision) => {
+                        // send event
+                        world.get::<&mut Events>(|events| events.push(
+                            event::ProjectileBlockEvent {
+                                collision: collision,
+                                projectile: *_entity,
+                            },
+                            &world
+                        ));
+                    }
+                }
 
-                    blocks
-                        .set_block(collision.location, BlockState::DIRT)
-                        .unwrap();
-                });
+                /* debug!("collision = {collision:?}");
+
+                velocity.0 = Vec3::ZERO; */
+
+                /* // Set arrow position to the collision location
+                **position = collision.normal;
+
+                blocks
+                    .set_block(collision.location, BlockState::DIRT)
+                    .unwrap(); */
             }
         });
 

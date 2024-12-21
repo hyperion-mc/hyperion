@@ -3,10 +3,10 @@ use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{
     glam::Vec3,
     simulation::{Pitch, Position, Yaw, entity_kind::EntityKind},
+    spatial::get_first_collision,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use rayon::iter::Either;
-use spatial::get_first_collision;
 use tracing::debug;
 
 #[derive(Parser, CommandPermission, Debug)]

@@ -39,7 +39,6 @@ members = [
     'crates/hyperion-text',
     'crates/hyperion-utils',
     'crates/simd-utils',
-    'crates/spatial',
     'crates/system-order',
     'events/tag',
     'tools/packet-inspector',
@@ -230,9 +229,6 @@ version = '0.10.8'
 
 [workspace.dependencies.simd-utils]
 path = 'crates/simd-utils'
-
-[workspace.dependencies.spatial]
-path = 'crates/spatial'
 
 [workspace.dependencies.syntect]
 default-features = false

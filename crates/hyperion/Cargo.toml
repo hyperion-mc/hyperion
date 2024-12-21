@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 bitfield-struct = { workspace = true }
 bitvec = { workspace = true }
+bvh-region = { workspace = true }
 bumpalo = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
@@ -70,12 +71,12 @@ valence_protocol = { workspace = true }
 valence_registry = { workspace = true }
 valence_server = { workspace = true }
 valence_text = { workspace = true }
+ordered-float = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
-spatial = { workspace = true }
 
 [lints]
 workspace = true
