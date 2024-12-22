@@ -46,6 +46,19 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/antithesis-tag:latest
             ghcr.io/${{ github.repository }}/antithesis-tag:${{ github.sha }}
+
+      - name: Build and push antithesis-bot
+        uses: depot/build-push-action@v1
+        with:
+          project: qln0fqqvvd
+          token: ${{ secrets.DEPOT_TOKEN }}
+          context: .
+          target: antithesis-bot
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/antithesis-bot:latest
+            ghcr.io/${{ github.repository }}/antithesis-bot:${{ github.sha }}
   publish:
     runs-on: ubuntu-latest
     permissions:
