@@ -177,6 +177,9 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
       org.opencontainers.image.version="0.1.0"
 
 FROM runtime-base AS antithesis-bot
+
+ENV LD_LIBRARY_PATH=/usr/lib
+COPY --from=antithesis /usr/lib/libvoidstar.so /usr/lib/libvoidstar.so
 COPY --from=antithesis /app/antithesis-bot /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
       org.opencontainers.image.description="Hyperion Antithesis Bot" \
