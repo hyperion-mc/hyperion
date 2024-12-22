@@ -1,3 +1,5 @@
+#![expect(missing_docs)]
+
 use std::collections::HashSet;
 
 use approx::assert_relative_eq;

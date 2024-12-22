@@ -1,3 +1,11 @@
+#![expect(missing_docs)]
+//! Benchmarks comparing different float sorting approaches.
+//!
+//! Tests three sorting methods:
+//! - Regular sort with unwrap
+//! - Sort with `unwrap_unchecked`
+//! - Sort using `OrderedFloat` wrapper
+
 use std::hint::black_box;
 
 use criterion::{Bencher, Criterion, criterion_group, criterion_main};

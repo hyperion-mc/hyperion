@@ -6,6 +6,10 @@ use geometry::aabb::Aabb;
 use crate::{Bvh, Node, utils::GetAabb};
 
 impl<T: Debug> Bvh<T> {
+    /// Returns an iterator over elements whose bounding boxes overlap with the target region.
+    ///
+    /// The iterator yields references to elements whose bounding boxes (obtained via `get_aabb`)
+    /// collide with the target [`Aabb`].
     pub fn range<'a>(
         &'a self,
         target: Aabb,

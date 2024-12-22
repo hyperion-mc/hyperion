@@ -49,6 +49,7 @@ pub struct Compressors {
 }
 
 impl Compressors {
+    /// Creates a new `Compressors` instance with the specified compression level.
     #[must_use]
     pub(crate) fn new(level: CompressionLvl) -> Self {
         Self {
@@ -128,9 +129,11 @@ pub struct Compose {
     scratch: Scratches,
     global: Global,
     io_buf: IoBuf,
+    /// Thread-local bump allocator for temporary allocations
     pub bump: ThreadLocal<Bump>,
 }
 
+/// A bundle of encoded packet data that can be sent to clients
 #[must_use]
 pub struct DataBundle<'a, 'b> {
     compose: &'a Compose,
@@ -139,6 +142,7 @@ pub struct DataBundle<'a, 'b> {
 }
 
 impl<'a, 'b> DataBundle<'a, 'b> {
+    /// Creates a new `DataBundle` instance.
     pub fn new(compose: &'a Compose, system: EntityView<'b>) -> Self {
         Self {
             compose,
@@ -147,6 +151,7 @@ impl<'a, 'b> DataBundle<'a, 'b> {
         }
     }
 
+    /// Adds a packet to the data bundle.
     pub fn add_packet(&mut self, pkt: impl PacketBundle) -> anyhow::Result<()> {
         let world = self.system.world();
         let data = self
@@ -158,10 +163,12 @@ impl<'a, 'b> DataBundle<'a, 'b> {
         Ok(())
     }
 
+    /// Adds raw data to the data bundle.
     pub fn add_raw(&mut self, raw: &[u8]) {
         self.data.extend_from_slice(raw);
     }
 
+    /// Sends the data bundle to a specific client.
     pub fn unicast(&self, stream: ConnectionId) -> anyhow::Result<()> {
         if self.data.is_empty() {
             return Ok(());
@@ -174,6 +181,7 @@ impl<'a, 'b> DataBundle<'a, 'b> {
     }
 
     // todo: use builder pattern for excluding
+    /// Broadcasts the data bundle to clients within a certain region.
     pub fn broadcast_local(&self, center: I16Vec2) -> anyhow::Result<()> {
         if self.data.is_empty() {
             return Ok(());
@@ -187,6 +195,7 @@ impl<'a, 'b> DataBundle<'a, 'b> {
 }
 
 impl Compose {
+    /// Creates a new `Compose` instance.
     #[must_use]
     pub fn new(compressor: Compressors, scratch: Scratches, global: Global, io_buf: IoBuf) -> Self {
         Self {
@@ -198,18 +207,20 @@ impl Compose {
         }
     }
 
+    /// Returns a reference to the global state.
     #[must_use]
     #[expect(missing_docs)]
     pub const fn global(&self) -> &Global {
         &self.global
     }
 
+    /// Returns a mutable reference to the global state.
     #[expect(missing_docs)]
     pub fn global_mut(&mut self) -> &mut Global {
         &mut self.global
     }
 
-    /// Broadcast globally to all players
+    /// Broadcasts a packet globally to all players.
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
     pub const fn broadcast<'a, 'b, P>(
@@ -228,18 +239,20 @@ impl Compose {
         }
     }
 
+    /// Returns a reference to the IO buffer.
     #[must_use]
     #[expect(missing_docs)]
     pub const fn io_buf(&self) -> &IoBuf {
         &self.io_buf
     }
 
+    /// Returns a mutable reference to the IO buffer.
     #[expect(missing_docs)]
     pub fn io_buf_mut(&mut self) -> &mut IoBuf {
         &mut self.io_buf
     }
 
-    /// Broadcast a packet within a certain region.
+    /// Broadcasts a packet within a certain region.
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
     pub const fn broadcast_local<'a, 'b, P>(
@@ -263,7 +276,7 @@ impl Compose {
         }
     }
 
-    /// Send a packet to a single player.
+    /// Sends a packet to a single player.
     pub fn unicast<P>(
         &self,
         packet: P,
@@ -286,7 +299,7 @@ impl Compose {
         .send()
     }
 
-    /// Send a packet to a single player without compression.
+    /// Sends a packet to a single player without compression.
     pub fn unicast_no_compression<P>(
         &self,
         packet: &P,
@@ -306,19 +319,20 @@ impl Compose {
         .send()
     }
 
+    /// Returns a new `PacketEncoder` instance.
     #[must_use]
     pub(crate) fn encoder(&self) -> PacketEncoder {
         let threshold = self.global.shared.compression_threshold;
         PacketEncoder::new(threshold)
     }
 
-    /// Obtain a thread-local scratch buffer.
+    /// Obtains a thread-local scratch buffer.
     #[must_use]
     pub fn scratch(&self, world: &World) -> &RefCell<Scratch> {
         self.scratch.get(world)
     }
 
-    /// Obtain a thread-local [`libdeflater::Compressor`]
+    /// Obtains a thread-local [`libdeflater::Compressor`].
     #[must_use]
     pub fn compressor(&self, world: &World) -> &RefCell<libdeflater::Compressor> {
         self.compressor.get(world)
@@ -336,6 +350,7 @@ pub struct IoBuf {
 }
 
 impl IoBuf {
+    /// Fetches and increments the index.
     pub fn fetch_add_idx(&self, world: &World) -> u16 {
         let cell = self.idx.get(world);
         let result = cell.get();
@@ -343,6 +358,7 @@ impl IoBuf {
         result
     }
 
+    /// Returns the order ID based on the system order.
     pub fn order_id(&self, system_order: SystemOrder, world: &World) -> u32 {
         u32::from(system_order.value()) << 16 | u32::from(self.fetch_add_idx(world))
     }
@@ -371,6 +387,7 @@ impl<P> Unicast<'_, '_, P>
 where
     P: PacketBundle,
 {
+    /// Sends the packet to the specified client.
     fn send(self) -> anyhow::Result<()> {
         self.compose.io_buf.unicast_private(
             self.packet,
@@ -383,7 +400,7 @@ where
 }
 
 impl<P> Broadcast<'_, '_, P> {
-    /// Send the packet to all players.
+    /// Sends the packet to all players.
     pub fn send(self) -> anyhow::Result<()>
     where
         P: PacketBundle,
@@ -402,7 +419,7 @@ impl<P> Broadcast<'_, '_, P> {
         Ok(())
     }
 
-    /// Exclude a certain player from the broadcast. This can only be called once.
+    /// Excludes a certain player from the broadcast. This can only be called once.
     pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
         let exclude = exclude.into();
         let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
@@ -426,7 +443,7 @@ pub struct BroadcastLocal<'a, 'b, P> {
 }
 
 impl<P> BroadcastLocal<'_, '_, P> {
-    /// Send the packet
+    /// Sends the packet.
     pub fn send(self) -> anyhow::Result<()>
     where
         P: PacketBundle,
@@ -445,7 +462,7 @@ impl<P> BroadcastLocal<'_, '_, P> {
         Ok(())
     }
 
-    /// Exclude a certain player from the broadcast. This can only be called once.
+    /// Excludes a certain player from the broadcast. This can only be called once.
     pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
         let exclude = exclude.into();
         let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
@@ -474,6 +491,7 @@ impl IoBuf {
         })
     }
 
+    /// Encodes a packet with compression.
     fn encode_packet<P>(
         &self,
         packet: P,
@@ -500,6 +518,7 @@ impl IoBuf {
         Ok(result)
     }
 
+    /// Encodes a packet without compression.
     fn encode_packet_no_compression<P>(&self, packet: P, world: &World) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
@@ -512,6 +531,7 @@ impl IoBuf {
         Ok(result)
     }
 
+    /// Sends a packet to a specific client.
     fn unicast_private<P>(
         &self,
         packet: P,
@@ -535,6 +555,7 @@ impl IoBuf {
         Ok(())
     }
 
+    /// Broadcasts raw data to clients within a certain region.
     fn broadcast_local_raw(
         &self,
         data: &[u8],
@@ -570,6 +591,7 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
+    /// Broadcasts raw data to all clients.
     pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64, system: EntityView<'_>) {
         let world = system.world();
         let buffer = self.buffer.get(&world);
@@ -600,6 +622,7 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
+    /// Sends raw data to a specific client.
     pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId, system: EntityView<'_>) {
         let world = system.world();
         let system_order = SystemOrder::of(system);
@@ -627,6 +650,7 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
+    /// Sets the receive broadcasts flag for a specific client.
     pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId, world: &World) {
         let buffer = self.buffer.get(world);
         let buffer = &mut *buffer.borrow_mut();

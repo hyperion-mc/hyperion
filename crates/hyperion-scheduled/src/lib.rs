@@ -1,9 +1,12 @@
+//! A priority queue that allows popping items until a given key.
+
 use std::{
     borrow::Borrow,
     cmp::{Ordering, Reverse},
     collections::{BinaryHeap, binary_heap::PeekMut},
 };
 
+/// Internal type for storing key-value pairs in the priority queue
 struct KeyValue<K, V>(K, V);
 
 impl<K: Ord, V> Eq for KeyValue<K, V> {}
@@ -26,6 +29,8 @@ impl<K: Ord, V> PartialOrd for KeyValue<K, V> {
     }
 }
 
+/// A priority queue that stores key-value pairs and allows popping items until a given key.
+/// The queue is ordered by the keys in ascending order.
 pub struct Scheduled<K, V> {
     // min-heap
     queue: BinaryHeap<Reverse<KeyValue<K, V>>>,
@@ -38,6 +43,7 @@ impl<K: Ord, V> Default for Scheduled<K, V> {
 }
 
 impl<K: Ord, V> Scheduled<K, V> {
+    /// Creates a new empty [`Scheduled`].
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -45,10 +51,13 @@ impl<K: Ord, V> Scheduled<K, V> {
         }
     }
 
+    /// Adds a key-value pair to the queue.
     pub fn schedule(&mut self, key: K, value: V) {
         self.queue.push(Reverse(KeyValue(key, value)));
     }
 
+    /// Returns an iterator that yields values with keys less than or equal to the given limit.
+    /// The values are yielded in ascending order of their keys.
     pub fn pop_until<'a, Q>(&'a mut self, limit: &'a Q) -> impl Iterator<Item = V> + 'a
     where
         K: Borrow<Q>,
@@ -65,10 +74,12 @@ impl<K: Ord, V> Scheduled<K, V> {
         })
     }
 
+    /// Removes all items from the queue.
     pub fn clear(&mut self) {
         self.queue.clear();
     }
 
+    /// Returns a reference to the key-value pair with the smallest key, if any.
     #[must_use]
     pub fn peek(&self) -> Option<(&K, &V)> {
         self.queue
@@ -76,11 +87,13 @@ impl<K: Ord, V> Scheduled<K, V> {
             .map(|Reverse(KeyValue(key, value))| (key, value))
     }
 
+    /// Returns `true` if the queue contains no items.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
+    /// Returns the number of items in the queue.
     #[must_use]
     pub fn len(&self) -> usize {
         self.queue.len()

@@ -1,10 +1,12 @@
+#![expect(missing_docs)]
+
 use serde::Deserialize;
 
 mod bot;
 
 #[derive(Deserialize, Debug)]
 pub struct LaunchArguments {
-    ip: String,
+    endpoint: String,
 
     #[serde(default = "default_bot_count")]
     bot_count: u32,
@@ -19,14 +21,17 @@ pub async fn start(args: LaunchArguments) -> eyre::Result<()> {
 
     tracing::info!("args = {args:?}");
 
-    let LaunchArguments { ip, bot_count } = args;
+    let LaunchArguments {
+        endpoint,
+        bot_count,
+    } = args;
 
     if bot_count > UNUSUALLY_HIGH_BOT_THRESHOLD {
         tracing::warn!("bot_count {bot_count} is unusually high. This may cause issues.");
     }
 
     for _ in 0..bot_count {
-        bot::launch(&ip).await?;
+        bot::launch(&endpoint).await?;
     }
 
     Ok(())

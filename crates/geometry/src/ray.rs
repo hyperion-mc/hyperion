@@ -1,11 +1,25 @@
+//! Ray types and utilities.
+//!
+//! This module provides a [`Ray`] type for representing rays in 3D space, which are useful for
+//! intersection tests and ray casting.
+//!
+//! A ray consists of an origin point and a direction vector. The ray extends infinitely from the
+//! origin in the direction specified.
+
 use std::ops::Mul;
 
 use glam::{IVec3, Vec3};
 
+/// A ray in 3D space, consisting of an origin point and a direction vector.
+///
+/// The ray extends infinitely from the origin in the specified direction.
 #[derive(Debug, Clone, Copy)]
 pub struct Ray {
+    /// The origin point of the ray
     origin: Vec3,
+    /// The direction vector of the ray
     direction: Vec3,
+    /// Cached inverse of the direction vector for optimization
     inv_direction: Vec3,
 }
 
@@ -18,21 +32,25 @@ impl Mul<f32> for Ray {
 }
 
 impl Ray {
+    /// Returns the origin point of the ray.
     #[must_use]
     pub const fn origin(&self) -> Vec3 {
         self.origin
     }
 
+    /// Returns the direction vector of the ray.
     #[must_use]
     pub const fn direction(&self) -> Vec3 {
         self.direction
     }
 
+    /// Returns the cached inverse of the direction vector.
     #[must_use]
     pub const fn inv_direction(&self) -> Vec3 {
         self.inv_direction
     }
 
+    /// Creates a new ray from an origin point and direction vector.
     #[must_use]
     pub fn new(origin: Vec3, direction: Vec3) -> Self {
         let inv_direction = Vec3::new(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
@@ -44,6 +62,7 @@ impl Ray {
         }
     }
 
+    /// Creates a new ray from two points, using the first as origin and the vector between them as direction.
     #[must_use]
     pub fn from_points(origin: Vec3, end: Vec3) -> Self {
         let direction = end - origin;
@@ -164,6 +183,9 @@ impl Ray {
     }
 }
 
+/// An iterator that traverses through grid cells (voxels) intersected by a ray.
+///
+/// Uses an optimized DDA (Digital Differential Analyzer) algorithm for efficient traversal.
 #[derive(Debug)]
 #[must_use]
 pub struct VoxelTraversal {

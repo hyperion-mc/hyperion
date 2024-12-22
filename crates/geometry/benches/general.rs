@@ -1,3 +1,11 @@
+//! Benchmarks for geometry primitives and operations.
+//!
+//! This module contains benchmarks for testing performance of:
+//! - AABB intersection tests
+//! - Ray intersection tests
+//! - Various geometric operations
+
+
 use std::hint::black_box;
 
 use geometry::{aabb::Aabb, ray::Ray};

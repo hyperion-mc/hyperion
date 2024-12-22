@@ -1,3 +1,5 @@
+//! Utility functions and types used across the Hyperion project.
+
 use flecs_ecs::{
     core::World,
     macros::Component,
@@ -7,9 +9,12 @@ use flecs_ecs::{
 mod cached_save;
 pub use cached_save::cached_save;
 
+/// Extension trait for converting between Minecraft entity IDs and Flecs [`Entity`] IDs.
 pub trait EntityExt {
+    /// Converts a Flecs entity ID to a Minecraft entity ID.
     fn minecraft_id(&self) -> i32;
 
+    /// Creates a Flecs entity from a Minecraft entity ID.
     fn from_minecraft_id(id: i32) -> Self;
 }
 
@@ -74,6 +79,7 @@ pub struct AppId {
     pub application: String,
 }
 
+/// Module component for registering Hyperion utilities with the ECS world.
 #[derive(Component)]
 pub struct HyperionUtilsModule;
 

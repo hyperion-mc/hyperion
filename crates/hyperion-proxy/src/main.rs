@@ -1,3 +1,5 @@
+#![expect(missing_docs)]
+
 use std::{fmt::Debug, net::SocketAddr, path::PathBuf};
 
 use clap::Parser;

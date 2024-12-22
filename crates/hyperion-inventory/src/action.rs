@@ -1,3 +1,5 @@
+#![allow(missing_docs, reason = "todo: fix")]
+
 use valence_protocol::ItemStack;
 
 use super::{OFFHAND_SLOT, PlayerInventory, slot_index_from_hand};

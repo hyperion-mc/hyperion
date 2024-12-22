@@ -11,6 +11,8 @@ use tracing::info;
 
 use crate::AppId;
 
+/// Downloads a file from a URL and caches it locally, returning the path to the cached file.
+/// If the file is already cached, returns the cached path without downloading.
 pub fn cached_save<U: reqwest::IntoUrl + 'static>(
     world: &World,
     url: U,

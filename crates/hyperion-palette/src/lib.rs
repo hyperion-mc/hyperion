@@ -1,3 +1,4 @@
+#![expect(missing_docs, reason = "todo: fix")]
 #![feature(portable_simd)]
 
 use std::{clone::Clone, iter::FusedIterator};

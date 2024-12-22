@@ -1,3 +1,4 @@
+#![expect(missing_docs)]
 //! Configuration for the server.
 
 use std::{fmt::Debug, fs::File, io::Read, path::Path};

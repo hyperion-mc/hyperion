@@ -1,3 +1,12 @@
+//! Axis-aligned bounding box (AABB) types and utilities.
+//!
+//! This module provides two AABB implementations:
+//! - [`Aabb`]: A standard AABB using `f32` coordinates
+//! - [`OrderedAabb`]: An AABB using ordered floating point coordinates that can be used as hash keys
+//!
+//! The module also includes the [`HasAabb`] trait for types that can provide their bounding box.
+
+
 use std::{
     fmt::{Debug, Display},
     ops::Add,

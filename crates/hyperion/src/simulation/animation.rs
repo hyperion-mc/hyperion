@@ -1,3 +1,4 @@
+#![expect(missing_docs)]
 use enumset::{EnumSet, EnumSetType};
 use flecs_ecs::prelude::Component;
 use valence_protocol::{VarInt, packets::play::EntityAnimationS2c};

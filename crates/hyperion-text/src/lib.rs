@@ -1,3 +1,5 @@
+#![expect(missing_docs, reason = "todo: fix")]
+
 use std::{borrow::Cow, io::Write};
 
 use serde::{Deserialize, Serialize};

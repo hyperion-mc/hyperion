@@ -1,3 +1,4 @@
+#![expect(missing_docs)]
 use divan::{Bencher, black_box};
 use hyperion_stats::ParallelStats;
 use rand::Rng;

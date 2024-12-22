@@ -1,3 +1,5 @@
+#![allow(missing_docs, reason = "todo: fix")]
+
 use std::{collections::HashMap, io::Write};
 
 use derive_build::Build;

@@ -15,6 +15,7 @@
     clippy::module_inception,
     clippy::future_not_send
 )]
+#![expect(missing_docs, reason = "todo: fix")]
 
 use std::fmt::Debug;
 

@@ -1,3 +1,14 @@
+#![expect(missing_docs, reason = "todo: fix")]
+//! Protocol messages for communication between proxy and server components.
+//!
+//! This crate defines the message types and serialization formats used for
+//! communication between the proxy and server components of the system.
+//!
+//! The messages are divided into:
+//! - Proxy to server messages ([`proxy_to_server`])
+//! - Server to proxy messages ([`server_to_proxy`])
+//! - Shared message types ([`shared`])
+
 #![allow(
     clippy::module_inception,
     clippy::module_name_repetitions,

@@ -32,6 +32,15 @@ impl<T> Bvh<T>
 where
     T: Debug + Send + Copy + Sync,
 {
+    /// Builds a new BVH from a vector of elements and a function to get their AABBs.
+    ///
+    /// The BVH is built using a top-down approach, recursively subdividing the elements
+    /// into smaller groups based on their spatial distribution. The build process is
+    /// parallelized when the input is large enough.
+    ///
+    /// # Returns
+    ///
+    /// A new [`Bvh`] containing the elements organized in a hierarchical structure
     #[tracing::instrument(skip_all, fields(elements_len = elements.len()))]
     pub fn build(mut elements: Vec<T>, get_aabb: (impl GetAabb<T> + Sync)) -> Self {
         let max_threads = utils::thread_count_pow2();

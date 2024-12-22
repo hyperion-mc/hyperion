@@ -1,6 +1,7 @@
 #![feature(portable_simd)]
 #![feature(array_chunks)]
 #![feature(iter_array_chunks)]
+#![expect(missing_docs)]
 
 use std::simd::{f64x4, num::SimdFloat};
 

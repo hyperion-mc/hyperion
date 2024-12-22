@@ -1,3 +1,4 @@
+#![expect(missing_docs)]
 use std::fmt::Debug;
 
 use bytes::Bytes;

@@ -14,6 +14,7 @@
     clippy::cast_sign_loss,
     reason = "todo: we should double check no sign loss"
 )]
+#![expect(missing_docs, reason = "todo: fix")]
 
 mod packet_io;
 mod packet_registry;
