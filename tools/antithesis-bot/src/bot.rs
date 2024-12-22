@@ -14,9 +14,9 @@ use valence_protocol::{
 /// 1.20.1
 const PROTOCOL_VERSION: i32 = 763;
 
-pub async fn launch(ip: String) -> eyre::Result<()> {
+pub async fn launch(ip: &str) -> eyre::Result<()> {
     // Connect to the TCP server
-    let mut stream = TcpStream::connect(&ip)
+    let mut stream = TcpStream::connect(ip)
         .await
         .wrap_err_with(|| format!("Failed to connect to {ip}"))?;
 
@@ -28,7 +28,7 @@ pub async fn launch(ip: String) -> eyre::Result<()> {
     // step 1: send a handshake packet
     let packet = valence_protocol::packets::handshaking::HandshakeC2s {
         protocol_version: VarInt(PROTOCOL_VERSION),
-        server_address: Bounded(&ip),
+        server_address: Bounded(ip),
         server_port: 0, // todo: probably does not matter
         next_state: HandshakeNextState::Status,
     };

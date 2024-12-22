@@ -28,7 +28,7 @@ pub async fn start(args: LaunchArguments) -> eyre::Result<()> {
     }
 
     for _ in 0..bot_count {
-        bot::launch(ip).await?;
+        bot::launch(&ip).await?;
     }
 
     Ok(())
