@@ -49,6 +49,7 @@ members = [
 resolver = '2'
 
 [workspace.dependencies]
+antithesis_sdk = { git = "https://github.com/antithesishq/antithesis-sdk-rust" }
 anyhow = '1.0.86'
 approx = '0.5.1'
 arrayvec = '0.7.4'
@@ -116,10 +117,6 @@ tokio = '1.40.0'
 toml = '0.8.14'
 uuid = '1.8.0'
 
-[workspace.dependencies.antithesis]
-git = "https://github.com/andrewgazelka/antithesis-sdk-rust"
-package = "antithesis_sdk"
-branch = "12-21-fix_update_rand_to_0.9.0-beta.1"
 
 [workspace.dependencies.bvh]
 git = 'https://github.com/andrewgazelka/bvh-data'
