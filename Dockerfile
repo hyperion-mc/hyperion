@@ -8,17 +8,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y \
-        curl \
+        binutils \
         build-essential \
-        libssl-dev \
-        pkg-config \
         cmake \
-        perl \
+        curl \
         gcc \
-        linux-headers-generic \
-        libclang1 \
-        llvm-dev \
         libclang-dev \
+        libclang1 \
+        libssl-dev \
+        linux-headers-generic \
+        llvm-dev \
+        perl \
+        pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Base builder stage with Rust installation
@@ -94,11 +95,13 @@ COPY ./libvoidstar.so /usr/lib/libvoidstar.so
 # Assumes libvoidstar.so is in /usr/lib
 ENV LIBVOIDSTAR_PATH=/usr/lib
 ENV LD_LIBRARY_PATH=/usr/lib
+
 ENV RUSTFLAGS="-Ccodegen-units=1 \
     -Cpasses=sancov-module \
     -Cllvm-args=-sanitizer-coverage-level=3 \
     -Cllvm-args=-sanitizer-coverage-trace-pc-guard \
     -Clink-args=-Wl,--build-id \
+    -Clink-args=-Wl,-z,nostart-stop-gc \
     -L/usr/lib \
     -lvoidstar"
 
@@ -113,10 +116,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cp /antithesis-target/debug/tag /app/tag
 
 # Verify instrumentation was successful
-#RUN nm target/debug/hyperion-proxy | grep "sanitizer_cov_trace_pc_guard" && \
-#    ldd target/debug/hyperion-proxy | grep "libvoidstar" && \
-#    nm target/debug/tag | grep "sanitizer_cov_trace_pc_guard" && \
-#    ldd target/debug/tag | grep "libvoidstar"
+RUN nm target/debug/hyperion-proxy | grep "sanitizer_cov_trace_pc_guard" && \
+    ldd target/debug/hyperion-proxy | grep "libvoidstar" && \
+    nm target/debug/tag | grep "sanitizer_cov_trace_pc_guard" && \
+    ldd target/debug/tag | grep "libvoidstar"
 
 # Release builder
 FROM builder-base AS build-release
