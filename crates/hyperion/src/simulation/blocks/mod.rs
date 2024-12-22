@@ -128,37 +128,22 @@ impl Blocks {
         // Use voxel traversal to efficiently walk through blocks
         for cell in ray.voxel_traversal(bounds_min, bounds_max) {
             if let Some(block) = self.get_block(cell) {
-                debug!("Checking block at {:?}", cell);
                 let origin = cell.as_vec3();
 
                 // Check collision with block shapes
                 let collision = block
                     .collision_shapes()
                     .map(|shape| {
-                        let aabb =
-                            geometry::aabb::Aabb::new(shape.min().as_vec3(), shape.max().as_vec3());
-                        debug!("Checking shape AABB: {:?}", aabb);
-                        aabb
+                        geometry::aabb::Aabb::new(shape.min().as_vec3(), shape.max().as_vec3())
                     })
-                    .map(|shape| {
-                        let translated_shape = shape + origin;
-                        debug!("Translated shape AABB: {:?}", translated_shape);
-                        translated_shape
-                    })
-                    .filter_map(|shape| {
-                        let intersection = shape.intersect_ray(&ray);
-                        debug!("Intersection result: {:?}", intersection);
-                        intersection
-                    })
+                    .map(|shape| shape + origin)
+                    .filter_map(|shape| shape.intersect_ray(&ray))
                     .min();
-                debug!("Final collision result: {:?}", collision);
 
                 if let Some(distance) = collision {
                     let distance = distance.into_inner();
                     let collision_point = ray.origin() + ray.direction() * distance;
                     let collision_normal = (collision_point - origin).normalize();
-
-                    debug!("Collision point: {:?}", collision_point);
 
                     return Some(RayCollision {
                         distance,

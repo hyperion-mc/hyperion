@@ -6,17 +6,9 @@ use flecs_ecs::{
 };
 use glam::I16Vec2;
 use hyperion::{
-    ItemKind, ItemStack,
-    glam::Vec3,
-    net::Compose,
-    simulation::{
-        Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw,
-        entity_kind::EntityKind,
-        event, get_direction_from_rotation,
-        metadata::living_entity::{ArrowsInEntity, HandStates},
-    },
-    storage::{EventQueue, Events},
-    valence_protocol::packets::play,
+    glam::Vec3, net::Compose, simulation::{
+        entity_kind::EntityKind, event, get_direction_from_rotation, metadata::living_entity::{ArrowsInEntity, HandStates}, Owner, Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw
+    }, storage::{EventQueue, Events}, valence_protocol::packets::play, ItemKind, ItemStack
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
@@ -25,17 +17,6 @@ use valence_protocol::VarInt;
 
 #[derive(Component)]
 pub struct BowModule;
-
-#[derive(Component)]
-pub struct Owner {
-    entity: Entity,
-}
-
-impl Owner {
-    pub fn new(entity: Entity) -> Self {
-        Self { entity }
-    }
-}
 
 #[derive(Component)]
 pub struct LastFireTime {
@@ -83,7 +64,6 @@ impl BowCharging {
 
 impl Module for BowModule {
     fn module(world: &World) {
-        world.component::<Owner>();
         world.component::<LastFireTime>();
         world.component::<BowCharging>();
 
@@ -217,6 +197,7 @@ impl Module for BowModule {
             &Compose($),
             &mut EventQueue<event::ProjectileEntityEvent>,
         )
+        .multi_threaded()
         .singleton()
         .kind::<flecs::pipeline::PostUpdate>()
         .each_iter(move |it, _, (compose, event_queue)| {
@@ -229,9 +210,6 @@ impl Module for BowModule {
                         .projectile
                         .entity_view(world)
                         .get::<(&Velocity, &Owner)>(|(velocity, owner)| {
-                            if owner.entity == event.client {
-                                return (0.0, owner.entity, I16Vec2::ZERO);
-                            }
                             let chunck_pos = event
                                 .client
                                 .entity_view(world)
@@ -279,6 +257,7 @@ impl Module for BowModule {
             world,
             &mut EventQueue<event::ProjectileBlockEvent>,
         )
+        .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
         .each_iter(move |it, _, event_queue| {
             let _system = it.system();

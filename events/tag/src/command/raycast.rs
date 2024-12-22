@@ -62,7 +62,7 @@ impl MinecraftCommand for RaycastCommand {
 
         debug!("ray = {ray:?}");
 
-        let result = get_first_collision(ray, &world);
+        let result = get_first_collision(ray, &world, Some(caller));
 
         match result {
             Some(Either::Left(entity)) => {

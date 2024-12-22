@@ -355,6 +355,17 @@ impl Default for RunningSpeed {
     }
 }
 
+#[derive(Component)]
+pub struct Owner {
+    pub entity: Entity,
+}
+
+impl Owner {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
+
 /// If the entity can be targeted by non-player entities.
 #[derive(Component)]
 pub struct AiTargetable;
@@ -586,6 +597,7 @@ impl Module for SimModule {
         world.component::<Player>();
         world.component::<Visible>();
         world.component::<Spawn>();
+        world.component::<Owner>();
 
         world.component::<EntityKind>().meta();
 

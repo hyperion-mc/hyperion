@@ -17,7 +17,7 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Pitch, Position, Velocity, Xp, Yaw,
+        Owner, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -407,12 +407,13 @@ impl Module for EntityStateSyncModule {
             world,
             &mut Position,
             &mut Velocity,
+            &Owner,
             ?&ConnectionId
         )
         .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
         .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (position, velocity, connection_id)| {
+        .each_iter(|it, row, (position, velocity, owner, connection_id)| {
             if let Some(_connection_id) = connection_id {
                 return;
             }
@@ -430,7 +431,8 @@ impl Module for EntityStateSyncModule {
 
                 let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
-                let Some(collision) = get_first_collision(ray, &world) else {
+                let Some(collision) = 
+                get_first_collision(ray, &world, Some(owner.entity)) else {
                     // Drag (0.99 / 20.0)
                     // 1.0 - (0.99 / 20.0) * 0.05
                     velocity.0 *= 0.997_525;
@@ -458,7 +460,7 @@ impl Module for EntityStateSyncModule {
                             },
                             &world
                         ));
-                    }
+                    },
                     Either::Right(collision) => {
                         // send event
                         world.get::<&mut Events>(|events| events.push(
