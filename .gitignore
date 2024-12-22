@@ -24,6 +24,7 @@ perf.data
 # Misc
 /extractor/build
 /extractor/out
+vendor/
 /extractor/classes
 /extractor/run
 /extractor/bin

@@ -1,0 +1,21 @@
+[package]
+name = "antithesis-bot"
+version.workspace = true
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+
+[dependencies]
+antithesis_sdk.workspace = true
+bytes = "1.9.0"
+dotenvy.workspace = true
+envy.workspace = true
+eyre.workspace = true
+regex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+tracing-subscriber.workspace = true
+tracing.workspace = true
+valence_protocol.workspace = true
+
+[lints]
+workspace = true
