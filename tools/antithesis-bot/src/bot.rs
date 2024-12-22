@@ -1,4 +1,4 @@
-use antithesis::serde_json::json;
+use antithesis_sdk::serde_json::json;
 use bytes::BytesMut;
 use eyre::{Context, eyre};
 use tokio::{
@@ -51,7 +51,7 @@ pub async fn launch(address: &str) -> eyre::Result<()> {
         .await
         .wrap_err_with(|| format!("Failed to connect to {address}"))?;
 
-    antithesis::assert_reachable!("connected to the Minecraft server");
+    antithesis_sdk::assert_reachable!("connected to the Minecraft server");
 
     let mut encoder = PacketEncoder::new();
     let mut decoder = PacketDecoder::new();
@@ -102,7 +102,7 @@ pub async fn launch(address: &str) -> eyre::Result<()> {
                 "value": packet,
             });
 
-            antithesis::assert_reachable!("received a packet", &packet);
+            antithesis_sdk::assert_reachable!("received a packet", &packet);
 
             info!("packet\n{packet:#?}");
             break 'outer Ok(());

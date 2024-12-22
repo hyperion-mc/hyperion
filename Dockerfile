@@ -113,13 +113,15 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/antithesis-target \
     cargo build --frozen --target-dir /antithesis-target && \
     cp /antithesis-target/debug/hyperion-proxy /app/hyperion-proxy && \
-    cp /antithesis-target/debug/tag /app/tag
+    cp /antithesis-target/debug/tag /app/tag && \
+    cp /antithesis-target/debug/antithesis-bot /app/antithesis-bot
 
 # Verify instrumentation was successful
-RUN nm target/debug/hyperion-proxy | grep "sanitizer_cov_trace_pc_guard" && \
-    ldd target/debug/hyperion-proxy | grep "libvoidstar" && \
-    nm target/debug/tag | grep "sanitizer_cov_trace_pc_guard" && \
-    ldd target/debug/tag | grep "libvoidstar"
+RUN --mount=type=cache,target=/antithesis-target \
+    nm /antithesis-target/debug/hyperion-proxy | grep "sanitizer_cov_trace_pc_guard" && \
+    ldd /antithesis-target/debug/hyperion-proxy | grep "libvoidstar" && \
+    nm /antithesis-target/debug/tag | grep "sanitizer_cov_trace_pc_guard" && \
+    ldd /antithesis-target/debug/tag | grep "libvoidstar"
 
 # Release builder
 FROM builder-base AS build-release
@@ -130,8 +132,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo build --profile release-full --frozen --workspace --exclude antithesis-bot && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
-    cp target/release-full/tag /app/build/ && \
-    cp target/release-full/antithesis-bot /app/build/
+    cp target/release-full/tag /app/build/
 
 # Runtime base image
 FROM ubuntu:24.04 AS runtime-base

@@ -5,7 +5,7 @@ authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
 
 [dependencies]
-antithesis.workspace = true
+antithesis_sdk.workspace = true
 bytes = "1.9.0"
 dotenvy.workspace = true
 envy.workspace = true
