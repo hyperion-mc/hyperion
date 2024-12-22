@@ -1,3 +1,5 @@
+use core::sync;
+
 use antithesis::serde_json::json;
 use bytes::BytesMut;
 use eyre::{Context, eyre};
@@ -14,11 +16,42 @@ use valence_protocol::{
 /// 1.20.1
 const PROTOCOL_VERSION: i32 = 763;
 
-pub async fn launch(ip: &str) -> eyre::Result<()> {
+#[derive(Debug, PartialEq, Eq)]
+pub struct ServerAddress {
+    host: String,
+    port: u16,
+}
+
+fn parse_address(address: &str) -> eyre::Result<ServerAddress> {
+    static ADDRESS_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^(?P<host>[^:]+)(?::(?P<port>\d+))?$").unwrap()
+    });
+
+    let captures = ADDRESS_REGEX
+        .captures(address)
+        .ok_or_else(|| eyre!("Invalid address format"))?;
+
+    let host = captures
+        .name("host")
+        .ok_or_else(|| eyre!("Missing host in address"))?
+        .as_str()
+        .to_owned();
+
+    let port = captures
+        .name("port")
+        .and_then(|m| m.as_str().parse::<u16>().ok())
+        .unwrap_or(25565);
+
+    Ok(ServerAddress { host, port })
+}
+
+pub async fn launch(address: &str) -> eyre::Result<()> {
+    let server_addr = parse_address(address)?;
+
     // Connect to the TCP server
-    let mut stream = TcpStream::connect(ip)
+    let mut stream = TcpStream::connect(address)
         .await
-        .wrap_err_with(|| format!("Failed to connect to {ip}"))?;
+        .wrap_err_with(|| format!("Failed to connect to {address}"))?;
 
     antithesis::assert_reachable!("connected to the Minecraft server");
 
@@ -28,8 +61,8 @@ pub async fn launch(ip: &str) -> eyre::Result<()> {
     // step 1: send a handshake packet
     let packet = valence_protocol::packets::handshaking::HandshakeC2s {
         protocol_version: VarInt(PROTOCOL_VERSION),
-        server_address: Bounded(ip),
-        server_port: 0, // todo: probably does not matter
+        server_address: Bounded(&server_addr.host),
+        server_port: server_addr.port,
         next_state: HandshakeNextState::Status,
     };
 
@@ -76,5 +109,35 @@ pub async fn launch(ip: &str) -> eyre::Result<()> {
             info!("packet\n{packet:#?}");
             break 'outer Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_address_with_port() {
+        let result = parse_address("example.com:12345").unwrap();
+        assert_eq!(result, ServerAddress {
+            host: "example.com".to_string(),
+            port: 12345
+        });
+    }
+
+    #[test]
+    fn test_parse_address_without_port() {
+        let result = parse_address("example.com").unwrap();
+        assert_eq!(result, ServerAddress {
+            host: "example.com".to_string(),
+            port: 25565
+        });
+    }
+
+    #[test]
+    fn test_parse_address_invalid() {
+        assert!(parse_address("").is_err());
+        assert!(parse_address(":1234").is_err());
+        assert!(parse_address("example.com:").is_err());
     }
 }

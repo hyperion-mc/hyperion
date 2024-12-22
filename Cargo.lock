@@ -281,7 +281,7 @@ dependencies = [
  "dotenvy",
  "envy",
  "eyre",
- "rand 0.9.0-beta.1",
+ "regex",
  "serde",
  "tokio",
  "tracing",

@@ -101,6 +101,7 @@ proptest = '1.5.0'
 quote = '1.0.37'
 rand = '0.8.5'
 rayon = '1.10.0'
+regex = "1.11.1"
 rkyv = '0.8.8'
 serde = '1.0.216'
 serde_json = '1.0.117'
