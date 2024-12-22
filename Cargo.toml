@@ -42,6 +42,7 @@ members = [
     'crates/spatial',
     'crates/system-order',
     'events/tag',
+    'tools/antithesis-bot',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
@@ -68,6 +69,8 @@ eframe = '0.29.1'
 egui = '0.29.1'
 egui_dock = '0.14.0'
 enumset = '1.1.5'
+envy = "0.4.2"
+eyre = "0.6.12"
 fastrand = '2.1.0'
 flume = '0.11.1'
 futures-util = '0.3.31'
@@ -111,6 +114,11 @@ time = '0.3.37'
 tokio = '1.40.0'
 toml = '0.8.14'
 uuid = '1.8.0'
+
+[workspace.dependencies.antithesis]
+git = "https://github.com/andrewgazelka/antithesis-sdk-rust"
+package = "antithesis_sdk"
+branch = "12-21-fix_update_rand_to_0.9.0-beta.1"
 
 [workspace.dependencies.bvh]
 git = 'https://github.com/andrewgazelka/bvh-data'
