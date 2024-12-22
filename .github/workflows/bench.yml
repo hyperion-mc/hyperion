@@ -46,7 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download Artifact
+        id: download
         uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
         with:
           commit: ${{ github.event.pull_request.base.sha }}
           name: bench_${{ matrix.benchmark }}
@@ -57,10 +59,13 @@ jobs:
           toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
       - uses: Swatinem/rust-cache@v2
       - name: Run cargo bench
+        if: steps.download.outcome == 'success'
         run: cargo bench --bench=${{ matrix.benchmark }} -- compare /tmp/bench/${{ matrix.benchmark }} > bench_output_${{ matrix.benchmark }}.txt
       - name: remove /tmp/bench
+        if: steps.download.outcome == 'success'
         run: rm -rf /tmp/bench
       - name: Post benchmark results as PR comment
+        if: steps.download.outcome == 'success'
         uses: actions/github-script@v6
         with:
           script: |
