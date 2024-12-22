@@ -8,6 +8,8 @@ on:
 env:
   RUST_NIGHTLY_TOOLCHAIN: nightly-2024-12-18
   RUSTFLAGS: -Clinker=/usr/bin/clang -Clink-arg=--ld-path=/usr/local/bin/mold -Ctarget-cpu=native -Zshare-generics=y -Zthreads=0
+  BENCHMARKS: >-
+    general
 
 jobs:
   export:
@@ -15,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        benchmark: [ side_by_side, other_benchmark ] # Add your benchmarks here
+        benchmark: ${{ fromJson(format('[{0}]', join(env.BENCHMARKS, ','))) }}
     steps:
       - uses: actions/checkout@v4
       - uses: rui314/setup-mold@v1
@@ -40,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        benchmark: [ general ] # Add your benchmarks here
+        benchmark: ${{ fromJson(format('[{0}]', join(env.BENCHMARKS, ','))) }}
     permissions:
       pull-requests: write
     steps:
