@@ -127,7 +127,7 @@ FROM builder-base AS build-release
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=/app/target \
-    cargo build --profile release-full --frozen && \
+    cargo build --profile release-full --frozen --workspace --exclude antithesis-bot && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
     cp target/release-full/tag /app/build/ && \
