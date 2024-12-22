@@ -1,3 +1,4 @@
+use antithesis::serde_json::json;
 use bytes::BytesMut;
 use eyre::{Context, eyre};
 use tokio::{
@@ -18,6 +19,8 @@ pub async fn launch(ip: String) -> eyre::Result<()> {
     let mut stream = TcpStream::connect(&ip)
         .await
         .wrap_err_with(|| format!("Failed to connect to {ip}"))?;
+
+    antithesis::assert_reachable!("connected to the Minecraft server");
 
     let mut encoder = PacketEncoder::new();
     let mut decoder = PacketDecoder::new();
@@ -63,7 +66,14 @@ pub async fn launch(ip: String) -> eyre::Result<()> {
             .try_next_packet()
             .map_err(|e| eyre!("failed to decode packet: {e}"))?
         {
-            tracing::info!("packet\n{packet:#?}");
+            let packet = format!("{packet:?}");
+            let packet = json! ({
+                "value": packet,
+            });
+
+            antithesis::assert_reachable!("received a packet", &packet);
+
+            info!("packet\n{packet:#?}");
             break 'outer Ok(());
         }
     }
