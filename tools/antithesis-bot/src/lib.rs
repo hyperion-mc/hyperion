@@ -27,7 +27,9 @@ pub async fn start(args: LaunchArguments) -> eyre::Result<()> {
         tracing::warn!("bot_count {bot_count} is unusually high. This may cause issues.");
     }
 
-    bot::launch(ip).await?;
+    for _ in 0..bot_count {
+        bot::launch(ip).await?;
+    }
 
     Ok(())
 }
