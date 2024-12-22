@@ -1,3 +1,6 @@
+//! Macros to build an Event struct. This will likely be removed/improved in 
+//! <https://github.com/hyperion-mc/hyperion/pull/771>
+
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};

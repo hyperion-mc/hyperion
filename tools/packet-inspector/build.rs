@@ -1,3 +1,5 @@
+#![doc = include_str!("README.md")]
+
 use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
@@ -13,6 +15,7 @@ struct Packet {
     id: i32,
 }
 
+#[allow(missing_docs)]
 pub fn main() -> anyhow::Result<()> {
     let packets: Vec<Packet> = serde_json::from_str(include_str!("extracted/packets.json"))?;
 

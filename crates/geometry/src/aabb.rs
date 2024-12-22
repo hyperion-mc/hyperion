@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ray::Ray;
 
+/// A trait for types that can provide their axis-aligned bounding box.
 pub trait HasAabb {
+    /// Returns the axis-aligned bounding box that fully contains this object.
     fn aabb(&self) -> Aabb;
 }
 
@@ -19,6 +21,11 @@ impl HasAabb for Aabb {
     }
 }
 
+/// An axis-aligned bounding box with ordered floating point coordinates.
+///
+/// This variant of AABB uses `NotNan<f32>` for coordinates to enable total ordering
+/// and hashing. This is useful when AABBs need to be stored in ordered collections
+/// or used as hash keys.
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Ord, PartialOrd, Hash)]
 pub struct OrderedAabb {
     min_x: NotNan<f32>,
@@ -44,9 +51,15 @@ impl TryFrom<Aabb> for OrderedAabb {
     }
 }
 
+/// An axis-aligned bounding box (AABB) defined by minimum and maximum points.
+///
+/// The AABB is represented by two points in 3D space - a minimum point that defines the
+/// lower bounds in all dimensions, and a maximum point that defines the upper bounds.
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Aabb {
+    /// The minimum point (lower bounds) of the bounding box
     pub min: Vec3,
+    /// The maximum point (upper bounds) of the bounding box  
     pub max: Vec3,
 }
 
@@ -109,31 +122,6 @@ impl Add<Vec3> for Aabb {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Ord, PartialOrd, Hash)]
-pub struct CheckableAabb {
-    pub min: [NotNan<f32>; 3],
-    pub max: [NotNan<f32>; 3],
-}
-
-impl TryFrom<Aabb> for CheckableAabb {
-    type Error = ordered_float::FloatIsNan;
-
-    fn try_from(value: Aabb) -> Result<Self, Self::Error> {
-        Ok(Self {
-            min: [
-                NotNan::new(value.min.x)?,
-                NotNan::new(value.min.y)?,
-                NotNan::new(value.min.z)?,
-            ],
-            max: [
-                NotNan::new(value.max.x)?,
-                NotNan::new(value.max.y)?,
-                NotNan::new(value.max.z)?,
-            ],
-        })
-    }
-}
-
 impl Default for Aabb {
     fn default() -> Self {
         Self::NULL
@@ -141,48 +129,61 @@ impl Default for Aabb {
 }
 
 impl Aabb {
+    /// An axis-aligned bounding box that contains all possible points in 3D space.
+    /// This is represented by having minimum coordinates of negative infinity and maximum coordinates of positive infinity.
     pub const EVERYTHING: Self = Self {
         min: Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY),
         max: Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY),
     };
+
+    /// An empty axis-aligned bounding box that contains no points.
+    /// This is represented by having minimum coordinates greater than maximum coordinates,
+    /// making it impossible for any point to be contained within it.
     pub const NULL: Self = Self {
         min: Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY),
         max: Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY),
     };
 
     #[must_use]
+    #[allow(missing_docs)]
     pub fn new(min: impl Into<Vec3>, max: impl Into<Vec3>) -> Self {
         let min = min.into();
         let max = max.into();
         Self { min, max }
     }
 
+    /// Returns a new [`Aabb`] that is shrunk by the given amount in all directions.
+    /// This is equivalent to calling [`expand`](Self::expand) with a negative amount.
     #[must_use]
     pub fn shrink(self, amount: f32) -> Self {
         Self::expand(self, -amount)
     }
 
+    /// Returns a new [`Aabb`] with the same dimensions as `self` but positioned with its bottom center at the given point.
     #[must_use]
-    pub fn move_to_feet(&self, feet: Vec3) -> Self {
+    pub fn with_bottom_center(&self, bottom_center: Vec3) -> Self {
         let half_width = (self.max.x - self.min.x) / 2.0;
         let height = self.max.y - self.min.y;
 
-        let min = Vec3::new(feet.x - half_width, feet.y, feet.z - half_width);
-        let max = Vec3::new(feet.x + half_width, feet.y + height, feet.z + half_width);
+        let min = Vec3::new(bottom_center.x - half_width, bottom_center.y, bottom_center.z - half_width);
+        let max = Vec3::new(bottom_center.x + half_width, bottom_center.y + height, bottom_center.z + half_width);
 
         Self { min, max }
     }
 
+    /// Creates a new axis-aligned bounding box from a bottom center point, width, and height.
+    /// The width extends equally in both x and z directions from the center point.
     #[must_use]
-    pub fn create(feet: Vec3, width: f32, height: f32) -> Self {
+    pub fn from_bottom_center(bottom: Vec3, width: f32, height: f32) -> Self {
         let half_width = width / 2.0;
 
-        let min = Vec3::new(feet.x - half_width, feet.y, feet.z - half_width);
-        let max = Vec3::new(feet.x + half_width, feet.y + height, feet.z + half_width);
+        let min = Vec3::new(bottom.x - half_width, bottom.y, bottom.z - half_width);
+        let max = Vec3::new(bottom.x + half_width, bottom.y + height, bottom.z + half_width);
 
         Self { min, max }
     }
 
+    /// Returns a new axis-aligned bounding box that is offset by the given vector.
     #[must_use]
     pub fn move_by(&self, offset: Vec3) -> Self {
         Self {
@@ -190,7 +191,8 @@ impl Aabb {
             max: self.max + offset,
         }
     }
-
+    /// Returns the overlapping region between two axis-aligned bounding boxes, if one exists.
+    /// If the boxes do not overlap, returns `None`.
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
         let min_x = a.min.x.max(b.min.x);
@@ -212,6 +214,8 @@ impl Aabb {
         }
     }
 
+    /// Returns `true` if this axis-aligned bounding box collides with another one.
+    /// Two boxes collide if they overlap in all three dimensions.
     #[must_use]
     pub fn collides(&self, other: &Self) -> bool {
         self.min.x <= other.max.x
@@ -222,6 +226,7 @@ impl Aabb {
             && self.max.z >= other.min.z
     }
 
+    /// Returns `true` if the given point lies within this axis-aligned bounding box.
     #[must_use]
     pub fn collides_point(&self, point: Vec3) -> bool {
         self.min.x <= point.x
@@ -232,6 +237,8 @@ impl Aabb {
             && point.z <= self.max.z
     }
 
+    /// Returns the squared distance between a point and this axis-aligned bounding box.
+    /// If the point is inside the box, returns 0.
     #[must_use]
     pub fn dist2(&self, point: Vec3) -> f64 {
         let point = point.as_dvec3();
@@ -245,6 +252,9 @@ impl Aabb {
         diff.length_squared()
     }
 
+    /// Returns an iterator over elements that overlap with this axis-aligned bounding box.
+    /// 
+    /// The returned iterator yields references to elements whose bounding boxes collide with this one.
     pub fn overlaps<'a, T>(
         &'a self,
         elements: impl Iterator<Item = &'a T>,
@@ -255,6 +265,7 @@ impl Aabb {
         elements.filter(|element| self.collides(&element.aabb()))
     }
 
+    /// Returns the surface area of this axis-aligned bounding box.
     #[must_use]
     pub fn surface_area(&self) -> f32 {
         let lens = self.lens();
@@ -263,12 +274,17 @@ impl Aabb {
             .mul_add(lens.x, lens.x.mul_add(lens.y, lens.y * lens.z))
     }
 
+    /// Returns the volume of this axis-aligned bounding box.
     #[must_use]
     pub fn volume(&self) -> f32 {
         let lens = self.lens();
         lens.x * lens.y * lens.z
     }
 
+    /// Returns the distance along the ray to the first intersection point with this AABB, if any.
+    /// 
+    /// Returns `None` if the ray does not intersect the AABB. If the ray origin is inside the AABB,
+    /// returns a distance of 0.
     #[must_use]
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         let origin = ray.origin();
@@ -349,6 +365,8 @@ impl Aabb {
         Some(NotNan::new(t_hit).unwrap())
     }
 
+    /// Returns a new [`Aabb`] that is expanded by the given amount in all directions.
+    /// This is equivalent to calling [`shrink`](Self::shrink) with a negative amount.
     #[must_use]
     pub fn expand(mut self, amount: f32) -> Self {
         self.min -= Vec3::splat(amount);
@@ -362,36 +380,43 @@ impl Aabb {
         point.cmpge(self.min).all() && point.cmple(self.max).all()
     }
 
+    /// Expands this [`Aabb`] to include another [`Aabb`] by adjusting the minimum and maximum bounds.
     pub fn expand_to_fit(&mut self, other: &Self) {
         self.min = self.min.min(other.min);
         self.max = self.max.max(other.max);
     }
 
+    /// Returns the center point of this axis-aligned bounding box.
     #[must_use]
     pub fn mid(&self) -> Vec3 {
         (self.min + self.max) / 2.0
     }
 
+    /// Returns the x-coordinate of the center point of this axis-aligned bounding box.
     #[must_use]
     pub fn mid_x(&self) -> f32 {
         (self.min.x + self.max.x) / 2.0
     }
 
+    /// Returns the y-coordinate of the center point of this axis-aligned bounding box.
     #[must_use]
     pub fn mid_y(&self) -> f32 {
         (self.min.y + self.max.y) / 2.0
     }
 
+    /// Returns the z-coordinate of the center point of this axis-aligned bounding box.
     #[must_use]
     pub fn mid_z(&self) -> f32 {
         (self.min.z + self.max.z) / 2.0
     }
 
+    /// Returns the dimensions (width, height, depth) of this axis-aligned bounding box.
     #[must_use]
     pub fn lens(&self) -> Vec3 {
         self.max - self.min
     }
 
+    /// Creates a new [`Aabb`] that contains all the given objects.
     pub fn containing<T: HasAabb>(input: &[T]) -> Self {
         let mut current_min = Vec3::splat(f32::INFINITY);
         let mut current_max = Vec3::splat(f32::NEG_INFINITY);

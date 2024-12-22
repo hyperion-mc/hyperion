@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 #![feature(portable_simd)]
 #![feature(trusted_len)]
 #![feature(slice_as_chunks)]

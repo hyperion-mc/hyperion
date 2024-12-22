@@ -304,7 +304,9 @@ branch = 'feat-open'
 git = 'https://github.com/andrewgazelka/valence'
 
 [workspace.lints]
+
 [workspace.lints.clippy]
+
 cast_precision_loss = 'allow'
 future_not_send = 'allow'
 missing_errors_doc = 'allow'
@@ -342,6 +344,8 @@ level = 'deny'
 priority = -1
 
 [workspace.lints.rust]
+missing_docs = 'deny'
+
 [workspace.lints.rust.future_incompatible]
 level = 'deny'
 priority = -1

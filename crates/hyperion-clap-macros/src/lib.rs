@@ -1,7 +1,10 @@
+//! Macros to build commands that have permissions. These are on top of the existing
+//! `clap::Parser` traits.
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, Error, Ident, Lit, parse_macro_input};
 
+/// Derives the `CommandPermission` trait for a struct or enum.
 #[proc_macro_derive(CommandPermission, attributes(command_permission))]
 pub fn derive_command_permission(input: TokenStream) -> TokenStream {
     // Parse the input as a DeriveInput (struct or enum)
