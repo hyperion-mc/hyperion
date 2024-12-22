@@ -1,21 +1,20 @@
+use antithesis_bot::LaunchArguments;
 use eyre::Result;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-#[derive(Deserialize)]
-struct Args {
-    ip: String,
-}
-
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
+    tracing_subscriber::fmt::init();
     // Load .env file first
     if let Err(e) = dotenvy::dotenv() {
         warn!("Failed to load .env file: {}", e);
     }
-    
+
     // Deserialize environment variables into the struct
-    let args: Args = envy::from_env()?;
-    info!(?args.ip, "Using IP address");
+    let args: LaunchArguments = envy::from_env()?;
+
+    antithesis_bot::start(args).await?;
 
     Ok(())
 }

@@ -6,12 +6,14 @@ edition.workspace = true
 
 [dependencies]
 antithesis.workspace = true
+bytes = "1.9.0"
 dotenvy.workspace = true
 envy.workspace = true
 eyre.workspace = true
 rand = "0.9.0-beta.1"
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["full"] }
+tracing-subscriber.workspace = true
 tracing.workspace = true
 valence_protocol.workspace = true
 

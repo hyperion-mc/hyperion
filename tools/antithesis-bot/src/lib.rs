@@ -7,10 +7,16 @@ mod bot;
 #[derive(Deserialize, Debug)]
 pub struct LaunchArguments {
     ip: String,
+
+    #[serde(default = "default_bot_count")]
     bot_count: u32,
 }
 
-pub fn bootstrap(args: LaunchArguments) {
+const fn default_bot_count() -> u32 {
+    1
+}
+
+pub async fn start(args: LaunchArguments) -> eyre::Result<()> {
     const UNUSUALLY_HIGH_BOT_THRESHOLD: u32 = 1_000;
 
     tracing::info!("args = {args:?}");
@@ -21,6 +27,7 @@ pub fn bootstrap(args: LaunchArguments) {
         tracing::warn!("bot_count {bot_count} is unusually high. This may cause issues.");
     }
 
-    let sender: char = AntithesisRng.random();
-    let mut bot = antithesis::Bot::new(ip, bot_count);
+    bot::launch(ip).await?;
+
+    Ok(())
 }

@@ -277,6 +277,7 @@ name = "antithesis-bot"
 version = "0.1.0"
 dependencies = [
  "antithesis_sdk",
+ "bytes",
  "dotenvy",
  "envy",
  "eyre",
@@ -284,6 +285,7 @@ dependencies = [
  "serde",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "valence_protocol",
 ]
 
