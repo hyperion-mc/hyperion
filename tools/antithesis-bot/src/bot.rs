@@ -1,4 +1,3 @@
-use core::sync;
 
 use antithesis::serde_json::json;
 use bytes::BytesMut;
