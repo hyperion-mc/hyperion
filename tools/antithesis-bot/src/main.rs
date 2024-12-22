@@ -1,7 +1,5 @@
 use antithesis_bot::LaunchArguments;
-use eyre::Result;
-use serde::Deserialize;
-use tracing::{info, warn};
+use tracing::warn;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {

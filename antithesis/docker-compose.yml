@@ -24,6 +24,15 @@ services:
     networks:
       - proxy-network
 
+  antithesis-bot:
+    image: ghcr.io/hyperion-mc/hyperion/antithesis-bot:latest
+    restart: unless-stopped
+    environment:
+      - HOST=hyperion-proxy:25565
+      - RUST_LOG=info
+    networks:
+      - proxy-network
+
 networks:
   proxy-network:
     driver: bridge

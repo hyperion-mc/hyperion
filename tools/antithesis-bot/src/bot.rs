@@ -7,7 +7,7 @@ use tokio::{
 };
 use tracing::info;
 use valence_protocol::{
-    Bounded, PacketDecoder, PacketEncoder, VarInt, WritePacket,
+    Bounded, PacketDecoder, PacketEncoder, VarInt,
     packets::handshaking::handshake_c2s::HandshakeNextState,
 };
 

@@ -1,5 +1,3 @@
-use antithesis::random::AntithesisRng;
-use rand::Rng;
 use serde::Deserialize;
 
 mod bot;

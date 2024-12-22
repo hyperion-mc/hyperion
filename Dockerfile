@@ -127,7 +127,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo build --profile release-full --frozen && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
-    cp target/release-full/tag /app/build/
+    cp target/release-full/tag /app/build/ && \
+    cp target/release-full/antithesis-bot /app/build/
 
 # Runtime base image
 FROM ubuntu:24.04 AS runtime-base
@@ -169,4 +170,10 @@ FROM runtime-base AS antithesis-tag
 COPY --from=antithesis /app/tag /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
       org.opencontainers.image.description="Hyperion Tag Event" \
+      org.opencontainers.image.version="0.1.0"
+
+FROM runtime-base AS antithesis-bot
+COPY --from=antithesis /app/antithesis-bot /
+LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
+      org.opencontainers.image.description="Hyperion Antithesis Bot" \
       org.opencontainers.image.version="0.1.0"
