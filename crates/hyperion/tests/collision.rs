@@ -8,15 +8,23 @@
 use std::{assert_matches::assert_matches, collections::HashSet};
 
 use approx::assert_relative_eq;
-use flecs_ecs::{core::{
-    flecs, Entity, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, WorldGet
-}, macros::system};
+use flecs_ecs::{
+    core::{
+        Entity, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, WorldGet, flecs,
+    },
+    macros::system,
+};
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::{IVec3, Vec3};
 use hyperion::{
-    runtime::AsyncRuntime, simulation::{
-        blocks::Blocks, entity_kind::EntityKind, event, EntitySize, Owner, Pitch, Position, Spawn, Velocity, Yaw
-    }, spatial::{self, Spatial, SpatialIndex, SpatialModule}, storage::EventQueue, HyperionCore
+    HyperionCore,
+    runtime::AsyncRuntime,
+    simulation::{
+        EntitySize, Owner, Pitch, Position, Spawn, Velocity, Yaw, blocks::Blocks,
+        entity_kind::EntityKind, event,
+    },
+    spatial::{self, Spatial, SpatialIndex, SpatialModule},
+    storage::EventQueue,
 };
 use spatial::get_first_collision;
 
@@ -26,17 +34,7 @@ fn test_get_first_collision() {
     world.import::<HyperionCore>();
     world.import::<SpatialModule>();
     world.import::<hyperion_utils::HyperionUtilsModule>();
-    world.get::<&AsyncRuntime>(|runtime| {
-        const URL: &str = "https://github.com/andrewgazelka/maps/raw/main/GenMap.tar.gz";
-
-        let f = hyperion_utils::cached_save(&world, URL);
-
-        let save = runtime.block_on(f).unwrap_or_else(|e| {
-            panic!("failed to download map {URL}: {e}");
-        });
-
-        world.set(Blocks::new(&world, &save).unwrap());
-    });
+    world.import::<hyperion_genmap::GenMapModule>();
 
     // Make all entities have Spatial component so they are spatially indexed
     world

@@ -148,14 +148,12 @@ impl Iterator for VoxelTraversal {
                 self.current_pos.z += self.step.z;
                 self.t_max.z += self.t_delta.z;
             }
+        } else if self.t_max.y < self.t_max.z {
+            self.current_pos.y += self.step.y;
+            self.t_max.y += self.t_delta.y;
         } else {
-            if self.t_max.y < self.t_max.z {
-                self.current_pos.y += self.step.y;
-                self.t_max.y += self.t_delta.y;
-            } else {
-                self.current_pos.z += self.step.z;
-                self.t_max.z += self.t_delta.z;
-            }
+            self.current_pos.z += self.step.z;
+            self.t_max.z += self.t_delta.z;
         }
 
         Some(current)

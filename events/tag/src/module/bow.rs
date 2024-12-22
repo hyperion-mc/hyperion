@@ -6,9 +6,17 @@ use flecs_ecs::{
 };
 use glam::I16Vec2;
 use hyperion::{
-    glam::Vec3, net::Compose, simulation::{
-        entity_kind::EntityKind, event, get_direction_from_rotation, metadata::living_entity::{ArrowsInEntity, HandStates}, Owner, Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw
-    }, storage::{EventQueue, Events}, valence_protocol::packets::play, ItemKind, ItemStack
+    ItemKind, ItemStack,
+    glam::Vec3,
+    net::Compose,
+    simulation::{
+        Owner, Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw,
+        entity_kind::EntityKind,
+        event, get_direction_from_rotation,
+        metadata::living_entity::{ArrowsInEntity, HandStates},
+    },
+    storage::{EventQueue, Events},
+    valence_protocol::packets::play,
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;

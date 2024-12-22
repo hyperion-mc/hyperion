@@ -45,7 +45,7 @@ fn arrow() {
     world.progress();
 
     arrow.get::<&Position>(|position| {
-        // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525 
+        // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525
         assert_eq!(*position, Position::new(0.0, 20.947_525, 0.0));
     });
 
