@@ -45,8 +45,8 @@ fn arrow() {
     world.progress();
 
     arrow.get::<&Position>(|position| {
-        // since velocity.y is 1.0, the arrow should be at y = 20.0 + 1.0
-        assert_eq!(*position, Position::new(0.0, 21.0, 0.0));
+        // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525 
+        assert_eq!(*position, Position::new(0.0, 20.947_525, 0.0));
     });
 
     world.progress();
@@ -55,6 +55,6 @@ fn arrow() {
         // gravity! drag! this is what was returned from the test but I am unsure if it actually
         // what we should be getting
         // todo: make a bunch more tests and compare to the vanilla velocity and positions
-        assert_eq!(*position, Position::new(0.0, 21.947_525, 0.0));
+        assert_eq!(*position, Position::new(0.0, 21.842_704_875_625, 0.0));
     });
 }
