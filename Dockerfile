@@ -161,7 +161,7 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
 ENTRYPOINT ["/tag"]
 CMD ["--ip", "0.0.0.0", "--port", "35565"]
 
-FROM antithesis-runtime-base AS antithesis-hyperion-proxy
+FROM runtime-base AS antithesis-runtime-base
 
 COPY --from=antithesis /usr/lib/libvoidstar.so /usr/lib/libvoidstar.so
 ENV LD_LIBRARY_PATH=/usr/lib

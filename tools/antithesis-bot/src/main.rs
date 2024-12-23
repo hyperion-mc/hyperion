@@ -4,7 +4,6 @@ use tracing::warn;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt::init();
-    // Load .env file first
     if let Err(e) = dotenvy::dotenv() {
         warn!("Failed to load .env file: {}", e);
     }
