@@ -183,9 +183,14 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
       org.opencontainers.image.description="Hyperion Tag Event" \
       org.opencontainers.image.version="0.1.0"
 
+ENTRYPOINT ["/tag"]
+CMD ["--ip", "0.0.0.0", "--port", "35565"]
+
 FROM antithesis-runtime-base AS antithesis-bot
 
 COPY --from=antithesis /app/antithesis-bot /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
       org.opencontainers.image.description="Hyperion Antithesis Bot" \
       org.opencontainers.image.version="0.1.0"
+
+ENTRYPOINT ["/antithesis-bot"]

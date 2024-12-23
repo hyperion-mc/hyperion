@@ -40,16 +40,19 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     environment:
-      - HOST=hyperion-proxy:25565
+      - ADDRESS=hyperion-proxy:25565
       - RUST_LOG=info
     networks:
       - proxy-network
 
+    depends_on:
+      - hyperion-proxy
 
     build:
       context: ..
       dockerfile: Dockerfile
       target: antithesis-bot
+
 
 networks:
   proxy-network:
