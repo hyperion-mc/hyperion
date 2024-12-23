@@ -1,6 +1,7 @@
 services:
   hyperion-proxy:
     image: ghcr.io/hyperion-mc/hyperion/antithesis-hyperion-proxy:latest
+    platform: linux/amd64
     ports:
       - "25565:25565"
     command: [ "--server", "tag:35565", "0.0.0.0:25565" ]
@@ -13,6 +14,7 @@ services:
       - tag
   tag:
     image: ghcr.io/hyperion-mc/hyperion/antithesis-tag:latest
+    platform: linux/amd64
     ports:
       - "27750:27750"
     expose:
@@ -26,6 +28,7 @@ services:
 
   antithesis-bot:
     image: ghcr.io/hyperion-mc/hyperion/antithesis-bot:latest
+    platform: linux/amd64
     restart: unless-stopped
     environment:
       - HOST=hyperion-proxy:25565

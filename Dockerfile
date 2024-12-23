@@ -162,6 +162,8 @@ ENTRYPOINT ["/tag"]
 CMD ["--ip", "0.0.0.0", "--port", "35565"]
 
 FROM runtime-base AS antithesis-hyperion-proxy
+
+COPY --from=antithesis /usr/lib/libvoidstar.so /usr/lib/libvoidstar.so
 COPY --from=antithesis /app/hyperion-proxy /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
       org.opencontainers.image.description="Hyperion Proxy Server" \
@@ -171,6 +173,8 @@ ENTRYPOINT ["/hyperion-proxy"]
 CMD ["0.0.0.0:8080"]
 
 FROM runtime-base AS antithesis-tag
+
+COPY --from=antithesis /usr/lib/libvoidstar.so /usr/lib/libvoidstar.so
 COPY --from=antithesis /app/tag /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
       org.opencontainers.image.description="Hyperion Tag Event" \
