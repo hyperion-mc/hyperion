@@ -35,7 +35,9 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain ${RUST_NIGH
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 WORKDIR /app
 
-RUN cargo install cargo-machete cargo-nextest
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash && \
+    cargo binstall -y cargo-machete cargo-nextest && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
 
 COPY . .
 
@@ -56,22 +58,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=/app/target \
     cargo clippy --workspace --benches --tests --examples --all-features --frozen -- -D warnings && \
-    cargo nextest archive --all-features --frozen --archive-file tests.tar.zst
-
-FROM builder-ci AS doc
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=${CARGO_HOME}/git \
-    --mount=type=cache,target=/app/target \
-    cargo doc --all-features --workspace --frozen --no-deps && \
-    touch doc-done
-
-
-FROM builder-base AS nextest
-
-COPY --from=builder-ci /app/tests.tar.zst /app/tests.tar.zst
-RUN cargo nextest run --archive-file tests.tar.zst && \
-    touch nextest-done
+#    cargo doc --all-features --workspace --frozen --no-deps && \
+    cargo nextest run --all-features --frozen && \
+    touch ci-done
 
 
 FROM builder-base AS fmt
@@ -82,8 +71,7 @@ FROM builder-base AS ci
 
 COPY --from=machete /app/machete-done /app/machete-done
 COPY --from=fmt /app/fmt-done /app/fmt-done
-COPY --from=nextest /app/nextest-done /app/nextest-done
-COPY --from=doc /app/doc-done /app/doc-done
+COPY --from=builder-ci /app/ci-done /app/ci-done
 
 FROM builder-base AS antithesis
 
