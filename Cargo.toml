@@ -50,7 +50,7 @@ resolver = '2'
 
 [workspace.dependencies]
 antithesis_sdk = { git = "https://github.com/antithesishq/antithesis-sdk-rust" }
-anyhow = '1.0.86'
+anyhow = '1.0.95'
 approx = '0.5.1'
 arrayvec = '0.7.4'
 base64 = '0.22.1'
