@@ -17,6 +17,8 @@ const fn default_bot_count() -> u32 {
 pub async fn start(args: LaunchArguments) -> eyre::Result<()> {
     const UNUSUALLY_HIGH_BOT_THRESHOLD: u32 = 1_000;
 
+    antithesis_sdk::antithesis_init();
+
     tracing::info!("args = {args:?}");
 
     let LaunchArguments { ip, bot_count } = args;
