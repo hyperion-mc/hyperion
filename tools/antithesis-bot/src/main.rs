@@ -1,11 +1,11 @@
 use antithesis_bot::LaunchArguments;
-use tracing::warn;
+use tracing::trace;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt::init();
     if let Err(e) = dotenvy::dotenv() {
-        warn!("Failed to load .env file: {}", e);
+        trace!("Failed to load .env file: {}", e);
     }
 
     // Deserialize environment variables into the struct
