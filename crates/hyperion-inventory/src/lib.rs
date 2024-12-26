@@ -46,27 +46,8 @@ impl OpenInventory {
     }
 }
 
-#[derive(Component, Debug)]
-pub struct InventoryState {
-    pub window_id: u8,
-    pub state_id: Wrapping<i32>,
-    pub slots_changed: u64,
-    pub client_updated_cursor_item: Option<ItemStack>,
-}
-
 #[derive(Component, Clone, PartialEq, Default, Debug, Deref, DerefMut)]
 pub struct CursorItem(pub ItemStack);
-
-impl Default for InventoryState {
-    fn default() -> Self {
-        Self {
-            window_id: 0,
-            state_id: Wrapping(0),
-            slots_changed: 0,
-            client_updated_cursor_item: None,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct AddItemResult {
@@ -409,54 +390,6 @@ impl PlayerInventory {
         }
 
         result
-    }
-
-    pub fn slot(&self, idx: u16) -> &ItemStack {
-        self.slots
-            .get(idx as usize)
-            .expect("slot index out of range")
-    }
-
-    pub fn set_slot<I: Into<ItemStack>>(&mut self, idx: u16, item: I) {
-        let _unused = self.replace_slot(idx, item);
-    }
-
-    pub fn replace_slot<I: Into<ItemStack>>(&mut self, idx: u16, item: I) -> ItemStack {
-        assert!(idx < self.slot_count(), "slot index of {idx} out of bounds");
-
-        let new = item.into();
-        let old = &mut self.slots[idx as usize];
-
-        if new != *old {
-            self.changed |= 1 << idx;
-        }
-
-        std::mem::replace(old, new)
-    }
-
-    pub fn slot_count(&self) -> u16 {
-        self.slots.len() as u16
-    }
-
-    pub fn swap_slot(&mut self, idx_a: u16, idx_b: u16) {
-        assert!(
-            idx_a < self.slot_count(),
-            "slot index of {idx_a} out of bounds"
-        );
-        assert!(
-            idx_b < self.slot_count(),
-            "slot index of {idx_b} out of bounds"
-        );
-
-        if idx_a == idx_b || self.slots[idx_a as usize] == self.slots[idx_b as usize] {
-            // Nothing to do here, ignore.
-            return;
-        }
-
-        self.changed |= 1 << idx_a;
-        self.changed |= 1 << idx_b;
-
-        self.slots.swap(idx_a as usize, idx_b as usize);
     }
 }
 

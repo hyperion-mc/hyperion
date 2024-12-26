@@ -1,15 +1,8 @@
-use std::borrow::Cow;
-
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
-use hyperion::{
-    ItemKind, ItemStack,
-    net::{Compose, ConnectionId},
-};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
+use hyperion::{ItemKind, ItemStack};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
-use hyperion_inventory::{InventoryState, PlayerInventory};
-use valence_protocol::packets::play;
-use valence_server::entity::abstract_fireball::Item;
+use hyperion_inventory::PlayerInventory;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "bow")]
@@ -34,19 +27,17 @@ impl MinecraftCommand for BowCommand {
                     count: 64,
                     nbt: None,
                 });
-                /* inventory.set_slot(36, ItemStack {
-                    item: ItemKind::Bow,
-                    count: 1,
-                    nbt: None,
-                });
-
-                inventory.set_slot(37, ItemStack {
-                    item: ItemKind::Arrow,
-                    count: 64,
-                    nbt: None,
-                }); */
-
-
+                // inventory.set_slot(36, ItemStack {
+                // item: ItemKind::Bow,
+                // count: 1,
+                // nbt: None,
+                // });
+                //
+                // inventory.set_slot(37, ItemStack {
+                // item: ItemKind::Arrow,
+                // count: 64,
+                // nbt: None,
+                // });
             });
     }
 }
