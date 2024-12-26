@@ -318,6 +318,7 @@ impl Module for IngressModule {
                     .entity()
                     .set(ConnectionId::new(connect))
                     .set(hyperion_inventory::PlayerInventory::default())
+                    .set(hyperion_inventory::InventoryState::default())
                     .set(ConfirmBlockSequences::default())
                     .set(PacketState::Handshake)
                     .set(ActiveAnimation::NONE)

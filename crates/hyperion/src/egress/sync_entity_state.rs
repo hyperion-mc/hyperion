@@ -186,7 +186,7 @@ impl Module for EntityStateSyncModule {
             },
         );
 
-        system!(
+/*         system!(
             "player_inventory_sync",
             world,
             &Compose($),
@@ -196,43 +196,35 @@ impl Module for EntityStateSyncModule {
         .multi_threaded()
         .kind::<flecs::pipeline::OnStore>()
         .each_iter(move |it, _, (compose, inventory, io)| {
-            let mut run = || {
-                let io = *io;
-                let system = it.system();
+            let io = *io;
+            let system = it.system();
 
-                for slot in &inventory.updated_since_last_tick {
-                    let Ok(slot) = u16::try_from(slot) else {
-                        error!("failed to convert slot to u16 {slot}");
-                        continue;
-                    };
-                    let item = inventory
-                        .get(slot)
-                        .with_context(|| format!("failed to get item for slot {slot}"))?;
-                    let Ok(slot) = i16::try_from(slot) else {
-                        error!("failed to convert slot to i16 {slot}");
-                        continue;
-                    };
-                    let pkt = play::ScreenHandlerSlotUpdateS2c {
-                        window_id: 0,
-                        state_id: VarInt::default(),
-                        slot_idx: slot,
-                        slot_data: Cow::Borrowed(item),
-                    };
-                    compose
-                        .unicast(&pkt, io, system)
-                        .context("failed to send inventory update")?;
-                }
-
-                inventory.updated_since_last_tick.clear();
-                inventory.hand_slot_updated_since_last_tick = false;
-
-                anyhow::Ok(())
-            };
-
-            if let Err(e) = run() {
-                error!("Failed to sync player inventory: {}", e);
+            for slot in &inventory.updated_since_last_tick {
+                let Ok(slot) = u16::try_from(slot) else {
+                    error!("failed to convert slot to u16 {slot}");
+                    continue;
+                };
+                let item = inventory
+                    .get(slot)
+                    .with_context(|| format!("failed to get item for slot {slot}")).unwrap();
+                let Ok(slot) = i16::try_from(slot) else {
+                    error!("failed to convert slot to i16 {slot}");
+                    continue;
+                };
+                let pkt = play::ScreenHandlerSlotUpdateS2c {
+                    window_id: 0,
+                    state_id: VarInt::default(),
+                    slot_idx: slot,
+                    slot_data: Cow::Borrowed(item),
+                };
+                compose
+                    .unicast(&pkt, io, system)
+                    .context("failed to send inventory update").unwrap();
             }
-        });
+
+            inventory.updated_since_last_tick.clear();
+            inventory.hand_slot_updated_since_last_tick = false;
+        }); */
 
         system!(
             "sync_equipped_items",

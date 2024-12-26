@@ -35,7 +35,6 @@ impl Module for BowModule {
         )
         .term_at(0u32)
         .singleton()
-        .multi_threaded()
         .kind::<flecs::pipeline::PostUpdate>()
         .each_iter(move |it, _, event_queue| {
             let _system = it.system();

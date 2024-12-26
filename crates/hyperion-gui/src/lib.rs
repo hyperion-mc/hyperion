@@ -105,7 +105,7 @@ impl Gui {
     }
 
     pub fn draw<'a>(&'a self, system: EntityView<'_>, player: Entity) {
-        let container_items: Cow<'a, [ItemStack]> = (0..self.size)
+        /* let container_items: Cow<'a, [ItemStack]> = (0..self.size)
             .map(|slot| {
                 self.items
                     .get(&slot)
@@ -130,7 +130,7 @@ impl Gui {
                     .unicast(&set_content_packet, *stream, system)
                     .unwrap();
             });
-        });
+        }); */
     }
 
     pub fn open(&mut self, system: EntityView<'_>, player: Entity) {
@@ -152,7 +152,7 @@ impl Gui {
 
         self.draw(system, player);
 
-        world.get::<&mut GlobalEventHandlers>(|event_handlers| {
+        /* world.get::<&mut GlobalEventHandlers>(|event_handlers| {
             let window_id = self.window_id;
             let items = self.items.clone();
             let gui = self.clone();
@@ -190,7 +190,7 @@ impl Gui {
                     .unicast(&set_content_packet, stream, system)
                     .unwrap();
             });
-        });
+        }); */
     }
 
     pub fn handle_close(&mut self, _player: Entity, _close_packet: CloseScreenS2c) {

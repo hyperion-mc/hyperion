@@ -7,6 +7,7 @@ use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{I16Vec2, IVec3, Quat, Vec3};
 use hyperion_utils::EntityExt;
+use inventory::InventoryModule;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use skin::PlayerSkin;
@@ -33,6 +34,7 @@ pub mod command;
 pub mod entity_kind;
 pub mod event;
 pub mod handlers;
+pub mod inventory;
 pub mod metadata;
 pub mod skin;
 pub mod util;
@@ -627,9 +629,16 @@ impl Module for SimModule {
         world.component::<animation::ActiveAnimation>();
 
         world.component::<hyperion_inventory::PlayerInventory>();
+        world.component::<hyperion_inventory::CursorItem>();
+
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
 
         world.component::<BowCharging>();
         component!(world, BowCharging).opaque_func(meta_ser_stringify_type_display::<BowCharging>);
+
+        // world.component::<InventoryModule>();
 
         observer!(
             world,

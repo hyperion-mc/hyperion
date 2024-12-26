@@ -1,21 +1,71 @@
-use std::cmp::min;
+use std::{cmp::min, num::Wrapping};
 
-use flecs_ecs::{core::World, macros::Component, prelude::Module};
+use derive_more::{Deref, DerefMut};
+use flecs_ecs::{
+    core::{Entity, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs},
+    macros::{Component, system},
+    prelude::Module,
+};
 use roaring::RoaringBitmap;
-use valence_protocol::{ItemKind, ItemStack};
+use valence_protocol::{
+    ItemKind, ItemStack, VarInt,
+    packets::play::{self, open_screen_s2c::WindowType},
+};
 
 pub mod action;
 pub mod parser;
 
-pub type PlayerInventory = Inventory<46>;
+pub type PlayerInventory = Inventory;
 
 /// Placeholder; this will be added later.
-#[derive(Component, Debug, PartialEq)]
-pub struct Inventory<const T: usize> {
-    slots: [ItemStack; T],
-    hand_slot: u16,
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct Inventory {
+    size: usize,
+    slots: Vec<ItemStack>,
+    pub hand_slot: u16,
+    pub title: String,
+    pub kind: WindowType,
+    pub changed: u64,
+    pub readonly: bool,
     pub updated_since_last_tick: RoaringBitmap, // todo: maybe make this private
     pub hand_slot_updated_since_last_tick: bool, // todo: maybe make this private
+}
+
+#[derive(Component, Clone, Debug)]
+pub struct OpenInventory {
+    pub entity: Entity,
+    pub client_changed: u64,
+}
+
+impl OpenInventory {
+    pub fn new(entity: Entity) -> Self {
+        Self {
+            entity,
+            client_changed: 0,
+        }
+    }
+}
+
+#[derive(Component, Debug)]
+pub struct InventoryState {
+    pub window_id: u8,
+    pub state_id: Wrapping<i32>,
+    pub slots_changed: u64,
+    pub client_updated_cursor_item: Option<ItemStack>,
+}
+
+#[derive(Component, Clone, PartialEq, Default, Debug, Deref, DerefMut)]
+pub struct CursorItem(pub ItemStack);
+
+impl Default for InventoryState {
+    fn default() -> Self {
+        Self {
+            window_id: 0,
+            state_id: Wrapping(0),
+            slots_changed: 0,
+            client_updated_cursor_item: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -23,13 +73,18 @@ pub struct AddItemResult {
     pub remaining: Option<ItemStack>,
 }
 
-impl<const T: usize> Default for Inventory<T> {
+impl Default for Inventory {
     fn default() -> Self {
         Self {
-            slots: [ItemStack::EMPTY; T],
+            size: 46,
+            slots: [ItemStack::EMPTY; 46].to_vec(),
+            title: "Inventory".to_string(),
+            kind: WindowType::Generic9x3,
             hand_slot: 0,
+            changed: 0,
             updated_since_last_tick: RoaringBitmap::new(),
             hand_slot_updated_since_last_tick: false,
+            readonly: false,
         }
     }
 }
@@ -51,11 +106,12 @@ enum TryAddSlot {
 
 const HAND_START_SLOT: u16 = 36;
 
-impl<const N: usize> Inventory<N> {
+impl Inventory {
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
         let item = self.get_mut(index)?;
         *item = stack;
         self.updated_since_last_tick.insert(u32::from(index));
+        self.changed |= 1 << index;
         Ok(())
     }
 
@@ -70,7 +126,7 @@ impl<const N: usize> Inventory<N> {
     }
 
     #[must_use]
-    pub const fn slots(&self) -> &[ItemStack; N] {
+    pub const fn slots(&self) -> &Vec<ItemStack> {
         &self.slots
     }
 
@@ -82,6 +138,7 @@ impl<const N: usize> Inventory<N> {
             *slot = ItemStack::EMPTY;
             self.updated_since_last_tick
                 .insert(u32::try_from(idx).unwrap());
+            self.changed |= 1 << idx;
         }
     }
 
@@ -134,6 +191,7 @@ impl<const N: usize> Inventory<N> {
 
         // assume that the slot is updated
         self.updated_since_last_tick.insert(u32::from(index));
+        self.changed |= 1 << index;
 
         Ok(slot)
     }
@@ -187,6 +245,7 @@ impl<const N: usize> Inventory<N> {
                 *existing_stack = to_add.clone().with_count(new_count);
                 to_add.count -= new_count;
                 self.updated_since_last_tick.insert(u32::from(slot));
+                self.changed |= 1 << slot;
                 return if to_add.count > 0 {
                     Ok(TryAddSlot::Partial)
                 } else {
@@ -206,11 +265,13 @@ impl<const N: usize> Inventory<N> {
                 existing_stack.count += to_add.count;
                 *to_add = ItemStack::EMPTY;
                 self.updated_since_last_tick.insert(u32::from(slot));
+                self.changed |= 1 << slot;
                 Ok(TryAddSlot::Complete)
             } else {
                 existing_stack.count = max_stack_size;
                 to_add.count -= space_left;
                 self.updated_since_last_tick.insert(u32::from(slot));
+                self.changed |= 1 << slot;
                 Ok(TryAddSlot::Partial)
             };
         }
@@ -349,6 +410,54 @@ impl PlayerInventory {
 
         result
     }
+
+    pub fn slot(&self, idx: u16) -> &ItemStack {
+        self.slots
+            .get(idx as usize)
+            .expect("slot index out of range")
+    }
+
+    pub fn set_slot<I: Into<ItemStack>>(&mut self, idx: u16, item: I) {
+        let _unused = self.replace_slot(idx, item);
+    }
+
+    pub fn replace_slot<I: Into<ItemStack>>(&mut self, idx: u16, item: I) -> ItemStack {
+        assert!(idx < self.slot_count(), "slot index of {idx} out of bounds");
+
+        let new = item.into();
+        let old = &mut self.slots[idx as usize];
+
+        if new != *old {
+            self.changed |= 1 << idx;
+        }
+
+        std::mem::replace(old, new)
+    }
+
+    pub fn slot_count(&self) -> u16 {
+        self.slots.len() as u16
+    }
+
+    pub fn swap_slot(&mut self, idx_a: u16, idx_b: u16) {
+        assert!(
+            idx_a < self.slot_count(),
+            "slot index of {idx_a} out of bounds"
+        );
+        assert!(
+            idx_b < self.slot_count(),
+            "slot index of {idx_b} out of bounds"
+        );
+
+        if idx_a == idx_b || self.slots[idx_a as usize] == self.slots[idx_b as usize] {
+            // Nothing to do here, ignore.
+            return;
+        }
+
+        self.changed |= 1 << idx_a;
+        self.changed |= 1 << idx_b;
+
+        self.slots.swap(idx_a as usize, idx_b as usize);
+    }
 }
 
 #[must_use]
@@ -368,12 +477,3 @@ pub fn slot_index_from_hand(hand_idx: u8) -> u16 {
 
 // todo: not sure if this is correct
 pub const OFFHAND_SLOT: u16 = 45;
-
-#[derive(Component)]
-pub struct InventoryModule;
-
-impl Module for InventoryModule {
-    fn module(world: &World) {
-        world.component::<PlayerInventory>();
-    }
-}

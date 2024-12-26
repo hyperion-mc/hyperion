@@ -19,7 +19,7 @@ pub struct Handler {
 
 impl Module for ItemModule {
     fn module(world: &World) {
-        world.import::<hyperion_inventory::InventoryModule>();
+        world.import::<hyperion::simulation::inventory::InventoryModule>();
         world.component::<Handler>();
 
         world.get::<&mut GlobalEventHandlers>(|handlers| {

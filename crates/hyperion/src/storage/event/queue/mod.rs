@@ -61,6 +61,9 @@ define_events! {
     event::ClientStatusEvent,
     event::ProjectileEntityEvent,
     event::ProjectileBlockEvent,
+    event::ClickSlotEvent,
+    event::DropItemStackEvent,
+    event::UpdateSelectedSlotEvent,
 }
 
 pub trait ReducedLifetime {

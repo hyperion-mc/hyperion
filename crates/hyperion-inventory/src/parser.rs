@@ -1,4 +1,4 @@
-use snafu::{ResultExt, Snafu, ensure};
+/* use snafu::{ResultExt, Snafu, ensure};
 
 use super::action::{FullMouseButton, InventoryAction, MouseButton};
 
@@ -221,3 +221,4 @@ mod tests {
         ));
     }
 }
+ */
