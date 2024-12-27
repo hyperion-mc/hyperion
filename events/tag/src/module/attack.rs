@@ -9,6 +9,7 @@ use flecs_ecs::{
     macros::{Component, system},
     prelude::Module,
 };
+use glam::IVec3;
 use hyperion::{
     net::{
         Compose, ConnectionId, agnostic,
@@ -16,6 +17,7 @@ use hyperion::{
     },
     simulation::{
         PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
+        blocks::Blocks,
         event::{self, ClientStatusCommand},
         metadata::{entity::Pose, living_entity::Health},
     },
@@ -38,6 +40,8 @@ use hyperion_rank_tree::Team;
 use hyperion_utils::EntityExt;
 use tracing::info_span;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
+
+use super::spawn::{avoid_blocks, is_valid_spawn_block};
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -528,20 +532,24 @@ impl Module for AttackModule {
 
                         let random_index = fastrand::usize(..pos_vec.len());
 
-                        *position = *pos_vec.get(random_index).unwrap();
+                        if let Some(random_mate) = pos_vec.get(random_index) {
+                            let respawn_pos = get_respawn_pos(query.world, random_mate);
 
-                        let pkt_teleport = play::PlayerPositionLookS2c {
-                            position: pos_vec.get(random_index).unwrap().as_dvec3(),
-                            yaw: **yaw,
-                            pitch: **pitch,
-                            flags: PlayerPositionLookFlags::default(),
-                            teleport_id: VarInt(fastrand::i32(..)),
-                        };
+                            *position = Position::from(respawn_pos.as_vec3());
 
-                        query
-                            .compose
-                            .unicast(&pkt_teleport, *connection, query.system)
-                            .unwrap();
+                            let pkt_teleport = play::PlayerPositionLookS2c {
+                                position: respawn_pos,
+                                yaw: **yaw,
+                                pitch: **pitch,
+                                flags: PlayerPositionLookFlags::default(),
+                                teleport_id: VarInt(fastrand::i32(..)),
+                            };
+
+                            query
+                                .compose
+                                .unicast(&pkt_teleport, *connection, query.system)
+                                .unwrap();
+                        }
                     },
                 );
             });
@@ -549,6 +557,28 @@ impl Module for AttackModule {
     }
 }
 
+fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
+    let mut position = base_pos.as_dvec3();
+    world.get::<&mut Blocks>(|blocks| {
+        for x in base_pos.as_i16vec3().x - 15..base_pos.as_i16vec3().x + 15 {
+            for y in base_pos.as_i16vec3().y - 15..base_pos.as_i16vec3().y + 15 {
+                for z in base_pos.as_i16vec3().z - 15..base_pos.as_i16vec3().z + 15 {
+                    let pos = IVec3::new(i32::from(x), i32::from(y), i32::from(z));
+                    match blocks.get_block(pos) {
+                        Some(state) => {
+                            if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
+                                position = pos.as_dvec3();
+                                return;
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+            }
+        }
+    });
+    position
+}
 // From minecraft source
 fn get_damage_left(damage: f32, armor: f32, armor_toughness: f32) -> f32 {
     let f: f32 = 2.0 + armor_toughness / 4.0;
