@@ -1,27 +1,23 @@
-#![feature(thread_local)]
+use std::{ borrow::Cow, collections::HashMap };
 
-use std::{borrow::Cow, cell::Cell, collections::HashMap};
-
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
+use flecs_ecs::{
+    core::{ Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider },
+    macros::Component,
+};
 use hyperion::{
-    net::{Compose, ConnectionId}, simulation::inventory::non_zero_window_id, storage::GlobalEventHandlers, valence_protocol::{
+    simulation::{ entity_kind::EntityKind, Uuid },
+    storage::GlobalEventHandlers,
+    valence_protocol::{
         packets::play::{
             click_slot_c2s::ClickMode,
             close_screen_s2c::CloseScreenS2c,
             inventory_s2c::InventoryS2c,
-            open_screen_s2c::{OpenScreenS2c, WindowType},
-        }, text::IntoText, ItemStack, VarInt
-    }
+        },
+        ItemStack,
+        VarInt,
+    },
 };
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InventoryItem {
-    pub id: String,
-    pub name: String,
-    pub lore: Option<String>,
-    pub quantity: u32,
-}
+use hyperion_inventory::{ CursorItem, Inventory, InventoryState, OpenInventory };
 
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerType {
@@ -32,153 +28,82 @@ pub enum ContainerType {
     Hopper,
 }
 
-#[derive(Clone)]
+#[derive(Component, Clone)]
 pub struct Gui {
-    items: HashMap<usize, GuiItem>,
-    size: usize,
-    title: String,
-    window_id: u8,
-    container_type: ContainerType,
-}
-
-#[derive(Clone)]
-pub struct GuiItem {
-    item: ItemStack,
-    on_click: fn(Entity, ClickMode),
+    entity: Entity,
+    items: HashMap<usize, fn(Entity, ClickMode)>,
+    pub id: u64,
 }
 
 impl Gui {
     #[must_use]
-    pub fn new(size: usize, title: String, container_type: ContainerType) -> Self {
+    pub fn new(inventory: Inventory, world: &World, id: u64) -> Self {
+        let uuid = Uuid::new_v4();
+
+        let entity = world.add_enum(EntityKind::BlockDisplay).set(uuid).set(inventory);
+
         Self {
-            window_id: non_zero_window_id(),
-            title,
-            size,
-            container_type,
+            entity: *entity,
             items: HashMap::new(),
+            id,
         }
     }
 
-    #[must_use]
-    pub const fn get_window_type(&self) -> WindowType {
-        match self.container_type {
-            ContainerType::Chest => WindowType::Generic9x3,
-            ContainerType::ShulkerBox => WindowType::ShulkerBox,
-            ContainerType::Furnace => WindowType::Furnace,
-            ContainerType::Dispenser => WindowType::Generic3x3,
-            ContainerType::Hopper => WindowType::Hopper,
-        }
+    pub fn add_command(&mut self, slot: usize, on_click: fn(Entity, ClickMode)) {
+        self.items.insert(slot, on_click);
     }
 
-    pub fn add_item(&mut self, slot: usize, item: GuiItem) -> Result<(), String> {
-        if slot >= self.size {
-            return Err(format!(
-                "Slot {} is out of bounds for GUI of size {}",
-                slot, self.size
-            ));
-        }
-
-        self.items.insert(slot, item);
-
-        Ok(())
-    }
-
-    pub fn draw<'a>(&'a self, system: EntityView<'_>, player: Entity) {
-        /* let container_items: Cow<'a, [ItemStack]> = (0..self.size)
-            .map(|slot| {
-                self.items
-                    .get(&slot)
-                    .map(|gui_item| gui_item.item.clone())
-                    .unwrap_or_default()
-            })
-            .collect();
-
-        let binding = ItemStack::default();
-        let set_content_packet = InventoryS2c {
-            window_id: self.window_id,
-            state_id: VarInt(0),
-            slots: container_items,
-            carried_item: Cow::Borrowed(&binding),
-        };
-
-        let world = system.world();
-
-        world.get::<&Compose>(|compose| {
-            player.entity_view(world).get::<&ConnectionId>(|stream| {
-                compose
-                    .unicast(&set_content_packet, *stream, system)
-                    .unwrap();
-            });
-        }); */
-    }
-
-    pub fn open(&mut self, system: EntityView<'_>, player: Entity) {
-        let open_screen_packet = OpenScreenS2c {
-            window_id: VarInt(i32::from(self.window_id)),
-            window_type: self.get_window_type(),
-            window_title: self.title.clone().into_cow_text(),
-        };
-
-        let world = system.world();
-
-        world.get::<&Compose>(|compose| {
-            player.entity_view(world).get::<&ConnectionId>(|stream| {
-                compose
-                    .unicast(&open_screen_packet, *stream, system)
-                    .unwrap();
-            });
-        });
-
-        self.draw(system, player);
-
-/*         world.get::<&mut GlobalEventHandlers>(|event_handlers| {
-            let window_id = self.window_id;
+    pub fn init(&mut self, world: &World) {
+        world.get::<&mut GlobalEventHandlers>(|event_handlers| {
             let items = self.items.clone();
-            let gui = self.clone();
             event_handlers.click.register(move |query, event| {
                 let system = query.system;
+                let world = system.world();
                 let button = event.mode;
+                query.id
+                    .entity_view(world)
+                    .get::<(&InventoryState, &CursorItem)>(|(inv_state, cursor_item)| {
+                        if event.window_id != inv_state.window_id() {
+                            return;
+                        }
 
-                if event.window_id != window_id {
-                    return;
-                }
+                        let slot = usize::from(event.slot_idx);
+                        let Some(item) = items.get(&slot) else {
+                            return;
+                        };
 
-                let slot = usize::from(event.slot_idx);
-                let Some(item) = items.get(&slot) else {
-                    return;
-                };
+                        item(query.id, button);
 
-                (item.on_click)(player, button);
-                gui.draw(query.system, player);
+                        let inventory = &*query.inventory;
+                        let compose = query.compose;
+                        let stream = query.io_ref;
 
-                let inventory = &*query.inventory;
-                let compose = query.compose;
-                let stream = query.io_ref;
+                        // re-draw the inventory
+                        let player_inv = inventory
+                            .slots()
+                            .into_iter()
+                            .map(|slot| slot.stack.clone())
+                            .collect();
 
-                // re-draw the inventory
-                let player_inv = inventory.slots();
+                        let set_content_packet = InventoryS2c {
+                            window_id: 0,
+                            state_id: VarInt(0),
+                            slots: Cow::Owned(player_inv),
+                            carried_item: Cow::Borrowed(&cursor_item.0),
+                        };
 
-                let set_content_packet = InventoryS2c {
-                    window_id: 0,
-                    state_id: VarInt(0),
-                    slots: Cow::Borrowed(player_inv),
-                    carried_item: Cow::Borrowed(&ItemStack::EMPTY),
-                };
-
-                compose
-                    .unicast(&set_content_packet, stream, system)
-                    .unwrap();
+                        compose.unicast(&set_content_packet, stream, system).unwrap();
+                    });
             });
-        }); */
+        });
+    }
+
+    pub fn open(&self, system: EntityView<'_>, player: Entity) {
+        let world = system.world();
+        player.entity_view(world).set(OpenInventory::new(self.entity));
     }
 
     pub fn handle_close(&mut self, _player: Entity, _close_packet: CloseScreenS2c) {
         todo!()
-    }
-}
-
-impl GuiItem {
-    pub fn new(item: ItemStack, on_click: fn(Entity, ClickMode)) -> Self {
-        Self { item, on_click }
     }
 }

@@ -2874,6 +2874,7 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
+ "hyperion-inventory",
  "serde",
  "valence_protocol",
 ]

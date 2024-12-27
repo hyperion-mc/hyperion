@@ -7,7 +7,6 @@ use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{I16Vec2, IVec3, Quat, Vec3};
 use hyperion_utils::EntityExt;
-use inventory::InventoryModule;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use skin::PlayerSkin;

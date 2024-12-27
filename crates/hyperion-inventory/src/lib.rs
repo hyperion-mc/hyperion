@@ -114,6 +114,20 @@ impl Default for Inventory {
     }
 }
 
+impl Inventory {
+    pub fn new(size: usize, title: String, kind: WindowType) -> Self {
+        Self {
+            size,
+            slots: vec![ItemSlot::default(); size],
+            title,
+            kind,
+            hand_slot: 0,
+            changed: std::num::Wrapping(0),
+            readonly: false,
+        }
+    }
+}
+
 use hyperion_crafting::{ Crafting2x2, CraftingRegistry };
 use snafu::prelude::*;
 

@@ -1,10 +1,11 @@
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView};
-use hyperion::valence_protocol::packets::play::click_slot_c2s::ClickMode;
-use hyperion_clap::{CommandPermission, MinecraftCommand};
-use hyperion_gui::{ContainerType, Gui, GuiItem};
-use hyperion_item::builder::ItemBuilder;
+use flecs_ecs::core::{ Builder, Entity, EntityView, QueryAPI, WorldProvider };
+use hyperion::{ ItemKind, ItemStack };
+use hyperion_clap::{ CommandPermission, MinecraftCommand };
+use hyperion_gui::Gui;
+use hyperion_inventory::Inventory;
 use tracing::debug;
+use valence_protocol::packets::play::open_screen_s2c::WindowType;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "testgui")]
@@ -13,7 +14,7 @@ pub struct GuiCommand;
 
 impl MinecraftCommand for GuiCommand {
     fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let mut gui = Gui::new(27, "Test Chest GUI".to_string(), ContainerType::Chest);
+        /* let mut gui = Gui::new(27, "Test Chest GUI".to_string(), ContainerType::Chest);
 
         let info_item = GuiItem::new(
             ItemBuilder::new(hyperion::ItemKind::GoldIngot)
@@ -31,8 +32,40 @@ impl MinecraftCommand for GuiCommand {
             },
         );
 
-        gui.add_item(13, info_item).unwrap();
+        gui.add_item(13, info_item).unwrap(); */
+        let world = system.world();
+        /* world.get::<&Gui>(|gui| {}); */
+        // get a list of all the guis
+        let gui = world.query::<&Gui>().build();
+        let mut found = false;
+        gui.each_iter(|_it, _, gui| {
+            if gui.id == 27 {
+                gui.open(system, caller);
+                found = true;
+                return;
+            }
+        });
+        if !found {
+            let mut gui_inventory = Inventory::new(
+                27,
+                "Test Chest GUI".to_string(),
+                WindowType::Generic9x3
+            );
 
-        gui.open(system, caller);
+            let item = ItemStack::new(ItemKind::GoldIngot, 1, None);
+
+            gui_inventory.set(13, item).unwrap();
+
+            let mut gui = Gui::new(gui_inventory, &world, 27);
+            gui.init(&world);
+
+            gui.add_command(13, |player, click_mode| {
+                debug!("Player {:?} clicked on slot 13 with mode {:?}", player, click_mode);
+            });
+
+            gui.open(system, caller);
+        }
+
+        // gui.open(system, caller);
     }
 }
