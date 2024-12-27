@@ -226,7 +226,7 @@ impl Module for EntityStateSyncModule {
             inventory.hand_slot_updated_since_last_tick = false;
         }); */
 
-        system!(
+/*         system!(
             "sync_equipped_items",
             world,
             &Compose($),
@@ -239,10 +239,10 @@ impl Module for EntityStateSyncModule {
             // let entity = it.entity(row);
             let system = it.system();
             // get armor and hand
-            let hand = EquipmentEntry {
+            /* let hand = EquipmentEntry {
                 slot: 0,
                 item: inventory.get_cursor().clone(),
-            };
+            }; */
             let helmet = EquipmentEntry {
                 slot: 5,
                 item: inventory.get_helmet().clone(),
@@ -266,14 +266,14 @@ impl Module for EntityStateSyncModule {
 
             let packet = play::EntityEquipmentUpdateS2c {
                 entity_id: VarInt(it.entity(row).minecraft_id()),
-                equipment: vec![hand, helmet, chestplate, leggings, boots, off_hand],
+                equipment: vec![helmet, chestplate, leggings, boots, off_hand],
             };
 
             compose
                 .broadcast_local(&packet, position.to_chunk(), system)
                 .send()
                 .unwrap();
-        });
+        }); */
 
         // What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
         // IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs

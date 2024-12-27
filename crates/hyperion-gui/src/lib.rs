@@ -4,18 +4,14 @@ use std::{borrow::Cow, cell::Cell, collections::HashMap};
 
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
-    net::{Compose, ConnectionId},
-    storage::GlobalEventHandlers,
-    valence_protocol::{
-        ItemStack, VarInt,
+    net::{Compose, ConnectionId}, simulation::inventory::non_zero_window_id, storage::GlobalEventHandlers, valence_protocol::{
         packets::play::{
             click_slot_c2s::ClickMode,
             close_screen_s2c::CloseScreenS2c,
             inventory_s2c::InventoryS2c,
             open_screen_s2c::{OpenScreenS2c, WindowType},
-        },
-        text::IntoText,
-    },
+        }, text::IntoText, ItemStack, VarInt
+    }
 };
 use serde::{Deserialize, Serialize};
 
@@ -49,23 +45,6 @@ pub struct Gui {
 pub struct GuiItem {
     item: ItemStack,
     on_click: fn(Entity, ClickMode),
-}
-
-/// Thread-local non-zero id means that it will be very unlikely that one player will have two
-/// of the same IDs at the same time when opening GUIs in succession.
-///
-/// We are skipping 0 because it is reserved for the player's inventory.
-fn non_zero_window_id() -> u8 {
-    #[thread_local]
-    static ID: Cell<u8> = Cell::new(0);
-
-    ID.set(ID.get().wrapping_add(1));
-
-    if ID.get() == 0 {
-        ID.set(1);
-    }
-
-    ID.get()
 }
 
 impl Gui {
@@ -152,7 +131,7 @@ impl Gui {
 
         self.draw(system, player);
 
-        /* world.get::<&mut GlobalEventHandlers>(|event_handlers| {
+/*         world.get::<&mut GlobalEventHandlers>(|event_handlers| {
             let window_id = self.window_id;
             let items = self.items.clone();
             let gui = self.clone();

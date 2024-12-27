@@ -23,6 +23,7 @@
 #![feature(portable_simd)]
 #![feature(trivial_bounds)]
 #![feature(pointer_is_aligned_to)]
+#![feature(thread_local)]
 
 pub const NUM_THREADS: usize = 8;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
@@ -87,8 +88,8 @@ pub mod egress;
 pub mod ingress;
 pub mod net;
 pub mod simulation;
-pub mod storage;
 pub mod spatial;
+pub mod storage;
 
 /// Relationship for previous values
 #[derive(Component)]

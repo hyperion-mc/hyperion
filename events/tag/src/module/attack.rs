@@ -561,16 +561,16 @@ const fn calculate_toughness(item: &ItemStack) -> f32 {
 
 fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
     let hand = inventory.get_cursor();
-    let damage = calculate_damage(hand);
-    let armor = calculate_armor(inventory.get_helmet())
-        + calculate_armor(inventory.get_chestplate())
-        + calculate_armor(inventory.get_leggings())
-        + calculate_armor(inventory.get_boots());
+    let damage = calculate_damage(&hand.stack);
+    let armor = calculate_armor(&inventory.get_helmet().stack)
+        + calculate_armor(&inventory.get_chestplate().stack)
+        + calculate_armor(&inventory.get_leggings().stack)
+        + calculate_armor(&inventory.get_boots().stack);
 
-    let armor_toughness = calculate_toughness(inventory.get_helmet())
-        + calculate_toughness(inventory.get_chestplate())
-        + calculate_toughness(inventory.get_leggings())
-        + calculate_toughness(inventory.get_boots());
+    let armor_toughness = calculate_toughness(&inventory.get_helmet().stack)
+        + calculate_toughness(&inventory.get_chestplate().stack)
+        + calculate_toughness(&inventory.get_leggings().stack)
+        + calculate_toughness(&inventory.get_boots().stack);
 
     CombatStats {
         armor,
