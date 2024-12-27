@@ -8,7 +8,7 @@ use valence_protocol::{
     },
 };
 
-use crate::simulation::handlers::PacketSwitchQuery;
+use crate::simulation::{event::ClientStatusEvent, handlers::PacketSwitchQuery};
 
 pub type EventFn<T> = Box<dyn Fn(&mut PacketSwitchQuery<'_>, &T) + 'static + Send + Sync>;
 
@@ -70,6 +70,8 @@ pub struct GlobalEventHandlers {
 
     // todo: this should be a lifetime for<'a>
     pub completion: EventHandlers<CommandCompletionRequest<'static>>,
+    // Used to request respawn or stats
+    pub client_status: EventHandlers<ClientStatusEvent>,
 }
 
 pub struct EventHandlers<T> {

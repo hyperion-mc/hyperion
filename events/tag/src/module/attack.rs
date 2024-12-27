@@ -2,20 +2,26 @@ use std::borrow::Cow;
 
 use compact_str::format_compact;
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, flecs},
+    core::{
+        Builder, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
+        World, WorldGet, flecs,
+    },
     macros::{Component, system},
     prelude::Module,
 };
+use glam::IVec3;
 use hyperion::{
     net::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
     },
     simulation::{
-        PacketState, Player, Position, Velocity, Yaw, event,
+        PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
+        blocks::Blocks,
+        event::{self, ClientStatusCommand},
         metadata::{entity::Pose, living_entity::Health},
     },
-    storage::EventQueue,
+    storage::{EventQueue, GlobalEventHandlers},
     uuid::Uuid,
     valence_protocol::{
         ItemKind, ItemStack, Particle, VarInt, ident,
@@ -33,6 +39,9 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
 use hyperion_utils::EntityExt;
 use tracing::info_span;
+use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
+
+use super::spawn::{avoid_blocks, is_valid_spawn_block};
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -68,6 +77,7 @@ pub struct KillCount {
 #[allow(clippy::cast_possible_truncation)]
 impl Module for AttackModule {
     #[allow(clippy::excessive_nesting)]
+    #[allow(clippy::cast_sign_loss)]
     fn module(world: &World) {
         world.component::<ImmuneUntil>().meta();
         world.component::<Armor>().meta();
@@ -120,12 +130,12 @@ impl Module for AttackModule {
         system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
             .multi_threaded()
             .each_iter(
-                move |it: TableIter<'_, false>,
-                      _,
-                      (event_queue, compose): (
-                          &mut EventQueue<event::AttackEntity>,
-                          &Compose,
-                      )| {
+            move |it: TableIter<'_, false>,
+                _,
+                (event_queue, compose): (
+                    &mut EventQueue<event::AttackEntity>,
+                    &Compose,
+                )| {
                     const IMMUNE_TICK_DURATION: i64 = 10;
 
                     let span = info_span!("handle_attacks");
@@ -140,7 +150,7 @@ impl Module for AttackModule {
                     for event in event_queue.drain() {
                         let target = world.entity_from_id(event.target);
                         let origin = world.entity_from_id(event.origin);
-                        origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team)| {
+                        origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team, &mut Xp)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team, origin_xp)| {
                             let damage = from_stats.damage + calculate_stats(from_inventory).damage;
                             target.try_get::<(
                                 &ConnectionId,
@@ -151,9 +161,10 @@ impl Module for AttackModule {
                                 &CombatStats,
                                 &PlayerInventory,
                                 &Team,
-                                &mut Pose
+                                &mut Pose,
+                                &mut Xp
                             )>(
-                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose)| {
+                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp)| {
                                     if let Some(immune_until) = immune_until {
                                         if immune_until.tick > current_tick {
                                             return;
@@ -461,6 +472,9 @@ impl Module for AttackModule {
 
                                         target.set::<Team>(*origin_team);
 
+                                        origin_xp.amount = (f32::from(target_xp.amount)*0.5) as u16;
+                                        target_xp.amount = (f32::from(target_xp.amount)/3.) as u16;
+
                                         return;
                                     }
 
@@ -492,9 +506,79 @@ impl Module for AttackModule {
                     }
                 },
             );
+
+        world.get::<&mut GlobalEventHandlers>(|handlers| {
+            handlers.client_status.register(|query, client_status| {
+                if client_status.status == ClientStatusCommand::RequestStats {
+                    return;
+                }
+
+                let client = client_status.client.entity_view(query.world);
+
+                client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
+                    |(team, position, yaw, pitch, connection)| {
+                        let mut pos_vec = vec![];
+
+                        query
+                            .world
+                            .query::<(&Position, &Team)>()
+                            .build()
+                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                                if team != candidate_team || candidate == client {
+                                    return;
+                                }
+                                pos_vec.push(*candidate_pos);
+                            });
+
+                        let random_index = fastrand::usize(..pos_vec.len());
+
+                        if let Some(random_mate) = pos_vec.get(random_index) {
+                            let respawn_pos = get_respawn_pos(query.world, random_mate);
+
+                            *position = Position::from(respawn_pos.as_vec3());
+
+                            let pkt_teleport = play::PlayerPositionLookS2c {
+                                position: respawn_pos,
+                                yaw: **yaw,
+                                pitch: **pitch,
+                                flags: PlayerPositionLookFlags::default(),
+                                teleport_id: VarInt(fastrand::i32(..)),
+                            };
+
+                            query
+                                .compose
+                                .unicast(&pkt_teleport, *connection, query.system)
+                                .unwrap();
+                        }
+                    },
+                );
+            });
+        });
     }
 }
 
+fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
+    let mut position = base_pos.as_dvec3();
+    world.get::<&mut Blocks>(|blocks| {
+        for x in base_pos.as_i16vec3().x - 15..base_pos.as_i16vec3().x + 15 {
+            for y in base_pos.as_i16vec3().y - 15..base_pos.as_i16vec3().y + 15 {
+                for z in base_pos.as_i16vec3().z - 15..base_pos.as_i16vec3().z + 15 {
+                    let pos = IVec3::new(i32::from(x), i32::from(y), i32::from(z));
+                    match blocks.get_block(pos) {
+                        Some(state) => {
+                            if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
+                                position = pos.as_dvec3();
+                                return;
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+            }
+        }
+    });
+    position
+}
 // From minecraft source
 fn get_damage_left(damage: f32, armor: f32, armor_toughness: f32) -> f32 {
     let f: f32 = 2.0 + armor_toughness / 4.0;

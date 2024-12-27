@@ -614,7 +614,10 @@ pub fn request_command_completions(
     Ok(())
 }
 
-pub fn client_status(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+pub fn client_status(
+    mut data: &'static [u8],
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     let pkt = play::ClientStatusC2s::decode(&mut data)?;
 
     let command = ClientStatusEvent {
@@ -625,7 +628,7 @@ pub fn client_status(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> 
         },
     };
 
-    query.events.push(command, query.world);
+    query.handlers.client_status.trigger_all(query, &command);
 
     Ok(())
 }
