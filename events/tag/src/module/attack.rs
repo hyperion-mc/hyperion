@@ -15,7 +15,7 @@ use hyperion::{
         packets::{BossBarAction, BossBarS2c},
     },
     simulation::{
-        PacketState, Pitch, Player, Position, Velocity, Yaw,
+        PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
         event::{self, ClientStatusCommand},
         metadata::{entity::Pose, living_entity::Health},
     },
@@ -73,6 +73,7 @@ pub struct KillCount {
 #[allow(clippy::cast_possible_truncation)]
 impl Module for AttackModule {
     #[allow(clippy::excessive_nesting)]
+    #[allow(clippy::cast_sign_loss)]
     fn module(world: &World) {
         world.component::<ImmuneUntil>().meta();
         world.component::<Armor>().meta();
@@ -145,7 +146,7 @@ impl Module for AttackModule {
                     for event in event_queue.drain() {
                         let target = world.entity_from_id(event.target);
                         let origin = world.entity_from_id(event.origin);
-                        origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team)| {
+                        origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team, &mut Xp)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team, origin_xp)| {
                             let damage = from_stats.damage + calculate_stats(from_inventory).damage;
                             target.try_get::<(
                                 &ConnectionId,
@@ -156,9 +157,10 @@ impl Module for AttackModule {
                                 &CombatStats,
                                 &PlayerInventory,
                                 &Team,
-                                &mut Pose
+                                &mut Pose,
+                                &mut Xp
                             )>(
-                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose)| {
+                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp)| {
                                     if let Some(immune_until) = immune_until {
                                         if immune_until.tick > current_tick {
                                             return;
@@ -466,6 +468,9 @@ impl Module for AttackModule {
 
                                         target.set::<Team>(*origin_team);
 
+                                        origin_xp.amount = (f32::from(target_xp.amount)*0.5) as u16;
+                                        target_xp.amount = (f32::from(target_xp.amount)/3.) as u16;
+
                                         return;
                                     }
 
@@ -524,10 +529,9 @@ impl Module for AttackModule {
                         let random_index = fastrand::usize(..pos_vec.len());
 
                         *position = *pos_vec.get(random_index).unwrap();
-                        client.modified::<Position>();
 
                         let pkt_teleport = play::PlayerPositionLookS2c {
-                            position: position.as_dvec3(),
+                            position: pos_vec.get(random_index).unwrap().as_dvec3(),
                             yaw: **yaw,
                             pitch: **pitch,
                             flags: PlayerPositionLookFlags::default(),

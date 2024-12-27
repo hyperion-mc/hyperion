@@ -5,13 +5,13 @@ use hyperion::{
         macros::Component,
         prelude::Module,
     },
-    net::ConnectionId,
+    net::{ConnectionId, DataBundle},
     protocol::{game_mode::OptGameMode, packets::play, ByteAngle, VarInt},
     server::{ident, GameMode},
     simulation::{
         event::ClientStatusCommand,
         metadata::{entity::Pose, living_entity::Health},
-        Pitch, Position, Uuid, Yaw,
+        Pitch, Position, Uuid, Xp, Yaw,
     },
     storage::GlobalEventHandlers,
 };
@@ -38,8 +38,9 @@ impl Module for RespawnModule {
                     &Position,
                     &Yaw,
                     &Pitch,
+                    &Xp,
                 )>(
-                    |(connection, health, pose, uuid, position, yaw, pitch)| {
+                    |(connection, health, pose, uuid, position, yaw, pitch, xp)| {
                         health.heal(20.);
 
                         *pose = Pose::Standing;
@@ -64,6 +65,12 @@ impl Module for RespawnModule {
                             portal_cooldown: VarInt::default(),
                         };
 
+                        let pkt_xp = play::ExperienceBarUpdateS2c {
+                            bar: xp.get_visual().prop,
+                            level: VarInt(i32::from(xp.get_visual().level)),
+                            total_xp: VarInt::default(),
+                        };
+
                         let pkt_add_player = play::PlayerSpawnS2c {
                             entity_id: VarInt(client.minecraft_id()),
                             player_uuid: uuid.0,
@@ -72,14 +79,12 @@ impl Module for RespawnModule {
                             pitch: ByteAngle::from_degrees(**pitch),
                         };
 
-                        query
-                            .compose
-                            .unicast(&pkt_health, *connection, query.system)
-                            .unwrap();
-                        query
-                            .compose
-                            .unicast(&pkt_respawn, *connection, query.system)
-                            .unwrap();
+                        let mut bundle = DataBundle::new(query.compose, query.system);
+                        bundle.add_packet(&pkt_health).unwrap();
+                        bundle.add_packet(&pkt_respawn).unwrap();
+                        bundle.add_packet(&pkt_xp).unwrap();
+
+                        bundle.unicast(*connection).unwrap();
                         query
                             .compose
                             .broadcast(&pkt_add_player, query.system)
