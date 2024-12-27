@@ -2,7 +2,10 @@ use std::borrow::Cow;
 
 use compact_str::format_compact;
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, flecs},
+    core::{
+        Builder, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
+        World, WorldGet, flecs,
+    },
     macros::{Component, system},
     prelude::Module,
 };
@@ -12,10 +15,11 @@ use hyperion::{
         packets::{BossBarAction, BossBarS2c},
     },
     simulation::{
-        PacketState, Player, Position, Velocity, Yaw, event,
+        PacketState, Pitch, Player, Position, Velocity, Yaw,
+        event::{self, ClientStatusCommand},
         metadata::{entity::Pose, living_entity::Health},
     },
-    storage::EventQueue,
+    storage::{EventQueue, GlobalEventHandlers},
     uuid::Uuid,
     valence_protocol::{
         ItemKind, ItemStack, Particle, VarInt, ident,
@@ -33,6 +37,7 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
 use hyperion_utils::EntityExt;
 use tracing::info_span;
+use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -120,12 +125,12 @@ impl Module for AttackModule {
         system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
             .multi_threaded()
             .each_iter(
-                move |it: TableIter<'_, false>,
-                      _,
-                      (event_queue, compose): (
-                          &mut EventQueue<event::AttackEntity>,
-                          &Compose,
-                      )| {
+            move |it: TableIter<'_, false>,
+                _,
+                (event_queue, compose): (
+                    &mut EventQueue<event::AttackEntity>,
+                    &Compose,
+                )| {
                     const IMMUNE_TICK_DURATION: i64 = 10;
 
                     let span = info_span!("handle_attacks");
@@ -492,6 +497,51 @@ impl Module for AttackModule {
                     }
                 },
             );
+
+        world.get::<&mut GlobalEventHandlers>(|handlers| {
+            handlers.client_status.register(|query, client_status| {
+                if client_status.status == ClientStatusCommand::RequestStats {
+                    return;
+                }
+
+                let client = client_status.client.entity_view(query.world);
+
+                client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
+                    |(team, position, yaw, pitch, connection)| {
+                        let mut pos_vec = vec![];
+
+                        query
+                            .world
+                            .query::<(&Position, &Team)>()
+                            .build()
+                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                                if team != candidate_team || candidate == client {
+                                    return;
+                                }
+                                pos_vec.push(*candidate_pos);
+                            });
+
+                        let random_index = fastrand::usize(..pos_vec.len());
+
+                        *position = *pos_vec.get(random_index).unwrap();
+                        client.modified::<Position>();
+
+                        let pkt_teleport = play::PlayerPositionLookS2c {
+                            position: position.as_dvec3(),
+                            yaw: **yaw,
+                            pitch: **pitch,
+                            flags: PlayerPositionLookFlags::default(),
+                            teleport_id: VarInt(fastrand::i32(..)),
+                        };
+
+                        query
+                            .compose
+                            .unicast(&pkt_teleport, *connection, query.system)
+                            .unwrap();
+                    },
+                );
+            });
+        });
     }
 }
 
