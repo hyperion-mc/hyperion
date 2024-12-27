@@ -9,6 +9,7 @@ use hyperion::{
     storage::EventQueue,
     valence_protocol::{packets::play, text::IntoText},
 };
+use hyperion_rank_tree::Team;
 use tracing::info_span;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 15; // 15 seconds
@@ -52,7 +53,7 @@ impl Module for ChatModule {
 
                     // Check cooldown
                     // todo: try_get if entity is dead/not found what will happen?
-                    by.get::<(&Name, &Position, &mut ChatCooldown, &ConnectionId)>(|(name, position, cooldown, io)| {
+                    by.get::<(&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>(|(name, position, cooldown, io, team)| {
                         // Check if player is still on cooldown
                         if cooldown.expires > current_tick {
                             let remaining_ticks = cooldown.expires - current_tick;
@@ -71,7 +72,14 @@ impl Module for ChatModule {
 
                         cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
 
-                        let chat = format!("§8<§b{name}§8>§r {msg}").into_cow_text();
+                        let color_prefix = match team {
+                            Team::Blue => "§9",
+                            Team::Green => "§a",
+                            Team::Red => "§c",
+                            Team::Yellow => "§e",
+                        };
+
+                        let chat = format!("§8<{color_prefix}{name}§8>§r {msg}").into_cow_text();
                         let packet = play::GameMessageS2c {
                             chat,
                             overlay: false,
