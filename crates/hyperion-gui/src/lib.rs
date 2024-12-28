@@ -18,6 +18,7 @@ use hyperion::{
     },
 };
 use hyperion_inventory::{ CursorItem, Inventory, InventoryState, OpenInventory };
+use tracing::debug;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerType {
@@ -62,7 +63,7 @@ impl Gui {
                 let button = event.mode;
                 query.id
                     .entity_view(world)
-                    .get::<(&InventoryState, &CursorItem)>(|(inv_state, cursor_item)| {
+                    .get::<&InventoryState>(|inv_state| {
                         if event.window_id != inv_state.window_id() {
                             return;
                         }
@@ -73,26 +74,6 @@ impl Gui {
                         };
 
                         item(query.id, button);
-
-                        let inventory = &*query.inventory;
-                        let compose = query.compose;
-                        let stream = query.io_ref;
-
-                        // re-draw the inventory
-                        let player_inv = inventory
-                            .slots()
-                            .into_iter()
-                            .map(|slot| slot.stack.clone())
-                            .collect();
-
-                        let set_content_packet = InventoryS2c {
-                            window_id: 0,
-                            state_id: VarInt(0),
-                            slots: Cow::Owned(player_inv),
-                            carried_item: Cow::Borrowed(&cursor_item.0),
-                        };
-
-                        compose.unicast(&set_content_packet, stream, system).unwrap();
                     });
             });
         });

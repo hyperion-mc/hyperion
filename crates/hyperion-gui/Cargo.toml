@@ -9,6 +9,7 @@ hyperion = { workspace = true }
 hyperion-inventory = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 valence_protocol = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

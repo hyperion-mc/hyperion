@@ -2876,6 +2876,7 @@ dependencies = [
  "hyperion",
  "hyperion-inventory",
  "serde",
+ "tracing",
  "valence_protocol",
 ]
 

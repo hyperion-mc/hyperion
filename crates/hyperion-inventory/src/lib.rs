@@ -2,7 +2,7 @@
 use std::{ cell::Cell, cmp::min, num::Wrapping };
 
 use derive_more::{ Deref, DerefMut };
-use flecs_ecs::{ core::{ Entity, EntityViewGet }, macros::Component };
+use flecs_ecs::{ core::{ Entity, EntityViewGet, World }, macros::Component };
 use valence_protocol::{ ItemKind, ItemStack, packets::play::open_screen_s2c::WindowType };
 
 pub mod action;
@@ -114,20 +114,6 @@ impl Default for Inventory {
     }
 }
 
-impl Inventory {
-    pub fn new(size: usize, title: String, kind: WindowType) -> Self {
-        Self {
-            size,
-            slots: vec![ItemSlot::default(); size],
-            title,
-            kind,
-            hand_slot: 0,
-            changed: std::num::Wrapping(0),
-            readonly: false,
-        }
-    }
-}
-
 use hyperion_crafting::{ Crafting2x2, CraftingRegistry };
 use snafu::prelude::*;
 
@@ -147,7 +133,19 @@ enum TryAddSlot {
 const HAND_START_SLOT: u16 = 36;
 
 impl Inventory {
-    fn increment_slot(&mut self, index: usize) {
+    pub fn new(size: usize, title: String, kind: WindowType, readonly: bool) -> Self {
+        Self {
+            size,
+            slots: vec![ItemSlot::default(); size],
+            title,
+            kind,
+            hand_slot: 0,
+            changed: std::num::Wrapping(0),
+            readonly,
+        }
+    }
+
+    pub fn increment_slot(&mut self, index: usize) {
         // set the slot as changed and increment the changed counter
         self.slots[index as usize].changed = true;
         self.changed += 1 << index;
@@ -189,7 +187,7 @@ impl Inventory {
         let index = usize::from(index);
         self.slots[index].stack = stack;
         self.increment_slot(index);
-        // increment the changed counter
+        // increment the changed countr
         Ok(())
     }
 
@@ -365,6 +363,15 @@ impl Inventory {
 
         Ok(TryAddSlot::Skipped)
     }
+
+    pub fn swap_slot(&mut self, slot: u16, other_slot: u16) {
+        let slot = usize::from(slot);
+        let other_slot = usize::from(other_slot);
+
+        self.slots.swap(slot, other_slot);
+        self.increment_slot(slot);
+        self.increment_slot(other_slot);
+    }
 }
 
 impl PlayerInventory {
@@ -395,6 +402,14 @@ impl PlayerInventory {
         let result = registry.get_result_2x2(items).cloned().unwrap_or(ItemStack::EMPTY);
 
         result
+    }
+
+    pub fn slots_inventory(&self) -> &[ItemSlot] {
+        &self.slots[9..44]
+    }
+
+    pub fn slots_inventory_mut(&mut self) -> &mut [ItemSlot] {
+        &mut self.slots[9..=44]
     }
 
     pub fn set_hotbar(&mut self, idx: u16, stack: ItemStack) {
