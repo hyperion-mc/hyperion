@@ -620,10 +620,78 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             // ignoring the count
                             // and also see if the last tick was within 1 tick of the current tick
                             // if so, then try to take any matching items from the cursor item and add it to the
-                            // count of cursor item
+                            // count of cursor item till it reaches 64 or there are no more matching items
+                            // make sure the slot is empty as well
 
-                            //let last_stack_clicked = inv_state.last_stack_clicked();
-                            debug!("double click");
+                            let slot_idx = packet.slot_idx as u16;
+                            let slot = inventories_mut[slot_idx as usize].clone();
+                            let cursor = cursor_item.0.clone();
+
+                            debug!("slot: {:?}", slot);
+                            debug!("cursor: {:?}", cursor);
+
+                            if slot.stack.is_empty() {
+                                let last_stack = inv_state.last_stack_clicked();
+                                debug!("last stack: {:?}", last_stack);
+                                if
+                                    last_stack.0.item == cursor.item &&
+                                    last_stack.0.nbt == cursor.nbt
+                                {
+                                    debug!("double click");
+                                    let max_stack = cursor_item.0.item.max_stack();
+                                    let mut needed = max_stack - cursor_item.0.count;
+
+                                    // Skip if cursor is already at max
+                                    if needed <= 0 {
+                                        return;
+                                    }
+
+                                    let mut slot_changes: Vec<usize> = vec![];
+
+                                    // Collect matching slots with their counts
+                                    let mut matching_slots: Vec<(usize, i8)> = inventories_mut
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, slot)| {
+                                            slot.stack.item == cursor_item.0.item &&
+                                                slot.stack.nbt == cursor_item.0.nbt
+                                        })
+                                        .map(|(idx, slot)| (idx, slot.stack.count))
+                                        .collect();
+
+                                    // Sort by count ascending and index
+                                    matching_slots.sort_by_key(|&(idx, count)| (count, idx));
+                                    // Iterate through all slots
+                                    for (idx, available) in matching_slots {
+                                        let take = available.min(needed);
+
+                                        // Update slot
+                                        let slot = &mut inventories_mut[idx];
+                                        slot.stack.count -= take;
+                                        if slot.stack.count == 0 {
+                                            slot.stack = ItemStack::EMPTY;
+                                        }
+                                        slot.changed = true;
+                                        slot_changes.push(idx);
+
+                                        // Update cursor
+                                        cursor_item.0.count += take;
+                                        needed -= take;
+
+                                        if needed <= 0 {
+                                            break;
+                                        }
+                                    }
+                                    // Mark slot as changed
+                                    for &idx in &slot_changes {
+                                        if idx < open_inv.size() {
+                                            open_inv.increment_slot(idx);
+                                        } else {
+                                            player_inventory.increment_slot(idx - open_inv.size());
+                                        }
+                                    }
+                                }
+                            }
                         }
                         ClickMode::ShiftClick => {
                             debug!("shift click");
