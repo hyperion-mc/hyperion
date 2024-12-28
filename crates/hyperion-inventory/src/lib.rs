@@ -3,7 +3,11 @@ use std::{ cell::Cell, cmp::min, num::Wrapping };
 
 use derive_more::{ Deref, DerefMut };
 use flecs_ecs::{ core::{ Entity, EntityViewGet, World }, macros::Component };
-use valence_protocol::{ ItemKind, ItemStack, packets::play::open_screen_s2c::WindowType };
+use valence_protocol::{
+    packets::play::{ click_slot_c2s::ClickMode, open_screen_s2c::WindowType },
+    ItemKind,
+    ItemStack,
+};
 
 pub mod action;
 pub mod parser;
@@ -31,6 +35,10 @@ pub struct Inventory {
 pub struct InventoryState {
     window_id: u8,
     state_id: Wrapping<i32>,
+    // u64 is the last tick
+    last_stack_clicked: (ItemStack, i64),
+    last_button: (i8, i64),
+    last_mode: (ClickMode, i64),
 }
 
 impl Default for InventoryState {
@@ -38,6 +46,9 @@ impl Default for InventoryState {
         Self {
             window_id: 0,
             state_id: Wrapping(0),
+            last_stack_clicked: (ItemStack::EMPTY, 0),
+            last_button: (0, 0),
+            last_mode: (ClickMode::Click, 0),
         }
     }
 }
@@ -57,6 +68,33 @@ impl InventoryState {
 
     pub fn set_window_id(&mut self) {
         self.window_id = non_zero_window_id();
+    }
+
+    pub fn last_stack_clicked(&self) -> (&ItemStack, i64) {
+        (&self.last_stack_clicked.0, self.last_stack_clicked.1)
+    }
+
+    pub fn set_last_stack_clicked(&mut self, stack: ItemStack, tick: i64) {
+        self.last_stack_clicked.0 = stack;
+        self.last_stack_clicked.1 = tick;
+    }
+
+    pub fn last_button(&self) -> (i8, i64) {
+        self.last_button
+    }
+
+    pub fn set_last_button(&mut self, button: i8, tick: i64) {
+        self.last_button.0 = button;
+        self.last_button.1 = tick;
+    }
+
+    pub fn last_mode(&self) -> (ClickMode, i64) {
+        self.last_mode
+    }
+
+    pub fn set_last_mode(&mut self, mode: ClickMode, tick: i64) {
+        self.last_mode.0 = mode;
+        self.last_mode.1 = tick;
     }
 }
 
@@ -183,6 +221,10 @@ impl Inventory {
         self.title = title;
     }
 
+    pub fn size(&self) -> usize {
+        self.size
+    }
+    
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
         let index = usize::from(index);
         self.slots[index].stack = stack;
