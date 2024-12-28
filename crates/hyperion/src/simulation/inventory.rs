@@ -296,25 +296,21 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
                         return;
                     }
-
-                    // if the inventory is not readonly, handle the click
-                    // in this case we need to check what button was clicked and what mode
-
                     // button 0 is left click
                     // button 1 is right click
                     // button 2 is middle click
 
-                    // if the mode is click, and the button is 0, then check if its the same item as the cursor item
-                    // if it is, check how many items are in the slot
-                    // if its less than 64, then add as many items from the cursor item as possible till the count of the slot is 64
-                    // if the slot is empty, then move the cursor item to the slot
-                    // if its not the same item, then swap the cursor item with the slot item
-                    // if the slot_idx is -999 that means the cursor item is being dropped
-
-                    // if the mode is click, and the button is 1, then check if its the same item as the cursor item
-                    // if it is the same or the slot is empty, then move 1 item from the cursor item to the slot
-
                     match packet.mode {
+                        // if the mode is click, and the on is 0, then check if its the same item as the cursor item
+                        // if it is, check how many items are in the slot
+                        // if its less than 64, then add as many items from the cursor item as possible till the count of the slot is 64
+                        // if the slot is empty, then move the cursor item to the slot
+                        // if its not the same item, then swap the cursor item with the slot item
+                        // if the slot_idx is -999 that means the cursor item is being dropped
+
+                        // if the mode is click, and the button is 1, then check if its the same item as the cursor item
+                        // if it is the same or the slot is empty, then move 1 item from the cursor item to the slot
+                        // if the cursor item is empty, then take half of the stack from the slot
                         ClickMode::Click => {
                             let slot_idx = packet.slot_idx as u16;
                             match packet.button {
@@ -413,10 +409,25 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                             cursor.nbt.clone()
                                         );
                                         cursor_item.0.count -= 1;
+                                    } else if cursor_item.0.is_empty() {
+                                        // if cursor_item is empty, and slot stack is not empty then take half of the stack
+                                        let count = slot.stack.count / 2;
+                                        let new_stack = ItemStack::new(
+                                            slot.stack.item,
+                                            count,
+                                            slot.stack.nbt.clone()
+                                        );
+                                        inventories_mut[slot_idx as usize].stack = ItemStack::new(
+                                            slot.stack.item,
+                                            slot.stack.count - count,
+                                            slot.stack.nbt.clone()
+                                        );
+                                        cursor_item.0 = new_stack;
                                     }
                                     open_inv.increment_slot(slot_idx as usize);
                                 }
                                 2 => {
+                                    // nothing yet
                                     debug!("middle click");
                                 }
                                 _ => {}
