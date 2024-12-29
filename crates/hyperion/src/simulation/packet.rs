@@ -1,86 +1,76 @@
-use std::{collections::HashMap, ptr::NonNull};
+use std::{
+    any::{TypeId, type_name},
+    collections::HashMap,
+    mem::transmute,
+};
 
 use anyhow::Result;
-use flecs_ecs::core::EntityView;
+use flecs_ecs::macros::Component;
 use rustc_hash::FxBuildHasher;
 use valence_protocol::{Decode, Packet};
 
-use crate::simulation::handlers::PacketSwitchQuery;
+use crate::{common::util::Lifetime, simulation::handlers::PacketSwitchQuery};
 
-// We'll store the deserialization function separately from handlers
-type DeserializerFn =
-    Box<dyn Fn(&HandlerRegistry, &[u8], &mut PacketSwitchQuery<'_>) -> Result<()>>;
+type DeserializerFn = fn(&HandlerRegistry, &[u8], &mut PacketSwitchQuery<'_>) -> Result<()>;
+type AnyHandler = unsafe fn();
+type Handler<T> = fn(&<T as Lifetime>::WithLifetime<'_>, &mut PacketSwitchQuery<'_>) -> Result<()>;
 
-type PacketHandler = Box<dyn Fn(NonNull<u8>, &mut PacketSwitchQuery<'_>) -> Result<()>>;
+fn packet_deserializer<'p, P>(
+    registry: &HandlerRegistry,
+    mut bytes: &'p [u8],
+    query: &mut PacketSwitchQuery<'_>,
+) -> Result<()>
+where
+    P: Packet + Decode<'static> + Lifetime + 'static,
+{
+    // SAFETY: The transmute to 'static is sound because the result is immediately shortened to
+    // the original 'p lifetime. This transmute is necessary due to a technical limitation in the
+    // Decode trait; users can only use P with a concrete lifetime, meaning that Decode would
+    // decode to that lifetime, but we need to be able to decode to the 'p lifetime
+    // TODO: could be unsound if someone implemented Decode<'static> and kept the 'static references in the error
+    let packet = P::decode(unsafe { transmute::<&mut &'p [u8], &mut &'static [u8]>(&mut bytes) })?
+        .shorten_lifetime::<'p>();
 
-#[derive(Default)]
+    registry.trigger(packet, query)?;
+
+    Ok(())
+}
+
+#[derive(Component, Default)]
 pub struct HandlerRegistry {
     // Store deserializer and multiple handlers separately
     deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,
-    handlers: HashMap<i32, Vec<PacketHandler>, FxBuildHasher>,
+    handlers: HashMap<TypeId, Vec<AnyHandler>, FxBuildHasher>,
 }
 
 impl HandlerRegistry {
     // Register a packet type's deserializer
-    pub fn register_packet<'p, P>(&mut self)
+    pub fn register_packet<P>(&mut self)
     where
-        P: Packet + Send + Sync + Decode<'p>,
+        P: Packet + Decode<'static> + Lifetime + 'static,
     {
-        let deserializer: DeserializerFn = Box::new(
-            |registry: &Self, bytes: &[u8], query: &mut PacketSwitchQuery<'_>| -> Result<()> {
-                // transmute to bypass lifetime issue with Decode
-                // packet is dropped at end of scope and references in handlers are locked to the scope of the handler
-                let mut bytes = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(bytes) };
-                let mut packet = P::decode(&mut bytes)?;
-                // packet is always non-null, swap to NonNull::from_mut after stabilization
-                let ptr = unsafe { NonNull::new_unchecked(&mut packet).cast::<u8>() };
-
-                // Get all handlers for this packet type
-                let handlers = registry.handlers.get(&P::ID).ok_or_else(|| {
-                    anyhow::anyhow!("No handlers registered for packet ID: {}", P::ID)
-                })?;
-
-                // Call all handlers with the deserialized packet
-                for handler in handlers {
-                    handler(ptr, query)?;
-                }
-
-                Ok(())
-            },
-        );
-
-        self.deserializers.insert(P::ID, deserializer);
-        // Initialize the handlers vector if it doesn't exist
-        self.handlers.entry(P::ID).or_default();
+        self.deserializers.insert(P::ID, packet_deserializer::<P>);
     }
 
-    // Add a handler for a packet type
-    pub fn add_handler<'p, P>(
-        &mut self,
-        handler: impl for<'a> Fn(&'a P, &mut PacketSwitchQuery<'_>) -> Result<()>
-        + Send
-        + Sync
-        + 'static,
-    ) where
-        P: Packet + Send + Sync + Decode<'p>,
+    // Add a handler
+    pub fn add_handler<P>(&mut self, handler: Handler<P>)
+    where
+        P: Lifetime + 'static,
     {
-        // Ensure the packet type is registered
-        if !self.deserializers.contains_key(&P::ID) {
-            self.register_packet::<P>();
-        }
-
-        // Wrap the typed handler to work with Any
-        let boxed_handler: PacketHandler = Box::new(move |any_packet, entity| {
-            let packet = unsafe { any_packet.cast::<P>().as_ref() };
-            handler(packet, entity)
-        });
-
         // Add the handler to the vector
-        self.handlers.entry(P::ID).or_default().push(boxed_handler);
+        self.handlers
+            .entry(TypeId::of::<P::WithLifetime<'static>>())
+            .or_default()
+            .push(unsafe { transmute::<Handler<P>, AnyHandler>(handler) });
     }
 
     // Process a packet, calling all registered handlers
-    pub fn process_packet(&self, id: i32, bytes: &[u8], query: &mut PacketSwitchQuery<'_>) -> Result<()> {
+    pub fn process_packet(
+        &self,
+        id: i32,
+        bytes: &[u8],
+        query: &mut PacketSwitchQuery<'_>,
+    ) -> Result<()> {
         // Get the deserializer
         let deserializer = self
             .deserializers
@@ -88,5 +78,34 @@ impl HandlerRegistry {
             .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {}", id))?;
 
         deserializer(self, bytes, query)
+    }
+
+    pub fn trigger<T>(&self, value: T, query: &mut PacketSwitchQuery<'_>) -> Result<()>
+    where
+        T: Lifetime,
+    {
+        // Get all handlers for this type
+        let handlers = self
+            .handlers
+            .get(&TypeId::of::<T::WithLifetime<'static>>())
+            .ok_or_else(|| {
+                anyhow::anyhow!("No handlers registered for type {}", type_name::<T>())
+            })?;
+
+        // Call all handlers
+        for handler in handlers {
+            // SAFETY: The underlying handler type is Handler<T> because the type of T matches the
+            // type of the value passed to trigger, disregarding lifetimes. It is sound to pass a T
+            // of any lifetime to the handler because the borrow checker doesn't allow the handler
+            // to make any assumptions about the length of the lifetime of the T passed to the
+            // handler function.
+            let handler = unsafe { &*std::ptr::from_ref(&handler).cast::<Handler<T>>() };
+
+            // The existing lifetime of T is okay, but shorten_lifetime is needed because the type
+            // checker expects a value with type T::WithLifetime.
+            handler((&value).shorten_lifetime(), query)?;
+        }
+
+        Ok(())
     }
 }

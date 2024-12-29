@@ -34,19 +34,9 @@ pub mod entity_kind;
 pub mod event;
 pub mod handlers;
 pub mod metadata;
+pub mod packet;
 pub mod skin;
 pub mod util;
-pub mod packet;
-
-
-
-
-
-
-
-
-
-
 
 #[derive(Component, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {

@@ -32,12 +32,14 @@ use super::{
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::{Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose},
+    simulation::{
+        Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose,
+        packet::HandlerRegistry,
+    },
     storage::{
         ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
     },
 };
-use crate::simulation::packet::HandlerRegistry;
 
 fn full(query: &mut PacketSwitchQuery<'_>, mut data: &[u8]) -> anyhow::Result<()> {
     let pkt = play::FullC2s::decode(&mut data)?;
@@ -258,6 +260,7 @@ fn player_interact_entity(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> any
 pub struct PacketSwitchQuery<'a> {
     pub id: Entity,
     pub handlers: &'a GlobalEventHandlers,
+    pub handler_registry: &'a HandlerRegistry,
     pub view: EntityView<'a>,
     pub compose: &'a Compose,
     pub io_ref: ConnectionId,
@@ -642,12 +645,32 @@ pub fn packet_switch(
     // as the data is bump-allocated and reset occurs at the end of the tick
     let data: &'static [u8] = unsafe { core::mem::transmute(data) };
 
-    let mut handler = HandlerRegistry::default();
+    //    query.handler_registry.add_handler::<play::RequestCommandCompletionsC2s<'_>>(|packet, query| {
+    //        let play::RequestCommandCompletionsC2s {
+    //            transaction_id,
+    //            text,
+    //        } = dbg!(packet);
+    //
+    ////        let text = text.0;
+    ////        let transaction_id = transaction_id.0;
+    ////
+    ////        let completion = CommandCompletionRequest {
+    ////            query: text,
+    ////            id: transaction_id,
+    ////        };
+    ////
+    ////        query.handlers.completion.trigger_all(query, &completion);
+    //        Ok(())
+    //    });
 
-    handler.add_handler::<play::ChatMessageC2s<'_>>(|handler, query| {
-        let world = entity.world();
-    });
+    //    handler.add_handler::<play::ChatMessageC2s<'_>>(|handler, query| {
+    //        // let world = entity.world();
+    //        Ok(())
+    //    });
 
+    query
+        .handler_registry
+        .process_packet(packet_id, data, query)?;
     match packet_id {
         play::ChatMessageC2s::ID => chat_message(data, query)?,
         play::ClickSlotC2s::ID => click_slot(data, query)?,

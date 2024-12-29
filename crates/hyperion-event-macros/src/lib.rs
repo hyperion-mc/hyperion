@@ -137,6 +137,10 @@ impl EventType {
 
                 impl sealed::Sealed for #path::#ident<'static> {}
 
+                unsafe impl crate::common::util::Lifetime for #path::#ident<'_> {
+                    type WithLifetime<'a> = #path::#ident<'a>;
+                }
+
                 impl ReducedLifetime for #path::#ident<'static> {
                     type Reduced<'a> = #path::#ident<'a>
                     where
@@ -158,6 +162,10 @@ impl EventType {
                 }
 
                 impl sealed::Sealed for #path::#ident {}
+
+                unsafe impl crate::common::util::Lifetime for #path::#ident {
+                    type WithLifetime<'a> = #path::#ident;
+                }
 
                 impl ReducedLifetime for #path::#ident {
                     type Reduced<'a> = Self

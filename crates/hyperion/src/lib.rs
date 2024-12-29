@@ -79,7 +79,7 @@ use crate::{
     ingress::PendingRemove,
     net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
     runtime::Tasks,
-    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player},
+    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
     util::mojang::ApiProvider,
 };
 
@@ -271,6 +271,8 @@ impl HyperionCore {
         world.component::<Blocks>();
 
         world.component::<Tasks>();
+
+        world.component::<HandlerRegistry>();
 
         system!("run_tasks", world, &mut Tasks($))
             .with::<flecs::pipeline::OnUpdate>()
