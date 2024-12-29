@@ -41,6 +41,7 @@ use crate::{
         ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
     },
 };
+use crate::simulation::packet::HandlerRegistry;
 
 fn full(query: &mut PacketSwitchQuery<'_>, mut data: &[u8]) -> anyhow::Result<()> {
     let pkt = play::FullC2s::decode(&mut data)?;
@@ -657,6 +658,12 @@ pub fn packet_switch(
     // ideally we wouldn't have to do this. The lifetime is the same as the entire tick.
     // as the data is bump-allocated and reset occurs at the end of the tick
     let data: &'static [u8] = unsafe { core::mem::transmute(data) };
+
+    let mut handler = HandlerRegistry::default();
+
+    handler.add_handler::<play::ChatMessageC2s<'_>>(|handler, query| {
+        let world = entity.world();
+    });
 
     match packet_id {
         play::ChatMessageC2s::ID => chat_message(data, query)?,
