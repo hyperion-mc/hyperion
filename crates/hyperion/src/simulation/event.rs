@@ -7,6 +7,7 @@ use valence_generated::block::BlockState;
 use valence_protocol::Hand;
 use valence_server::{ItemKind, entity::item_frame::ItemStack};
 
+use super::blocks::RayCollision;
 use crate::simulation::skin::PlayerSkin;
 
 #[derive(Component, Default, Debug)]
@@ -145,4 +146,16 @@ pub enum ClientStatusCommand {
 pub struct ClientStatusEvent {
     pub client: Entity,
     pub status: ClientStatusCommand,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectileEntityEvent {
+    pub client: Entity,
+    pub projectile: Entity,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectileBlockEvent {
+    pub collision: RayCollision,
+    pub projectile: Entity,
 }

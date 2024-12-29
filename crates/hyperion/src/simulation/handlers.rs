@@ -24,15 +24,18 @@ use valence_text::IntoText;
 
 use super::{
     ConfirmBlockSequences, EntitySize, Position,
-    animation::{self, ActiveAnimation},
+    animation::{self, ActiveAnimation, Kind},
     block_bounds,
     blocks::Blocks,
-    bow::BowCharging,
     event::ClientStatusEvent,
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::{Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose},
+    simulation::{
+        Pitch, Yaw, aabb, event,
+        event::PluginMessage,
+        metadata::{entity::Pose, living_entity::HandStates},
+    },
     storage::{
         ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
     },
@@ -298,6 +301,8 @@ fn player_action(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Resu
                 item: query.inventory.get_cursor().item,
             };
 
+            query.id.entity_view(query.world).set(HandStates::new(0));
+
             query.events.push(event, query.world);
         }
         action => bail!("unimplemented {action:?}"),
@@ -353,19 +358,27 @@ pub fn player_interact_item(
     let cursor = query.inventory.get_cursor();
 
     if !cursor.is_empty() {
+        let flecs_event = event::ItemInteract {
+            entity: query.id,
+            hand,
+            sequence: sequence.0,
+        };
         if cursor.item == ItemKind::WrittenBook {
             let packet = play::OpenWrittenBookS2c { hand };
             query.compose.unicast(&packet, query.io_ref, query.system)?;
         } else if cursor.item == ItemKind::Bow {
             // Start charging bow
-            let entity = query.world.entity_from_id(query.id);
-            entity.get::<Option<&BowCharging>>(|charging| {
-                if charging.is_some() {
-                    return;
-                }
-                entity.set(BowCharging::now());
-            });
+            // let entity = query.world.entity_from_id(query.id);
+            // entity.get::<Option<&BowCharging>>(|charging| {
+            // if charging.is_some() {
+            // return;
+            // }
+            // entity.set(BowCharging::now());
+            //
+            // entity.set(HandStates::new(1));
+            // });
         }
+        query.events.push(flecs_event, query.world);
     }
 
     query.handlers.interact.trigger_all(query, &event);

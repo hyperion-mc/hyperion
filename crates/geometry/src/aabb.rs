@@ -279,64 +279,39 @@ impl Aabb {
         }
 
         let dir = ray.direction();
+        let inv_dir = ray.inv_direction();
 
-        // For each axis, handle zero direction:
+        // Initialize t_min and t_max to the range of possible values
         let (mut t_min, mut t_max) = (f32::NEG_INFINITY, f32::INFINITY);
 
         // X-axis
-        if dir.x == 0.0 {
-            // Ray is parallel to X slab
-            if origin.x < self.min.x || origin.x > self.max.x {
-                return None; // no intersection if outside slab
-            }
-            // else: no constraint from X (t_min, t_max remain infinite)
-        } else {
-            let inv_dx = 1.0 / dir.x;
-            let tx1 = (self.min.x - origin.x) * inv_dx;
-            let tx2 = (self.max.x - origin.x) * inv_dx;
-            let t_low = tx1.min(tx2);
-            let t_high = tx1.max(tx2);
-            t_min = t_min.max(t_low);
-            t_max = t_max.min(t_high);
-            if t_min > t_max {
-                return None;
-            }
+        if dir.x != 0.0 {
+            let tx1 = (self.min.x - origin.x) * inv_dir.x;
+            let tx2 = (self.max.x - origin.x) * inv_dir.x;
+            t_min = t_min.max(tx1.min(tx2));
+            t_max = t_max.min(tx1.max(tx2));
+        } else if origin.x < self.min.x || origin.x > self.max.x {
+            return None; // Ray is parallel to X slab and outside the slab
         }
 
-        // Y-axis (do the same zero-check logic)
-        if dir.y == 0.0 {
-            if origin.y < self.min.y || origin.y > self.max.y {
-                return None;
-            }
-        } else {
-            let inv_dy = 1.0 / dir.y;
-            let ty1 = (self.min.y - origin.y) * inv_dy;
-            let ty2 = (self.max.y - origin.y) * inv_dy;
-            let t_low = ty1.min(ty2);
-            let t_high = ty1.max(ty2);
-            t_min = t_min.max(t_low);
-            t_max = t_max.min(t_high);
-            if t_min > t_max {
-                return None;
-            }
+        // Y-axis
+        if dir.y != 0.0 {
+            let ty1 = (self.min.y - origin.y) * inv_dir.y;
+            let ty2 = (self.max.y - origin.y) * inv_dir.y;
+            t_min = t_min.max(ty1.min(ty2));
+            t_max = t_max.min(ty1.max(ty2));
+        } else if origin.y < self.min.y || origin.y > self.max.y {
+            return None; // Ray is parallel to Y slab and outside the slab
         }
 
-        // Z-axis (same pattern)
-        if dir.z == 0.0 {
-            if origin.z < self.min.z || origin.z > self.max.z {
-                return None;
-            }
-        } else {
-            let inv_dz = 1.0 / dir.z;
-            let tz1 = (self.min.z - origin.z) * inv_dz;
-            let tz2 = (self.max.z - origin.z) * inv_dz;
-            let t_low = tz1.min(tz2);
-            let t_high = tz1.max(tz2);
-            t_min = t_min.max(t_low);
-            t_max = t_max.min(t_high);
-            if t_min > t_max {
-                return None;
-            }
+        // Z-axis
+        if dir.z != 0.0 {
+            let tz1 = (self.min.z - origin.z) * inv_dir.z;
+            let tz2 = (self.max.z - origin.z) * inv_dir.z;
+            t_min = t_min.max(tz1.min(tz2));
+            t_max = t_max.min(tz1.max(tz2));
+        } else if origin.z < self.min.z || origin.z > self.max.z {
+            return None; // Ray is parallel to Z slab and outside the slab
         }
 
         // At this point, t_min and t_max define the intersection range.
