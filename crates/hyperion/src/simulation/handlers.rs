@@ -287,6 +287,14 @@ fn player_action(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Resu
     let position = IVec3::new(packet.position.x, packet.position.y, packet.position.z);
 
     match packet.action {
+        PlayerAction::StartDestroyBlock => {
+            let event = event::StartDestroyBlock {
+                position,
+                from: query.id,
+                sequence,
+            };
+            query.events.push(event, query.world);
+        }
         PlayerAction::StopDestroyBlock => {
             let event = event::DestroyBlock {
                 position,
