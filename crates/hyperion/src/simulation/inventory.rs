@@ -1,4 +1,4 @@
-use std::{ borrow::Cow, cell::Cell, ops::Deref };
+use std::{ borrow::Cow, cell::Cell, ops::{ Deref, DerefMut } };
 use flecs_ecs::{
     core::{ flecs, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World },
     macros::{ observer, system, Component },
@@ -279,6 +279,8 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
             if let Some(open_inventory) = open_inventory {
                 open_inventory.entity.entity_view(query.world).get::<&mut Inventory>(|open_inv| {
                     let readonly = open_inv.readonly();
+                    let open_inv_size = open_inv.size();
+
                     let mut inventories_mut = open_inv
                         .slots_mut()
                         .iter_mut()
@@ -530,7 +532,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         }
                         //
                         ClickMode::Drag => {
-                            debug!("Packet: {:?}", packet);
                             //debug!("Slot Changed: {:?}", packet.slot_changes);
                             // We iterate through the slot changes,
                             // if slots changed is empty return
@@ -722,7 +723,94 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             }
                         }
                         ClickMode::ShiftClick => {
-                            debug!("shift click");
+                            // case 1: clicking in open inventory
+                            // when shift clicking, it moves the slot clicked to the last empty slot in the player's hotbar.
+                            // if the hotbar is full then it moves it to the first empty slot in the player's inventory
+                            // if slot is empty, check when was the last time the slot was clicked
+                            // if its within 1 tick of the current tick, then move all items with the exact item and nbt as the
+                            // last stack clicked to the player's hotbar or inventory
+                            // case 2: clicking in player's inventory
+                            // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
+                            // if the slot is empty, then move the last stack clicked to the slot
+                            // same behavior as case 1
+                            let slot_idx = packet.slot_idx as usize;
+                            let source_slot = inventories_mut[slot_idx].clone();
+
+                            // Skip if source slot is empty
+                            if source_slot.stack.is_empty() {
+                                return;
+                            }
+
+                            // Clear source slot immediately
+                            inventories_mut[slot_idx].stack = ItemStack::EMPTY;
+                            inventories_mut[slot_idx].changed = true;
+                            let mut slot_changes = vec![slot_idx];
+
+                            let mut to_move = source_slot.stack.clone();
+
+                            // Case 1: Clicking in open inventory
+                            if slot_idx < open_inv_size {
+                                // Try hotbar first (36-44)
+                                for target_idx in (open_inv_size + 27..=open_inv_size + 35).rev() {
+                                    if
+                                        try_move_to_slot(
+                                            &mut to_move,
+                                            &mut inventories_mut[target_idx]
+                                        )
+                                    {
+                                        slot_changes.push(target_idx);
+                                        if to_move.is_empty() {
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // Then try main inventory (9-35)
+                                if !to_move.is_empty() {
+                                    for target_idx in open_inv_size..open_inv_size + 27 {
+                                        if
+                                            try_move_to_slot(
+                                                &mut to_move,
+                                                &mut inventories_mut[target_idx]
+                                            )
+                                        {
+                                            slot_changes.push(target_idx);
+                                            if to_move.is_empty() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Case 2: Clicking in player inventory
+                                for target_idx in 0..open_inv_size {
+                                    if
+                                        try_move_to_slot(
+                                            &mut to_move,
+                                            &mut inventories_mut[target_idx]
+                                        )
+                                    {
+                                        slot_changes.push(target_idx);
+                                        if to_move.is_empty() {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If we couldn't move everything, put remainder back
+                            if !to_move.is_empty() {
+                                inventories_mut[slot_idx].stack = to_move;
+                            }
+
+                            // Mark all changed slots
+                            for &idx in &slot_changes {
+                                if idx < open_inv.size() {
+                                    open_inv.increment_slot(idx);
+                                } else {
+                                    player_inventory.increment_slot(idx - open_inv.size());
+                                }
+                            }
                         }
                         ClickMode::Hotbar => {
                             debug!("hotbar");
@@ -758,6 +846,39 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
         query.handlers.click.trigger_all(query, &event); */
         });
+}
+
+fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
+    // Try to stack with existing items
+    if
+        !target.stack.is_empty() &&
+        target.stack.item == source.item &&
+        target.stack.nbt == source.nbt
+    {
+        let available_space = target.stack.item.max_stack() - target.stack.count;
+        let to_move = source.count.min(available_space);
+
+        if to_move > 0 {
+            target.stack.count += to_move;
+            source.count -= to_move;
+            target.changed = true;
+
+            if source.count == 0 {
+                *source = ItemStack::EMPTY;
+            }
+            return true;
+        }
+    } else if
+        // Try empty slot
+        target.stack.is_empty()
+    {
+        target.stack = source.clone();
+        target.changed = true;
+        *source = ItemStack::EMPTY;
+        return true;
+    }
+
+    false
 }
 
 fn resync_inventory(
