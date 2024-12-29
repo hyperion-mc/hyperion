@@ -292,7 +292,10 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         resync_inventory(
                             query.compose,
                             &query.system,
-                            &inventories_mut,
+                            &inventories_mut
+                                .iter()
+                                .map(|slot| (*slot).clone())
+                                .collect(),
                             inv_state,
                             cursor_item,
                             query.io_ref
@@ -304,7 +307,10 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         resync_inventory(
                             query.compose,
                             &query.system,
-                            &inventories_mut,
+                            &inventories_mut
+                                .iter()
+                                .map(|slot| (*slot).clone())
+                                .collect(),
                             inv_state,
                             cursor_item,
                             query.io_ref
@@ -315,7 +321,10 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         resync_inventory(
                             query.compose,
                             &query.system,
-                            &inventories_mut,
+                            &inventories_mut
+                                .iter()
+                                .map(|slot| (*slot).clone())
+                                .collect(),
                             inv_state,
                             cursor_item,
                             query.io_ref
@@ -338,6 +347,8 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                     // button 1 is right click
                     // button 2 is middle click
 
+                    let mut slots_changed: Vec<usize> = vec![];
+
                     match packet.mode {
                         // if the mode is click, and the on is 0, then check if its the same item as the cursor item
                         // if it is, check how many items are in the slot
@@ -353,7 +364,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             let slot_idx = packet.slot_idx as u16;
                             match packet.button {
                                 0 => {
-                                    debug!("Cursor item: {:?}", cursor_item.0);
                                     if packet.slot_idx == -999 {
                                         if cursor_item.0.is_empty() {
                                             return;
@@ -367,13 +377,16 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         query.events.push(event, query.world);
                                         return;
                                     }
+
                                     let slot = inventories_mut[slot_idx as usize].clone();
                                     let cursor = cursor_item.0.clone();
+                                    let slot_index = slot_idx as usize;
 
                                     if slot.stack.is_empty() {
-                                        inventories_mut[slot_idx as usize].stack = cursor;
-                                        inventories_mut[slot_idx as usize].changed = true;
+                                        inventories_mut[slot_index].stack = cursor;
+                                        inventories_mut[slot_index].changed = true;
                                         cursor_item.0 = ItemStack::EMPTY;
+                                        slots_changed.push(slot_index);
                                         inv_state.set_last_stack_clicked(
                                             ItemStack::EMPTY,
                                             query.compose.global().tick
@@ -381,57 +394,43 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                     } else if slot.stack.item == cursor.item {
                                         let count = slot.stack.count.saturating_add(cursor.count);
                                         let max = slot.stack.item.max_stack();
+
                                         if count > max {
                                             let diff = count - max;
-                                            inventories_mut[slot_idx as usize].stack =
-                                                ItemStack::new(
-                                                    cursor.item,
-                                                    max,
-                                                    cursor.nbt.clone()
-                                                );
-                                            inventories_mut[slot_idx as usize].changed = true;
+                                            inventories_mut[slot_index].stack = ItemStack::new(
+                                                cursor.item,
+                                                max,
+                                                cursor.nbt.clone()
+                                            );
                                             cursor_item.0 = ItemStack::new(
                                                 cursor.item,
                                                 diff,
                                                 cursor.nbt.clone()
                                             );
-                                            inv_state.set_last_stack_clicked(
-                                                ItemStack::new(
-                                                    cursor.item,
-                                                    count,
-                                                    cursor.nbt.clone()
-                                                ),
-                                                query.compose.global().tick
-                                            );
                                         } else {
-                                            inventories_mut[slot_idx as usize].stack =
-                                                ItemStack::new(
-                                                    cursor.item,
-                                                    count,
-                                                    cursor.nbt.clone()
-                                                );
-                                            inventories_mut[slot_idx as usize].changed = true;
-                                            cursor_item.0 = ItemStack::EMPTY;
-                                            inv_state.set_last_stack_clicked(
-                                                inventories_mut[slot_idx as usize].stack.clone(),
-                                                query.compose.global().tick
+                                            inventories_mut[slot_index].stack = ItemStack::new(
+                                                cursor.item,
+                                                count,
+                                                cursor.nbt.clone()
                                             );
+                                            cursor_item.0 = ItemStack::EMPTY;
                                         }
+
+                                        inventories_mut[slot_index].changed = true;
+                                        slots_changed.push(slot_index);
+                                        inv_state.set_last_stack_clicked(
+                                            inventories_mut[slot_index].stack.clone(),
+                                            query.compose.global().tick
+                                        );
                                     } else {
                                         let old_slot_stack = slot.stack.clone();
-                                        inventories_mut[slot_idx as usize].stack = cursor;
-                                        inventories_mut[slot_idx as usize].changed = true;
+                                        inventories_mut[slot_index].stack = cursor;
+                                        inventories_mut[slot_index].changed = true;
                                         cursor_item.0 = old_slot_stack.clone();
+                                        slots_changed.push(slot_index);
                                         inv_state.set_last_stack_clicked(
                                             old_slot_stack,
                                             query.compose.global().tick
-                                        );
-                                    }
-                                    if slot_idx <= (open_inv.size() as u16) {
-                                        open_inv.increment_slot(slot_idx as usize);
-                                    } else {
-                                        player_inventory.increment_slot(
-                                            (slot_idx as usize) - open_inv.size()
                                         );
                                     }
                                 }
@@ -514,13 +513,14 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
                                     if changed {
                                         slot.changed = true;
-                                        if slot_idx < open_inv.size() {
+                                        slots_changed.push(slot_idx);
+                                        /* if slot_idx < open_inv.size() {
                                             open_inv.increment_slot(slot_idx);
                                         } else {
                                             player_inventory.increment_slot(
                                                 slot_idx - open_inv.size()
                                             );
-                                        }
+                                        } */
                                     }
                                 }
                                 2 => {
@@ -547,7 +547,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
                             let mut cursor = cursor_item.0.clone();
                             let slots = packet.slot_changes.clone();
-                            let mut slot_changed: Vec<usize> = vec![];
 
                             match packet.button {
                                 2 => {
@@ -590,7 +589,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         if stack != inventories_mut[slot_idx].stack {
                                             inventories_mut[slot_idx].stack = stack;
                                             inventories_mut[slot_idx].changed = true;
-                                            slot_changed.push(slot_idx);
+                                            slots_changed.push(slot_idx);
                                         }
                                     }
                                     // Update cursor to leftover remainder
@@ -625,7 +624,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         if stack != inventories_mut[slot_idx].stack {
                                             inventories_mut[slot_idx].stack = stack;
                                             inventories_mut[slot_idx].changed = true;
-                                            slot_changed.push(slot_idx);
+                                            slots_changed.push(slot_idx);
                                         }
                                     }
                                 }
@@ -633,13 +632,13 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             }
 
                             // Mark changed slots appropriately
-                            for &idx in &slot_changed {
+                            /* for &idx in &slot_changed {
                                 if idx < open_inv.size() {
                                     open_inv.increment_slot(idx);
                                 } else {
                                     player_inventory.increment_slot(idx - open_inv.size());
                                 }
-                            }
+                            } */
 
                             // Update the cursor with any remaining count
                             cursor_item.0 = cursor;
@@ -675,8 +674,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         return;
                                     }
 
-                                    let mut slot_changes: Vec<usize> = vec![];
-
                                     // Collect matching slots with their counts
                                     let mut matching_slots: Vec<(usize, i8)> = inventories_mut
                                         .iter()
@@ -701,7 +698,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                             slot.stack = ItemStack::EMPTY;
                                         }
                                         slot.changed = true;
-                                        slot_changes.push(idx);
+                                        slots_changed.push(idx);
 
                                         // Update cursor
                                         cursor_item.0.count += take;
@@ -712,13 +709,13 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         }
                                     }
                                     // Mark slot as changed
-                                    for &idx in &slot_changes {
+                                    /* for &idx in &slot_changes {
                                         if idx < open_inv.size() {
                                             open_inv.increment_slot(idx);
                                         } else {
                                             player_inventory.increment_slot(idx - open_inv.size());
                                         }
-                                    }
+                                    } */
                                 }
                             }
                         }
@@ -744,7 +741,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             // Clear source slot immediately
                             inventories_mut[slot_idx].stack = ItemStack::EMPTY;
                             inventories_mut[slot_idx].changed = true;
-                            let mut slot_changes = vec![slot_idx];
+                            slots_changed.push(slot_idx);
 
                             let mut to_move = source_slot.stack.clone();
 
@@ -758,7 +755,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                             &mut inventories_mut[target_idx]
                                         )
                                     {
-                                        slot_changes.push(target_idx);
+                                        slots_changed.push(target_idx);
                                         if to_move.is_empty() {
                                             break;
                                         }
@@ -774,7 +771,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                                 &mut inventories_mut[target_idx]
                                             )
                                         {
-                                            slot_changes.push(target_idx);
+                                            slots_changed.push(target_idx);
                                             if to_move.is_empty() {
                                                 break;
                                             }
@@ -790,7 +787,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                             &mut inventories_mut[target_idx]
                                         )
                                     {
-                                        slot_changes.push(target_idx);
+                                        slots_changed.push(target_idx);
                                         if to_move.is_empty() {
                                             break;
                                         }
@@ -804,22 +801,65 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             }
 
                             // Mark all changed slots
-                            for &idx in &slot_changes {
+                            /* for &idx in &slots_changed {
                                 if idx < open_inv.size() {
                                     open_inv.increment_slot(idx);
                                 } else {
                                     player_inventory.increment_slot(idx - open_inv.size());
                                 }
-                            }
+                            } */
                         }
                         ClickMode::Hotbar => {
-                            debug!("hotbar");
+                            // the client is pressing on numbers 1-9 or their hotbar binds
+                            // we just need to swap the two index provided by the packet in
+                            // slot_changes
+                            let slot_idx = packet.slot_idx as usize;
+                            let slot = inventories_mut[slot_idx].clone();
+
+                            // button 0 is the first slot in the hotbar of the player's inventory
+                            // button 8 is the last slot in the hotbar of the player's inventory
+                            let hotbar_idx = (packet.button as usize) + open_inv_size + 27;
+                            let hotbar_slot = inventories_mut[hotbar_idx].clone();
+
+                            inventories_mut[slot_idx].stack = hotbar_slot.stack.clone();
+                            inventories_mut[hotbar_idx].stack = slot.stack.clone();
+                            inventories_mut[slot_idx].changed = true;
+                            inventories_mut[hotbar_idx].changed = true;
+
+                            slots_changed.push(slot_idx);
+                            slots_changed.push(hotbar_idx);
+
+                            /* if slot_idx < open_inv.size() {
+                                open_inv.increment_slot(slot_idx);
+                            } else {
+                                player_inventory.increment_slot(slot_idx - open_inv.size());
+                            } */
                         }
                         ClickMode::CreativeMiddleClick => {
                             debug!("creative middle click");
                         }
                         ClickMode::DropKey => {
                             debug!("drop key");
+                        }
+                    }
+
+                    resync_inventory(
+                        query.compose,
+                        &query.system,
+                        &inventories_mut
+                            .iter()
+                            .map(|slot| (*slot).clone())
+                            .collect(),
+                        inv_state,
+                        cursor_item,
+                        query.io_ref
+                    );
+
+                    for &idx in &slots_changed {
+                        if idx < open_inv_size {
+                            open_inv.increment_slot(idx);
+                        } else {
+                            player_inventory.increment_slot(idx - open_inv_size);
                         }
                     }
                 });
@@ -884,7 +924,7 @@ fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
 fn resync_inventory(
     compose: &Compose,
     system: &EntityView<'_>,
-    inventory: &Vec<&mut ItemSlot>,
+    inventory: &Vec<ItemSlot>,
     inv_state: &InventoryState,
     cursor_item: &CursorItem,
     stream_id: ConnectionId
