@@ -17,7 +17,6 @@ pub struct ReplaceCommand;
 fn pick_ore() -> BlockState {
     // Total weight is 100 for easy percentage calculation
     const WEIGHTS: &[(BlockState, u32)] = &[
-        (BlockState::COBBLESTONE, 16),
         (BlockState::COAL_ORE, 16),
         (BlockState::COPPER_ORE, 8),
         (BlockState::IRON_ORE, 4),
@@ -121,15 +120,20 @@ impl hyperion_clap::MinecraftCommand for ReplaceCommand {
             let groups = group(&concrete_positions);
 
             world.get::<&mut OreVeins>(|ore_veins| {
-                **ore_veins = concrete_positions;
-            });
+                for group in groups {
+                    let group_ore = pick_ore();
+                    for position in group {
+                        let actual_ore = pick_given_ore(group_ore);
+                        blocks.set_block(position, actual_ore).unwrap();
 
-            for group in groups {
-                let ore = pick_ore();
-                for position in group {
-                    blocks.set_block(position, pick_given_ore(ore)).unwrap();
+                        if actual_ore == BlockState::COBBLESTONE || actual_ore == BlockState::STONE
+                        {
+                            continue;
+                        }
+                        ore_veins.insert(position);
+                    }
                 }
-            }
+            });
 
             let elapsed = started_time.elapsed();
 
