@@ -5,6 +5,7 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
+use itertools::Either;
 use tracing::{debug, error};
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
@@ -20,9 +21,12 @@ use crate::{
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
+        event,
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
+    spatial::get_first_collision,
+    storage::Events,
 };
 
 #[derive(Component)]
@@ -182,7 +186,7 @@ impl Module for EntityStateSyncModule {
             },
         );
 
-        system!(
+/*         system!(
             "player_inventory_sync",
             world,
             &Compose($),
@@ -192,45 +196,37 @@ impl Module for EntityStateSyncModule {
         .multi_threaded()
         .kind::<flecs::pipeline::OnStore>()
         .each_iter(move |it, _, (compose, inventory, io)| {
-            let mut run = || {
-                let io = *io;
-                let system = it.system();
+            let io = *io;
+            let system = it.system();
 
-                for slot in &inventory.updated_since_last_tick {
-                    let Ok(slot) = u16::try_from(slot) else {
-                        error!("failed to convert slot to u16 {slot}");
-                        continue;
-                    };
-                    let item = inventory
-                        .get(slot)
-                        .with_context(|| format!("failed to get item for slot {slot}"))?;
-                    let Ok(slot) = i16::try_from(slot) else {
-                        error!("failed to convert slot to i16 {slot}");
-                        continue;
-                    };
-                    let pkt = play::ScreenHandlerSlotUpdateS2c {
-                        window_id: 0,
-                        state_id: VarInt::default(),
-                        slot_idx: slot,
-                        slot_data: Cow::Borrowed(item),
-                    };
-                    compose
-                        .unicast(&pkt, io, system)
-                        .context("failed to send inventory update")?;
-                }
-
-                inventory.updated_since_last_tick.clear();
-                inventory.hand_slot_updated_since_last_tick = false;
-
-                anyhow::Ok(())
-            };
-
-            if let Err(e) = run() {
-                error!("Failed to sync player inventory: {}", e);
+            for slot in &inventory.updated_since_last_tick {
+                let Ok(slot) = u16::try_from(slot) else {
+                    error!("failed to convert slot to u16 {slot}");
+                    continue;
+                };
+                let item = inventory
+                    .get(slot)
+                    .with_context(|| format!("failed to get item for slot {slot}")).unwrap();
+                let Ok(slot) = i16::try_from(slot) else {
+                    error!("failed to convert slot to i16 {slot}");
+                    continue;
+                };
+                let pkt = play::ScreenHandlerSlotUpdateS2c {
+                    window_id: 0,
+                    state_id: VarInt::default(),
+                    slot_idx: slot,
+                    slot_data: Cow::Borrowed(item),
+                };
+                compose
+                    .unicast(&pkt, io, system)
+                    .context("failed to send inventory update").unwrap();
             }
-        });
 
-        system!(
+            inventory.updated_since_last_tick.clear();
+            inventory.hand_slot_updated_since_last_tick = false;
+        }); */
+
+/*         system!(
             "sync_equipped_items",
             world,
             &Compose($),
@@ -243,10 +239,10 @@ impl Module for EntityStateSyncModule {
             // let entity = it.entity(row);
             let system = it.system();
             // get armor and hand
-            let hand = EquipmentEntry {
+            /* let hand = EquipmentEntry {
                 slot: 0,
                 item: inventory.get_cursor().clone(),
-            };
+            }; */
             let helmet = EquipmentEntry {
                 slot: 5,
                 item: inventory.get_helmet().clone(),
@@ -270,14 +266,14 @@ impl Module for EntityStateSyncModule {
 
             let packet = play::EntityEquipmentUpdateS2c {
                 entity_id: VarInt(it.entity(row).minecraft_id()),
-                equipment: vec![hand, helmet, chestplate, leggings, boots, off_hand],
+                equipment: vec![helmet, chestplate, leggings, boots, off_hand],
             };
 
             compose
                 .broadcast_local(&packet, position.to_chunk(), system)
                 .send()
                 .unwrap();
-        });
+        }); */
 
         // What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
         // IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs
@@ -413,7 +409,8 @@ impl Module for EntityStateSyncModule {
                 return;
             }
 
-            let world = it.system().world();
+            let system = it.system();
+            let world = system.world();
             let _entity = it.entity(row);
 
             if velocity.0 != Vec3::ZERO {
@@ -424,34 +421,65 @@ impl Module for EntityStateSyncModule {
 
                 let center = **position;
 
-                let ray = geometry::ray::Ray::new(center, velocity.0);
+                let distance = velocity.0.length();
 
-                #[allow(clippy::excessive_nesting)]
-                world.get::<&mut Blocks>(|blocks| {
-                    let Some(collision) = blocks.first_collision(ray) else {
-                        // Drag (0.99 / 20.0)
-                        // 1.0 - (0.99 / 20.0) * 0.05
-                        velocity.0 *= 0.997_525;
+                debug!("Creatign Ray");
 
-                        // Gravity (20 MPSS)
-                        velocity.0.y -= 0.05;
+                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
-                        // Terminal Velocity (100.0)
-                        velocity.0 = velocity.0.clamp_length(0.0, 100.0);
-                        return;
-                    };
+                debug!("ray = {ray:?}");
 
-                    debug!("collision = {collision:?}");
+                let Some(collision) = get_first_collision(ray, &world) else {
+                    // Drag (0.99 / 20.0)
+                    // 1.0 - (0.99 / 20.0) * 0.05
+                    velocity.0 *= 0.997_525;
 
-                    velocity.0 = Vec3::ZERO;
+                    // Gravity (20 MPSS)
+                    velocity.0.y -= 0.05;
 
-                    // Set arrow position to the collision location
-                    **position = collision.normal;
+                    // Terminal Velocity (100.0)
+                    velocity.0 = velocity.0.clamp_length(0.0, 100.0);
+                    return;
+                };
 
-                    blocks
-                        .set_block(collision.location, BlockState::DIRT)
-                        .unwrap();
-                });
+                debug!("Collision: {collision:?}");
+
+                match collision {
+                    Either::Left(entity) => {
+                        let entity = entity.entity_view(world);
+                        debug!("entity: {entity:?}");
+                        // send event
+                        world.get::<&mut Events>(|events| events.push(
+                            event::ProjectileEntityEvent {
+                                client: *entity,
+                                projectile: *_entity,
+                            },
+                            &world
+                        ));
+                    }
+                    Either::Right(collision) => {
+                        debug!("block: {collision:?}");
+                        // send event
+                        world.get::<&mut Events>(|events| events.push(
+                            event::ProjectileBlockEvent {
+                                collision: collision,
+                                projectile: *_entity,
+                            },
+                            &world
+                        ));
+                    }
+                }
+
+                /* debug!("collision = {collision:?}");
+
+                velocity.0 = Vec3::ZERO; */
+
+                /* // Set arrow position to the collision location
+                **position = collision.normal;
+
+                blocks
+                    .set_block(collision.location, BlockState::DIRT)
+                    .unwrap(); */
             }
         });
 

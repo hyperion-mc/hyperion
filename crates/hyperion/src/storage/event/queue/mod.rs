@@ -58,7 +58,12 @@ define_events! {
     event::SwingArm,
     event::ToggleDoor,
     event::ReleaseUseItem,
-    event::ClientStatusEvent
+    event::ClientStatusEvent,
+    event::ProjectileEntityEvent,
+    event::ProjectileBlockEvent,
+    event::ClickSlotEvent,
+    event::DropItemStackEvent,
+    event::UpdateSelectedSlotEvent,
 }
 
 pub trait ReducedLifetime {

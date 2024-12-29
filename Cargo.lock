@@ -2831,6 +2831,7 @@ dependencies = [
  "bitfield-struct",
  "bitvec",
  "bumpalo",
+ "bvh-region",
  "bytemuck",
  "byteorder",
  "bytes",
@@ -2864,6 +2865,7 @@ dependencies = [
  "ndarray",
  "no_denormals",
  "once_cell",
+ "ordered-float",
  "ouroboros",
  "parking_lot",
  "rayon",
@@ -2875,7 +2877,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "simd-utils",
- "spatial",
  "system-order",
  "thiserror 2.0.9",
  "tokio",
@@ -2961,7 +2962,9 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
+ "hyperion-inventory",
  "serde",
+ "tracing",
  "valence_protocol",
 ]
 
@@ -2969,6 +2972,7 @@ dependencies = [
 name = "hyperion-inventory"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "flecs_ecs",
  "hyperion-crafting",
  "roaring",
@@ -5596,18 +5600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spatial"
-version = "0.1.0"
-dependencies = [
- "bvh-region",
- "flecs_ecs",
- "geometry",
- "hyperion",
- "ordered-float",
- "rayon",
-]
-
-[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5795,7 +5787,6 @@ dependencies = [
  "rayon",
  "roaring",
  "rustc-hash 2.1.0",
- "spatial",
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",

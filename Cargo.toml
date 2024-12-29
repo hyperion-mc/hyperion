@@ -39,7 +39,6 @@ members = [
     'crates/hyperion-text',
     'crates/hyperion-utils',
     'crates/simd-utils',
-    'crates/spatial',
     'crates/system-order',
     'events/tag',
     'tools/antithesis-bot',
@@ -145,7 +144,7 @@ default-features = false
 version = '1.0.30'
 
 [workspace.dependencies.flecs_ecs]
-features = ['flecs_manual_registration']
+features = ['flecs_manual_registration', "flecs_system"]
 git = 'https://github.com/Indra-db/Flecs-Rust'
 
 [workspace.dependencies.geometry]
@@ -237,9 +236,6 @@ version = '0.10.8'
 
 [workspace.dependencies.simd-utils]
 path = 'crates/simd-utils'
-
-[workspace.dependencies.spatial]
-path = 'crates/spatial'
 
 [workspace.dependencies.syntect]
 default-features = false

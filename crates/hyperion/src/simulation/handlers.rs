@@ -2,12 +2,13 @@
 
 use std::borrow::Cow;
 
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
+use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
-use tracing::{info, instrument, trace, warn};
+use tracing::{debug, info, instrument, trace, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
@@ -15,20 +16,15 @@ use valence_generated::{
 use valence_protocol::{
     Decode, Hand, ItemStack, Packet, VarInt,
     packets::play::{
-        self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
-        player_interact_entity_c2s::EntityInteraction,
+        self, ClickSlotC2s, click_slot_c2s::ClickMode, client_command_c2s::ClientCommand,
+        player_action_c2s::PlayerAction, player_interact_entity_c2s::EntityInteraction,
         player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, Position,
-    animation::{self, ActiveAnimation},
-    block_bounds,
-    blocks::Blocks,
-    bow::BowCharging,
-    event::ClientStatusEvent,
+    animation::{self, ActiveAnimation}, block_bounds, blocks::Blocks, bow::BowCharging, event::ClientStatusEvent, inventory::{close_handled_screen, handle_click_slot, handle_update_selected_slot}, ConfirmBlockSequences, EntitySize, Position
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
@@ -295,7 +291,7 @@ fn player_action(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Resu
         PlayerAction::ReleaseUseItem => {
             let event = event::ReleaseUseItem {
                 from: query.id,
-                item: query.inventory.get_cursor().item,
+                item: query.inventory.get_cursor().stack.item,
             };
 
             query.events.push(event, query.world);
@@ -350,7 +346,7 @@ pub fn player_interact_item(
         sequence: sequence.0,
     };
 
-    let cursor = query.inventory.get_cursor();
+    let cursor = &query.inventory.get_cursor().stack;
 
     if !cursor.is_empty() {
         if cursor.item == ItemKind::WrittenBook {
@@ -416,7 +412,7 @@ pub fn player_interact_block(
     } else {
         // Attempt to place a block
 
-        let held = query.inventory.get_cursor();
+        let held = &query.inventory.get_cursor().stack;
 
         if held.is_empty() {
             return Ok(());
@@ -471,9 +467,7 @@ pub fn update_selected_slot(
     // "Set Selected Slot" packet (ID 0x0B)
     let packet = play::UpdateSelectedSlotC2s::decode(&mut data)?;
 
-    let play::UpdateSelectedSlotC2s { slot } = packet;
-
-    query.inventory.set_cursor(slot);
+    handle_update_selected_slot(packet, query);
 
     Ok(())
 }
@@ -523,59 +517,9 @@ pub fn custom_payload(
 
 // keywords: inventory
 fn click_slot(mut data: &'static [u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let pkt = play::ClickSlotC2s::decode(&mut data)?;
+    let packet = play::ClickSlotC2s::decode(&mut data)?;
 
-    let to_send_pkt = play::ScreenHandlerSlotUpdateS2c {
-        window_id: -1,
-        state_id: VarInt::default(),
-        slot_idx: 0, // crafting result
-        slot_data: Cow::Borrowed(&ItemStack::EMPTY),
-    };
-
-    // negate click
-    query
-        .compose
-        .unicast(&to_send_pkt, query.io_ref, query.system)?;
-
-    let slot_idx = u16::try_from(pkt.slot_idx).context("slot index is negative")?;
-
-    let item_in_slot = query.inventory.get(slot_idx)?;
-
-    let to_send_pkt = play::ScreenHandlerSlotUpdateS2c {
-        window_id: 0,
-        state_id: VarInt::default(),
-        slot_idx: pkt.slot_idx,
-        slot_data: Cow::Borrowed(item_in_slot),
-    };
-
-    query
-        .compose
-        .unicast(&to_send_pkt, query.io_ref, query.system)?;
-
-    // info!("click slot\n{pkt:#?}");
-
-    // // todo(security): validate the player can do this. This is a MAJOR security issue.
-    // // as players will be able to spawn items in their inventory wit current logic.
-    // for SlotChange { idx, stack } in pkt.slot_changes.iter() {
-    //     let idx = u16::try_from(*idx).context("slot index is negative")?;
-    //     query.inventory.set(idx, stack.clone())?;
-    // }
-
-    let item = query.inventory.crafting_result(query.crafting_registry);
-
-    let set_item_pkt = play::ScreenHandlerSlotUpdateS2c {
-        window_id: 0,
-        state_id: VarInt(0),
-        slot_idx: 0, // crafting result
-        slot_data: Cow::Owned(item),
-    };
-
-    query
-        .compose
-        .unicast(&set_item_pkt, query.io_ref, query.system)?;
-
-    let event = ClickSlotEvent::try_from(pkt)?;
-    query.handlers.click.trigger_all(query, &event);
+    handle_click_slot(packet, query);
 
     Ok(())
 }
@@ -662,6 +606,7 @@ pub fn packet_switch(
         play::PositionAndOnGroundC2s::ID => position_and_on_ground(query, data)?,
         play::RequestCommandCompletionsC2s::ID => request_command_completions(data, query)?,
         play::UpdateSelectedSlotC2s::ID => update_selected_slot(data, query)?,
+        play::CloseHandledScreenC2s::ID => close_handled_screen(data, query)?,
         _ => trace!("unknown packet id: 0x{:02X}", packet_id),
     }
 

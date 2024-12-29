@@ -33,6 +33,7 @@ pub mod command;
 pub mod entity_kind;
 pub mod event;
 pub mod handlers;
+pub mod inventory;
 pub mod metadata;
 pub mod skin;
 pub mod util;
@@ -627,9 +628,16 @@ impl Module for SimModule {
         world.component::<animation::ActiveAnimation>();
 
         world.component::<hyperion_inventory::PlayerInventory>();
+        world.component::<hyperion_inventory::CursorItem>();
+
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
 
         world.component::<BowCharging>();
         component!(world, BowCharging).opaque_func(meta_ser_stringify_type_display::<BowCharging>);
+
+        // world.component::<InventoryModule>();
 
         observer!(
             world,

@@ -22,6 +22,7 @@ pub struct InteractEvent {
     pub sequence: i32,
 }
 
+#[derive(Debug)]
 pub struct ClickSlotEvent {
     pub window_id: u8,
     pub state_id: i32,

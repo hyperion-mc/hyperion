@@ -1,4 +1,4 @@
-use valence_protocol::ItemStack;
+/* use valence_protocol::ItemStack;
 
 use super::{OFFHAND_SLOT, PlayerInventory, slot_index_from_hand};
 
@@ -169,3 +169,4 @@ impl InventoryAndCursor {
         }
     }
 }
+ */

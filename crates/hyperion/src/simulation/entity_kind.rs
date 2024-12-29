@@ -128,4 +128,5 @@ pub enum EntityKind {
     ZombifiedPiglin = 121,
     Player = 122,
     FishingBobber = 123,
+    Gui = 124,
 }

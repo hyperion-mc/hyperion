@@ -139,9 +139,10 @@ impl Module for BlockModule {
                         destroy.from
                             .entity_view(world)
                             .get::<(&mut PlayerInventory, &mut MainBlockCount)>(|(inventory, main_block_count)| {
-                                let stack = inventory
+                                let stack = &mut inventory
                                     .get_hand_slot_mut(inventory::BLOCK_SLOT)
-                                    .unwrap();
+                                    .unwrap()
+                                    .stack;
 
                                 stack.count = stack.count.saturating_add(1);
                                 **main_block_count = main_block_count.saturating_add(1);
@@ -259,7 +260,7 @@ impl Module for BlockModule {
 
                         from.entity_view(world).get::<(&mut PlayerInventory, &ConnectionId)>(|(inventory, stream)| {
                             // so we send update to player
-                            let _ = inventory.get_cursor_mut();
+                            //let _ = inventory.get_cursor_mut();
 
                             let msg = chat!("§cYou can't place this block");
 
@@ -272,7 +273,8 @@ impl Module for BlockModule {
                     mc.set_block(position, block).unwrap();
 
                     from.entity_view(world).get::<&mut PlayerInventory>(|inventory| {
-                        inventory.take_one_held();
+                        // TODO: This should be done in the inventory system
+                        //inventory.take_one_held();
                     });
 
                     from.entity_view(world).get::<&mut MainBlockCount>(|main_block_count| {

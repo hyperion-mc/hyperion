@@ -8,12 +8,13 @@ use std::{collections::HashSet, net::SocketAddr};
 use flecs_ecs::prelude::*;
 use hyperion::{GameServerEndpoint, HyperionCore, simulation::Player};
 use hyperion_clap::hyperion_command::CommandRegistry;
+use hyperion_gui::Gui;
 use module::{block::BlockModule, vanish::VanishModule};
 
 mod module;
 
 use derive_more::{Deref, DerefMut};
-use hyperion::{glam::IVec3, simulation::Position};
+use hyperion::{glam::IVec3, simulation::Position, spatial};
 use hyperion_rank_tree::Team;
 use module::{attack::AttackModule, level::LevelModule, regeneration::RegenerationModule};
 use spatial::SpatialIndex;
@@ -52,6 +53,7 @@ impl Module for TagModule {
 
         world.component::<FollowClosestPlayer>();
         world.component::<MainBlockCount>();
+        world.component::<Gui>();
 
         world
             .component::<Player>()

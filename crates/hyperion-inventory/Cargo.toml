@@ -4,6 +4,7 @@ roaring = {workspace = true}
 snafu = {workspace = true}
 valence_protocol = {workspace = true}
 flecs_ecs = {workspace = true}
+derive_more = {workspace = true}
 
 [lints]
 workspace = true
