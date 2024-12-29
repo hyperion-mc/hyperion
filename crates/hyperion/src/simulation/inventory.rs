@@ -434,63 +434,91 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                     }
                                 }
                                 1 => {
+                                    // Handle click outside inventory
                                     if packet.slot_idx == -999 {
-                                        if cursor_item.0.is_empty() {
-                                            return;
+                                        if !cursor_item.0.is_empty() {
+                                            let new_stack = ItemStack::new(
+                                                cursor_item.0.item,
+                                                1,
+                                                cursor_item.0.nbt.clone()
+                                            );
+                                            cursor_item.0.count =
+                                                cursor_item.0.count.saturating_sub(1);
+                                            if cursor_item.0.count == 0 {
+                                                cursor_item.0 = ItemStack::EMPTY;
+                                            }
+                                            query.events.push(
+                                                event::DropItemStackEvent {
+                                                    client: query.id,
+                                                    from_slot: None,
+                                                    item: new_stack,
+                                                },
+                                                query.world
+                                            );
                                         }
-                                        let new_stack = ItemStack::new(
-                                            cursor_item.0.item,
-                                            1,
-                                            cursor_item.0.nbt.clone()
-                                        );
-                                        let event = event::DropItemStackEvent {
-                                            client: query.id,
-                                            from_slot: None,
-                                            item: new_stack,
-                                        };
-                                        cursor_item.0.count -= 1;
-                                        query.events.push(event, query.world);
                                         return;
                                     }
 
-                                    let slot = inventories_mut[slot_idx as usize].clone();
-                                    let cursor = cursor_item.0.clone();
+                                    let slot_idx = packet.slot_idx as usize;
+                                    let slot = &mut inventories_mut[slot_idx];
+                                    let mut changed = false;
 
-                                    if slot.stack.is_empty() || slot.stack.item == cursor.item {
-                                        // check count of slot
-                                        let count = slot.stack.count.saturating_add(1);
-                                        let max = slot.stack.item.max_stack();
-                                        if count > max {
-                                            return;
+                                    if cursor_item.0.is_empty() {
+                                        if !slot.stack.is_empty() {
+                                            let total = slot.stack.count;
+                                            let take = (total + 1) / 2; // Round up
+                                            let leave = total - take;
+
+                                            cursor_item.0 = ItemStack::new(
+                                                slot.stack.item,
+                                                take,
+                                                slot.stack.nbt.clone()
+                                            );
+
+                                            if leave > 0 {
+                                                slot.stack.count = leave;
+                                            } else {
+                                                slot.stack = ItemStack::EMPTY;
+                                            }
+                                            changed = true;
                                         }
-
-                                        inventories_mut[slot_idx as usize].stack = ItemStack::new(
-                                            cursor.item,
-                                            count,
-                                            cursor.nbt.clone()
-                                        );
-                                        cursor_item.0.count -= 1;
-                                    } else if cursor_item.0.is_empty() {
-                                        // if cursor_item is empty, and slot stack is not empty then take half of the stack
-                                        let count = slot.stack.count / 2;
-                                        let new_stack = ItemStack::new(
-                                            slot.stack.item,
-                                            count,
-                                            slot.stack.nbt.clone()
-                                        );
-                                        inventories_mut[slot_idx as usize].stack = ItemStack::new(
-                                            slot.stack.item,
-                                            slot.stack.count - count,
-                                            slot.stack.nbt.clone()
-                                        );
-                                        cursor_item.0 = new_stack;
-                                    }
-                                    if slot_idx <= (open_inv.size() as u16) {
-                                        open_inv.increment_slot(slot_idx as usize);
                                     } else {
-                                        player_inventory.increment_slot(
-                                            (slot_idx as usize) - open_inv.size()
-                                        );
+                                        if slot.stack.is_empty() {
+                                            slot.stack = ItemStack::new(
+                                                cursor_item.0.item,
+                                                1,
+                                                cursor_item.0.nbt.clone()
+                                            );
+                                            cursor_item.0.count =
+                                                cursor_item.0.count.saturating_sub(1);
+                                            if cursor_item.0.count == 0 {
+                                                cursor_item.0 = ItemStack::EMPTY;
+                                            }
+                                            changed = true;
+                                        } else if
+                                            slot.stack.item == cursor_item.0.item &&
+                                            slot.stack.nbt == cursor_item.0.nbt &&
+                                            slot.stack.count < slot.stack.item.max_stack()
+                                        {
+                                            slot.stack.count = slot.stack.count.saturating_add(1);
+                                            cursor_item.0.count =
+                                                cursor_item.0.count.saturating_sub(1);
+                                            if cursor_item.0.count == 0 {
+                                                cursor_item.0 = ItemStack::EMPTY;
+                                            }
+                                            changed = true;
+                                        }
+                                    }
+
+                                    if changed {
+                                        slot.changed = true;
+                                        if slot_idx < open_inv.size() {
+                                            open_inv.increment_slot(slot_idx);
+                                        } else {
+                                            player_inventory.increment_slot(
+                                                slot_idx - open_inv.size()
+                                            );
+                                        }
                                     }
                                 }
                                 2 => {
