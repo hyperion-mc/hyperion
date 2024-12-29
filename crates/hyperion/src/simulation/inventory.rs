@@ -19,7 +19,7 @@ use tracing::debug;
 use valence_protocol::{
     packets::play::{
         self,
-        click_slot_c2s::ClickMode,
+        click_slot_c2s::{ ClickMode, SlotChange },
         entity_equipment_update_s2c::EquipmentEntry,
         ClickSlotC2s,
         UpdateSelectedSlotC2s,
@@ -364,164 +364,24 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                             let slot_idx = packet.slot_idx as u16;
                             match packet.button {
                                 0 => {
-                                    if packet.slot_idx == -999 {
-                                        if cursor_item.0.is_empty() {
-                                            return;
-                                        }
-                                        let event = event::DropItemStackEvent {
-                                            client: query.id,
-                                            from_slot: None,
-                                            item: cursor_item.0.clone(),
-                                        };
-                                        cursor_item.0 = ItemStack::EMPTY;
-                                        query.events.push(event, query.world);
-                                        return;
-                                    }
-
-                                    let slot = inventories_mut[slot_idx as usize].clone();
-                                    let cursor = cursor_item.0.clone();
-                                    let slot_index = slot_idx as usize;
-
-                                    if slot.stack.is_empty() {
-                                        inventories_mut[slot_index].stack = cursor;
-                                        inventories_mut[slot_index].changed = true;
-                                        cursor_item.0 = ItemStack::EMPTY;
-                                        slots_changed.push(slot_index);
-                                        inv_state.set_last_stack_clicked(
-                                            ItemStack::EMPTY,
-                                            query.compose.global().tick
-                                        );
-                                    } else if slot.stack.item == cursor.item {
-                                        let count = slot.stack.count.saturating_add(cursor.count);
-                                        let max = slot.stack.item.max_stack();
-
-                                        if count > max {
-                                            let diff = count - max;
-                                            inventories_mut[slot_index].stack = ItemStack::new(
-                                                cursor.item,
-                                                max,
-                                                cursor.nbt.clone()
-                                            );
-                                            cursor_item.0 = ItemStack::new(
-                                                cursor.item,
-                                                diff,
-                                                cursor.nbt.clone()
-                                            );
-                                        } else {
-                                            inventories_mut[slot_index].stack = ItemStack::new(
-                                                cursor.item,
-                                                count,
-                                                cursor.nbt.clone()
-                                            );
-                                            cursor_item.0 = ItemStack::EMPTY;
-                                        }
-
-                                        inventories_mut[slot_index].changed = true;
-                                        slots_changed.push(slot_index);
-                                        inv_state.set_last_stack_clicked(
-                                            inventories_mut[slot_index].stack.clone(),
-                                            query.compose.global().tick
-                                        );
-                                    } else {
-                                        let old_slot_stack = slot.stack.clone();
-                                        inventories_mut[slot_index].stack = cursor;
-                                        inventories_mut[slot_index].changed = true;
-                                        cursor_item.0 = old_slot_stack.clone();
-                                        slots_changed.push(slot_index);
-                                        inv_state.set_last_stack_clicked(
-                                            old_slot_stack,
-                                            query.compose.global().tick
-                                        );
-                                    }
+                                    handle_left_click_slot(
+                                        packet,
+                                        query,
+                                        &mut inventories_mut,
+                                        inv_state,
+                                        cursor_item,
+                                        &mut slots_changed,
+                                        slot_idx as i16
+                                    );
                                 }
                                 1 => {
-                                    // Handle click outside inventory
-                                    if packet.slot_idx == -999 {
-                                        if !cursor_item.0.is_empty() {
-                                            let new_stack = ItemStack::new(
-                                                cursor_item.0.item,
-                                                1,
-                                                cursor_item.0.nbt.clone()
-                                            );
-                                            cursor_item.0.count =
-                                                cursor_item.0.count.saturating_sub(1);
-                                            if cursor_item.0.count == 0 {
-                                                cursor_item.0 = ItemStack::EMPTY;
-                                            }
-                                            query.events.push(
-                                                event::DropItemStackEvent {
-                                                    client: query.id,
-                                                    from_slot: None,
-                                                    item: new_stack,
-                                                },
-                                                query.world
-                                            );
-                                        }
-                                        return;
-                                    }
-
-                                    let slot_idx = packet.slot_idx as usize;
-                                    let slot = &mut inventories_mut[slot_idx];
-                                    let mut changed = false;
-
-                                    if cursor_item.0.is_empty() {
-                                        if !slot.stack.is_empty() {
-                                            let total = slot.stack.count;
-                                            let take = (total + 1) / 2; // Round up
-                                            let leave = total - take;
-
-                                            cursor_item.0 = ItemStack::new(
-                                                slot.stack.item,
-                                                take,
-                                                slot.stack.nbt.clone()
-                                            );
-
-                                            if leave > 0 {
-                                                slot.stack.count = leave;
-                                            } else {
-                                                slot.stack = ItemStack::EMPTY;
-                                            }
-                                            changed = true;
-                                        }
-                                    } else {
-                                        if slot.stack.is_empty() {
-                                            slot.stack = ItemStack::new(
-                                                cursor_item.0.item,
-                                                1,
-                                                cursor_item.0.nbt.clone()
-                                            );
-                                            cursor_item.0.count =
-                                                cursor_item.0.count.saturating_sub(1);
-                                            if cursor_item.0.count == 0 {
-                                                cursor_item.0 = ItemStack::EMPTY;
-                                            }
-                                            changed = true;
-                                        } else if
-                                            slot.stack.item == cursor_item.0.item &&
-                                            slot.stack.nbt == cursor_item.0.nbt &&
-                                            slot.stack.count < slot.stack.item.max_stack()
-                                        {
-                                            slot.stack.count = slot.stack.count.saturating_add(1);
-                                            cursor_item.0.count =
-                                                cursor_item.0.count.saturating_sub(1);
-                                            if cursor_item.0.count == 0 {
-                                                cursor_item.0 = ItemStack::EMPTY;
-                                            }
-                                            changed = true;
-                                        }
-                                    }
-
-                                    if changed {
-                                        slot.changed = true;
-                                        slots_changed.push(slot_idx);
-                                        /* if slot_idx < open_inv.size() {
-                                            open_inv.increment_slot(slot_idx);
-                                        } else {
-                                            player_inventory.increment_slot(
-                                                slot_idx - open_inv.size()
-                                            );
-                                        } */
-                                    }
+                                    handle_right_click_slot(
+                                        packet,
+                                        query,
+                                        &mut inventories_mut,
+                                        cursor_item,
+                                        &mut slots_changed
+                                    );
                                 }
                                 2 => {
                                     // nothing yet
@@ -530,7 +390,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                 _ => {}
                             }
                         }
-                        //
                         ClickMode::Drag => {
                             //debug!("Slot Changed: {:?}", packet.slot_changes);
                             // We iterate through the slot changes,
@@ -550,296 +409,63 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
                             match packet.button {
                                 2 => {
-                                    // Dragging with left click: split the cursor stack evenly among selected slots
-                                    let total = cursor.count;
-                                    let slots_len = slots.len() as i8;
-
-                                    let per_slot = total / slots_len;
-                                    let mut remainder = total % slots_len;
-
-                                    for slot_update in slots.iter() {
-                                        let slot_idx = slot_update.idx as usize;
-                                        let mut stack = inventories_mut[slot_idx].stack.clone();
-
-                                        // If the slot is empty, set both item and nbt, then count
-                                        if stack.is_empty() {
-                                            let available_space = cursor.item.max_stack();
-                                            let to_add = per_slot.min(available_space);
-                                            if to_add > 0 {
-                                                stack.item = cursor.item;
-                                                stack.nbt = cursor.nbt.clone();
-                                                stack.count = to_add;
-                                            }
-                                            // Track remainder if not all per_slot could fit
-                                            remainder = remainder.saturating_add(per_slot - to_add);
-                                        } else if
-                                            // If the slot is not empty but matches cursor item + nbt
-                                            stack.item == cursor.item &&
-                                            stack.nbt == cursor.nbt
-                                        {
-                                            let available_space =
-                                                stack.item.max_stack() - stack.count;
-                                            let to_add = per_slot.min(available_space);
-                                            stack.count = stack.count.saturating_add(to_add);
-                                            // Track remainder if not all per_slot could fit
-                                            remainder = remainder.saturating_add(per_slot - to_add);
-                                        }
-
-                                        // Update the slot and mark it changed if any addition happened
-                                        if stack != inventories_mut[slot_idx].stack {
-                                            inventories_mut[slot_idx].stack = stack;
-                                            inventories_mut[slot_idx].changed = true;
-                                            slots_changed.push(slot_idx);
-                                        }
-                                    }
-                                    // Update cursor to leftover remainder
-                                    cursor.count = remainder;
+                                    handle_left_drag_slot(
+                                        &mut cursor,
+                                        slots,
+                                        &mut inventories_mut,
+                                        &mut slots_changed
+                                    );
                                 }
                                 6 => {
-                                    // Dragging with right click: place 1 item into each selected slot
-                                    for slot_update in slots.iter() {
-                                        if cursor.count == 0 {
-                                            break;
-                                        }
-                                        let slot_idx = slot_update.idx as usize;
-                                        let mut stack = inventories_mut[slot_idx].stack.clone();
-                                        if stack.is_empty() {
-                                            stack.item = cursor.item;
-                                            stack.nbt = cursor.nbt.clone();
-                                            stack.count = 1;
-                                            cursor.count -= 1;
-                                        } else if
-                                            // If the slot is not empty but matches cursor item + nbt
-                                            stack.item == cursor.item &&
-                                            stack.nbt == cursor.nbt
-                                        {
-                                            let available_space =
-                                                stack.item.max_stack() - stack.count;
-                                            let to_add = (1).min(available_space);
-                                            stack.count = stack.count.saturating_add(to_add);
-                                            cursor.count -= to_add;
-                                        }
-
-                                        // Update the slot and mark it changed if any addition happened
-                                        if stack != inventories_mut[slot_idx].stack {
-                                            inventories_mut[slot_idx].stack = stack;
-                                            inventories_mut[slot_idx].changed = true;
-                                            slots_changed.push(slot_idx);
-                                        }
-                                    }
+                                    handle_right_drag_slot(
+                                        &mut cursor,
+                                        slots,
+                                        &mut inventories_mut,
+                                        &mut slots_changed
+                                    );
                                 }
                                 _ => {}
                             }
-
-                            // Mark changed slots appropriately
-                            /* for &idx in &slot_changed {
-                                if idx < open_inv.size() {
-                                    open_inv.increment_slot(idx);
-                                } else {
-                                    player_inventory.increment_slot(idx - open_inv.size());
-                                }
-                            } */
 
                             // Update the cursor with any remaining count
                             cursor_item.0 = cursor;
                         }
                         ClickMode::DoubleClick => {
-                            // if the slot is empty... check if the last stack clicked is the same as the cursor item
-                            // ignoring the count
-                            // and also see if the last tick was within 1 tick of the current tick
-                            // if so, then try to take any matching items from the cursor item and add it to the
-                            // count of cursor item till it reaches 64 or there are no more matching items
-                            // make sure the slot is empty as well
-
-                            let slot_idx = packet.slot_idx as u16;
-                            let slot = inventories_mut[slot_idx as usize].clone();
-                            let cursor = cursor_item.0.clone();
-
-                            debug!("slot: {:?}", slot);
-                            debug!("cursor: {:?}", cursor);
-
-                            if slot.stack.is_empty() {
-                                let last_stack = inv_state.last_stack_clicked();
-                                debug!("last stack: {:?}", last_stack);
-                                if
-                                    last_stack.0.item == cursor.item &&
-                                    last_stack.0.nbt == cursor.nbt
-                                {
-                                    debug!("double click");
-                                    let max_stack = cursor_item.0.item.max_stack();
-                                    let mut needed = max_stack - cursor_item.0.count;
-
-                                    // Skip if cursor is already at max
-                                    if needed <= 0 {
-                                        return;
-                                    }
-
-                                    // Collect matching slots with their counts
-                                    let mut matching_slots: Vec<(usize, i8)> = inventories_mut
-                                        .iter()
-                                        .enumerate()
-                                        .filter(|(_, slot)| {
-                                            slot.stack.item == cursor_item.0.item &&
-                                                slot.stack.nbt == cursor_item.0.nbt
-                                        })
-                                        .map(|(idx, slot)| (idx, slot.stack.count))
-                                        .collect();
-
-                                    // Sort by count ascending and index
-                                    matching_slots.sort_by_key(|&(idx, count)| (count, idx));
-                                    // Iterate through all slots
-                                    for (idx, available) in matching_slots {
-                                        let take = available.min(needed);
-
-                                        // Update slot
-                                        let slot = &mut inventories_mut[idx];
-                                        slot.stack.count -= take;
-                                        if slot.stack.count == 0 {
-                                            slot.stack = ItemStack::EMPTY;
-                                        }
-                                        slot.changed = true;
-                                        slots_changed.push(idx);
-
-                                        // Update cursor
-                                        cursor_item.0.count += take;
-                                        needed -= take;
-
-                                        if needed <= 0 {
-                                            break;
-                                        }
-                                    }
-                                    // Mark slot as changed
-                                    /* for &idx in &slot_changes {
-                                        if idx < open_inv.size() {
-                                            open_inv.increment_slot(idx);
-                                        } else {
-                                            player_inventory.increment_slot(idx - open_inv.size());
-                                        }
-                                    } */
-                                }
-                            }
+                            handle_double_click(
+                                packet,
+                                &mut inventories_mut,
+                                inv_state,
+                                cursor_item,
+                                &mut slots_changed
+                            );
                         }
                         ClickMode::ShiftClick => {
-                            // case 1: clicking in open inventory
-                            // when shift clicking, it moves the slot clicked to the last empty slot in the player's hotbar.
-                            // if the hotbar is full then it moves it to the first empty slot in the player's inventory
-                            // if slot is empty, check when was the last time the slot was clicked
-                            // if its within 1 tick of the current tick, then move all items with the exact item and nbt as the
-                            // last stack clicked to the player's hotbar or inventory
-                            // case 2: clicking in player's inventory
-                            // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
-                            // if the slot is empty, then move the last stack clicked to the slot
-                            // same behavior as case 1
-                            let slot_idx = packet.slot_idx as usize;
-                            let source_slot = inventories_mut[slot_idx].clone();
-
-                            // Skip if source slot is empty
-                            if source_slot.stack.is_empty() {
-                                return;
-                            }
-
-                            // Clear source slot immediately
-                            inventories_mut[slot_idx].stack = ItemStack::EMPTY;
-                            inventories_mut[slot_idx].changed = true;
-                            slots_changed.push(slot_idx);
-
-                            let mut to_move = source_slot.stack.clone();
-
-                            // Case 1: Clicking in open inventory
-                            if slot_idx < open_inv_size {
-                                // Try hotbar first (36-44)
-                                for target_idx in (open_inv_size + 27..=open_inv_size + 35).rev() {
-                                    if
-                                        try_move_to_slot(
-                                            &mut to_move,
-                                            &mut inventories_mut[target_idx]
-                                        )
-                                    {
-                                        slots_changed.push(target_idx);
-                                        if to_move.is_empty() {
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                // Then try main inventory (9-35)
-                                if !to_move.is_empty() {
-                                    for target_idx in open_inv_size..open_inv_size + 27 {
-                                        if
-                                            try_move_to_slot(
-                                                &mut to_move,
-                                                &mut inventories_mut[target_idx]
-                                            )
-                                        {
-                                            slots_changed.push(target_idx);
-                                            if to_move.is_empty() {
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Case 2: Clicking in player inventory
-                                for target_idx in 0..open_inv_size {
-                                    if
-                                        try_move_to_slot(
-                                            &mut to_move,
-                                            &mut inventories_mut[target_idx]
-                                        )
-                                    {
-                                        slots_changed.push(target_idx);
-                                        if to_move.is_empty() {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // If we couldn't move everything, put remainder back
-                            if !to_move.is_empty() {
-                                inventories_mut[slot_idx].stack = to_move;
-                            }
-
-                            // Mark all changed slots
-                            /* for &idx in &slots_changed {
-                                if idx < open_inv.size() {
-                                    open_inv.increment_slot(idx);
-                                } else {
-                                    player_inventory.increment_slot(idx - open_inv.size());
-                                }
-                            } */
+                            handle_shift_click(
+                                packet,
+                                &mut inventories_mut,
+                                open_inv_size,
+                                &mut slots_changed
+                            );
                         }
                         ClickMode::Hotbar => {
-                            // the client is pressing on numbers 1-9 or their hotbar binds
-                            // we just need to swap the two index provided by the packet in
-                            // slot_changes
-                            let slot_idx = packet.slot_idx as usize;
-                            let slot = inventories_mut[slot_idx].clone();
-
-                            // button 0 is the first slot in the hotbar of the player's inventory
-                            // button 8 is the last slot in the hotbar of the player's inventory
-                            let hotbar_idx = (packet.button as usize) + open_inv_size + 27;
-                            let hotbar_slot = inventories_mut[hotbar_idx].clone();
-
-                            inventories_mut[slot_idx].stack = hotbar_slot.stack.clone();
-                            inventories_mut[hotbar_idx].stack = slot.stack.clone();
-                            inventories_mut[slot_idx].changed = true;
-                            inventories_mut[hotbar_idx].changed = true;
-
-                            slots_changed.push(slot_idx);
-                            slots_changed.push(hotbar_idx);
-
-                            /* if slot_idx < open_inv.size() {
-                                open_inv.increment_slot(slot_idx);
-                            } else {
-                                player_inventory.increment_slot(slot_idx - open_inv.size());
-                            } */
+                            handle_hotbar_swap(
+                                packet,
+                                &mut inventories_mut,
+                                open_inv_size,
+                                &mut slots_changed
+                            );
                         }
                         ClickMode::CreativeMiddleClick => {
                             debug!("creative middle click");
                         }
                         ClickMode::DropKey => {
-                            debug!("drop key");
+                            handle_drop_key(
+                                packet,
+                                query,
+                                &mut inventories_mut,
+                                cursor_item,
+                                &mut slots_changed
+                            );
                         }
                     }
 
@@ -869,23 +495,483 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
 
             inv_state.set_last_button(0, query.compose.global().tick);
             inv_state.set_last_mode(ClickMode::Click, query.compose.global().tick);
+        });
+}
 
-            // if open_inv is Some, check if the inventory is readonly
+fn handle_left_click_slot(
+    packet: ClickSlotC2s<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    inv_state: &mut InventoryState,
+    cursor_item: &mut CursorItem,
+    slots_changed: &mut Vec<usize>,
+    slot_idx: i16
+) {
+    if packet.slot_idx == -999 {
+        if cursor_item.0.is_empty() {
+            return;
+        }
+        let event = event::DropItemStackEvent {
+            client: query.id,
+            from_slot: None,
+            item: cursor_item.0.clone(),
+        };
+        cursor_item.0 = ItemStack::EMPTY;
+        query.events.push(event, query.world);
+        return;
+    }
 
-            /* let event = storage::ClickSlotEvent {
-                window_id: inv_state.window_id(), 
-            state_id: inv_state.state_id(),
-            slot_idx: packet.slot_idx as u16,
-            mode: packet.mode,
-            button: packet.button,
-            slot_changes: packet.slot_changes.to_vec(),
-            carried_item: packet.carried_item,
+    let slot = inventories_mut[slot_idx as usize].clone();
+    let cursor = cursor_item.0.clone();
+    let slot_index = slot_idx as usize;
+
+    if slot.stack.is_empty() {
+        inventories_mut[slot_index].stack = cursor;
+        inventories_mut[slot_index].changed = true;
+        cursor_item.0 = ItemStack::EMPTY;
+        slots_changed.push(slot_index);
+        inv_state.set_last_stack_clicked(ItemStack::EMPTY, query.compose.global().tick);
+    } else if slot.stack.item == cursor.item {
+        let count = slot.stack.count.saturating_add(cursor.count);
+        let max = slot.stack.item.max_stack();
+
+        if count > max {
+            let diff = count - max;
+            inventories_mut[slot_index].stack = ItemStack::new(
+                cursor.item,
+                max,
+                cursor.nbt.clone()
+            );
+            cursor_item.0 = ItemStack::new(cursor.item, diff, cursor.nbt.clone());
+        } else {
+            inventories_mut[slot_index].stack = ItemStack::new(
+                cursor.item,
+                count,
+                cursor.nbt.clone()
+            );
+            cursor_item.0 = ItemStack::EMPTY;
+        }
+
+        inventories_mut[slot_index].changed = true;
+        slots_changed.push(slot_index);
+        inv_state.set_last_stack_clicked(
+            inventories_mut[slot_index].stack.clone(),
+            query.compose.global().tick
+        );
+    } else {
+        let old_slot_stack = slot.stack.clone();
+        inventories_mut[slot_index].stack = cursor;
+        inventories_mut[slot_index].changed = true;
+        cursor_item.0 = old_slot_stack.clone();
+        slots_changed.push(slot_index);
+        inv_state.set_last_stack_clicked(old_slot_stack, query.compose.global().tick);
+    }
+}
+
+fn handle_right_click_slot(
+    packet: ClickSlotC2s<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    cursor_item: &mut CursorItem,
+    slots_changed: &mut Vec<usize>
+) {
+    // Handle click outside inventory
+    if packet.slot_idx == -999 {
+        if !cursor_item.0.is_empty() {
+            let new_stack = ItemStack::new(cursor_item.0.item, 1, cursor_item.0.nbt.clone());
+            cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
+            if cursor_item.0.count == 0 {
+                cursor_item.0 = ItemStack::EMPTY;
+            }
+            query.events.push(
+                event::DropItemStackEvent {
+                    client: query.id,
+                    from_slot: None,
+                    item: new_stack,
+                },
+                query.world
+            );
+        }
+        return;
+    }
+
+    let slot_idx = packet.slot_idx as usize;
+    let slot = &mut inventories_mut[slot_idx];
+    let mut changed = false;
+
+    if cursor_item.0.is_empty() {
+        if !slot.stack.is_empty() {
+            let total = slot.stack.count;
+            let take = (total + 1) / 2; // Round up
+            let leave = total - take;
+
+            cursor_item.0 = ItemStack::new(slot.stack.item, take, slot.stack.nbt.clone());
+
+            if leave > 0 {
+                slot.stack.count = leave;
+            } else {
+                slot.stack = ItemStack::EMPTY;
+            }
+            changed = true;
+        }
+    } else {
+        if slot.stack.is_empty() {
+            slot.stack = ItemStack::new(cursor_item.0.item, 1, cursor_item.0.nbt.clone());
+            cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
+            if cursor_item.0.count == 0 {
+                cursor_item.0 = ItemStack::EMPTY;
+            }
+            changed = true;
+        } else if
+            slot.stack.item == cursor_item.0.item &&
+            slot.stack.nbt == cursor_item.0.nbt &&
+            slot.stack.count < slot.stack.item.max_stack()
+        {
+            slot.stack.count = slot.stack.count.saturating_add(1);
+            cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
+            if cursor_item.0.count == 0 {
+                cursor_item.0 = ItemStack::EMPTY;
+            }
+            changed = true;
+        }
+    }
+
+    if changed {
+        slot.changed = true;
+        slots_changed.push(slot_idx);
+    }
+}
+
+fn handle_left_drag_slot(
+    cursor: &mut ItemStack,
+    slots: Cow<'_, [SlotChange]>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    slots_changed: &mut Vec<usize>
+) {
+    let total = cursor.count;
+    let slots_len = slots.len() as i8;
+
+    let per_slot = total / slots_len;
+    let mut remainder = total % slots_len;
+
+    for slot_update in slots.iter() {
+        let slot_idx = slot_update.idx as usize;
+        let mut stack = inventories_mut[slot_idx].stack.clone();
+
+        // If the slot is empty, set both item and nbt, then count
+        if stack.is_empty() {
+            let available_space = cursor.item.max_stack();
+            let to_add = per_slot.min(available_space);
+            if to_add > 0 {
+                stack.item = cursor.item;
+                stack.nbt = cursor.nbt.clone();
+                stack.count = to_add;
+            }
+            // Track remainder if not all per_slot could fit
+            remainder = remainder.saturating_add(per_slot - to_add);
+        } else if
+            // If the slot is not empty but matches cursor item + nbt
+            stack.item == cursor.item &&
+            stack.nbt == cursor.nbt
+        {
+            let available_space = stack.item.max_stack() - stack.count;
+            let to_add = per_slot.min(available_space);
+            stack.count = stack.count.saturating_add(to_add);
+            // Track remainder if not all per_slot could fit
+            remainder = remainder.saturating_add(per_slot - to_add);
+        }
+
+        // Update the slot and mark it changed if any addition happened
+        if stack != inventories_mut[slot_idx].stack {
+            inventories_mut[slot_idx].stack = stack;
+            inventories_mut[slot_idx].changed = true;
+            slots_changed.push(slot_idx);
+        }
+    }
+    // Update cursor to leftover remainder
+    cursor.count = remainder;
+}
+
+fn handle_right_drag_slot(
+    cursor: &mut ItemStack,
+    slots: Cow<'_, [SlotChange]>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    slots_changed: &mut Vec<usize>
+) {
+    for slot_update in slots.iter() {
+        if cursor.count == 0 {
+            break;
+        }
+        let slot_idx = slot_update.idx as usize;
+        let mut stack = inventories_mut[slot_idx].stack.clone();
+        if stack.is_empty() {
+            stack.item = cursor.item;
+            stack.nbt = cursor.nbt.clone();
+            stack.count = 1;
+            cursor.count -= 1;
+        } else if
+            // If the slot is not empty but matches cursor item + nbt
+            stack.item == cursor.item &&
+            stack.nbt == cursor.nbt
+        {
+            let available_space = stack.item.max_stack() - stack.count;
+            let to_add = (1).min(available_space);
+            stack.count = stack.count.saturating_add(to_add);
+            cursor.count -= to_add;
+        }
+
+        // Update the slot and mark it changed if any addition happened
+        if stack != inventories_mut[slot_idx].stack {
+            inventories_mut[slot_idx].stack = stack;
+            inventories_mut[slot_idx].changed = true;
+            slots_changed.push(slot_idx);
+        }
+    }
+}
+
+fn handle_double_click(
+    packet: ClickSlotC2s<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    inv_state: &InventoryState,
+    cursor_item: &mut CursorItem,
+    slots_changed: &mut Vec<usize>
+) {
+    // if the slot is empty... check if the last stack clicked is the same as the cursor item
+    // ignoring the count
+    // and also see if the last tick was within 1 tick of the current tick
+    // if so, then try to take any matching items from the cursor item and add it to the
+    // count of cursor item till it reaches 64 or there are no more matching items
+    // make sure the slot is empty as well
+
+    let slot_idx = packet.slot_idx as u16;
+    let slot = inventories_mut[slot_idx as usize].clone();
+    let cursor = cursor_item.0.clone();
+
+    debug!("slot: {:?}", slot);
+    debug!("cursor: {:?}", cursor);
+
+    if slot.stack.is_empty() {
+        let last_stack = inv_state.last_stack_clicked();
+        debug!("last stack: {:?}", last_stack);
+        if last_stack.0.item == cursor.item && last_stack.0.nbt == cursor.nbt {
+            debug!("double click");
+            let max_stack = cursor_item.0.item.max_stack();
+            let mut needed = max_stack - cursor_item.0.count;
+
+            // Skip if cursor is already at max
+            if needed <= 0 {
+                return;
+            }
+
+            // Collect matching slots with their counts
+            let mut matching_slots: Vec<(usize, i8)> = inventories_mut
+                .iter()
+                .enumerate()
+                .filter(|(_, slot)| {
+                    slot.stack.item == cursor_item.0.item && slot.stack.nbt == cursor_item.0.nbt
+                })
+                .map(|(idx, slot)| (idx, slot.stack.count))
+                .collect();
+
+            // Sort by count ascending and index
+            matching_slots.sort_by_key(|&(idx, count)| (count, idx));
+            // Iterate through all slots
+            for (idx, available) in matching_slots {
+                let take = available.min(needed);
+
+                // Update slot
+                let slot = &mut inventories_mut[idx];
+                slot.stack.count -= take;
+                if slot.stack.count == 0 {
+                    slot.stack = ItemStack::EMPTY;
+                }
+                slot.changed = true;
+                slots_changed.push(idx);
+
+                // Update cursor
+                cursor_item.0.count += take;
+                needed -= take;
+
+                if needed <= 0 {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn handle_shift_click(
+    packet: ClickSlotC2s<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    open_inv_size: usize,
+    slots_changed: &mut Vec<usize>
+) {
+    // case 1: clicking in open inventory
+    // when shift clicking, it moves the slot clicked to the last empty slot in the player's hotbar.
+    // if the hotbar is full then it moves it to the first empty slot in the player's inventory
+    // if slot is empty, check when was the last time the slot was clicked
+    // if its within 1 tick of the current tick, then move all items with the exact item and nbt as the
+    // last stack clicked to the player's hotbar or inventory
+    // case 2: clicking in player's inventory
+    // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
+    // if the slot is empty, then move the last stack clicked to the slot
+    // same behavior as case 1
+    let slot_idx = packet.slot_idx as usize;
+    let source_slot = inventories_mut[slot_idx].clone();
+
+    // Skip if source slot is empty
+    if source_slot.stack.is_empty() {
+        return;
+    }
+
+    // Clear source slot immediately
+    inventories_mut[slot_idx].stack = ItemStack::EMPTY;
+    inventories_mut[slot_idx].changed = true;
+    slots_changed.push(slot_idx);
+
+    let mut to_move = source_slot.stack.clone();
+
+    // Case 1: Clicking in open inventory
+    if slot_idx < open_inv_size {
+        // Try hotbar first (36-44)
+        for target_idx in (open_inv_size + 27..=open_inv_size + 35).rev() {
+            if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+                slots_changed.push(target_idx);
+                if to_move.is_empty() {
+                    break;
+                }
+            }
+        }
+
+        // Then try main inventory (9-35)
+        if !to_move.is_empty() {
+            for target_idx in open_inv_size..open_inv_size + 27 {
+                if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+                    slots_changed.push(target_idx);
+                    if to_move.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        // Case 2: Clicking in player inventory
+        for target_idx in 0..open_inv_size {
+            if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+                slots_changed.push(target_idx);
+                if to_move.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // If we couldn't move everything, put remainder back
+    if !to_move.is_empty() {
+        inventories_mut[slot_idx].stack = to_move;
+    }
+}
+
+fn handle_hotbar_swap(
+    packet: ClickSlotC2s<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    open_inv_size: usize,
+    slots_changed: &mut Vec<usize>
+) {
+    // the client is pressing on numbers 1-9 or their hotbar binds
+    // we just need to swap the two index provided by the packet in
+    // slot_changes
+    let slot_idx = packet.slot_idx as usize;
+    let slot = inventories_mut[slot_idx].clone();
+
+    // button 0 is the first slot in the hotbar of the player's inventory
+    // button 8 is the last slot in the hotbar of the player's inventory
+    let hotbar_idx = (packet.button as usize) + open_inv_size + 27;
+    let hotbar_slot = inventories_mut[hotbar_idx].clone();
+
+    inventories_mut[slot_idx].stack = hotbar_slot.stack.clone();
+    inventories_mut[hotbar_idx].stack = slot.stack.clone();
+    inventories_mut[slot_idx].changed = true;
+    inventories_mut[hotbar_idx].changed = true;
+
+    slots_changed.push(slot_idx);
+    slots_changed.push(hotbar_idx);
+}
+
+fn handle_drop_key(
+    packet: ClickSlotC2s<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+    inventories_mut: &mut Vec<&mut ItemSlot>,
+    cursor_item: &mut CursorItem,
+    slots_changed: &mut Vec<usize>
+) {
+    // if the button is 0, then drop 1 item from the slot_idx
+    // if button is 1, then drop the entire stack from the slot_idx
+
+    let slot_idx = packet.slot_idx;
+    // if the slot_idx is -999, then drop whatever is in the cursor item
+    if slot_idx == -999 {
+        if cursor_item.0.is_empty() {
+            return;
+        }
+
+        let mut dropped = cursor_item.0.clone();
+        let mut dropped_count = 0;
+
+        if packet.button == 0 {
+            dropped_count = 1;
+        } else if packet.button == 1 {
+            dropped_count = dropped.count;
+        }
+
+        dropped.count = dropped_count;
+        cursor_item.0.count -= dropped_count;
+
+        if cursor_item.0.count == 0 {
+            cursor_item.0 = ItemStack::EMPTY;
+        }
+
+        let event = event::DropItemStackEvent {
+            client: query.id,
+            from_slot: None,
+            item: dropped,
         };
 
-        debug!("click slot event from inventory.rs: {:?}", event);
+        query.events.push(event, query.world);
+    } else {
+        let slot = &mut inventories_mut[slot_idx as usize];
 
-        query.handlers.click.trigger_all(query, &event); */
-        });
+        if slot.stack.is_empty() {
+            return;
+        }
+
+        let mut dropped = slot.stack.clone();
+        let mut dropped_count = 0;
+
+        if packet.button == 0 {
+            dropped_count = 1;
+        } else if packet.button == 1 {
+            dropped_count = dropped.count;
+        }
+
+        dropped.count = dropped_count;
+        slot.stack.count -= dropped_count;
+
+        if slot.stack.count == 0 {
+            slot.stack = ItemStack::EMPTY;
+        }
+
+        slot.changed = true;
+        slots_changed.push(slot_idx as usize);
+
+        let event = event::DropItemStackEvent {
+            client: query.id,
+            from_slot: Some(slot_idx as i16),
+            item: dropped,
+        };
+
+        query.events.push(event, query.world);
+    }
 }
 
 fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
