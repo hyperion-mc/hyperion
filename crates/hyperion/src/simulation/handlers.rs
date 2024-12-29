@@ -32,7 +32,11 @@ use super::{
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::{Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose},
+    simulation::{
+        Pitch, Yaw, aabb,
+        event::{self, PluginMessage},
+        metadata::entity::Pose,
+    },
     storage::{
         ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
     },
@@ -263,7 +267,7 @@ pub struct PacketSwitchQuery<'a> {
     pub position: &'a mut Position,
     pub yaw: &'a mut Yaw,
     pub pitch: &'a mut Pitch,
-    pub size: &'a EntitySize,
+    pub size: &'a mut EntitySize,
     pub events: &'a Events,
     pub world: &'a World,
     pub blocks: &'a Blocks,
@@ -315,9 +319,11 @@ fn client_command(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow:
     match packet.action {
         ClientCommand::StartSneaking => {
             *query.pose = Pose::Sneaking;
+            query.size.height = 1.5;
         }
         ClientCommand::StopSneaking | ClientCommand::LeaveBed => {
             *query.pose = Pose::Standing;
+            query.size.height = 1.8;
         }
         ClientCommand::StartSprinting
         | ClientCommand::StopSprinting
@@ -437,14 +443,14 @@ pub fn player_interact_block(
         let position_dvec3 = position.as_vec3();
 
         // todo(hack): technically players can do some crazy position stuff to abuse this probably
-        // let player_aabb = query.position.bounding.shrink(0.01);
         let player_aabb = aabb(**query.position, *query.size);
 
         let collides_player = block_state
             .collision_shapes()
-            .map(|aabb| Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()))
-            .map(|aabb| aabb.move_by(position_dvec3))
-            .any(|block_aabb| player_aabb.collides(&block_aabb));
+            .map(|aabb| {
+                Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position_dvec3)
+            })
+            .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
 
         if collides_player {
             return Ok(());
