@@ -1,10 +1,14 @@
-use std::{ borrow::Cow, cell::Cell, ops::{ Deref, DerefMut } };
+use std::borrow::Cow;
 use flecs_ecs::{
     core::{ flecs, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World },
     macros::{ observer, system, Component },
     prelude::Module,
 };
 use hyperion_inventory::{
+    is_boots,
+    is_chestplate,
+    is_helmet,
+    is_leggings,
     CursorItem,
     Inventory,
     InventoryState,
@@ -13,8 +17,6 @@ use hyperion_inventory::{
     PlayerInventory,
 };
 use hyperion_utils::EntityExt;
-use rkyv::vec;
-use serde::de;
 use tracing::debug;
 use valence_protocol::{
     packets::play::{
@@ -99,7 +101,7 @@ impl Module for InventoryModule {
             &mut InventoryState,
             &ConnectionId,
         ).each_iter(
-            |it, row, (open_inventory, compose, inv_state, io)| {
+            |it, row, (_open_inventory, compose, inv_state, io)| {
                 let system = it.system();
                 let _world = it.world();
                 let entity = it.entity(row);
@@ -371,7 +373,8 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         inv_state,
                                         cursor_item,
                                         &mut slots_changed,
-                                        slot_idx as i16
+                                        slot_idx as i16,
+                                        false
                                     );
                                 }
                                 1 => {
@@ -380,7 +383,8 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                         query,
                                         &mut inventories_mut,
                                         cursor_item,
-                                        &mut slots_changed
+                                        &mut slots_changed,
+                                        false
                                     );
                                 }
                                 2 => {
@@ -452,7 +456,8 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                                 packet,
                                 &mut inventories_mut,
                                 open_inv_size,
-                                &mut slots_changed
+                                &mut slots_changed,
+                                false
                             );
                         }
                         ClickMode::CreativeMiddleClick => {
@@ -505,7 +510,8 @@ fn handle_left_click_slot(
     inv_state: &mut InventoryState,
     cursor_item: &mut CursorItem,
     slots_changed: &mut Vec<usize>,
-    slot_idx: i16
+    slot_idx: i16,
+    player_only: bool
 ) {
     if packet.slot_idx == -999 {
         if cursor_item.0.is_empty() {
@@ -519,6 +525,22 @@ fn handle_left_click_slot(
         cursor_item.0 = ItemStack::EMPTY;
         query.events.push(event, query.world);
         return;
+    }
+
+    if player_only {
+        if (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
+            let is_valid = match slot_idx {
+                5 => is_helmet(cursor_item.0.item),
+                6 => is_chestplate(cursor_item.0.item),
+                7 => is_leggings(cursor_item.0.item),
+                8 => is_boots(cursor_item.0.item),
+                _ => false,
+            };
+
+            if !is_valid {
+                return;
+            }
+        }
     }
 
     let slot = inventories_mut[slot_idx as usize].clone();
@@ -573,7 +595,8 @@ fn handle_right_click_slot(
     query: &mut PacketSwitchQuery<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     cursor_item: &mut CursorItem,
-    slots_changed: &mut Vec<usize>
+    slots_changed: &mut Vec<usize>,
+    player_only: bool
 ) {
     // Handle click outside inventory
     if packet.slot_idx == -999 {
@@ -593,6 +616,23 @@ fn handle_right_click_slot(
             );
         }
         return;
+    }
+
+    if player_only {
+        let slot_idx = packet.slot_idx as i16;
+        if (5..=8).contains(&slot_idx) && !cursor_item.0.is_empty() {
+            let is_valid = match slot_idx {
+                5 => is_helmet(cursor_item.0.item),
+                6 => is_chestplate(cursor_item.0.item),
+                7 => is_leggings(cursor_item.0.item),
+                8 => is_boots(cursor_item.0.item),
+                _ => false,
+            };
+
+            if !is_valid {
+                return;
+            }
+        }
     }
 
     let slot_idx = packet.slot_idx as usize;
@@ -876,11 +916,13 @@ fn handle_hotbar_swap(
     packet: ClickSlotC2s<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     open_inv_size: usize,
-    slots_changed: &mut Vec<usize>
+    slots_changed: &mut Vec<usize>,
+    player_only: bool
 ) {
     // the client is pressing on numbers 1-9 or their hotbar binds
     // we just need to swap the two index provided by the packet in
     // slot_changes
+
     let slot_idx = packet.slot_idx as usize;
     let slot = inventories_mut[slot_idx].clone();
 
@@ -888,6 +930,22 @@ fn handle_hotbar_swap(
     // button 8 is the last slot in the hotbar of the player's inventory
     let hotbar_idx = (packet.button as usize) + open_inv_size + 27;
     let hotbar_slot = inventories_mut[hotbar_idx].clone();
+
+    if player_only {
+        if (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
+            let is_valid = match slot_idx {
+                5 => is_helmet(hotbar_slot.stack.item),
+                6 => is_chestplate(hotbar_slot.stack.item),
+                7 => is_leggings(hotbar_slot.stack.item),
+                8 => is_boots(hotbar_slot.stack.item),
+                _ => false,
+            };
+
+            if !is_valid {
+                return;
+            }
+        }
+    }
 
     inventories_mut[slot_idx].stack = hotbar_slot.stack.clone();
     inventories_mut[hotbar_idx].stack = slot.stack.clone();

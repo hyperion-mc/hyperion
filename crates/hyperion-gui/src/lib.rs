@@ -5,7 +5,7 @@ use flecs_ecs::{
     macros::Component,
 };
 use hyperion::{
-    simulation::{ entity_kind::EntityKind, Uuid },
+    simulation::{ entity_kind::EntityKind, Spawn, Uuid },
     storage::GlobalEventHandlers,
     valence_protocol::{
         packets::play::{
@@ -41,7 +41,9 @@ impl Gui {
     pub fn new(inventory: Inventory, world: &World, id: u64) -> Self {
         let uuid = Uuid::new_v4();
 
-        let entity = world.add_enum(EntityKind::BlockDisplay).set(uuid).set(inventory);
+        let entity = world.entity().add_enum(EntityKind::BlockDisplay).set(uuid).set(inventory);
+
+        entity.enqueue(Spawn);
 
         Self {
             entity: *entity,

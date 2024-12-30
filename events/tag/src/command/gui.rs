@@ -1,6 +1,6 @@
 use clap::Parser;
 use flecs_ecs::core::{ Builder, Entity, EntityView, QueryAPI, WorldProvider };
-use hyperion::{ simulation::entity_kind::EntityKind, ItemKind, ItemStack };
+use hyperion::{ simulation::{entity_kind::EntityKind, Spawn}, ItemKind, ItemStack };
 use hyperion_clap::{ CommandPermission, MinecraftCommand };
 use hyperion_gui::Gui;
 use hyperion_inventory::Inventory;
@@ -88,7 +88,7 @@ impl MinecraftCommand for GuiCommand {
 
             gui.open(system, caller);
 
-            world.add_enum(EntityKind::Gui).set(gui);
+            world.entity().add_enum(EntityKind::Gui).set(gui).enqueue(Spawn);
         }
 
         // gui.open(system, caller);

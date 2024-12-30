@@ -224,7 +224,7 @@ impl Inventory {
     pub fn size(&self) -> usize {
         self.size
     }
-    
+
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
         let index = usize::from(index);
         self.slots[index].stack = stack;
@@ -417,11 +417,11 @@ impl Inventory {
 }
 
 impl PlayerInventory {
-    pub const BOOTS_SLOT: u16 = 8;
-    pub const CHESTPLATE_SLOT: u16 = 6;
     pub const HELMET_SLOT: u16 = 5;
-    pub const HOTBAR_START_SLOT: u16 = 36;
+    pub const CHESTPLATE_SLOT: u16 = 6;
     pub const LEGGINGS_SLOT: u16 = 7;
+    pub const BOOTS_SLOT: u16 = 8;
+    pub const HOTBAR_START_SLOT: u16 = 36;
     pub const OFFHAND_SLOT: u16 = OFFHAND_SLOT;
 
     #[must_use]
@@ -586,4 +586,54 @@ pub fn non_zero_window_id() -> u8 {
     }
 
     ID.get()
+}
+
+pub fn is_helmet(kind: ItemKind) -> bool {
+    matches!(
+        kind,
+        ItemKind::LeatherHelmet |
+            ItemKind::ChainmailHelmet |
+            ItemKind::IronHelmet |
+            ItemKind::GoldenHelmet |
+            ItemKind::DiamondHelmet |
+            ItemKind::NetheriteHelmet |
+            ItemKind::TurtleHelmet |
+            ItemKind::PlayerHead
+    )
+}
+
+pub fn is_chestplate(kind: ItemKind) -> bool {
+    matches!(
+        kind,
+        ItemKind::LeatherChestplate |
+            ItemKind::ChainmailChestplate |
+            ItemKind::IronChestplate |
+            ItemKind::GoldenChestplate |
+            ItemKind::DiamondChestplate |
+            ItemKind::NetheriteChestplate
+    )
+}
+
+pub fn is_leggings(kind: ItemKind) -> bool {
+    matches!(
+        kind,
+        ItemKind::LeatherLeggings |
+            ItemKind::ChainmailLeggings |
+            ItemKind::IronLeggings |
+            ItemKind::GoldenLeggings |
+            ItemKind::DiamondLeggings |
+            ItemKind::NetheriteLeggings
+    )
+}
+
+pub fn is_boots(kind: ItemKind) -> bool {
+    matches!(
+        kind,
+        ItemKind::LeatherBoots |
+            ItemKind::ChainmailBoots |
+            ItemKind::IronBoots |
+            ItemKind::GoldenBoots |
+            ItemKind::DiamondBoots |
+            ItemKind::NetheriteBoots
+    )
 }
