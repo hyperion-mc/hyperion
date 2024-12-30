@@ -567,6 +567,10 @@ fn handle_left_click_slot(
         return;
     }
 
+    if packet.slot_idx < 0 {
+        return;
+    }
+
     if player_only {
         if (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
             let is_valid = match slot_idx {
@@ -658,6 +662,10 @@ fn handle_right_click_slot(
         return;
     }
 
+    if packet.slot_idx < 0 {
+        return;
+    }
+
     if player_only {
         let slot_idx = packet.slot_idx as i16;
         if (5..=8).contains(&slot_idx) && !cursor_item.0.is_empty() {
@@ -743,6 +751,10 @@ fn handle_left_drag_slot(
     }
 
     for slot_update in slots.iter() {
+        if slot_update.idx < 0 {
+            continue;
+        }
+
         let slot_idx = slot_update.idx as usize;
         let mut stack = inventories_mut[slot_idx].stack.clone();
 
@@ -798,6 +810,10 @@ fn handle_right_drag_slot(
         if cursor.count == 0 {
             break;
         }
+
+        if slot_update.idx < 0 {
+            continue;
+        }
         let slot_idx = slot_update.idx as usize;
         let mut stack = inventories_mut[slot_idx].stack.clone();
         if stack.is_empty() {
@@ -839,6 +855,10 @@ fn handle_double_click(
     // if so, then try to take any matching items from the cursor item and add it to the
     // count of cursor item till it reaches 64 or there are no more matching items
     // make sure the slot is empty as well
+
+    if packet.slot_idx < 0 {
+        return;
+    }
 
     let slot_idx = packet.slot_idx as u16;
     let slot = inventories_mut[slot_idx as usize].clone();
@@ -914,6 +934,10 @@ fn handle_shift_click(
     // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
     // if the slot is empty, then move the last stack clicked to the slot
     // same behavior as case 1
+    if packet.slot_idx < 0 {
+        return;
+    }
+
     let slot_idx = packet.slot_idx as usize;
     let source_slot = inventories_mut[slot_idx].clone();
 
@@ -1003,12 +1027,20 @@ fn handle_hotbar_swap(
     // we just need to swap the two index provided by the packet in
     // slot_changes
 
+    if packet.slot_idx < 0 {
+        return;
+    }
+
     let slot_idx = packet.slot_idx as usize;
     let slot = inventories_mut[slot_idx].clone();
 
     // button 0 is the first slot in the hotbar of the player's inventory
     // button 8 is the last slot in the hotbar of the player's inventory
-    let hotbar_idx = (packet.button as usize) + open_inv_size + 27;
+    let hotbar_idx = if player_only {
+        (packet.button as usize) + 36
+    } else {
+        (packet.button as usize) + open_inv_size + 27
+    };
     let hotbar_slot = inventories_mut[hotbar_idx].clone();
 
     if player_only {
@@ -1077,40 +1109,45 @@ fn handle_drop_key(
         };
 
         query.events.push(event, query.world);
-    } else {
-        let slot = &mut inventories_mut[slot_idx as usize];
-
-        if slot.stack.is_empty() {
-            return;
-        }
-
-        let mut dropped = slot.stack.clone();
-        let mut dropped_count = 0;
-
-        if packet.button == 0 {
-            dropped_count = 1;
-        } else if packet.button == 1 {
-            dropped_count = dropped.count;
-        }
-
-        dropped.count = dropped_count;
-        slot.stack.count -= dropped_count;
-
-        if slot.stack.count == 0 {
-            slot.stack = ItemStack::EMPTY;
-        }
-
-        slot.changed = true;
-        slots_changed.push(slot_idx as usize);
-
-        let event = event::DropItemStackEvent {
-            client: query.id,
-            from_slot: Some(slot_idx as i16),
-            item: dropped,
-        };
-
-        query.events.push(event, query.world);
+        return;
     }
+
+    if slot_idx < 0 {
+        return;
+    }
+
+    let slot = &mut inventories_mut[slot_idx as usize];
+
+    if slot.stack.is_empty() {
+        return;
+    }
+
+    let mut dropped = slot.stack.clone();
+    let mut dropped_count = 0;
+
+    if packet.button == 0 {
+        dropped_count = 1;
+    } else if packet.button == 1 {
+        dropped_count = dropped.count;
+    }
+
+    dropped.count = dropped_count;
+    slot.stack.count -= dropped_count;
+
+    if slot.stack.count == 0 {
+        slot.stack = ItemStack::EMPTY;
+    }
+
+    slot.changed = true;
+    slots_changed.push(slot_idx as usize);
+
+    let event = event::DropItemStackEvent {
+        client: query.id,
+        from_slot: Some(slot_idx as i16),
+        item: dropped,
+    };
+
+    query.events.push(event, query.world);
 }
 
 fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
