@@ -154,7 +154,6 @@ impl Module for InventoryModule {
                                     slot: 0,
                                     item: slot.stack.clone(),
                                 });
-                                slot.changed = false;
                             }
 
                             if idx == 45 {
@@ -162,7 +161,6 @@ impl Module for InventoryModule {
                                     slot: 1,
                                     item: slot.stack.clone(),
                                 });
-                                slot.changed = false;
                             }
 
                             if (5..=8).contains(&(idx as u16)) {
@@ -177,7 +175,6 @@ impl Module for InventoryModule {
                                     slot: index,
                                     item: slot.stack.clone(),
                                 });
-                                slot.changed = false;
                             }
                         }
                     }
@@ -190,6 +187,7 @@ impl Module for InventoryModule {
 
                         compose
                             .broadcast_local(packet, position.to_chunk(), system)
+                            .exclude(stream_id)
                             .send()
                             .unwrap();
                     }
@@ -272,20 +270,6 @@ pub fn handle_update_selected_slot(
         client: query.id,
         slot: packet.slot as u8,
     };
-
-    // update the player's selected slot
-    let hand = EquipmentEntry {
-        slot: 0,
-        item: query.inventory.get_cursor().stack.clone(),
-    };
-
-    // sync the player's selected slot with the client
-    let packet = &(play::EntityEquipmentUpdateS2c {
-        entity_id: VarInt(query.id.minecraft_id()),
-        equipment: vec![hand],
-    });
-
-    query.compose.broadcast_local(packet, query.position.to_chunk(), query.system).send().unwrap();
 
     query.events.push(event, query.world);
 }

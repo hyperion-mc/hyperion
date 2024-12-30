@@ -2889,6 +2889,7 @@ dependencies = [
  "hyperion-crafting",
  "roaring",
  "snafu",
+ "tracing",
  "valence_protocol",
 ]
 

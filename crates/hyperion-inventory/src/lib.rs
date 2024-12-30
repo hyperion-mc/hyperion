@@ -3,6 +3,7 @@ use std::{ cell::Cell, cmp::min, num::Wrapping };
 
 use derive_more::{ Deref, DerefMut };
 use flecs_ecs::{ core::{ Entity, EntityViewGet, World }, macros::Component };
+use tracing::debug;
 use valence_protocol::{
     packets::play::{ click_slot_c2s::ClickMode, open_screen_s2c::WindowType },
     ItemKind,
@@ -149,7 +150,7 @@ impl Default for Inventory {
             slots: vec![ItemSlot::default(); 46],
             title: "Inventory".to_string(),
             kind: WindowType::Generic9x3,
-            hand_slot: 0,
+            hand_slot: 36,
             changed: std::num::Wrapping(0),
             readonly: false,
         }
@@ -181,7 +182,7 @@ impl Inventory {
             slots: vec![ItemSlot::default(); size],
             title,
             kind,
-            hand_slot: 0,
+            hand_slot: 36,
             changed: std::num::Wrapping(0),
             readonly,
         }
@@ -277,6 +278,8 @@ impl Inventory {
             return;
         }
 
+        debug!("Setting cursor to slot {}", index);
+
         self.hand_slot = index;
         self.increment_slot(index as usize);
     }
@@ -287,8 +290,8 @@ impl Inventory {
     }
 
     #[must_use]
-    pub const fn get_cursor_index(&self) -> u16 {
-        self.hand_slot + HAND_START_SLOT
+    pub fn get_cursor_index(&self) -> u16 {
+        self.hand_slot
     }
 
     // pub fn get_cursor_mut(&mut self) -> &mut ItemStack {
