@@ -70,6 +70,10 @@ impl InventoryState {
         self.window_id = non_zero_window_id();
     }
 
+    pub fn reset_window_id(&mut self) {
+        self.window_id = 0;
+    }
+
     pub fn last_stack_clicked(&self) -> (&ItemStack, i64) {
         (&self.last_stack_clicked.0, self.last_stack_clicked.1)
     }
@@ -229,7 +233,6 @@ impl Inventory {
         let index = usize::from(index);
         self.slots[index].stack = stack;
         self.increment_slot(index);
-        // increment the changed countr
         Ok(())
     }
 
