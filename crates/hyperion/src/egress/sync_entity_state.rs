@@ -290,6 +290,7 @@ impl Module for EntityStateSyncModule {
                         };
 
                         bundle.add_packet(&packet).unwrap();
+                        velocity.0 = Vec3::ZERO;
                     }
 
                     bundle.broadcast_local(chunk_pos).unwrap();

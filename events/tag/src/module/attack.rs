@@ -168,9 +168,10 @@ impl Module for AttackModule {
                                 &PlayerInventory,
                                 &Team,
                                 &mut Pose,
-                                &mut Xp
+                                &mut Xp,
+                                &mut Velocity
                             )>(
-                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp)| {
+                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp, target_velocity)| {
                                     if let Some(immune_until) = immune_until {
                                         if immune_until.tick > current_tick {
                                             return;
@@ -508,19 +509,15 @@ impl Module for AttackModule {
                                     let knockback_xz = 8.0;
                                     let knockback_y = 6.432;
 
-                                    let new_vel = Velocity::new(
+                                    let new_vel = Vec3::new(
                                         dir.x * knockback_xz / 20.0,
                                         knockback_y / 20.0,
                                         dir.z * knockback_xz / 20.0
                                     );
 
-                                    // https://github.com/valence-rs/valence/blob/8f3f84d557dacddd7faddb2ad724185ecee2e482/examples/ctf.rs#L987-L989
-                                    let packet = play::EntityVelocityUpdateS2c {
-                                        entity_id: VarInt(target.minecraft_id()),
-                                        velocity: new_vel.to_packet_units(),
-                                    };
+                                    target_velocity.0 = target_velocity.0+new_vel;
 
-                                    compose.broadcast_local(&packet, target_position.to_chunk(), system).send().unwrap();
+                                    // https://github.com/valence-rs/valence/blob/8f3f84d557dacddd7faddb2ad724185ecee2e482/examples/ctf.rs#L987-L989
                                 },
                             );
                         });
