@@ -530,6 +530,10 @@ impl Module for AttackModule {
                                 pos_vec.push(*candidate_pos);
                             });
 
+                        if pos_vec.is_empty() {
+                            return;
+                        }
+
                         let random_index = fastrand::usize(..pos_vec.len());
 
                         if let Some(random_mate) = pos_vec.get(random_index) {
