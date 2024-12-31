@@ -359,9 +359,15 @@ impl Blocks {
     #[must_use]
     pub fn get_block(&self, position: IVec3) -> Option<BlockState> {
         const START_Y: i32 = -64;
+        const MAX_Y: i32 = 383;
 
+        // Todo should probably return none
         if position.y < START_Y {
             // This block is in the void.
+            return Some(BlockState::VOID_AIR);
+        }
+
+        if position.y > MAX_Y {
             return Some(BlockState::VOID_AIR);
         }
 
