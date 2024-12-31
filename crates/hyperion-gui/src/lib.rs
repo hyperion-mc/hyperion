@@ -2,13 +2,15 @@
 
 use std::{borrow::Cow, cell::Cell, collections::HashMap};
 
+use anyhow::Context;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
     net::{Compose, ConnectionId},
-    storage::GlobalEventHandlers,
+    simulation::packet::HandlerRegistry,
     valence_protocol::{
         ItemStack, VarInt,
         packets::play::{
+            ClickSlotC2s,
             click_slot_c2s::ClickMode,
             close_screen_s2c::CloseScreenS2c,
             inventory_s2c::InventoryS2c,
@@ -152,21 +154,21 @@ impl Gui {
 
         self.draw(system, player);
 
-        world.get::<&mut GlobalEventHandlers>(|event_handlers| {
+        world.get::<&mut HandlerRegistry>(|registry| {
             let window_id = self.window_id;
             let items = self.items.clone();
             let gui = self.clone();
-            event_handlers.click.register(move |query, event| {
+            registry.add_handler(Box::new(move |event: &ClickSlotC2s<'_>, query| {
                 let system = query.system;
                 let button = event.mode;
 
                 if event.window_id != window_id {
-                    return;
+                    return Ok(());
                 }
 
-                let slot = usize::from(event.slot_idx);
+                let slot = usize::try_from(event.slot_idx).context("invalid slot index")?;
                 let Some(item) = items.get(&slot) else {
-                    return;
+                    return Ok(());
                 };
 
                 (item.on_click)(player, button);
@@ -189,7 +191,9 @@ impl Gui {
                 compose
                     .unicast(&set_content_packet, stream, system)
                     .unwrap();
-            });
+
+                Ok(())
+            }));
         });
     }
 

@@ -272,8 +272,6 @@ impl HyperionCore {
 
         world.component::<Tasks>();
 
-        world.component::<HandlerRegistry>();
-
         system!("run_tasks", world, &mut Tasks($))
             .with::<flecs::pipeline::OnUpdate>()
             .each_iter(|it, _, tasks| {
@@ -324,6 +322,9 @@ impl HyperionCore {
 
         let tasks = Tasks { tasks: task_rx };
         world.set(tasks);
+
+        world.component::<HandlerRegistry>();
+        world.set(HandlerRegistry::default());
 
         world.component::<GlobalEventHandlers>();
         world.set(GlobalEventHandlers::default());

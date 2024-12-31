@@ -7,8 +7,8 @@ use flecs_ecs::{
 };
 use hyperion::{
     net::agnostic,
-    simulation::event,
-    storage::{EventQueue, GlobalEventHandlers},
+    simulation::{event, packet::HandlerRegistry},
+    storage::{CommandCompletionRequest, EventQueue},
 };
 
 use crate::component::CommandRegistry;
@@ -65,8 +65,8 @@ impl Module for CommandSystemModule {
             }
         });
 
-        world.get::<&mut GlobalEventHandlers>(|handlers| {
-            handlers.completion.register(|query, completion| {
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(|completion: &CommandCompletionRequest<'_>, query| {
                 let input = completion.query;
 
                 // should be in form "/{command}"
@@ -78,7 +78,7 @@ impl Module for CommandSystemModule {
                     .unwrap_or("");
 
                 if command.is_empty() {
-                    return;
+                    return Ok(());
                 }
 
                 query.world.get::<&CommandRegistry>(|registry| {
@@ -88,7 +88,9 @@ impl Module for CommandSystemModule {
                     let on_tab = &cmd.on_tab_complete;
                     on_tab(query, completion);
                 });
-            });
+
+                Ok(())
+            }));
         });
     }
 }

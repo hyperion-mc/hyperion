@@ -2762,6 +2762,7 @@ dependencies = [
  "hyperion-event-macros",
  "hyperion-inventory",
  "hyperion-nerd-font",
+ "hyperion-packet-macros",
  "hyperion-palette",
  "hyperion-proto",
  "hyperion-text",
@@ -2871,6 +2872,7 @@ dependencies = [
 name = "hyperion-gui"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "flecs_ecs",
  "hyperion",
  "serde",
@@ -2907,6 +2909,15 @@ version = "0.1.0"
 [[package]]
 name = "hyperion-nerd-font"
 version = "0.1.0"
+
+[[package]]
+name = "hyperion-packet-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.90",
+]
 
 [[package]]
 name = "hyperion-palette"

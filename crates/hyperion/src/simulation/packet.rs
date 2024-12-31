@@ -9,11 +9,13 @@ use flecs_ecs::macros::Component;
 use rustc_hash::FxBuildHasher;
 use valence_protocol::{Decode, Packet};
 
-use crate::{common::util::Lifetime, simulation::handlers::PacketSwitchQuery};
+use crate::{common::util::Lifetime, simulation::handlers::{add_builtin_handlers, PacketSwitchQuery}};
 
 type DeserializerFn = fn(&HandlerRegistry, &[u8], &mut PacketSwitchQuery<'_>) -> Result<()>;
-type AnyHandler = unsafe fn();
-type Handler<T> = fn(&<T as Lifetime>::WithLifetime<'_>, &mut PacketSwitchQuery<'_>) -> Result<()>;
+//type AnyFn = unsafe fn();
+//type Handler<T> = fn(&T, &mut PacketSwitchQuery<'_>) -> Result<()>;
+type AnyFn = Box<dyn Send + Sync>;
+type Handler<T> = Box<dyn Fn(&T, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync>;
 
 fn packet_deserializer<'p, P>(
     registry: &HandlerRegistry,
@@ -23,6 +25,12 @@ fn packet_deserializer<'p, P>(
 where
     P: Packet + Decode<'static> + Lifetime + 'static,
 {
+    // If no handler is registered for this packet, skip decoding it
+    // TODO: consider moving this check out of the packet deserializer for performance
+    if !registry.has_handler::<P>() {
+        return Ok(());
+    }
+
     // SAFETY: The transmute to 'static is sound because the result is immediately shortened to
     // the original 'p lifetime. This transmute is necessary due to a technical limitation in the
     // Decode trait; users can only use P with a concrete lifetime, meaning that Decode would
@@ -31,37 +39,29 @@ where
     let packet = P::decode(unsafe { transmute::<&mut &'p [u8], &mut &'static [u8]>(&mut bytes) })?
         .shorten_lifetime::<'p>();
 
-    registry.trigger(packet, query)?;
+    registry.trigger(&packet, query)?;
 
     Ok(())
 }
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct HandlerRegistry {
     // Store deserializer and multiple handlers separately
     deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,
-    handlers: HashMap<TypeId, Vec<AnyHandler>, FxBuildHasher>,
+    handlers: HashMap<TypeId, Vec<AnyFn>, FxBuildHasher>,
 }
 
 impl HandlerRegistry {
-    // Register a packet type's deserializer
-    pub fn register_packet<P>(&mut self)
-    where
-        P: Packet + Decode<'static> + Lifetime + 'static,
-    {
-        self.deserializers.insert(P::ID, packet_deserializer::<P>);
-    }
-
     // Add a handler
     pub fn add_handler<P>(&mut self, handler: Handler<P>)
     where
-        P: Lifetime + 'static,
+        P: Lifetime,
     {
         // Add the handler to the vector
         self.handlers
             .entry(TypeId::of::<P::WithLifetime<'static>>())
             .or_default()
-            .push(unsafe { transmute::<Handler<P>, AnyHandler>(handler) });
+            .push(unsafe { transmute::<Handler<P>, AnyFn>(handler) });
     }
 
     // Process a packet, calling all registered handlers
@@ -80,7 +80,17 @@ impl HandlerRegistry {
         deserializer(self, bytes, query)
     }
 
-    pub fn trigger<T>(&self, value: T, query: &mut PacketSwitchQuery<'_>) -> Result<()>
+    #[must_use]
+    pub fn has_handler<T>(&self) -> bool
+    where
+        T: Lifetime,
+    {
+        self
+            .handlers
+            .contains_key(&TypeId::of::<T::WithLifetime<'static>>())
+    }
+
+    pub fn trigger<T>(&self, value: &T, query: &mut PacketSwitchQuery<'_>) -> Result<()>
     where
         T: Lifetime,
     {
@@ -97,15 +107,26 @@ impl HandlerRegistry {
             // SAFETY: The underlying handler type is Handler<T> because the type of T matches the
             // type of the value passed to trigger, disregarding lifetimes. It is sound to pass a T
             // of any lifetime to the handler because the borrow checker doesn't allow the handler
-            // to make any assumptions about the length of the lifetime of the T passed to the
-            // handler function.
-            let handler = unsafe { &*std::ptr::from_ref(&handler).cast::<Handler<T>>() };
+            // to make any assumptions about the length of the lifetime of the T
+            let handler = unsafe { &*std::ptr::from_ref(handler).cast::<Handler<T>>() };
 
-            // The existing lifetime of T is okay, but shorten_lifetime is needed because the type
-            // checker expects a value with type T::WithLifetime.
-            handler((&value).shorten_lifetime(), query)?;
+            handler(value, query)?;
         }
 
         Ok(())
+    }
+}
+
+impl Default for HandlerRegistry {
+    fn default() -> Self {
+        let mut registry = Self { deserializers: HashMap::default(), handlers: HashMap::default() };
+        hyperion_packet_macros::for_each_static_play_c2s_packet! {
+            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET>);
+        }
+        hyperion_packet_macros::for_each_lifetime_play_c2s_packet! {
+            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET<'_>>);
+        }
+        add_builtin_handlers(&mut registry);
+        registry
     }
 }

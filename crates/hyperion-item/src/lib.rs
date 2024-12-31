@@ -4,7 +4,7 @@ use flecs_ecs::{
     macros::Component,
     prelude::Module,
 };
-use hyperion::storage::{EventFn, GlobalEventHandlers, InteractEvent};
+use hyperion::{simulation::packet::HandlerRegistry, storage::{EventFn, InteractEvent}};
 use valence_protocol::nbt;
 
 pub mod builder;
@@ -22,27 +22,27 @@ impl Module for ItemModule {
         world.import::<hyperion_inventory::InventoryModule>();
         world.component::<Handler>();
 
-        world.get::<&mut GlobalEventHandlers>(|handlers| {
-            handlers.interact.register(|query, event| {
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(|event: &InteractEvent, query| {
                 let world = query.world;
                 let inventory = &mut *query.inventory;
 
                 let stack = inventory.get_cursor();
 
                 if stack.is_empty() {
-                    return;
+                    return Ok(());
                 }
 
                 let Some(nbt) = stack.nbt.as_ref() else {
-                    return;
+                    return Ok(());
                 };
 
                 let Some(handler) = nbt.get("Handler") else {
-                    return;
+                    return Ok(());
                 };
 
                 let nbt::Value::Long(id) = handler else {
-                    return;
+                    return Ok(());
                 };
 
                 let id: u64 = bytemuck::cast(*id);
@@ -53,7 +53,9 @@ impl Module for ItemModule {
                     let on_interact = &handler.on_click;
                     on_interact(query, event);
                 });
-            });
+
+                Ok(())
+            }));
         });
     }
 }
