@@ -385,13 +385,13 @@ impl Module for EntityStateSyncModule {
                 });
 
                 if velocity.0 != Vec3::ZERO {
-
                     let packet = play::EntityVelocityUpdateS2c {
                         entity_id,
                         velocity: velocity.to_packet_units(),
                     };
 
                     bundle.add_packet(&packet).unwrap();
+                    velocity.0 = Vec3::ZERO;
                 }
 
                 bundle.broadcast_local(chunk_pos).unwrap();
