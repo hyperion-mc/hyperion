@@ -567,7 +567,7 @@ fn handle_left_click_slot(
         return;
     }
 
-    if packet.slot_idx < 0 {
+    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
@@ -662,7 +662,7 @@ fn handle_right_click_slot(
         return;
     }
 
-    if packet.slot_idx < 0 {
+    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
@@ -751,7 +751,7 @@ fn handle_left_drag_slot(
     }
 
     for slot_update in slots.iter() {
-        if slot_update.idx < 0 {
+        if slot_update.idx < 0 || slot_update.idx >= (inventories_mut.len() as i16) {
             continue;
         }
 
@@ -811,7 +811,7 @@ fn handle_right_drag_slot(
             break;
         }
 
-        if slot_update.idx < 0 {
+        if slot_update.idx < 0 || slot_update.idx >= (inventories_mut.len() as i16) {
             continue;
         }
         let slot_idx = slot_update.idx as usize;
@@ -856,7 +856,7 @@ fn handle_double_click(
     // count of cursor item till it reaches 64 or there are no more matching items
     // make sure the slot is empty as well
 
-    if packet.slot_idx < 0 {
+    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
@@ -934,7 +934,7 @@ fn handle_shift_click(
     // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
     // if the slot is empty, then move the last stack clicked to the slot
     // same behavior as case 1
-    if packet.slot_idx < 0 {
+    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
@@ -1027,7 +1027,7 @@ fn handle_hotbar_swap(
     // we just need to swap the two index provided by the packet in
     // slot_changes
 
-    if packet.slot_idx < 0 {
+    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
@@ -1037,10 +1037,20 @@ fn handle_hotbar_swap(
     // button 0 is the first slot in the hotbar of the player's inventory
     // button 8 is the last slot in the hotbar of the player's inventory
     let hotbar_idx = if player_only {
-        (packet.button as usize) + 36
+        if packet.button == 40 {
+            // This is the offhand slot
+            45
+        } else {
+            (packet.button as usize) + 36
+        }
     } else {
         (packet.button as usize) + open_inv_size + 27
     };
+
+    if hotbar_idx >= (inventories_mut.len() as usize) {
+        return;
+    }
+
     let hotbar_slot = inventories_mut[hotbar_idx].clone();
 
     if player_only {
@@ -1112,7 +1122,7 @@ fn handle_drop_key(
         return;
     }
 
-    if slot_idx < 0 {
+    if slot_idx < 0 || slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
 
