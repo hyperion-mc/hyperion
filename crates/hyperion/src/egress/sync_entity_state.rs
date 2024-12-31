@@ -13,7 +13,7 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Owner, Pitch, Position, Velocity, Xp, Yaw,
+        Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -195,6 +195,7 @@ impl Module for EntityStateSyncModule {
             &mut Velocity,
             &Yaw,
             &Pitch,
+            ?&mut PendingTeleportation,
         )
             .multi_threaded()
             .kind::<flecs::pipeline::PreStore>()
@@ -210,90 +211,100 @@ impl Module for EntityStateSyncModule {
                      velocity,
                      yaw,
                      pitch,
+                     pending_teleport,
                  )| {
                     let world = it.system().world();
                     let system = it.system();
                     let entity = it.entity(row);
                     let entity_id = VarInt(entity.minecraft_id());
 
-                    let chunk_pos = position.to_chunk();
-
-                    let position_delta = **position - **prev_position;
-                    let needs_teleport = position_delta.abs().max_element() >= 8.0;
-                    let changed_position = **position != **prev_position;
-
-                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
-
-                    let mut bundle = DataBundle::new(compose, system);
-
-                    world.get::<&mut Blocks>(|blocks| {
-                        let grounded = is_grounded(position, blocks);
-
-                        if changed_position && !needs_teleport && look_changed {
-                            let packet = play::RotateAndMoveRelativeS2c {
-                                entity_id,
-                                #[allow(clippy::cast_possible_truncation)]
-                                delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                                on_ground: grounded,
-                            };
-
-                            bundle.add_packet(&packet).unwrap();
-                        } else {
-                            if changed_position && !needs_teleport {
-                                let packet = play::MoveRelativeS2c {
+                    if let Some(pending_teleport) = pending_teleport {
+                        if pending_teleport.ttl == 0 {
+                            entity.set::<PendingTeleportation>(PendingTeleportation::new(
+                                pending_teleport.destination,
+                            ));
+                        }
+                        pending_teleport.ttl -= 1;
+                    } else {
+                        let chunk_pos = position.to_chunk();
+    
+                        let position_delta = **position - **prev_position;
+                        let needs_teleport = position_delta.abs().max_element() >= 8.0;
+                        let changed_position = **position != **prev_position;
+    
+                        let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
+    
+                        let mut bundle = DataBundle::new(compose, system);
+    
+                        world.get::<&mut Blocks>(|blocks| {
+                            let grounded = is_grounded(position, blocks);
+    
+                            if changed_position && !needs_teleport && look_changed {
+                                let packet = play::RotateAndMoveRelativeS2c {
                                     entity_id,
                                     #[allow(clippy::cast_possible_truncation)]
                                     delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                    on_ground: grounded,
-                                };
-
-                                bundle.add_packet(&packet).unwrap();
-                            }
-
-                            if look_changed {
-                                let packet = play::RotateS2c {
-                                    entity_id,
                                     yaw: ByteAngle::from_degrees(**yaw),
                                     pitch: ByteAngle::from_degrees(**pitch),
                                     on_ground: grounded,
                                 };
-
+    
+                                bundle.add_packet(&packet).unwrap();
+                            } else {
+                                if changed_position && !needs_teleport {
+                                    let packet = play::MoveRelativeS2c {
+                                        entity_id,
+                                        #[allow(clippy::cast_possible_truncation)]
+                                        delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                                        on_ground: grounded,
+                                    };
+    
+                                    bundle.add_packet(&packet).unwrap();
+                                }
+    
+                                if look_changed {
+                                    let packet = play::RotateS2c {
+                                        entity_id,
+                                        yaw: ByteAngle::from_degrees(**yaw),
+                                        pitch: ByteAngle::from_degrees(**pitch),
+                                        on_ground: grounded,
+                                    };
+    
+                                    bundle.add_packet(&packet).unwrap();
+                                }
+                                let packet = play::EntitySetHeadYawS2c {
+                                    entity_id,
+                                    head_yaw: ByteAngle::from_degrees(**yaw),
+                                };
+    
                                 bundle.add_packet(&packet).unwrap();
                             }
-                            let packet = play::EntitySetHeadYawS2c {
+    
+                            if needs_teleport {
+                                let packet = play::EntityPositionS2c {
+                                    entity_id,
+                                    position: position.as_dvec3(),
+                                    yaw: ByteAngle::from_degrees(**yaw),
+                                    pitch: ByteAngle::from_degrees(**pitch),
+                                    on_ground: grounded,
+                                };
+    
+                                bundle.add_packet(&packet).unwrap();
+                            }
+                        });
+    
+                        if velocity.0 != Vec3::ZERO {
+                            let packet = play::EntityVelocityUpdateS2c {
                                 entity_id,
-                                head_yaw: ByteAngle::from_degrees(**yaw),
+                                velocity: velocity.to_packet_units(),
                             };
-
+    
                             bundle.add_packet(&packet).unwrap();
+                            velocity.0 = Vec3::ZERO;
                         }
-
-                        if needs_teleport {
-                            let packet = play::EntityPositionS2c {
-                                entity_id,
-                                position: position.as_dvec3(),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                                on_ground: grounded,
-                            };
-
-                            bundle.add_packet(&packet).unwrap();
-                        }
-                    });
-
-                    if velocity.0 != Vec3::ZERO {
-                        let packet = play::EntityVelocityUpdateS2c {
-                            entity_id,
-                            velocity: velocity.to_packet_units(),
-                        };
-
-                        bundle.add_packet(&packet).unwrap();
-                        velocity.0 = Vec3::ZERO;
+    
+                        bundle.broadcast_local(chunk_pos).unwrap();
                     }
-
-                    bundle.broadcast_local(chunk_pos).unwrap();
                 },
             );
 
