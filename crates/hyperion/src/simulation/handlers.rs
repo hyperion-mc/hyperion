@@ -23,7 +23,7 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, Position,
+    ConfirmBlockSequences, EntitySize, PendingTeleportation, Position,
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
@@ -647,6 +647,28 @@ pub fn client_status(
     Ok(())
 }
 
+pub fn confirm_teleportation(
+    mut data: &'static [u8],
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<(Option<&PendingTeleportation>, &mut Position)>(|(pending_teleport, position)| {
+        if let Some(pending_teleport) = pending_teleport {
+            let pkt = play::TeleportConfirmC2s::decode(&mut data).unwrap();
+
+            if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
+                return;
+            }
+
+            position.position = pending_teleport.destination;
+            entity.remove::<PendingTeleportation>();
+        }
+    });
+
+    Ok(())
+}
+
 pub fn packet_switch(
     raw: BorrowedPacketFrame<'_>,
     query: &mut PacketSwitchQuery<'_>,
@@ -676,6 +698,7 @@ pub fn packet_switch(
         play::PositionAndOnGroundC2s::ID => position_and_on_ground(query, data)?,
         play::RequestCommandCompletionsC2s::ID => request_command_completions(data, query)?,
         play::UpdateSelectedSlotC2s::ID => update_selected_slot(data, query)?,
+        play::TeleportConfirmC2s::ID => confirm_teleportation(data, query)?,
         _ => trace!("unknown packet id: 0x{:02X}", packet_id),
     }
 

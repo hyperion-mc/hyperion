@@ -16,7 +16,7 @@ use hyperion::{
         packets::{BossBarAction, BossBarS2c},
     },
     simulation::{
-        PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
+        PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
         event::{self, ClientStatusCommand},
         metadata::{entity::Pose, living_entity::Health},
@@ -39,7 +39,6 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
 use hyperion_utils::EntityExt;
 use tracing::info_span;
-use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
 use super::spawn::{avoid_blocks, is_valid_spawn_block};
 
@@ -494,7 +493,7 @@ impl Module for AttackModule {
                                         dir.z * knockback_xz / 20.0
                                     );
 
-                                    target_velocity.0 = target_velocity.0+new_vel;
+                                    target_velocity.0 += new_vel;
 
                                     // https://github.com/valence-rs/valence/blob/8f3f84d557dacddd7faddb2ad724185ecee2e482/examples/ctf.rs#L987-L989
                                 },
@@ -512,47 +511,32 @@ impl Module for AttackModule {
 
                 let client = client_status.client.entity_view(query.world);
 
-                client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
-                    |(team, position, yaw, pitch, connection)| {
-                        let mut pos_vec = vec![];
+                client.get::<&Team>(|team| {
+                    let mut pos_vec = vec![];
 
-                        query
-                            .world
-                            .query::<(&Position, &Team)>()
-                            .build()
-                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
-                                if team != candidate_team || candidate == client {
-                                    return;
-                                }
-                                pos_vec.push(*candidate_pos);
-                            });
+                    query
+                        .world
+                        .query::<(&Position, &Team)>()
+                        .build()
+                        .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                            if team != candidate_team || candidate == client {
+                                return;
+                            }
+                            pos_vec.push(*candidate_pos);
+                        });
 
-                        if pos_vec.is_empty() {
-                            return;
-                        }
+                    if pos_vec.is_empty() {
+                        return;
+                    }
 
-                        let random_index = fastrand::usize(..pos_vec.len());
+                    let random_index = fastrand::usize(..pos_vec.len());
 
-                        if let Some(random_mate) = pos_vec.get(random_index) {
-                            let respawn_pos = get_respawn_pos(query.world, random_mate);
+                    if let Some(random_mate) = pos_vec.get(random_index) {
+                        let respawn_pos = get_respawn_pos(query.world, random_mate).as_vec3();
 
-                            *position = Position::from(respawn_pos.as_vec3());
-
-                            let pkt_teleport = play::PlayerPositionLookS2c {
-                                position: respawn_pos,
-                                yaw: **yaw,
-                                pitch: **pitch,
-                                flags: PlayerPositionLookFlags::default(),
-                                teleport_id: VarInt(fastrand::i32(..)),
-                            };
-
-                            query
-                                .compose
-                                .unicast(&pkt_teleport, *connection, query.system)
-                                .unwrap();
-                        }
-                    },
-                );
+                        client.set::<PendingTeleportation>(PendingTeleportation::new(respawn_pos));
+                    }
+                });
             });
         });
     }
