@@ -19,7 +19,6 @@ use valence_protocol::{
     packets::play::{
         self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
         player_interact_entity_c2s::EntityInteraction,
-        player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
 use valence_text::IntoText;
@@ -80,18 +79,11 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             warn!("Failed to send error message to player: {e}");
         }
 
-        // Correct client position
-        let pkt = play::PlayerPositionLookS2c {
-            position: pose.position.as_dvec3(),
-            yaw: query.yaw.yaw,
-            pitch: query.pitch.pitch,
-            flags: PlayerPositionLookFlags::default(),
-            teleport_id: VarInt(fastrand::i32(..)),
-        };
-
-        if let Err(e) = query.compose.unicast(&pkt, query.io_ref, query.system) {
-            warn!("Failed to correct client position: {e}");
-        }
+        query
+            .id
+            .entity_view(query.world)
+            .set(PendingTeleportation::new(pose.position));
+        println!("Attempting to correct player's position");
     }
 }
 
