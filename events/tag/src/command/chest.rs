@@ -3,7 +3,7 @@ use flecs_ecs::core::{ Builder, Entity, EntityView, QueryAPI, WorldProvider };
 use hyperion::{ simulation::{entity_kind::EntityKind, Spawn}, ItemKind, ItemStack };
 use hyperion_clap::{ CommandPermission, MinecraftCommand };
 use hyperion_gui::Gui;
-use hyperion_inventory::Inventory;
+use hyperion_inventory::{Inventory, ItemSlot};
 use tracing::debug;
 use valence_protocol::packets::play::open_screen_s2c::WindowType;
 
@@ -43,6 +43,7 @@ impl MinecraftCommand for ChestCommand {
             gui_inventory.set(16, ItemStack::new(ItemKind::Coal, 64, None)).unwrap();
             gui_inventory.set(17, ItemStack::new(ItemKind::Emerald, 64, None)).unwrap();
             gui_inventory.set(18, ItemStack::new(ItemKind::GoldIngot, 64, None)).unwrap();
+            gui_inventory.set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)));
 
             let gui = Gui::new(gui_inventory, &world, 28);
             /* gui.add_command(13, |player, click_mode| match click_mode {

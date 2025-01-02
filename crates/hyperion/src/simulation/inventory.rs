@@ -14,7 +14,6 @@ use hyperion_inventory::{
     PlayerInventory,
 };
 use hyperion_utils::EntityExt;
-use tracing::debug;
 use valence_protocol::{
     packets::play::{
         self,
@@ -146,7 +145,6 @@ impl Module for InventoryModule {
                     for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
                         if slot.changed {
                             if (idx as u16) == hand_slot {
-                                debug!("cursor changed");
                                 equipment_changes.push(EquipmentEntry {
                                     slot: 0,
                                     item: slot.stack.clone(),
@@ -256,7 +254,6 @@ pub fn handle_update_selected_slot(
         return;
     }
 
-    debug!("slot: {}", packet.slot);
     // set the cursor slot from 35-44
     // 35 is the first slot in the hotbar
     let slot = packet.slot + 36;
@@ -276,11 +273,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
     // First of we need to check if the player has the inventory open
     // Then we need to check if that inventory is readonly
     // If so then we need to resync the inventory with the client to make sure the client is in sync with the server
-
-    debug!("slot_idx: {}", packet.slot_idx);
-    debug!("button: {:?}", packet.button);
-    debug!("mode: {:?}", packet.mode);
-
     query.id
         .entity_view(query.world)
         .get::<
@@ -417,7 +409,6 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         }
                         2 => {
                             // nothing yet
-                            debug!("middle click");
                         }
                         _ => {}
                     }
@@ -492,9 +483,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         player_only
                     );
                 }
-                ClickMode::CreativeMiddleClick => {
-                    debug!("creative middle click");
-                }
+                ClickMode::CreativeMiddleClick => {}
                 ClickMode::DropKey => {
                     handle_drop_key(
                         packet,
@@ -713,8 +702,8 @@ fn handle_right_click_slot(
         } else if
             slot.stack.item == cursor_item.0.item &&
             slot.stack.nbt == cursor_item.0.nbt &&
-            slot.stack.count < slot.stack.item.max_stack()
-            && !slot.readonly
+            slot.stack.count < slot.stack.item.max_stack() &&
+            !slot.readonly
         {
             slot.stack.count = slot.stack.count.saturating_add(1);
             cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
@@ -857,7 +846,7 @@ fn handle_double_click(
     inv_state: &InventoryState,
     cursor_item: &mut CursorItem,
     slots_changed: &mut Vec<usize>,
-    player_only: bool
+    _player_only: bool
 ) {
     // if the slot is empty... check if the last stack clicked is the same as the cursor item
     // ignoring the count
@@ -943,9 +932,7 @@ fn handle_shift_click(
     // if its within 1 tick of the current tick, then move all items with the exact item and nbt as the
     // last stack clicked to the player's hotbar or inventory
     // case 2: clicking in player's inventory
-    // if the clicked slot is happening in the player's inventory then just move all items with the exact item and nbt to the open inventory
-    // if the slot is empty, then move the last stack clicked to the slot
-    // same behavior as case 1
+    // The client sends a packet for each index they want to shift click
     if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
         return;
     }
@@ -1104,7 +1091,7 @@ fn handle_drop_key(
     inventories_mut: &mut Vec<&mut ItemSlot>,
     cursor_item: &mut CursorItem,
     slots_changed: &mut Vec<usize>,
-    player_only: bool
+    _player_only: bool
 ) {
     // if the button is 0, then drop 1 item from the slot_idx
     // if button is 1, then drop the entire stack from the slot_idx

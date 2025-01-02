@@ -2,47 +2,49 @@
 
 use std::borrow::Cow;
 
-use anyhow::{Context, bail, ensure};
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use anyhow::bail;
+use flecs_ecs::core::{ Entity, EntityView, EntityViewGet, World };
 use geometry::aabb::Aabb;
-use glam::{IVec3, Vec3};
-use hyperion_inventory::PlayerInventory;
+use glam::{ IVec3, Vec3 };
 use hyperion_utils::EntityExt;
-use tracing::{debug, info, instrument, trace, warn};
-use valence_generated::{
-    block::{BlockKind, BlockState, PropName},
-    item::ItemKind,
-};
+use tracing::{ info, instrument, trace, warn };
+use valence_generated::{ block::{ BlockKind, BlockState, PropName }, item::ItemKind };
 use valence_protocol::{
-    Decode, Hand, ItemStack, Packet, VarInt,
+    Decode,
+    Hand,
+    Packet,
+    VarInt,
     packets::play::{
-        self, ClickSlotC2s, click_slot_c2s::ClickMode, client_command_c2s::ClientCommand,
-        player_action_c2s::PlayerAction, player_interact_entity_c2s::EntityInteraction,
+        self,
+        client_command_c2s::ClientCommand,
+        player_action_c2s::PlayerAction,
+        player_interact_entity_c2s::EntityInteraction,
         player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
 use valence_text::IntoText;
 
 use super::{
-    animation::{self, ActiveAnimation}, block_bounds, blocks::Blocks, bow::BowCharging, event::ClientStatusEvent, inventory::{close_handled_screen, handle_click_slot, handle_update_selected_slot}, ConfirmBlockSequences, EntitySize, Position
+    animation::{ self, ActiveAnimation },
+    block_bounds,
+    blocks::Blocks,
+    bow::BowCharging,
+    event::ClientStatusEvent,
+    inventory::{ close_handled_screen, handle_click_slot, handle_update_selected_slot },
+    ConfirmBlockSequences,
+    EntitySize,
+    Position,
 };
 use crate::{
-    net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::{Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose},
-    storage::{
-        ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
-    },
+    net::{ Compose, ConnectionId, decoder::BorrowedPacketFrame },
+    simulation::{ Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose },
+    storage::{ CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent },
 };
 
 fn full(query: &mut PacketSwitchQuery<'_>, mut data: &[u8]) -> anyhow::Result<()> {
     let pkt = play::FullC2s::decode(&mut data)?;
 
-    let play::FullC2s {
-        position,
-        yaw,
-        pitch,
-        ..
-    } = pkt;
+    let play::FullC2s { position, yaw, pitch, .. } = pkt;
 
     // check to see if the player is moving too fast
     // if they are, ignore the packet
@@ -109,13 +111,12 @@ fn try_change_position(
     proposed: Vec3,
     position: &mut Position,
     size: EntitySize,
-    blocks: &Blocks,
+    blocks: &Blocks
 ) -> anyhow::Result<()> {
     is_within_speed_limits(**position, proposed)?;
 
     // Only check collision if we're starting outside a block
-    if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks)
-    {
+    if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks) {
         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
     }
 
@@ -132,17 +133,16 @@ pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
     let block_z = position.z as i32;
 
     // Check if the block at the calculated position is not air
-    !blocks
-        .get_block(IVec3::new(block_x, block_y, block_z))
-        .unwrap()
-        .is_air()
+    !blocks.get_block(IVec3::new(block_x, block_y, block_z)).unwrap().is_air()
 }
 fn is_within_speed_limits(current: Vec3, proposed: Vec3) -> anyhow::Result<()> {
     let delta = proposed - current;
     if delta.length_squared() > MAX_BLOCKS_PER_TICK.powi(2) {
-        return Err(anyhow::anyhow!(
-            "Moving too fast! Maximum speed is {MAX_BLOCKS_PER_TICK} blocks per tick"
-        ));
+        return Err(
+            anyhow::anyhow!(
+                "Moving too fast! Maximum speed is {MAX_BLOCKS_PER_TICK} blocks per tick"
+            )
+        );
     }
     Ok(())
 }
@@ -184,7 +184,7 @@ fn look_and_on_ground(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> any
 
 fn position_and_on_ground(
     query: &mut PacketSwitchQuery<'_>,
-    mut data: &[u8],
+    mut data: &[u8]
 ) -> anyhow::Result<()> {
     let pkt = play::PositionAndOnGroundC2s::decode(&mut data)?;
 
@@ -205,7 +205,7 @@ fn chat_command(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyho
             raw: command,
             by: query.id,
         },
-        query.world,
+        query.world
     );
 
     Ok(())
@@ -244,7 +244,7 @@ fn player_interact_entity(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> any
             target,
             damage: 1.0,
         },
-        query.world,
+        query.world
     );
 
     Ok(())
@@ -315,7 +315,7 @@ fn client_command(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow:
         ClientCommand::StopSneaking | ClientCommand::LeaveBed => {
             *query.pose = Pose::Standing;
         }
-        ClientCommand::StartSprinting
+        | ClientCommand::StartSprinting
         | ClientCommand::StopSprinting
         | ClientCommand::StartJumpWithHorse
         | ClientCommand::StopJumpWithHorse
@@ -336,10 +336,11 @@ fn client_command(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow:
 /// - Activating items with duration effects (e.g. chorus fruit teleport)
 pub fn player_interact_item(
     mut data: &'static [u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
-    let play::PlayerInteractItemC2s { hand, sequence } =
-        play::PlayerInteractItemC2s::decode(&mut data)?;
+    let play::PlayerInteractItemC2s { hand, sequence } = play::PlayerInteractItemC2s::decode(
+        &mut data
+    )?;
 
     let event = InteractEvent {
         hand,
@@ -371,7 +372,7 @@ pub fn player_interact_item(
 
 pub fn player_interact_block(
     mut data: &[u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
     let packet = play::PlayerInteractBlockC2s::decode(&mut data)?;
 
@@ -389,7 +390,7 @@ pub fn player_interact_block(
     let interacted_block_pos_vec = IVec3::new(
         interacted_block_pos.x,
         interacted_block_pos.y,
-        interacted_block_pos.z,
+        interacted_block_pos.z
     );
 
     let Some(interacted_block) = query.blocks.get_block(interacted_block_pos_vec) else {
@@ -407,7 +408,7 @@ pub fn player_interact_block(
                 from: query.id,
                 sequence: packet.sequence.0,
             },
-            query.world,
+            query.world
         );
     } else {
         // Attempt to place a block
@@ -453,7 +454,7 @@ pub fn player_interact_block(
                 sequence: packet.sequence.0,
                 block: block_state,
             },
-            query.world,
+            query.world
         );
     }
 
@@ -462,7 +463,7 @@ pub fn player_interact_block(
 
 pub fn update_selected_slot(
     mut data: &[u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
     // "Set Selected Slot" packet (ID 0x0B)
     let packet = play::UpdateSelectedSlotC2s::decode(&mut data)?;
@@ -474,7 +475,7 @@ pub fn update_selected_slot(
 
 pub fn creative_inventory_action(
     mut data: &[u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
     // "Creative Inventory Action" packet (ID 0x0C)
     let packet = play::CreativeInventoryActionC2s::decode(&mut data)?;
@@ -495,15 +496,13 @@ pub fn creative_inventory_action(
 
 pub fn custom_payload(
     mut data: &'static [u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
     let packet: play::CustomPayloadC2s<'static> = play::CustomPayloadC2s::decode(&mut data)?;
 
     let channel = packet.channel.into_inner();
 
-    let Cow::Borrowed(borrow) = channel else {
-        bail!("NO")
-    };
+    let Cow::Borrowed(borrow) = channel else { bail!("NO") };
 
     let event = PluginMessage {
         channel: borrow,
@@ -529,21 +528,17 @@ fn chat_message(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyho
     let pkt = play::ChatMessageC2s::decode(&mut data)?;
     let msg = pkt.message.0;
 
-    query
-        .events
-        .push(event::ChatMessage { msg, by: query.id }, query.world);
+    query.events.push(event::ChatMessage { msg, by: query.id }, query.world);
 
     Ok(())
 }
 
 pub fn request_command_completions(
     mut data: &'static [u8],
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
-    let play::RequestCommandCompletionsC2s {
-        transaction_id,
-        text,
-    } = play::RequestCommandCompletionsC2s::decode(&mut data)?;
+    let play::RequestCommandCompletionsC2s { transaction_id, text } =
+        play::RequestCommandCompletionsC2s::decode(&mut data)?;
 
     let text = text.0;
     let transaction_id = transaction_id.0;
@@ -576,7 +571,7 @@ pub fn client_status(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> 
 
 pub fn packet_switch(
     raw: BorrowedPacketFrame<'_>,
-    query: &mut PacketSwitchQuery<'_>,
+    query: &mut PacketSwitchQuery<'_>
 ) -> anyhow::Result<()> {
     let packet_id = raw.id;
     let data = raw.body;

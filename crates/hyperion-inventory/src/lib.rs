@@ -2,9 +2,10 @@
 use std::{ cell::Cell, cmp::min, num::Wrapping };
 
 use derive_more::{ Deref, DerefMut };
-use flecs_ecs::{ core::{ Entity, EntityViewGet, World }, macros::Component };
+use flecs_ecs::{ core::Entity, macros::Component };
 use tracing::debug;
 use valence_protocol::{
+    nbt::Compound,
     packets::play::{ click_slot_c2s::ClickMode, open_screen_s2c::WindowType },
     ItemKind,
     ItemStack,
@@ -115,6 +116,16 @@ impl Default for ItemSlot {
         Self {
             readonly: false,
             stack: ItemStack::EMPTY,
+            changed: false,
+        }
+    }
+}
+
+impl ItemSlot {
+    pub fn new(item: ItemKind, count: i8, nbt: Option<Compound>, readonly: Option<bool>) -> Self {
+        Self {
+            readonly: readonly.unwrap_or(false),
+            stack: ItemStack::new(item, count, nbt),
             changed: false,
         }
     }
@@ -235,6 +246,11 @@ impl Inventory {
         self.slots[index].stack = stack;
         self.increment_slot(index);
         Ok(())
+    }
+
+    pub fn set_slot(&mut self, index: usize, slot: ItemSlot) {
+        self.slots[index] = slot;
+        self.increment_slot(index);
     }
 
     pub fn items(&self) -> impl Iterator<Item = (u16, &ItemStack)> + '_ {

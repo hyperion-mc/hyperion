@@ -1,4 +1,4 @@
-use std::{ borrow::Cow, collections::HashMap };
+use std::collections::HashMap;
 
 use flecs_ecs::{
     core::{ Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider },
@@ -7,18 +7,12 @@ use flecs_ecs::{
 use hyperion::{
     simulation::{ entity_kind::EntityKind, Spawn, Uuid },
     storage::GlobalEventHandlers,
-    valence_protocol::{
-        packets::play::{
-            click_slot_c2s::ClickMode,
-            close_screen_s2c::CloseScreenS2c,
-            inventory_s2c::InventoryS2c,
-        },
-        ItemStack,
-        VarInt,
+    valence_protocol::packets::play::{
+        click_slot_c2s::ClickMode,
+        close_screen_s2c::CloseScreenS2c,
     },
 };
-use hyperion_inventory::{ CursorItem, Inventory, InventoryState, OpenInventory };
-use tracing::debug;
+use hyperion_inventory::{ Inventory, InventoryState, OpenInventory };
 
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerType {
@@ -63,20 +57,18 @@ impl Gui {
                 let system = query.system;
                 let world = system.world();
                 let button = event.mode;
-                query.id
-                    .entity_view(world)
-                    .get::<&InventoryState>(|inv_state| {
-                        if event.window_id != inv_state.window_id() {
-                            return;
-                        }
+                query.id.entity_view(world).get::<&InventoryState>(|inv_state| {
+                    if event.window_id != inv_state.window_id() {
+                        return;
+                    }
 
-                        let slot = usize::from(event.slot_idx);
-                        let Some(item) = items.get(&slot) else {
-                            return;
-                        };
+                    let slot = usize::from(event.slot_idx);
+                    let Some(item) = items.get(&slot) else {
+                        return;
+                    };
 
-                        item(query.id, button);
-                    });
+                    item(query.id, button);
+                });
             });
         });
     }
