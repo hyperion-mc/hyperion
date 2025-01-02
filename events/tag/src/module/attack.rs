@@ -10,31 +10,25 @@ use flecs_ecs::{
     prelude::Module,
 };
 use glam::IVec3;
-use hyperion::{
-    net::{
-        Compose, ConnectionId, agnostic,
-        packets::{BossBarAction, BossBarS2c},
+use hyperion::{net::{
+    Compose, ConnectionId, agnostic,
+    packets::{BossBarAction, BossBarS2c},
+}, simulation::{
+    PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
+    blocks::Blocks,
+    event::{self, ClientStatusCommand},
+    metadata::{entity::Pose, living_entity::Health},
+}, storage::{EventQueue, GlobalEventHandlers}, uuid::Uuid, valence_protocol::{
+    ItemKind, ItemStack, Particle, VarInt, ident,
+    math::{DVec3, Vec3},
+    nbt,
+    packets::play::{
+        self,
+        boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
+        entity_attributes_s2c::AttributeProperty,
     },
-    simulation::{
-        PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
-        blocks::Blocks,
-        event::{self, ClientStatusCommand},
-        metadata::{entity::Pose, living_entity::Health},
-    },
-    storage::{EventQueue, GlobalEventHandlers},
-    uuid::Uuid,
-    valence_protocol::{
-        ItemKind, ItemStack, Particle, VarInt, ident,
-        math::{DVec3, Vec3},
-        nbt,
-        packets::play::{
-            self,
-            boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
-            entity_attributes_s2c::AttributeProperty,
-        },
-        text::IntoText,
-    },
-};
+    text::IntoText,
+}, BlockKind};
 use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
 use hyperion_utils::EntityExt;
@@ -552,8 +546,15 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
                     match blocks.get_block(pos) {
                         Some(state) => {
                             if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
-                                position = pos.as_dvec3();
-                                return;
+                                let block_above1 = blocks.get_block(pos.with_y(pos.y+1));
+                                let block_above2 = blocks.get_block(pos.with_y(pos.y+2));
+
+                                if let Some(block_above1) = block_above1 && let Some(block_above2) = block_above2 {
+                                    if block_above1.to_kind() == BlockKind::Air && block_above2.to_kind() == BlockKind::Air  {
+                                        position = pos.with_y(pos.y+1).as_dvec3();
+                                        return;
+                                    }
+                                }
                             }
                         }
                         None => continue,
