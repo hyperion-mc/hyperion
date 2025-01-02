@@ -583,16 +583,20 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
                     let pos = IVec3::new(i32::from(x), i32::from(y), i32::from(z));
                     match blocks.get_block(pos) {
                         Some(state) => {
-                            if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
-                                let block_above1 = blocks.get_block(pos.with_y(pos.y+1));
-                                let block_above2 = blocks.get_block(pos.with_y(pos.y+2));
+                            if !is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
+                                continue;
+                            }
 
-                                if let Some(block_above1) = block_above1 && let Some(block_above2) = block_above2 {
-                                    if block_above1.to_kind() == BlockKind::Air && block_above2.to_kind() == BlockKind::Air  {
-                                        position = pos.with_y(pos.y+1).as_dvec3();
-                                        return;
-                                    }
-                                }
+                            let block_above1 = blocks.get_block(pos.with_y(pos.y + 1));
+                            let block_above2 = blocks.get_block(pos.with_y(pos.y + 2));
+
+                            if let Some(block_above1) = block_above1
+                                && let Some(block_above2) = block_above2
+                                && block_above1.to_kind() == BlockKind::Air
+                                && block_above2.to_kind() == BlockKind::Air
+                            {
+                                position = pos.with_y(pos.y + 1).as_dvec3();
+                                return;
                             }
                         }
                         None => continue,
