@@ -36,7 +36,7 @@ pub struct Inventory {
 pub struct InventoryState {
     window_id: u8,
     state_id: Wrapping<i32>,
-    // u64 is the last tick
+    // i64 is the last tick
     last_stack_clicked: (ItemStack, i64),
     last_button: (i8, i64),
     last_mode: (ClickMode, i64),

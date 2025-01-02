@@ -585,6 +585,9 @@ fn handle_left_click_slot(
     }
 
     let slot = inventories_mut[slot_idx as usize].clone();
+    if slot.readonly {
+        return;
+    }
     let cursor = cursor_item.0.clone();
     let slot_index = slot_idx as usize;
 
@@ -685,7 +688,7 @@ fn handle_right_click_slot(
     let mut changed = false;
 
     if cursor_item.0.is_empty() {
-        if !slot.stack.is_empty() {
+        if !slot.stack.is_empty() && !slot.readonly {
             let total = slot.stack.count;
             let take = (total + 1) / 2; // Round up
             let leave = total - take;
@@ -700,7 +703,7 @@ fn handle_right_click_slot(
             changed = true;
         }
     } else {
-        if slot.stack.is_empty() {
+        if slot.stack.is_empty() && !slot.readonly {
             slot.stack = ItemStack::new(cursor_item.0.item, 1, cursor_item.0.nbt.clone());
             cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
             if cursor_item.0.count == 0 {
@@ -711,6 +714,7 @@ fn handle_right_click_slot(
             slot.stack.item == cursor_item.0.item &&
             slot.stack.nbt == cursor_item.0.nbt &&
             slot.stack.count < slot.stack.item.max_stack()
+            && !slot.readonly
         {
             slot.stack.count = slot.stack.count.saturating_add(1);
             cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
@@ -755,6 +759,10 @@ fn handle_left_drag_slot(
         let slot_idx = slot_update.idx as usize;
         let mut stack = inventories_mut[slot_idx].stack.clone();
 
+        if inventories_mut[slot_idx].readonly {
+            continue;
+        }
+
         // If the slot is empty, set both item and nbt, then count
         if stack.is_empty() {
             let available_space = cursor.item.max_stack();
@@ -779,7 +787,7 @@ fn handle_left_drag_slot(
         }
 
         // Update the slot and mark it changed if any addition happened
-        if stack != inventories_mut[slot_idx].stack {
+        if stack != inventories_mut[slot_idx].stack && !inventories_mut[slot_idx].readonly {
             inventories_mut[slot_idx].stack = stack;
             inventories_mut[slot_idx].changed = true;
             slots_changed.push(slot_idx);
@@ -813,6 +821,11 @@ fn handle_right_drag_slot(
         }
         let slot_idx = slot_update.idx as usize;
         let mut stack = inventories_mut[slot_idx].stack.clone();
+
+        if inventories_mut[slot_idx].readonly {
+            continue;
+        }
+
         if stack.is_empty() {
             stack.item = cursor.item;
             stack.nbt = cursor.nbt.clone();
@@ -830,7 +843,7 @@ fn handle_right_drag_slot(
         }
 
         // Update the slot and mark it changed if any addition happened
-        if stack != inventories_mut[slot_idx].stack {
+        if stack != inventories_mut[slot_idx].stack && !inventories_mut[slot_idx].readonly {
             inventories_mut[slot_idx].stack = stack;
             inventories_mut[slot_idx].changed = true;
             slots_changed.push(slot_idx);
@@ -861,14 +874,13 @@ fn handle_double_click(
     let slot = inventories_mut[slot_idx as usize].clone();
     let cursor = cursor_item.0.clone();
 
-    debug!("slot: {:?}", slot);
-    debug!("cursor: {:?}", cursor);
+    if slot.readonly {
+        return;
+    }
 
     if slot.stack.is_empty() {
         let last_stack = inv_state.last_stack_clicked();
-        debug!("last stack: {:?}", last_stack);
         if last_stack.0.item == cursor.item && last_stack.0.nbt == cursor.nbt {
-            debug!("double click");
             let max_stack = cursor_item.0.item.max_stack();
             let mut needed = max_stack - cursor_item.0.count;
 
@@ -895,6 +907,9 @@ fn handle_double_click(
 
                 // Update slot
                 let slot = &mut inventories_mut[idx];
+                if slot.readonly {
+                    continue;
+                }
                 slot.stack.count -= take;
                 if slot.stack.count == 0 {
                     slot.stack = ItemStack::EMPTY;
@@ -939,7 +954,7 @@ fn handle_shift_click(
     let source_slot = inventories_mut[slot_idx].clone();
 
     // Skip if source slot is empty
-    if source_slot.stack.is_empty() {
+    if source_slot.stack.is_empty() || source_slot.readonly {
         return;
     }
     // if we shift click an armor piece, we should try to move it to the appropriate armor slot.
@@ -955,6 +970,10 @@ fn handle_shift_click(
         };
 
         if let Some(target_idx) = target_slot {
+            if inventories_mut[target_idx].readonly {
+                return;
+            }
+
             inventories_mut[target_idx].stack = source_slot.stack.clone();
             inventories_mut[target_idx].changed = true;
             slots_changed.push(target_idx);
@@ -1050,6 +1069,10 @@ fn handle_hotbar_swap(
 
     let hotbar_slot = inventories_mut[hotbar_idx].clone();
 
+    if hotbar_slot.readonly || slot.readonly {
+        return;
+    }
+
     if player_only {
         if (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
             let is_valid = match slot_idx {
@@ -1125,7 +1148,7 @@ fn handle_drop_key(
 
     let slot = &mut inventories_mut[slot_idx as usize];
 
-    if slot.stack.is_empty() {
+    if slot.stack.is_empty() || slot.readonly {
         return;
     }
 
@@ -1162,7 +1185,8 @@ fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
     if
         !target.stack.is_empty() &&
         target.stack.item == source.item &&
-        target.stack.nbt == source.nbt
+        target.stack.nbt == source.nbt &&
+        !target.readonly
     {
         let available_space = target.stack.item.max_stack() - target.stack.count;
         let to_move = source.count.min(available_space);
