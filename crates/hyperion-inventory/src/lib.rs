@@ -594,7 +594,71 @@ pub fn non_zero_window_id() -> u8 {
     ID.get()
 }
 
-pub fn is_helmet(kind: ItemKind) -> bool {
+pub trait ItemKindExt {
+    fn is_helmet(&self) -> bool;
+    fn is_chestplate(&self) -> bool;
+    fn is_leggings(&self) -> bool;
+    fn is_boots(&self) -> bool;
+    fn is_armor(&self) -> bool;
+}
+
+impl ItemKindExt for ItemKind {
+    fn is_helmet(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::LeatherHelmet |
+                ItemKind::ChainmailHelmet |
+                ItemKind::IronHelmet |
+                ItemKind::GoldenHelmet |
+                ItemKind::DiamondHelmet |
+                ItemKind::NetheriteHelmet |
+                ItemKind::TurtleHelmet |
+                ItemKind::PlayerHead
+        )
+    }
+
+    fn is_chestplate(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::LeatherChestplate |
+                ItemKind::ChainmailChestplate |
+                ItemKind::IronChestplate |
+                ItemKind::GoldenChestplate |
+                ItemKind::DiamondChestplate |
+                ItemKind::NetheriteChestplate
+        )
+    }
+
+    fn is_leggings(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::LeatherLeggings |
+                ItemKind::ChainmailLeggings |
+                ItemKind::IronLeggings |
+                ItemKind::GoldenLeggings |
+                ItemKind::DiamondLeggings |
+                ItemKind::NetheriteLeggings
+        )
+    }
+
+    fn is_boots(&self) -> bool {
+        matches!(
+            self,
+            ItemKind::LeatherBoots |
+                ItemKind::ChainmailBoots |
+                ItemKind::IronBoots |
+                ItemKind::GoldenBoots |
+                ItemKind::DiamondBoots |
+                ItemKind::NetheriteBoots
+        )
+    }
+
+    fn is_armor(&self) -> bool {
+        self.is_helmet() || self.is_chestplate() || self.is_leggings() || self.is_boots()
+    }
+}
+
+/* pub fn is_helmet(kind: ItemKind) -> bool {
     matches!(
         kind,
         ItemKind::LeatherHelmet |
@@ -642,4 +706,4 @@ pub fn is_boots(kind: ItemKind) -> bool {
             ItemKind::DiamondBoots |
             ItemKind::NetheriteBoots
     )
-}
+} */

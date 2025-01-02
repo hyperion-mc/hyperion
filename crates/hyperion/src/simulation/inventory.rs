@@ -5,10 +5,7 @@ use flecs_ecs::{
     prelude::Module,
 };
 use hyperion_inventory::{
-    is_boots,
-    is_chestplate,
-    is_helmet,
-    is_leggings,
+    ItemKindExt,
     CursorItem,
     Inventory,
     InventoryState,
@@ -574,10 +571,10 @@ fn handle_left_click_slot(
     if player_only {
         if (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
             let is_valid = match slot_idx {
-                5 => is_helmet(cursor_item.0.item),
-                6 => is_chestplate(cursor_item.0.item),
-                7 => is_leggings(cursor_item.0.item),
-                8 => is_boots(cursor_item.0.item),
+                5 => cursor_item.0.item.is_helmet(),
+                6 => cursor_item.0.item.is_chestplate(),
+                7 => cursor_item.0.item.is_leggings(),
+                8 => cursor_item.0.item.is_boots(),
                 _ => false,
             };
 
@@ -670,10 +667,10 @@ fn handle_right_click_slot(
         let slot_idx = packet.slot_idx as i16;
         if (5..=8).contains(&slot_idx) && !cursor_item.0.is_empty() {
             let is_valid = match slot_idx {
-                5 => is_helmet(cursor_item.0.item),
-                6 => is_chestplate(cursor_item.0.item),
-                7 => is_leggings(cursor_item.0.item),
-                8 => is_boots(cursor_item.0.item),
+                5 => cursor_item.0.item.is_helmet(),
+                6 => cursor_item.0.item.is_chestplate(),
+                7 => cursor_item.0.item.is_leggings(),
+                8 => cursor_item.0.item.is_boots(),
                 _ => false,
             };
 
@@ -950,10 +947,10 @@ fn handle_shift_click(
     if player_only {
         let item = source_slot.stack.item;
         let target_slot = match item {
-            _ if is_helmet(item) && inventories_mut[5].stack.is_empty() => Some(5),
-            _ if is_chestplate(item) && inventories_mut[6].stack.is_empty() => Some(6),
-            _ if is_leggings(item) && inventories_mut[7].stack.is_empty() => Some(7),
-            _ if is_boots(item) && inventories_mut[8].stack.is_empty() => Some(8),
+            _ if item.is_helmet() && inventories_mut[5].stack.is_empty() => Some(5),
+            _ if item.is_chestplate() && inventories_mut[6].stack.is_empty() => Some(6),
+            _ if item.is_leggings() && inventories_mut[7].stack.is_empty() => Some(7),
+            _ if item.is_boots() && inventories_mut[8].stack.is_empty() => Some(8),
             _ => None,
         };
 
@@ -1056,10 +1053,10 @@ fn handle_hotbar_swap(
     if player_only {
         if (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
             let is_valid = match slot_idx {
-                5 => is_helmet(hotbar_slot.stack.item),
-                6 => is_chestplate(hotbar_slot.stack.item),
-                7 => is_leggings(hotbar_slot.stack.item),
-                8 => is_boots(hotbar_slot.stack.item),
+                5 => hotbar_slot.stack.item.is_helmet(),
+                6 => hotbar_slot.stack.item.is_chestplate(),
+                7 => hotbar_slot.stack.item.is_leggings(),
+                8 => hotbar_slot.stack.item.is_boots(),
                 _ => false,
             };
 
