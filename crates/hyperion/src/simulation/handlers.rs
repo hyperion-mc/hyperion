@@ -83,7 +83,6 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             .id
             .entity_view(query.world)
             .set(PendingTeleportation::new(pose.position));
-        println!("Attempting to correct player's position");
     }
 }
 

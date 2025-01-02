@@ -6,7 +6,7 @@ use hyperion::{
         prelude::Module,
     },
     net::{ConnectionId, DataBundle},
-    protocol::{game_mode::OptGameMode, packets::play, ByteAngle, VarInt},
+    protocol::{game_mode::OptGameMode, packets::play, BlockPos, ByteAngle, GlobalPos, VarInt},
     server::{ident, GameMode},
     simulation::{
         event::{ClientStatusCommand, ClientStatusEvent},
@@ -65,7 +65,10 @@ impl Module for RespawnModule {
                                 is_debug: false,
                                 is_flat: false,
                                 copy_metadata: false,
-                                last_death_location: None,
+                                last_death_location: Option::from(GlobalPos {
+                                    dimension_name: ident!("minecraft:overworld").into(),
+                                    position: BlockPos::from(position.as_dvec3()),
+                                }),
                                 portal_cooldown: VarInt::default(),
                             };
 
