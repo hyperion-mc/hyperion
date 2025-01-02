@@ -92,6 +92,7 @@ impl Module for RespawnModule {
                             query
                                 .compose
                                 .broadcast(&pkt_add_player, query.system)
+                                .exclude(*connection)
                                 .send()
                                 .unwrap();
                         },
