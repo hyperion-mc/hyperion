@@ -14,7 +14,10 @@ use uuid;
 use valence_generated::block::BlockState;
 use valence_protocol::{
     ByteAngle, VarInt,
-    packets::play::{self, player_position_look_s2c::PlayerPositionLookFlags},
+    packets::play::{
+        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
+        player_position_look_s2c::PlayerPositionLookFlags,
+    },
 };
 
 use crate::{
@@ -589,6 +592,18 @@ impl PendingTeleportation {
     }
 }
 
+#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
+pub struct FlyingSpeed {
+    pub speed: f32,
+}
+
+impl FlyingSpeed {
+    #[must_use]
+    pub const fn new(speed: f32) -> Self {
+        Self { speed }
+    }
+}
+
 #[derive(Component)]
 pub struct SimModule;
 
@@ -623,6 +638,7 @@ impl Module for SimModule {
         world.component::<Spawn>();
         world.component::<Owner>();
         world.component::<PendingTeleportation>();
+        world.component::<FlyingSpeed>();
 
         world.component::<EntityKind>().meta();
 
@@ -774,6 +790,25 @@ impl Module for SimModule {
                 compose.unicast(&pkt, *connection, system).unwrap();
             },
         );
+
+        observer!(
+            world,
+            flecs::OnSet, &FlyingSpeed,
+            &Compose($), &ConnectionId
+        )
+        .each_iter(|it, _, (flying_speed, compose, connection)| {
+            let system = it.system();
+
+            let pkt = PlayerAbilitiesS2c {
+                flags: PlayerAbilitiesFlags::default()
+                    .with_flying(true)
+                    .with_allow_flying(true),
+                flying_speed: flying_speed.speed,
+                fov_modifier: 0.0,
+            };
+
+            compose.unicast(&pkt, *connection, system).unwrap();
+        });
     }
 }
 
