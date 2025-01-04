@@ -55,7 +55,8 @@ impl Default for InventoryState {
 }
 
 impl InventoryState {
-    pub fn state_id(&self) -> i32 {
+    #[must_use]
+    pub const fn state_id(&self) -> i32 {
         self.state_id.0
     }
 
@@ -63,7 +64,8 @@ impl InventoryState {
         self.state_id += 1;
     }
 
-    pub fn window_id(&self) -> u8 {
+    #[must_use]
+    pub const fn window_id(&self) -> u8 {
         self.window_id
     }
 
@@ -75,7 +77,8 @@ impl InventoryState {
         self.window_id = 0;
     }
 
-    pub fn last_stack_clicked(&self) -> (&ItemStack, i64) {
+    #[must_use]
+    pub const fn last_stack_clicked(&self) -> (&ItemStack, i64) {
         (&self.last_stack_clicked.0, self.last_stack_clicked.1)
     }
 
@@ -84,7 +87,8 @@ impl InventoryState {
         self.last_stack_clicked.1 = tick;
     }
 
-    pub fn last_button(&self) -> (i8, i64) {
+    #[must_use]
+    pub const fn last_button(&self) -> (i8, i64) {
         self.last_button
     }
 
@@ -93,7 +97,8 @@ impl InventoryState {
         self.last_button.1 = tick;
     }
 
-    pub fn last_mode(&self) -> (ClickMode, i64) {
+    #[must_use]
+    pub const fn last_mode(&self) -> (ClickMode, i64) {
         self.last_mode
     }
 
@@ -121,6 +126,7 @@ impl Default for ItemSlot {
 }
 
 impl ItemSlot {
+    #[must_use]
     pub fn new(item: ItemKind, count: i8, nbt: Option<Compound>, readonly: Option<bool>) -> Self {
         Self {
             readonly: readonly.unwrap_or(false),
@@ -137,7 +143,8 @@ pub struct OpenInventory {
 }
 
 impl OpenInventory {
-    pub fn new(entity: Entity) -> Self {
+    #[must_use]
+    pub const fn new(entity: Entity) -> Self {
         Self {
             entity,
             client_changed: 0,
@@ -185,6 +192,7 @@ enum TryAddSlot {
 const HAND_START_SLOT: u16 = 36;
 
 impl Inventory {
+    #[must_use]
     pub fn new(size: usize, title: String, kind: WindowType, readonly: bool) -> Self {
         Self {
             size,
@@ -199,15 +207,17 @@ impl Inventory {
 
     pub fn increment_slot(&mut self, index: usize) {
         // set the slot as changed and increment the changed counter
-        self.slots[index as usize].changed = true;
+        self.slots[index].changed = true;
         self.changed += 1 << index;
     }
 
-    pub fn changed(&self) -> u64 {
+    #[must_use]
+    pub const fn changed(&self) -> u64 {
         self.changed.0
     }
 
-    pub fn has_changed(&self) -> bool {
+    #[must_use]
+    pub const fn has_changed(&self) -> bool {
         self.changed.0 != 0
     }
 
@@ -215,11 +225,13 @@ impl Inventory {
         self.changed.0 = changed;
     }
 
-    pub fn kind(&self) -> WindowType {
+    #[must_use]
+    pub const fn kind(&self) -> WindowType {
         self.kind
     }
 
-    pub fn readonly(&self) -> bool {
+    #[must_use]
+    pub const fn readonly(&self) -> bool {
         self.readonly
     }
 
@@ -227,6 +239,7 @@ impl Inventory {
         self.readonly = readonly;
     }
 
+    #[must_use]
     pub fn title(&self) -> &str {
         &self.title
     }
@@ -235,7 +248,8 @@ impl Inventory {
         self.title = title;
     }
 
-    pub fn size(&self) -> usize {
+    #[must_use]
+    pub const fn size(&self) -> usize {
         self.size
     }
 
@@ -301,7 +315,7 @@ impl Inventory {
     }
 
     #[must_use]
-    pub fn get_cursor_index(&self) -> u16 {
+    pub const fn get_cursor_index(&self) -> u16 {
         self.hand_slot
     }
 
@@ -468,6 +482,7 @@ impl PlayerInventory {
         result
     }
 
+    #[must_use]
     pub fn slots_inventory(&self) -> &[ItemSlot] {
         &self.slots[9..44]
     }
@@ -622,50 +637,50 @@ impl ItemKindExt for ItemKind {
     fn is_helmet(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherHelmet
-                | ItemKind::ChainmailHelmet
-                | ItemKind::IronHelmet
-                | ItemKind::GoldenHelmet
-                | ItemKind::DiamondHelmet
-                | ItemKind::NetheriteHelmet
-                | ItemKind::TurtleHelmet
-                | ItemKind::PlayerHead
+            Self::LeatherHelmet
+                | Self::ChainmailHelmet
+                | Self::IronHelmet
+                | Self::GoldenHelmet
+                | Self::DiamondHelmet
+                | Self::NetheriteHelmet
+                | Self::TurtleHelmet
+                | Self::PlayerHead
         )
     }
 
     fn is_chestplate(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherChestplate
-                | ItemKind::ChainmailChestplate
-                | ItemKind::IronChestplate
-                | ItemKind::GoldenChestplate
-                | ItemKind::DiamondChestplate
-                | ItemKind::NetheriteChestplate
+            Self::LeatherChestplate
+                | Self::ChainmailChestplate
+                | Self::IronChestplate
+                | Self::GoldenChestplate
+                | Self::DiamondChestplate
+                | Self::NetheriteChestplate
         )
     }
 
     fn is_leggings(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherLeggings
-                | ItemKind::ChainmailLeggings
-                | ItemKind::IronLeggings
-                | ItemKind::GoldenLeggings
-                | ItemKind::DiamondLeggings
-                | ItemKind::NetheriteLeggings
+            Self::LeatherLeggings
+                | Self::ChainmailLeggings
+                | Self::IronLeggings
+                | Self::GoldenLeggings
+                | Self::DiamondLeggings
+                | Self::NetheriteLeggings
         )
     }
 
     fn is_boots(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherBoots
-                | ItemKind::ChainmailBoots
-                | ItemKind::IronBoots
-                | ItemKind::GoldenBoots
-                | ItemKind::DiamondBoots
-                | ItemKind::NetheriteBoots
+            Self::LeatherBoots
+                | Self::ChainmailBoots
+                | Self::IronBoots
+                | Self::GoldenBoots
+                | Self::DiamondBoots
+                | Self::NetheriteBoots
         )
     }
 

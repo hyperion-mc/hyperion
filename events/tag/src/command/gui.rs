@@ -45,7 +45,6 @@ impl MinecraftCommand for GuiCommand {
             if gui.id == 27 {
                 gui.open(system, caller);
                 found = true;
-                return;
             }
         });
         if !found {

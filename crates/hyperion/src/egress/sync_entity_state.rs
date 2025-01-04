@@ -367,7 +367,7 @@ impl Module for EntityStateSyncModule {
                             world.get::<&mut Events>(|events|
                                 events.push(
                                     event::ProjectileBlockEvent {
-                                        collision: collision,
+                                        collision,
                                         projectile: *_entity,
                                     },
                                     &world

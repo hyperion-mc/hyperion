@@ -5,7 +5,6 @@ use flecs_ecs::{
 use hyperion::{
     ItemKind, ItemStack,
     glam::Vec3,
-    net::Compose,
     simulation::{
         Pitch, Position, Spawn, Uuid, Velocity, Yaw, bow::BowCharging, entity_kind::EntityKind,
         event, get_direction_from_rotation, metadata::living_entity::ArrowsInEntity,
@@ -24,7 +23,7 @@ pub struct Owner {
 }
 
 impl Owner {
-    pub fn new(entity: Entity) -> Self {
+    pub const fn new(entity: Entity) -> Self {
         Self { entity }
     }
 }
@@ -148,7 +147,7 @@ impl Module for BowModule {
                                 damage: 1.0,
                             },
                             &world,
-                        )
+                        );
                     });
 
                     // Updating arrows in entity

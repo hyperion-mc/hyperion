@@ -25,7 +25,6 @@ impl MinecraftCommand for ChestCommand {
             if gui.id == 28 {
                 gui.open(system, caller);
                 found = true;
-                return;
             }
         });
 

@@ -63,7 +63,7 @@ impl Module for InventoryModule {
                     .entity_view(world)
                     .try_get::<&mut Inventory>(|inventory| {
                         let packet = &(play::OpenScreenS2c {
-                            window_id: VarInt(inv_state.window_id() as i32),
+                            window_id: VarInt(i32::from(inv_state.window_id())),
                             window_type: inventory.kind(),
                             window_title: inventory.title().to_string().into_cow_text(),
                         });
@@ -193,7 +193,7 @@ impl Module for InventoryModule {
                             (unsafe { transmute::<&mut Inventory, &mut Inventory>(open_inv) })
                                 .slots_mut()
                                 .iter_mut()
-                                .for_each(|slot| inventories_mut.push(slot))
+                                .for_each(|slot| inventories_mut.push(slot));
                         });
                     }
 
@@ -297,7 +297,7 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         (unsafe { transmute::<&mut Inventory, &mut Inventory>(open_inv) })
                             .slots_mut()
                             .iter_mut()
-                            .for_each(|slot| inventories_mut.push(slot))
+                            .for_each(|slot| inventories_mut.push(slot));
                     });
             }
 
@@ -553,19 +553,17 @@ fn handle_left_click_slot(
         return;
     }
 
-    if player_only {
-        if (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
-            let is_valid = match slot_idx {
-                5 => cursor_item.0.item.is_helmet(),
-                6 => cursor_item.0.item.is_chestplate(),
-                7 => cursor_item.0.item.is_leggings(),
-                8 => cursor_item.0.item.is_boots(),
-                _ => false,
-            };
+    if player_only && (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
+        let is_valid = match slot_idx {
+            5 => cursor_item.0.item.is_helmet(),
+            6 => cursor_item.0.item.is_chestplate(),
+            7 => cursor_item.0.item.is_leggings(),
+            8 => cursor_item.0.item.is_boots(),
+            _ => false,
+        };
 
-            if !is_valid {
-                return;
-            }
+        if !is_valid {
+            return;
         }
     }
 
@@ -590,10 +588,9 @@ fn handle_left_click_slot(
             let diff = count - max;
             inventories_mut[slot_index].stack =
                 ItemStack::new(cursor.item, max, cursor.nbt.clone());
-            cursor_item.0 = ItemStack::new(cursor.item, diff, cursor.nbt.clone());
+            cursor_item.0 = ItemStack::new(cursor.item, diff, cursor.nbt);
         } else {
-            inventories_mut[slot_index].stack =
-                ItemStack::new(cursor.item, count, cursor.nbt.clone());
+            inventories_mut[slot_index].stack = ItemStack::new(cursor.item, count, cursor.nbt);
             cursor_item.0 = ItemStack::EMPTY;
         }
 
@@ -604,7 +601,7 @@ fn handle_left_click_slot(
             query.compose.global().tick,
         );
     } else {
-        let old_slot_stack = slot.stack.clone();
+        let old_slot_stack = slot.stack;
         inventories_mut[slot_index].stack = cursor;
         inventories_mut[slot_index].changed = true;
         cursor_item.0 = old_slot_stack.clone();
@@ -646,7 +643,7 @@ fn handle_right_click_slot(
     }
 
     if player_only {
-        let slot_idx = packet.slot_idx as i16;
+        let slot_idx = packet.slot_idx;
         if (5..=8).contains(&slot_idx) && !cursor_item.0.is_empty() {
             let is_valid = match slot_idx {
                 5 => cursor_item.0.item.is_helmet(),
@@ -681,26 +678,24 @@ fn handle_right_click_slot(
             }
             changed = true;
         }
-    } else {
-        if slot.stack.is_empty() && !slot.readonly {
-            slot.stack = ItemStack::new(cursor_item.0.item, 1, cursor_item.0.nbt.clone());
-            cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
-            if cursor_item.0.count == 0 {
-                cursor_item.0 = ItemStack::EMPTY;
-            }
-            changed = true;
-        } else if slot.stack.item == cursor_item.0.item
-            && slot.stack.nbt == cursor_item.0.nbt
-            && slot.stack.count < slot.stack.item.max_stack()
-            && !slot.readonly
-        {
-            slot.stack.count = slot.stack.count.saturating_add(1);
-            cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
-            if cursor_item.0.count == 0 {
-                cursor_item.0 = ItemStack::EMPTY;
-            }
-            changed = true;
+    } else if slot.stack.is_empty() && !slot.readonly {
+        slot.stack = ItemStack::new(cursor_item.0.item, 1, cursor_item.0.nbt.clone());
+        cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
+        if cursor_item.0.count == 0 {
+            cursor_item.0 = ItemStack::EMPTY;
         }
+        changed = true;
+    } else if slot.stack.item == cursor_item.0.item
+        && slot.stack.nbt == cursor_item.0.nbt
+        && slot.stack.count < slot.stack.item.max_stack()
+        && !slot.readonly
+    {
+        slot.stack.count = slot.stack.count.saturating_add(1);
+        cursor_item.0.count = cursor_item.0.count.saturating_sub(1);
+        if cursor_item.0.count == 0 {
+            cursor_item.0 = ItemStack::EMPTY;
+        }
+        changed = true;
     }
 
     if changed {
@@ -723,7 +718,7 @@ fn handle_left_drag_slot(
     let mut remainder = total % slots_len;
 
     if player_only {
-        let mut slots = slots.iter().map(|slot| slot.idx as i16);
+        let mut slots = slots.iter().map(|slot| slot.idx);
         if slots.any(|slot| (5..=8).contains(&slot)) {
             return;
         }
@@ -781,7 +776,7 @@ fn handle_right_drag_slot(
     player_only: bool,
 ) {
     if player_only {
-        let mut slots = slots.iter().map(|slot| slot.idx as i16);
+        let mut slots = slots.iter().map(|slot| slot.idx);
         if slots.any(|slot| (5..=8).contains(&slot)) {
             return;
         }
@@ -946,7 +941,7 @@ fn handle_shift_click(
                 return;
             }
 
-            inventories_mut[target_idx].stack = source_slot.stack.clone();
+            inventories_mut[target_idx].stack = source_slot.stack;
             inventories_mut[target_idx].changed = true;
             slots_changed.push(target_idx);
             inventories_mut[slot_idx].stack = ItemStack::EMPTY;
@@ -961,13 +956,13 @@ fn handle_shift_click(
     inventories_mut[slot_idx].changed = true;
     slots_changed.push(slot_idx);
 
-    let mut to_move = source_slot.stack.clone();
+    let mut to_move = source_slot.stack;
 
     // Case 1: Clicking in open inventory
     if slot_idx < open_inv_size {
         // Try hotbar first (36-44)
         for target_idx in (open_inv_size + 27..=open_inv_size + 35).rev() {
-            if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+            if try_move_to_slot(&mut to_move, inventories_mut[target_idx]) {
                 slots_changed.push(target_idx);
                 if to_move.is_empty() {
                     break;
@@ -978,7 +973,7 @@ fn handle_shift_click(
         // Then try main inventory (9-35)
         if !to_move.is_empty() {
             for target_idx in open_inv_size..open_inv_size + 27 {
-                if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+                if try_move_to_slot(&mut to_move, inventories_mut[target_idx]) {
                     slots_changed.push(target_idx);
                     if to_move.is_empty() {
                         break;
@@ -989,7 +984,7 @@ fn handle_shift_click(
     } else {
         // Case 2: Clicking in player inventory
         for target_idx in 0..open_inv_size {
-            if try_move_to_slot(&mut to_move, &mut inventories_mut[target_idx]) {
+            if try_move_to_slot(&mut to_move, inventories_mut[target_idx]) {
                 slots_changed.push(target_idx);
                 if to_move.is_empty() {
                     break;
@@ -1035,7 +1030,7 @@ fn handle_hotbar_swap(
         (packet.button as usize) + open_inv_size + 27
     };
 
-    if hotbar_idx >= (inventories_mut.len() as usize) {
+    if hotbar_idx >= inventories_mut.len() {
         return;
     }
 
@@ -1045,24 +1040,22 @@ fn handle_hotbar_swap(
         return;
     }
 
-    if player_only {
-        if (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
-            let is_valid = match slot_idx {
-                5 => hotbar_slot.stack.item.is_helmet(),
-                6 => hotbar_slot.stack.item.is_chestplate(),
-                7 => hotbar_slot.stack.item.is_leggings(),
-                8 => hotbar_slot.stack.item.is_boots(),
-                _ => false,
-            };
+    if player_only && (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
+        let is_valid = match slot_idx {
+            5 => hotbar_slot.stack.item.is_helmet(),
+            6 => hotbar_slot.stack.item.is_chestplate(),
+            7 => hotbar_slot.stack.item.is_leggings(),
+            8 => hotbar_slot.stack.item.is_boots(),
+            _ => false,
+        };
 
-            if !is_valid {
-                return;
-            }
+        if !is_valid {
+            return;
         }
     }
 
-    inventories_mut[slot_idx].stack = hotbar_slot.stack.clone();
-    inventories_mut[hotbar_idx].stack = slot.stack.clone();
+    inventories_mut[slot_idx].stack = hotbar_slot.stack;
+    inventories_mut[hotbar_idx].stack = slot.stack;
     inventories_mut[slot_idx].changed = true;
     inventories_mut[hotbar_idx].changed = true;
 
@@ -1145,7 +1138,7 @@ fn handle_drop_key(
 
     let event = event::DropItemStackEvent {
         client: query.id,
-        from_slot: Some(slot_idx as i16),
+        from_slot: Some(slot_idx),
         item: dropped,
     };
 
@@ -1195,12 +1188,7 @@ fn resync_inventory(
     let packet = &(play::InventoryS2c {
         window_id: inv_state.window_id(),
         state_id: VarInt(inv_state.state_id()),
-        slots: Cow::Owned(
-            inventory
-                .into_iter()
-                .map(|slot| slot.stack.clone())
-                .collect(),
-        ),
+        slots: Cow::Owned(inventory.iter().map(|slot| slot.stack.clone()).collect()),
         carried_item: Cow::Borrowed(&cursor_item.0),
     });
 
