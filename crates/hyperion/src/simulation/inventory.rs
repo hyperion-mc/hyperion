@@ -582,36 +582,34 @@ fn handle_left_click_slot(
         return;
     }
 
-    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
+    let slot_idx = slot_idx as usize;
+    let Some(slot) = inventories_mut.get_mut(slot_idx) else {
         return;
-    }
+    };
 
-    if player_only && (5..=8).contains(&packet.slot_idx) && !cursor_item.0.is_empty() {
+    if player_only && !cursor_item.0.is_empty() {
         let is_valid = match slot_idx {
             5 => cursor_item.0.item.is_helmet(),
             6 => cursor_item.0.item.is_chestplate(),
             7 => cursor_item.0.item.is_leggings(),
             8 => cursor_item.0.item.is_boots(),
-            _ => false,
+            _ => true,
         };
 
         if !is_valid {
             return;
         }
     }
-
-    let slot = inventories_mut[slot_idx as usize].clone();
     if slot.readonly {
         return;
     }
     let cursor = cursor_item.0.clone();
-    let slot_index = slot_idx as usize;
 
     if slot.stack.is_empty() {
-        inventories_mut[slot_index].stack = cursor;
-        inventories_mut[slot_index].changed = true;
+        slot.stack = cursor;
+        slot.changed = true;
         cursor_item.0 = ItemStack::EMPTY;
-        slots_changed.push(slot_index);
+        slots_changed.push(slot_idx);
         inv_state.set_last_stack_clicked(ItemStack::EMPTY, query.compose.global().tick);
     } else if slot.stack.item == cursor.item {
         let count = slot.stack.count.saturating_add(cursor.count);
@@ -619,26 +617,22 @@ fn handle_left_click_slot(
 
         if count > max {
             let diff = count - max;
-            inventories_mut[slot_index].stack =
-                ItemStack::new(cursor.item, max, cursor.nbt.clone());
+            slot.stack = ItemStack::new(cursor.item, max, cursor.nbt.clone());
             cursor_item.0 = ItemStack::new(cursor.item, diff, cursor.nbt);
         } else {
-            inventories_mut[slot_index].stack = ItemStack::new(cursor.item, count, cursor.nbt);
+            slot.stack = ItemStack::new(cursor.item, count, cursor.nbt);
             cursor_item.0 = ItemStack::EMPTY;
         }
 
-        inventories_mut[slot_index].changed = true;
-        slots_changed.push(slot_index);
-        inv_state.set_last_stack_clicked(
-            inventories_mut[slot_index].stack.clone(),
-            query.compose.global().tick,
-        );
+        slot.changed = true;
+        slots_changed.push(slot_idx);
+        inv_state.set_last_stack_clicked(slot.stack.clone(), query.compose.global().tick);
     } else {
-        let old_slot_stack = slot.stack;
-        inventories_mut[slot_index].stack = cursor;
-        inventories_mut[slot_index].changed = true;
+        let old_slot_stack = slot.stack.clone();
+        slot.stack = cursor;
+        slot.changed = true;
         cursor_item.0 = old_slot_stack.clone();
-        slots_changed.push(slot_index);
+        slots_changed.push(slot_idx);
         inv_state.set_last_stack_clicked(old_slot_stack, query.compose.global().tick);
     }
 }
@@ -671,19 +665,20 @@ fn handle_right_click_slot(
         return;
     }
 
-    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
+    let slot_idx = packet.slot_idx as usize;
+    let Some(slot) = inventories_mut.get_mut(slot_idx) else {
         return;
-    }
+    };
 
     if player_only {
         let slot_idx = packet.slot_idx;
-        if (5..=8).contains(&slot_idx) && !cursor_item.0.is_empty() {
+        if !cursor_item.0.is_empty() {
             let is_valid = match slot_idx {
                 5 => cursor_item.0.item.is_helmet(),
                 6 => cursor_item.0.item.is_chestplate(),
                 7 => cursor_item.0.item.is_leggings(),
                 8 => cursor_item.0.item.is_boots(),
-                _ => false,
+                _ => true,
             };
 
             if !is_valid {
@@ -692,8 +687,6 @@ fn handle_right_click_slot(
         }
     }
 
-    let slot_idx = packet.slot_idx as usize;
-    let slot = &mut inventories_mut[slot_idx];
     let mut changed = false;
 
     if cursor_item.0.is_empty() {
@@ -758,14 +751,13 @@ fn handle_left_drag_slot(
     }
 
     for slot_update in slots.iter() {
-        if slot_update.idx < 0 || slot_update.idx >= (inventories_mut.len() as i16) {
-            continue;
-        }
-
         let slot_idx = slot_update.idx as usize;
-        let mut stack = inventories_mut[slot_idx].stack.clone();
+        let Some(slot) = inventories_mut.get_mut(slot_idx) else {
+            continue;
+        };
+        let mut stack = slot.stack.clone();
 
-        if inventories_mut[slot_idx].readonly {
+        if slot.readonly {
             continue;
         }
 
@@ -791,9 +783,9 @@ fn handle_left_drag_slot(
         }
 
         // Update the slot and mark it changed if any addition happened
-        if stack != inventories_mut[slot_idx].stack && !inventories_mut[slot_idx].readonly {
-            inventories_mut[slot_idx].stack = stack;
-            inventories_mut[slot_idx].changed = true;
+        if stack != slot.stack && !slot.readonly {
+            slot.stack = stack;
+            slot.changed = true;
             slots_changed.push(slot_idx);
         }
     }
@@ -820,13 +812,13 @@ fn handle_right_drag_slot(
             break;
         }
 
-        if slot_update.idx < 0 || slot_update.idx >= (inventories_mut.len() as i16) {
-            continue;
-        }
         let slot_idx = slot_update.idx as usize;
-        let mut stack = inventories_mut[slot_idx].stack.clone();
+        let Some(slot) = inventories_mut.get_mut(slot_idx) else {
+            continue;
+        };
+        let mut stack = slot.stack.clone();
 
-        if inventories_mut[slot_idx].readonly {
+        if slot.readonly {
             continue;
         }
 
@@ -845,9 +837,9 @@ fn handle_right_drag_slot(
         }
 
         // Update the slot and mark it changed if any addition happened
-        if stack != inventories_mut[slot_idx].stack && !inventories_mut[slot_idx].readonly {
-            inventories_mut[slot_idx].stack = stack;
-            inventories_mut[slot_idx].changed = true;
+        if stack != slot.stack && !slot.readonly {
+            slot.stack = stack;
+            slot.changed = true;
             slots_changed.push(slot_idx);
         }
     }
@@ -868,12 +860,10 @@ fn handle_double_click(
     // count of cursor item till it reaches 64 or there are no more matching items
     // make sure the slot is empty as well
 
-    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
+    let slot_idx = packet.slot_idx as usize;
+    let Some(slot) = inventories_mut.get(slot_idx) else {
         return;
-    }
-
-    let slot_idx = packet.slot_idx as u16;
-    let slot = inventories_mut[slot_idx as usize].clone();
+    };
     let cursor = cursor_item.0.clone();
 
     if slot.readonly {
@@ -946,17 +936,16 @@ fn handle_shift_click(
     // last stack clicked to the player's hotbar or inventory
     // case 2: clicking in player's inventory
     // The client sends a packet for each index they want to shift click
-    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
-        return;
-    }
-
     let slot_idx = packet.slot_idx as usize;
-    let source_slot = inventories_mut[slot_idx].clone();
+    let Some(source_slot) = inventories_mut.get(slot_idx) else {
+        return;
+    };
 
     // Skip if source slot is empty
     if source_slot.stack.is_empty() || source_slot.readonly {
         return;
     }
+
     // if we shift click an armor piece, we should try to move it to the appropriate armor slot.
     // if not just move it to the top of the inventory
     if player_only {
@@ -970,26 +959,29 @@ fn handle_shift_click(
         };
 
         if let Some(target_idx) = target_slot {
-            if inventories_mut[target_idx].readonly {
+            let Ok([source_slot, target_slot]) =
+                inventories_mut.get_many_mut([slot_idx, target_idx])
+            else {
+                return;
+            };
+            if target_slot.readonly {
                 return;
             }
 
-            inventories_mut[target_idx].stack = source_slot.stack;
-            inventories_mut[target_idx].changed = true;
+            target_slot.stack = std::mem::replace(&mut source_slot.stack, ItemStack::EMPTY);
+            target_slot.changed = true;
             slots_changed.push(target_idx);
-            inventories_mut[slot_idx].stack = ItemStack::EMPTY;
-            inventories_mut[slot_idx].changed = true;
+            source_slot.changed = true;
             slots_changed.push(slot_idx);
             return;
         }
     }
 
     // Clear source slot immediately
-    inventories_mut[slot_idx].stack = ItemStack::EMPTY;
-    inventories_mut[slot_idx].changed = true;
+    let source_slot = &mut inventories_mut[slot_idx];
+    let mut to_move = std::mem::replace(&mut source_slot.stack, ItemStack::EMPTY);
+    source_slot.changed = true;
     slots_changed.push(slot_idx);
-
-    let mut to_move = source_slot.stack;
 
     // Case 1: Clicking in open inventory
     if slot_idx < open_inv_size {
@@ -1043,13 +1035,6 @@ fn handle_hotbar_swap(
     // we just need to swap the two index provided by the packet in
     // slot_changes
 
-    if packet.slot_idx < 0 || packet.slot_idx >= (inventories_mut.len() as i16) {
-        return;
-    }
-
-    let slot_idx = packet.slot_idx as usize;
-    let slot = inventories_mut[slot_idx].clone();
-
     // button 0 is the first slot in the hotbar of the player's inventory
     // button 8 is the last slot in the hotbar of the player's inventory
     let hotbar_idx = if player_only {
@@ -1063,23 +1048,22 @@ fn handle_hotbar_swap(
         (packet.button as usize) + open_inv_size + 27
     };
 
-    if hotbar_idx >= inventories_mut.len() {
+    let slot_idx = packet.slot_idx as usize;
+    let Ok([slot, hotbar_slot]) = inventories_mut.get_many_mut([slot_idx, hotbar_idx]) else {
         return;
-    }
-
-    let hotbar_slot = inventories_mut[hotbar_idx].clone();
+    };
 
     if hotbar_slot.readonly || slot.readonly {
         return;
     }
 
-    if player_only && (5..=8).contains(&slot_idx) && !hotbar_slot.stack.is_empty() {
+    if player_only && !hotbar_slot.stack.is_empty() {
         let is_valid = match slot_idx {
             5 => hotbar_slot.stack.item.is_helmet(),
             6 => hotbar_slot.stack.item.is_chestplate(),
             7 => hotbar_slot.stack.item.is_leggings(),
             8 => hotbar_slot.stack.item.is_boots(),
-            _ => false,
+            _ => true,
         };
 
         if !is_valid {
@@ -1087,10 +1071,9 @@ fn handle_hotbar_swap(
         }
     }
 
-    inventories_mut[slot_idx].stack = hotbar_slot.stack;
-    inventories_mut[hotbar_idx].stack = slot.stack;
-    inventories_mut[slot_idx].changed = true;
-    inventories_mut[hotbar_idx].changed = true;
+    std::mem::swap(&mut slot.stack, &mut hotbar_slot.stack);
+    slot.changed = true;
+    hotbar_slot.changed = true;
 
     slots_changed.push(slot_idx);
     slots_changed.push(hotbar_idx);
@@ -1140,11 +1123,9 @@ fn handle_drop_key(
         return;
     }
 
-    if slot_idx < 0 || slot_idx >= (inventories_mut.len() as i16) {
+    let Some(slot) = inventories_mut.get_mut(slot_idx as usize) else {
         return;
-    }
-
-    let slot = &mut inventories_mut[slot_idx as usize];
+    };
 
     if slot.stack.is_empty() || slot.readonly {
         return;

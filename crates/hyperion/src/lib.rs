@@ -1,5 +1,6 @@
 //! Hyperion
 
+#![feature(get_many_mut)]
 #![feature(type_alias_impl_trait)]
 #![feature(io_error_more)]
 #![feature(trusted_len)]
