@@ -7,6 +7,9 @@ use flecs_ecs::{
     prelude::Module,
 };
 use geometry::{aabb::Aabb, ray::Ray};
+use ordered_float::NotNan;
+use rayon::iter::Either;
+
 use super::{
     egress::player_join::RayonWorldStages,
     glam::Vec3,
@@ -15,8 +18,6 @@ use super::{
         blocks::{Blocks, RayCollision},
     },
 };
-use ordered_float::NotNan;
-use rayon::iter::Either;
 
 #[derive(Component)]
 pub struct SpatialModule;

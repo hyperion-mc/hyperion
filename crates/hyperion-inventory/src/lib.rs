@@ -1,14 +1,13 @@
 #![feature(thread_local)]
-use std::{ cell::Cell, cmp::min, num::Wrapping };
+use std::{cell::Cell, cmp::min, num::Wrapping};
 
-use derive_more::{ Deref, DerefMut };
-use flecs_ecs::{ core::Entity, macros::Component };
+use derive_more::{Deref, DerefMut};
+use flecs_ecs::{core::Entity, macros::Component};
 use tracing::debug;
 use valence_protocol::{
+    ItemKind, ItemStack,
     nbt::Compound,
-    packets::play::{ click_slot_c2s::ClickMode, open_screen_s2c::WindowType },
-    ItemKind,
-    ItemStack,
+    packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
 };
 
 pub mod action;
@@ -168,14 +167,13 @@ impl Default for Inventory {
     }
 }
 
-use hyperion_crafting::{ Crafting2x2, CraftingRegistry };
+use hyperion_crafting::{Crafting2x2, CraftingRegistry};
 use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum InventoryAccessError {
-    #[snafu(display("Invalid slot index: {index}"))] InvalidSlot {
-        index: u16,
-    },
+    #[snafu(display("Invalid slot index: {index}"))]
+    InvalidSlot { index: u16 },
 }
 
 enum TryAddSlot {
@@ -254,16 +252,13 @@ impl Inventory {
     }
 
     pub fn items(&self) -> impl Iterator<Item = (u16, &ItemStack)> + '_ {
-        self.slots
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, item)| {
-                if item.stack.is_empty() {
-                    None
-                } else {
-                    Some((u16::try_from(idx).unwrap(), &item.stack))
-                }
-            })
+        self.slots.iter().enumerate().filter_map(|(idx, item)| {
+            if item.stack.is_empty() {
+                None
+            } else {
+                Some((u16::try_from(idx).unwrap(), &item.stack))
+            }
+        })
     }
 
     #[must_use]
@@ -328,7 +323,9 @@ impl Inventory {
     // }
 
     pub fn get(&self, index: u16) -> Result<&ItemSlot, InventoryAccessError> {
-        self.slots.get(usize::from(index)).ok_or(InventoryAccessError::InvalidSlot { index })
+        self.slots
+            .get(usize::from(index))
+            .ok_or(InventoryAccessError::InvalidSlot { index })
     }
 
     // pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
@@ -385,7 +382,7 @@ impl Inventory {
         &mut self,
         slot: u16,
         to_add: &mut ItemStack,
-        can_add_to_empty: bool
+        can_add_to_empty: bool,
     ) -> Result<TryAddSlot, InventoryAccessError> {
         let max_stack_size: i8 = to_add.item.max_stack();
 
@@ -439,11 +436,11 @@ impl Inventory {
 }
 
 impl PlayerInventory {
-    pub const HELMET_SLOT: u16 = 5;
-    pub const CHESTPLATE_SLOT: u16 = 6;
-    pub const LEGGINGS_SLOT: u16 = 7;
     pub const BOOTS_SLOT: u16 = 8;
+    pub const CHESTPLATE_SLOT: u16 = 6;
+    pub const HELMET_SLOT: u16 = 5;
     pub const HOTBAR_START_SLOT: u16 = 36;
+    pub const LEGGINGS_SLOT: u16 = 7;
     pub const OFFHAND_SLOT: u16 = OFFHAND_SLOT;
 
     #[must_use]
@@ -463,7 +460,10 @@ impl PlayerInventory {
             stack.item
         });
 
-        let result = registry.get_result_2x2(items).cloned().unwrap_or(ItemStack::EMPTY);
+        let result = registry
+            .get_result_2x2(items)
+            .cloned()
+            .unwrap_or(ItemStack::EMPTY);
 
         result
     }
@@ -622,50 +622,50 @@ impl ItemKindExt for ItemKind {
     fn is_helmet(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherHelmet |
-                ItemKind::ChainmailHelmet |
-                ItemKind::IronHelmet |
-                ItemKind::GoldenHelmet |
-                ItemKind::DiamondHelmet |
-                ItemKind::NetheriteHelmet |
-                ItemKind::TurtleHelmet |
-                ItemKind::PlayerHead
+            ItemKind::LeatherHelmet
+                | ItemKind::ChainmailHelmet
+                | ItemKind::IronHelmet
+                | ItemKind::GoldenHelmet
+                | ItemKind::DiamondHelmet
+                | ItemKind::NetheriteHelmet
+                | ItemKind::TurtleHelmet
+                | ItemKind::PlayerHead
         )
     }
 
     fn is_chestplate(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherChestplate |
-                ItemKind::ChainmailChestplate |
-                ItemKind::IronChestplate |
-                ItemKind::GoldenChestplate |
-                ItemKind::DiamondChestplate |
-                ItemKind::NetheriteChestplate
+            ItemKind::LeatherChestplate
+                | ItemKind::ChainmailChestplate
+                | ItemKind::IronChestplate
+                | ItemKind::GoldenChestplate
+                | ItemKind::DiamondChestplate
+                | ItemKind::NetheriteChestplate
         )
     }
 
     fn is_leggings(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherLeggings |
-                ItemKind::ChainmailLeggings |
-                ItemKind::IronLeggings |
-                ItemKind::GoldenLeggings |
-                ItemKind::DiamondLeggings |
-                ItemKind::NetheriteLeggings
+            ItemKind::LeatherLeggings
+                | ItemKind::ChainmailLeggings
+                | ItemKind::IronLeggings
+                | ItemKind::GoldenLeggings
+                | ItemKind::DiamondLeggings
+                | ItemKind::NetheriteLeggings
         )
     }
 
     fn is_boots(&self) -> bool {
         matches!(
             self,
-            ItemKind::LeatherBoots |
-                ItemKind::ChainmailBoots |
-                ItemKind::IronBoots |
-                ItemKind::GoldenBoots |
-                ItemKind::DiamondBoots |
-                ItemKind::NetheriteBoots
+            ItemKind::LeatherBoots
+                | ItemKind::ChainmailBoots
+                | ItemKind::IronBoots
+                | ItemKind::GoldenBoots
+                | ItemKind::DiamondBoots
+                | ItemKind::NetheriteBoots
         )
     }
 
@@ -674,52 +674,52 @@ impl ItemKindExt for ItemKind {
     }
 }
 
-/* pub fn is_helmet(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::LeatherHelmet |
-            ItemKind::ChainmailHelmet |
-            ItemKind::IronHelmet |
-            ItemKind::GoldenHelmet |
-            ItemKind::DiamondHelmet |
-            ItemKind::NetheriteHelmet |
-            ItemKind::TurtleHelmet |
-            ItemKind::PlayerHead
-    )
-}
-
-pub fn is_chestplate(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::LeatherChestplate |
-            ItemKind::ChainmailChestplate |
-            ItemKind::IronChestplate |
-            ItemKind::GoldenChestplate |
-            ItemKind::DiamondChestplate |
-            ItemKind::NetheriteChestplate
-    )
-}
-
-pub fn is_leggings(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::LeatherLeggings |
-            ItemKind::ChainmailLeggings |
-            ItemKind::IronLeggings |
-            ItemKind::GoldenLeggings |
-            ItemKind::DiamondLeggings |
-            ItemKind::NetheriteLeggings
-    )
-}
-
-pub fn is_boots(kind: ItemKind) -> bool {
-    matches!(
-        kind,
-        ItemKind::LeatherBoots |
-            ItemKind::ChainmailBoots |
-            ItemKind::IronBoots |
-            ItemKind::GoldenBoots |
-            ItemKind::DiamondBoots |
-            ItemKind::NetheriteBoots
-    )
-} */
+// pub fn is_helmet(kind: ItemKind) -> bool {
+// matches!(
+// kind,
+// ItemKind::LeatherHelmet |
+// ItemKind::ChainmailHelmet |
+// ItemKind::IronHelmet |
+// ItemKind::GoldenHelmet |
+// ItemKind::DiamondHelmet |
+// ItemKind::NetheriteHelmet |
+// ItemKind::TurtleHelmet |
+// ItemKind::PlayerHead
+// )
+// }
+//
+// pub fn is_chestplate(kind: ItemKind) -> bool {
+// matches!(
+// kind,
+// ItemKind::LeatherChestplate |
+// ItemKind::ChainmailChestplate |
+// ItemKind::IronChestplate |
+// ItemKind::GoldenChestplate |
+// ItemKind::DiamondChestplate |
+// ItemKind::NetheriteChestplate
+// )
+// }
+//
+// pub fn is_leggings(kind: ItemKind) -> bool {
+// matches!(
+// kind,
+// ItemKind::LeatherLeggings |
+// ItemKind::ChainmailLeggings |
+// ItemKind::IronLeggings |
+// ItemKind::GoldenLeggings |
+// ItemKind::DiamondLeggings |
+// ItemKind::NetheriteLeggings
+// )
+// }
+//
+// pub fn is_boots(kind: ItemKind) -> bool {
+// matches!(
+// kind,
+// ItemKind::LeatherBoots |
+// ItemKind::ChainmailBoots |
+// ItemKind::IronBoots |
+// ItemKind::GoldenBoots |
+// ItemKind::DiamondBoots |
+// ItemKind::NetheriteBoots
+// )
+// }

@@ -2,8 +2,8 @@ use clap::Parser;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{
     glam::Vec3,
-    spatial::get_first_collision,
     simulation::{Pitch, Position, Yaw, entity_kind::EntityKind},
+    spatial::get_first_collision,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use rayon::iter::Either;

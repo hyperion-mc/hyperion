@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
 use flecs_ecs::{
-    core::{ Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider },
+    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider},
     macros::Component,
 };
 use hyperion::{
-    simulation::{ entity_kind::EntityKind, Spawn, Uuid },
+    simulation::{Spawn, Uuid, entity_kind::EntityKind},
     storage::GlobalEventHandlers,
     valence_protocol::packets::play::{
-        click_slot_c2s::ClickMode,
-        close_screen_s2c::CloseScreenS2c,
+        click_slot_c2s::ClickMode, close_screen_s2c::CloseScreenS2c,
     },
 };
-use hyperion_inventory::{ Inventory, InventoryState, OpenInventory };
+use hyperion_inventory::{Inventory, InventoryState, OpenInventory};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerType {
@@ -35,7 +34,11 @@ impl Gui {
     pub fn new(inventory: Inventory, world: &World, id: u64) -> Self {
         let uuid = Uuid::new_v4();
 
-        let entity = world.entity().add_enum(EntityKind::BlockDisplay).set(uuid).set(inventory);
+        let entity = world
+            .entity()
+            .add_enum(EntityKind::BlockDisplay)
+            .set(uuid)
+            .set(inventory);
 
         entity.enqueue(Spawn);
 
@@ -57,25 +60,30 @@ impl Gui {
                 let system = query.system;
                 let world = system.world();
                 let button = event.mode;
-                query.id.entity_view(world).get::<&InventoryState>(|inv_state| {
-                    if event.window_id != inv_state.window_id() {
-                        return;
-                    }
+                query
+                    .id
+                    .entity_view(world)
+                    .get::<&InventoryState>(|inv_state| {
+                        if event.window_id != inv_state.window_id() {
+                            return;
+                        }
 
-                    let slot = usize::from(event.slot_idx);
-                    let Some(item) = items.get(&slot) else {
-                        return;
-                    };
+                        let slot = usize::from(event.slot_idx);
+                        let Some(item) = items.get(&slot) else {
+                            return;
+                        };
 
-                    item(query.id, button);
-                });
+                        item(query.id, button);
+                    });
             });
         });
     }
 
     pub fn open(&self, system: EntityView<'_>, player: Entity) {
         let world = system.world();
-        player.entity_view(world).set(OpenInventory::new(self.entity));
+        player
+            .entity_view(world)
+            .set(OpenInventory::new(self.entity));
     }
 
     pub fn handle_close(&mut self, _player: Entity, _close_packet: CloseScreenS2c) {

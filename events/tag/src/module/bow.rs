@@ -3,9 +3,14 @@ use flecs_ecs::{
     prelude::*,
 };
 use hyperion::{
-    glam::Vec3, net::Compose, simulation::{
-        bow::BowCharging, entity_kind::EntityKind, event, get_direction_from_rotation, metadata::living_entity::ArrowsInEntity, Pitch, Position, Spawn, Uuid, Velocity, Yaw
-    }, storage::{EventQueue, Events}, ItemKind, ItemStack
+    ItemKind, ItemStack,
+    glam::Vec3,
+    net::Compose,
+    simulation::{
+        Pitch, Position, Spawn, Uuid, Velocity, Yaw, bow::BowCharging, entity_kind::EntityKind,
+        event, get_direction_from_rotation, metadata::living_entity::ArrowsInEntity,
+    },
+    storage::{EventQueue, Events},
 };
 use hyperion_inventory::PlayerInventory;
 use tracing::debug;
@@ -132,33 +137,29 @@ impl Module for BowModule {
             let world = it.world();
 
             for event in event_queue.drain() {
-
                 debug!("arrow_entity_hit: {event:?}");
-                event
-                    .projectile
-                    .entity_view(world)
-                    .get::<&Owner>(| owner| {
-                        debug!("Sending attack event");
-                        world.get::<&Events>(|events| {
-                            events.push(
-                                event::AttackEntity {
-                                    origin: owner.entity,
-                                    target: event.client,
-                                    damage: 1.0,
-                                },
-                                &world,
-                            )
-                        });
-
-                        // Updating arrows in entity
-                        debug!("Updating arrows in entity");
-                        event.client
-                            .entity_view(world)
-                            .get::<&mut ArrowsInEntity>(|arrows| {
-                                arrows.0 += 1;
-                            });
-
+                event.projectile.entity_view(world).get::<&Owner>(|owner| {
+                    debug!("Sending attack event");
+                    world.get::<&Events>(|events| {
+                        events.push(
+                            event::AttackEntity {
+                                origin: owner.entity,
+                                target: event.client,
+                                damage: 1.0,
+                            },
+                            &world,
+                        )
                     });
+
+                    // Updating arrows in entity
+                    debug!("Updating arrows in entity");
+                    event
+                        .client
+                        .entity_view(world)
+                        .get::<&mut ArrowsInEntity>(|arrows| {
+                            arrows.0 += 1;
+                        });
+                });
 
                 event.projectile.entity_view(world).destruct();
             }

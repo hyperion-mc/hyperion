@@ -12,7 +12,9 @@ use flecs_ecs::core::{QueryBuilderImpl, SystemAPI, World, WorldGet, flecs};
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::Vec3;
 use hyperion::{
-    simulation::{entity_kind::EntityKind, EntitySize, Position}, spatial, HyperionCore
+    HyperionCore,
+    simulation::{EntitySize, Position, entity_kind::EntityKind},
+    spatial,
 };
 use spatial::{Spatial, SpatialIndex, SpatialModule};
 

@@ -4,12 +4,14 @@ use derive_more::Constructor;
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
 use valence_generated::block::BlockState;
-use valence_protocol::{packets::play::click_slot_c2s::{ClickMode, SlotChange}, Hand, ItemStack};
+use valence_protocol::{
+    Hand, ItemStack,
+    packets::play::click_slot_c2s::{ClickMode, SlotChange},
+};
 use valence_server::ItemKind;
 
-use crate::simulation::skin::PlayerSkin;
-
 use super::blocks::RayCollision;
+use crate::simulation::skin::PlayerSkin;
 
 #[derive(Component, Default, Debug)]
 pub struct ItemDropEvent {

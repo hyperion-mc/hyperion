@@ -5,23 +5,22 @@ use glam::Vec3;
 use hyperion_utils::EntityExt;
 use itertools::Either;
 use tracing::debug;
-use valence_protocol::{ ByteAngle, RawBytes, VarInt, packets::play::{ self } };
+use valence_protocol::{
+    ByteAngle, RawBytes, VarInt,
+    packets::play::{self},
+};
 
 use crate::{
     Prev,
-    net::{ Compose, ConnectionId, DataBundle },
+    net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Pitch,
-        Position,
-        Velocity,
-        Xp,
-        Yaw,
+        Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
         event,
         handlers::is_grounded,
-        metadata::{ MetadataChanges, get_and_clear_metadata },
+        metadata::{MetadataChanges, get_and_clear_metadata},
     },
     spatial::get_first_collision,
     storage::Events,
@@ -65,14 +64,12 @@ fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
 impl Module for EntityStateSyncModule {
     fn module(world: &World) {
         world
-            .system_named::<
-                (
-                    &Compose, // (0)
-                    &ConnectionId, // (1)
-                    &mut (Prev, Xp), // (2)
-                    &mut Xp, // (3)
-                )
-            >("entity_xp_sync")
+            .system_named::<(
+                &Compose,        // (0)
+                &ConnectionId,   // (1)
+                &mut (Prev, Xp), // (2)
+                &mut Xp,         // (3)
+            )>("entity_xp_sync")
             .term_at(0u32)
             .singleton()
             .multi_threaded()
@@ -97,17 +94,13 @@ impl Module for EntityStateSyncModule {
 
                         let mut prev_xp = table.field_unchecked::<Xp>(2);
                         let prev_xp = prev_xp.get_mut(..).unwrap();
-                        let prev_xp: &mut [u16] = core::slice::from_raw_parts_mut(
-                            prev_xp.as_mut_ptr().cast(),
-                            count
-                        );
+                        let prev_xp: &mut [u16] =
+                            core::slice::from_raw_parts_mut(prev_xp.as_mut_ptr().cast(), count);
 
                         let mut xp = table.field_unchecked::<Xp>(3);
                         let xp = xp.get_mut(..).unwrap();
-                        let xp: &mut [u16] = core::slice::from_raw_parts_mut(
-                            xp.as_mut_ptr().cast(),
-                            count
-                        );
+                        let xp: &mut [u16] =
+                            core::slice::from_raw_parts_mut(xp.as_mut_ptr().cast(), count);
 
                         simd_utils::copy_and_get_diff::<_, LANES>(
                             prev_xp,
@@ -130,7 +123,7 @@ impl Module for EntityStateSyncModule {
                                 entity.modified::<Xp>();
 
                                 compose.unicast(&packet, *net, system).unwrap();
-                            }
+                            },
                         );
                     }
                 }
@@ -165,9 +158,10 @@ impl Module for EntityStateSyncModule {
         ?&ConnectionId,
         &mut ActiveAnimation,
         )
-            .multi_threaded()
-            .kind::<flecs::pipeline::OnStore>()
-            .each_iter(move |it, row, (position, compose, connection_id, animation)| {
+        .multi_threaded()
+        .kind::<flecs::pipeline::OnStore>()
+        .each_iter(
+            move |it, row, (position, compose, connection_id, animation)| {
                 let io = connection_id.copied();
 
                 let entity = it.entity(row);
@@ -178,11 +172,16 @@ impl Module for EntityStateSyncModule {
                 let chunk_pos = position.to_chunk();
 
                 for pkt in animation.packets(entity_id) {
-                    compose.broadcast_local(&pkt, chunk_pos, system).exclude(io).send().unwrap();
+                    compose
+                        .broadcast_local(&pkt, chunk_pos, system)
+                        .exclude(io)
+                        .send()
+                        .unwrap();
                 }
 
                 animation.clear();
-            });
+            },
+        );
 
         // What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
         // IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs
@@ -304,19 +303,19 @@ impl Module for EntityStateSyncModule {
             &mut Velocity,
             ?&ConnectionId
         )
-            .multi_threaded()
-            .kind::<flecs::pipeline::OnUpdate>()
-            .with_enum_wildcard::<EntityKind>()
-            .each_iter(|it, row, (position, velocity, connection_id)| {
-                if let Some(_connection_id) = connection_id {
-                    return;
-                }
+        .multi_threaded()
+        .kind::<flecs::pipeline::OnUpdate>()
+        .with_enum_wildcard::<EntityKind>()
+        .each_iter(|it, row, (position, velocity, connection_id)| {
+            if let Some(_connection_id) = connection_id {
+                return;
+            }
 
-                let system = it.system();
-                let world = system.world();
-                let _entity = it.entity(row);
+            let system = it.system();
+            let world = system.world();
+            let _entity = it.entity(row);
 
-                if velocity.0 != Vec3::ZERO {
+            if velocity.0 != Vec3::ZERO {
                     position.x += velocity.0.x;
                     position.y += velocity.0.y;
                     position.z += velocity.0.z;
@@ -388,7 +387,7 @@ impl Module for EntityStateSyncModule {
                     .set_block(collision.location, BlockState::DIRT)
                     .unwrap(); */
                 }
-            });
+        });
 
         track_previous::<Position>(world);
         track_previous::<Yaw>(world);
