@@ -183,7 +183,7 @@ pub enum InventoryAccessError {
     InvalidSlot { index: u16 },
 }
 
-enum TryAddSlot {
+enum AddSlot {
     Complete,
     Partial,
     Skipped,
@@ -392,12 +392,12 @@ impl Inventory {
     }
 
     /// Returns remaining [`ItemStack`] if not all of the item was added to the slot
-    fn try_add_to_slot(
+    fn add_to_slot(
         &mut self,
         slot: u16,
         to_add: &mut ItemStack,
         can_add_to_empty: bool,
-    ) -> Result<TryAddSlot, InventoryAccessError> {
+    ) -> AddSlot {
         let max_stack_size: i8 = to_add.item.max_stack();
 
         let existing_stack = &mut self.slots[usize::from(slot)].stack;
@@ -409,12 +409,12 @@ impl Inventory {
                 to_add.count -= new_count;
                 self.increment_slot(slot as usize);
                 return if to_add.count > 0 {
-                    Ok(TryAddSlot::Partial)
+                    AddSlot::Partial
                 } else {
-                    Ok(TryAddSlot::Complete)
+                    AddSlot::Complete
                 };
             } else {
-                Ok(TryAddSlot::Skipped)
+                AddSlot::Skipped
             };
         }
 
@@ -427,16 +427,16 @@ impl Inventory {
                 existing_stack.count += to_add.count;
                 *to_add = ItemStack::EMPTY;
                 self.increment_slot(slot as usize);
-                Ok(TryAddSlot::Complete)
+                AddSlot::Complete
             } else {
                 existing_stack.count = max_stack_size;
                 to_add.count -= space_left;
                 self.increment_slot(slot as usize);
-                Ok(TryAddSlot::Partial)
+                AddSlot::Partial
             };
         }
 
-        Ok(TryAddSlot::Skipped)
+        AddSlot::Skipped
     }
 
     pub fn swap_slot(&mut self, slot: u16, other_slot: u16) {
@@ -554,30 +554,26 @@ impl PlayerInventory {
         // Try to add to hot bar (36-45) first, then the rest of the inventory (9-35)
         // try to stack first
         for slot in (36..=44).chain(9..36) {
-            let Ok(add_slot) = self.try_add_to_slot(slot, &mut item, false) else {
-                unreachable!("try_add_item should always return Ok");
-            };
+            let add_slot = self.add_to_slot(slot, &mut item, false);
 
             match add_slot {
-                TryAddSlot::Complete => {
+                AddSlot::Complete => {
                     return result;
                 }
-                TryAddSlot::Partial | TryAddSlot::Skipped => {}
+                AddSlot::Partial | AddSlot::Skipped => {}
             }
         }
 
         // Try to add to hot bar (36-44) first, then the rest of the inventory (9-35)
         // now try to add to empty slots
         for slot in (36..=44).chain(9..36) {
-            let Ok(add_slot) = self.try_add_to_slot(slot, &mut item, true) else {
-                unreachable!("try_add_item should always return Ok");
-            };
+            let add_slot = self.add_to_slot(slot, &mut item, true);
 
             match add_slot {
-                TryAddSlot::Complete => {
+                AddSlot::Complete => {
                     return result;
                 }
-                TryAddSlot::Partial | TryAddSlot::Skipped => {}
+                AddSlot::Partial | AddSlot::Skipped => {}
             }
         }
 
