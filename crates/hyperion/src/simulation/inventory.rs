@@ -267,6 +267,219 @@ pub fn handle_update_selected_slot(
     query.events.push(event, query.world);
 }
 
+fn handle_click_slot_inner<'a>(
+    packet: ClickSlotC2s<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+    inv_state: &mut InventoryState,
+    player_inventory: &'a mut PlayerInventory,
+    cursor_item: &mut CursorItem,
+    readonly: bool,
+    open_inv_size: usize,
+    player_only: bool,
+    mut inventories_mut: Vec<&'a mut ItemSlot>,
+) -> Vec<usize> {
+    if inventories_mut.is_empty() {
+        player_inventory
+            .slots_mut()
+            .iter_mut()
+            .for_each(|slot| inventories_mut.push(slot));
+    } else {
+        player_inventory
+            .slots_inventory_mut()
+            .iter_mut()
+            .for_each(|slot| inventories_mut.push(slot));
+    }
+
+    // validate that packet_window_id is the same as the inv_state.window_id
+    if packet.window_id != inv_state.window_id() {
+        resync_inventory(
+            query.compose,
+            &query.system,
+            &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
+            inv_state,
+            cursor_item,
+            query.io_ref,
+        );
+        return vec![];
+    }
+
+    if packet.state_id != VarInt(inv_state.state_id()) {
+        resync_inventory(
+            query.compose,
+            &query.system,
+            &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
+            inv_state,
+            cursor_item,
+            query.io_ref,
+        );
+    }
+
+    if readonly {
+        resync_inventory(
+            query.compose,
+            &query.system,
+            &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
+            inv_state,
+            cursor_item,
+            query.io_ref,
+        );
+        let event = storage::ClickSlotEvent {
+            window_id: inv_state.window_id(),
+            state_id: inv_state.state_id(),
+            slot_idx: packet.slot_idx as u16,
+            mode: packet.mode,
+            button: packet.button,
+            slot_changes: packet.slot_changes.to_vec(),
+            carried_item: cursor_item.0.clone(),
+        };
+
+        query.handlers.click.trigger_all(query, &event);
+
+        return vec![];
+    }
+    // button 0 is left click
+    // button 1 is right click
+    // button 2 is middle click
+
+    let mut slots_changed: Vec<usize> = vec![];
+
+    match packet.mode {
+        // if the mode is click, and the on is 0, then check if its the same item as the cursor item
+        // if it is, check how many items are in the slot
+        // if its less than 64, then add as many items from the cursor item as possible till the count of the slot is 64
+        // if the slot is empty, then move the cursor item to the slot
+        // if its not the same item, then swap the cursor item with the slot item
+        // if the slot_idx is -999 that means the cursor item is being dropped
+
+        // if the mode is click, and the button is 1, then check if its the same item as the cursor item
+        // if it is the same or the slot is empty, then move 1 item from the cursor item to the slot
+        // if the cursor item is empty, then take half of the stack from the slot
+        ClickMode::Click => {
+            let slot_idx = packet.slot_idx as u16;
+            match packet.button {
+                0 => {
+                    handle_left_click_slot(
+                        packet,
+                        query,
+                        &mut inventories_mut,
+                        inv_state,
+                        cursor_item,
+                        &mut slots_changed,
+                        slot_idx as i16,
+                        player_only,
+                    );
+                }
+                1 => {
+                    handle_right_click_slot(
+                        packet,
+                        query,
+                        &mut inventories_mut,
+                        cursor_item,
+                        &mut slots_changed,
+                        player_only,
+                    );
+                }
+                2 => {
+                    // nothing yet
+                }
+                _ => {}
+            }
+        }
+        ClickMode::Drag => {
+            // debug!("Slot Changed: {:?}", packet.slot_changes);
+            // We iterate through the slot changes,
+            // if slots changed is empty return
+            // if the button is 2 it means the player dragged with left click
+            // so we need to split the cursor item into the slots equally and the remainder stays in the cursor
+            // if the button is 6 it means the player dragged with right click
+            // so we need to put 1 item from the cursor into each slot and the remainder stays in the cursor
+            // also double check if the item in the slot is the same as the cursor item
+
+            if packet.slot_changes.is_empty() || cursor_item.0.is_empty() {
+                return vec![];
+            }
+
+            let mut cursor = cursor_item.0.clone();
+            let slots = packet.slot_changes.clone();
+
+            match packet.button {
+                2 => {
+                    handle_left_drag_slot(
+                        &mut cursor,
+                        slots,
+                        &mut inventories_mut,
+                        &mut slots_changed,
+                        player_only,
+                    );
+                }
+                6 => {
+                    handle_right_drag_slot(
+                        &mut cursor,
+                        slots,
+                        &mut inventories_mut,
+                        &mut slots_changed,
+                        player_only,
+                    );
+                }
+                _ => {}
+            }
+
+            // Update the cursor with any remaining count
+            cursor_item.0 = cursor;
+        }
+        ClickMode::DoubleClick => {
+            handle_double_click(
+                packet,
+                &mut inventories_mut,
+                inv_state,
+                cursor_item,
+                &mut slots_changed,
+                player_only,
+            );
+        }
+        ClickMode::ShiftClick => {
+            handle_shift_click(
+                packet,
+                &mut inventories_mut,
+                open_inv_size,
+                &mut slots_changed,
+                player_only,
+            );
+        }
+        ClickMode::Hotbar => {
+            handle_hotbar_swap(
+                packet,
+                &mut inventories_mut,
+                open_inv_size,
+                &mut slots_changed,
+                player_only,
+            );
+        }
+        ClickMode::CreativeMiddleClick => {}
+        ClickMode::DropKey => {
+            handle_drop_key(
+                packet,
+                query,
+                &mut inventories_mut,
+                cursor_item,
+                &mut slots_changed,
+                player_only,
+            );
+        }
+    }
+
+    resync_inventory(
+        query.compose,
+        &query.system,
+        &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
+        inv_state,
+        cursor_item,
+        query.io_ref,
+    );
+
+    slots_changed
+}
+
 pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery<'_>) {
     // In here we need to handle different behaviors based on the click mode
     // First of we need to check if the player has the inventory open
@@ -279,232 +492,32 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
         &mut CursorItem,
     )>(
         |(inv_state, open_inventory, player_inventory, cursor_item)| {
-            let mut readonly = player_inventory.readonly();
-            let mut inventories_mut: Vec<&mut ItemSlot> = vec![];
-            let mut open_inv_size = 0;
-            let mut player_only = true;
+            let mut has_slots_changed = false;
             if let Some(open_inventory) = open_inventory {
                 open_inventory
                     .entity
                     .entity_view(query.world)
                     .get::<&mut Inventory>(|open_inv| {
-                        readonly = open_inv.readonly();
-                        open_inv_size = open_inv.size();
-                        player_only = false;
+                        let readonly = open_inv.readonly();
+                        let open_inv_size = open_inv.size();
+                        let player_only = false;
 
-                        // VERY UNSAFE
-                        // IF SERVER CRASHES, THIS IS THE FIRST PLACE TO LOOK
-                        (unsafe { transmute::<&mut Inventory, &mut Inventory>(open_inv) })
-                            .slots_mut()
-                            .iter_mut()
-                            .for_each(|slot| inventories_mut.push(slot));
-                    });
-            }
+                        let inventories_mut: Vec<&mut ItemSlot> =
+                            open_inv.slots_mut().iter_mut().collect();
 
-            if inventories_mut.is_empty() {
-                player_inventory
-                    .slots_mut()
-                    .iter_mut()
-                    .for_each(|slot| inventories_mut.push(slot));
-            } else {
-                player_inventory
-                    .slots_inventory_mut()
-                    .iter_mut()
-                    .for_each(|slot| inventories_mut.push(slot));
-            }
+                        let slots_changed = handle_click_slot_inner(
+                            packet,
+                            query,
+                            inv_state,
+                            player_inventory,
+                            cursor_item,
+                            readonly,
+                            open_inv_size,
+                            player_only,
+                            inventories_mut,
+                        );
 
-            // validate that packet_window_id is the same as the inv_state.window_id
-            if packet.window_id != inv_state.window_id() {
-                resync_inventory(
-                    query.compose,
-                    &query.system,
-                    &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
-                    inv_state,
-                    cursor_item,
-                    query.io_ref,
-                );
-                return;
-            }
-
-            if packet.state_id != VarInt(inv_state.state_id()) {
-                resync_inventory(
-                    query.compose,
-                    &query.system,
-                    &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
-                    inv_state,
-                    cursor_item,
-                    query.io_ref,
-                );
-            }
-
-            if readonly {
-                resync_inventory(
-                    query.compose,
-                    &query.system,
-                    &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
-                    inv_state,
-                    cursor_item,
-                    query.io_ref,
-                );
-                let event = storage::ClickSlotEvent {
-                    window_id: inv_state.window_id(),
-                    state_id: inv_state.state_id(),
-                    slot_idx: packet.slot_idx as u16,
-                    mode: packet.mode,
-                    button: packet.button,
-                    slot_changes: packet.slot_changes.to_vec(),
-                    carried_item: cursor_item.0.clone(),
-                };
-
-                query.handlers.click.trigger_all(query, &event);
-
-                return;
-            }
-            // button 0 is left click
-            // button 1 is right click
-            // button 2 is middle click
-
-            let mut slots_changed: Vec<usize> = vec![];
-
-            match packet.mode {
-                // if the mode is click, and the on is 0, then check if its the same item as the cursor item
-                // if it is, check how many items are in the slot
-                // if its less than 64, then add as many items from the cursor item as possible till the count of the slot is 64
-                // if the slot is empty, then move the cursor item to the slot
-                // if its not the same item, then swap the cursor item with the slot item
-                // if the slot_idx is -999 that means the cursor item is being dropped
-
-                // if the mode is click, and the button is 1, then check if its the same item as the cursor item
-                // if it is the same or the slot is empty, then move 1 item from the cursor item to the slot
-                // if the cursor item is empty, then take half of the stack from the slot
-                ClickMode::Click => {
-                    let slot_idx = packet.slot_idx as u16;
-                    match packet.button {
-                        0 => {
-                            handle_left_click_slot(
-                                packet,
-                                query,
-                                &mut inventories_mut,
-                                inv_state,
-                                cursor_item,
-                                &mut slots_changed,
-                                slot_idx as i16,
-                                player_only,
-                            );
-                        }
-                        1 => {
-                            handle_right_click_slot(
-                                packet,
-                                query,
-                                &mut inventories_mut,
-                                cursor_item,
-                                &mut slots_changed,
-                                player_only,
-                            );
-                        }
-                        2 => {
-                            // nothing yet
-                        }
-                        _ => {}
-                    }
-                }
-                ClickMode::Drag => {
-                    // debug!("Slot Changed: {:?}", packet.slot_changes);
-                    // We iterate through the slot changes,
-                    // if slots changed is empty return
-                    // if the button is 2 it means the player dragged with left click
-                    // so we need to split the cursor item into the slots equally and the remainder stays in the cursor
-                    // if the button is 6 it means the player dragged with right click
-                    // so we need to put 1 item from the cursor into each slot and the remainder stays in the cursor
-                    // also double check if the item in the slot is the same as the cursor item
-
-                    if packet.slot_changes.is_empty() || cursor_item.0.is_empty() {
-                        return;
-                    }
-
-                    let mut cursor = cursor_item.0.clone();
-                    let slots = packet.slot_changes.clone();
-
-                    match packet.button {
-                        2 => {
-                            handle_left_drag_slot(
-                                &mut cursor,
-                                slots,
-                                &mut inventories_mut,
-                                &mut slots_changed,
-                                player_only,
-                            );
-                        }
-                        6 => {
-                            handle_right_drag_slot(
-                                &mut cursor,
-                                slots,
-                                &mut inventories_mut,
-                                &mut slots_changed,
-                                player_only,
-                            );
-                        }
-                        _ => {}
-                    }
-
-                    // Update the cursor with any remaining count
-                    cursor_item.0 = cursor;
-                }
-                ClickMode::DoubleClick => {
-                    handle_double_click(
-                        packet,
-                        &mut inventories_mut,
-                        inv_state,
-                        cursor_item,
-                        &mut slots_changed,
-                        player_only,
-                    );
-                }
-                ClickMode::ShiftClick => {
-                    handle_shift_click(
-                        packet,
-                        &mut inventories_mut,
-                        open_inv_size,
-                        &mut slots_changed,
-                        player_only,
-                    );
-                }
-                ClickMode::Hotbar => {
-                    handle_hotbar_swap(
-                        packet,
-                        &mut inventories_mut,
-                        open_inv_size,
-                        &mut slots_changed,
-                        player_only,
-                    );
-                }
-                ClickMode::CreativeMiddleClick => {}
-                ClickMode::DropKey => {
-                    handle_drop_key(
-                        packet,
-                        query,
-                        &mut inventories_mut,
-                        cursor_item,
-                        &mut slots_changed,
-                        player_only,
-                    );
-                }
-            }
-
-            resync_inventory(
-                query.compose,
-                &query.system,
-                &inventories_mut.iter().map(|slot| (*slot).clone()).collect(),
-                inv_state,
-                cursor_item,
-                query.io_ref,
-            );
-
-            if let Some(open_inventory) = open_inventory {
-                open_inventory
-                    .entity
-                    .entity_view(query.world)
-                    .get::<&mut Inventory>(|open_inv| {
+                        has_slots_changed = !slots_changed.is_empty();
                         for &idx in &slots_changed {
                             if idx < open_inv_size {
                                 open_inv.increment_slot(idx);
@@ -514,13 +527,33 @@ pub fn handle_click_slot(packet: ClickSlotC2s<'_>, query: &mut PacketSwitchQuery
                         }
                     });
             } else {
+                let readonly = player_inventory.readonly();
+                let open_inv_size = 0;
+                let player_only = true;
+                let inventories_mut: Vec<&mut ItemSlot> = vec![];
+
+                let slots_changed = handle_click_slot_inner(
+                    packet,
+                    query,
+                    inv_state,
+                    player_inventory,
+                    cursor_item,
+                    readonly,
+                    open_inv_size,
+                    player_only,
+                    inventories_mut,
+                );
+
+                has_slots_changed = !slots_changed.is_empty();
                 for &idx in &slots_changed {
                     player_inventory.increment_slot(idx);
                 }
             }
 
-            inv_state.set_last_button(0, query.compose.global().tick);
-            inv_state.set_last_mode(ClickMode::Click, query.compose.global().tick);
+            if has_slots_changed {
+                inv_state.set_last_button(0, query.compose.global().tick);
+                inv_state.set_last_mode(ClickMode::Click, query.compose.global().tick);
+            }
         },
     );
 }
