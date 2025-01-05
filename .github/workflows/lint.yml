@@ -63,8 +63,12 @@ jobs:
         run: cargo doc --no-deps --all-features
 
   test:
-    name: Tests
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14]  # macos-14 is for Apple Silicon
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Read rust-toolchain.toml
