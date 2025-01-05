@@ -484,7 +484,7 @@ impl PlayerInventory {
 
     #[must_use]
     pub fn slots_inventory(&self) -> &[ItemSlot] {
-        &self.slots[9..44]
+        &self.slots[9..=44]
     }
 
     pub fn slots_inventory_mut(&mut self) -> &mut [ItemSlot] {
