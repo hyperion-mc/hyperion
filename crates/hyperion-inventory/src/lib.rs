@@ -1,3 +1,4 @@
+#![feature(get_many_mut)]
 #![feature(thread_local)]
 use std::{cell::Cell, cmp::min, num::Wrapping};
 
@@ -199,11 +200,6 @@ impl Inventory {
         }
     }
 
-    pub fn increment_slot(&mut self, index: usize) {
-        // set the slot as changed
-        self.slots[index].changed = true;
-    }
-
     #[must_use]
     pub const fn kind(&self) -> WindowType {
         self.kind
@@ -234,14 +230,15 @@ impl Inventory {
 
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
         let index = usize::from(index);
-        self.slots[index].stack = stack;
-        self.increment_slot(index);
+        let slot = &mut self.slots[index];
+        slot.stack = stack;
+        slot.changed = true;
         Ok(())
     }
 
-    pub fn set_slot(&mut self, index: usize, slot: ItemSlot) {
+    pub fn set_slot(&mut self, index: usize, mut slot: ItemSlot) {
+        slot.changed = true;
         self.slots[index] = slot;
-        self.increment_slot(index);
     }
 
     pub fn items(&self) -> impl Iterator<Item = (u16, &ItemStack)> + '_ {
@@ -265,16 +262,12 @@ impl Inventory {
     }
 
     pub fn clear(&mut self) {
-        let mut to_increment = Vec::new();
-        for (idx, slot) in self.slots.iter_mut().enumerate() {
+        for slot in &mut self.slots {
             if slot.stack.is_empty() {
                 continue;
             }
             slot.stack = ItemStack::EMPTY;
-            to_increment.push(idx);
-        }
-        for idx in to_increment {
-            self.increment_slot(idx);
+            slot.changed = true;
         }
     }
 
@@ -286,7 +279,7 @@ impl Inventory {
         debug!("Setting cursor to slot {}", index);
 
         self.hand_slot = index;
-        self.increment_slot(index as usize);
+        self.slots[usize::from(index)].changed = true;
     }
 
     #[must_use]
@@ -367,8 +360,9 @@ impl Inventory {
 
     pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
         let index = usize::from(index);
-        self.increment_slot(index);
-        Ok(&mut self.slots[index])
+        let slot = &mut self.slots[index];
+        slot.changed = true;
+        Ok(slot)
     }
 
     /// Returns remaining [`ItemStack`] if not all of the item was added to the slot
@@ -380,14 +374,14 @@ impl Inventory {
     ) -> AddSlot {
         let max_stack_size: i8 = to_add.item.max_stack();
 
-        let existing_stack = &mut self.slots[usize::from(slot)].stack;
+        let slot = &mut self.slots[usize::from(slot)];
 
-        if existing_stack.is_empty() {
+        if slot.stack.is_empty() {
             return if can_add_to_empty {
                 let new_count = min(to_add.count, max_stack_size);
-                *existing_stack = to_add.clone().with_count(new_count);
                 to_add.count -= new_count;
-                self.increment_slot(slot as usize);
+                slot.stack = to_add.clone().with_count(new_count);
+                slot.changed = true;
                 return if to_add.count > 0 {
                     AddSlot::Partial
                 } else {
@@ -398,20 +392,20 @@ impl Inventory {
             };
         }
 
-        let stackable = existing_stack.item == to_add.item && existing_stack.nbt == to_add.nbt;
+        let stackable = slot.stack.item == to_add.item && slot.stack.nbt == to_add.nbt;
 
-        if stackable && existing_stack.count < max_stack_size {
-            let space_left = max_stack_size - existing_stack.count;
+        if stackable && slot.stack.count < max_stack_size {
+            let space_left = max_stack_size - slot.stack.count;
 
             return if to_add.count <= space_left {
-                existing_stack.count += to_add.count;
+                slot.stack.count += to_add.count;
+                slot.changed = true;
                 *to_add = ItemStack::EMPTY;
-                self.increment_slot(slot as usize);
                 AddSlot::Complete
             } else {
-                existing_stack.count = max_stack_size;
+                slot.stack.count = max_stack_size;
+                slot.changed = true;
                 to_add.count -= space_left;
-                self.increment_slot(slot as usize);
                 AddSlot::Partial
             };
         }
@@ -420,12 +414,17 @@ impl Inventory {
     }
 
     pub fn swap_slot(&mut self, slot: u16, other_slot: u16) {
+        if slot == other_slot {
+            return;
+        }
+
         let slot = usize::from(slot);
         let other_slot = usize::from(other_slot);
 
-        self.slots.swap(slot, other_slot);
-        self.increment_slot(slot);
-        self.increment_slot(other_slot);
+        let [slot, other_slot] = self.slots.get_many_mut([slot, other_slot]).unwrap();
+        std::mem::swap(slot, other_slot);
+        slot.changed = true;
+        other_slot.changed = true;
     }
 }
 
