@@ -15,7 +15,6 @@ pub mod parser;
 
 pub type PlayerInventory = Inventory;
 
-/// Placeholder; this will be added later.
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct Inventory {
     // doing this lets us create multiple pages from one inventory
