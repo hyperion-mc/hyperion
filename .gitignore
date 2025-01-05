@@ -4,6 +4,8 @@
 *.svg
 *.zip
 
+/result
+
 # IDE Configs
 /.vscode
 .idea

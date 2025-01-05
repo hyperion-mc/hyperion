@@ -42,14 +42,12 @@ members = [
     'crates/spatial',
     'crates/system-order',
     'events/tag',
-    'tools/antithesis-bot',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
 resolver = '2'
 
 [workspace.dependencies]
-antithesis_sdk = { git = "https://github.com/antithesishq/antithesis-sdk-rust" }
 anyhow = '1.0.95'
 approx = '0.5.1'
 arrayvec = '0.7.4'

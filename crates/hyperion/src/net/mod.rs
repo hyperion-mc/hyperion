@@ -69,27 +69,6 @@ impl Compressors {
 /// - Target or exclude specific clients in broadcast operations
 /// - Track connection state through the proxy layer
 ///
-/// # Example
-/// ```no_run
-/// // Create a new connection ID
-/// # use flecs_ecs::core::{EntityView, World};
-/// use hyperion::net::ConnectionId;
-/// # use hyperion::simulation::Compose;
-/// use valence_protocol::packets::play;
-/// # let compose: Compose = todo!();
-/// # let system: EntityView<'_> = todo!();
-/// # let world: &World = todo!();
-/// let conn_id = ConnectionId::new(12345);
-///
-/// let packet: play::ChatMessageS2c = todo!();
-///
-/// // Use it to send a packet to a specific client
-/// compose.unicast(&packet, conn_id, system).unwrap();
-///
-/// // Exclude a client from a broadcast
-/// compose.broadcast(&packet, system).exclude(conn_id).send()?;
-/// ```
-///
 /// Note: Connection IDs are managed internally by the networking system and should be obtained
 /// through the appropriate connection establishment handlers rather than created directly.
 #[derive(Component, Copy, Clone, Debug)]
