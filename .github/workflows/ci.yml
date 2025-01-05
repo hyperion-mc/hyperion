@@ -1,4 +1,4 @@
-name: Lint
+name: CI
 
 on:
   push:
@@ -81,4 +81,4 @@ jobs:
         with:
           cache-on-failure: "true"
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --all-features 
