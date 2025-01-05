@@ -14,9 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: echo "version=$(grep 'channel' rust-toolchain.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
         with:
-          components: rustfmt
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
@@ -28,9 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: echo "version=$(grep 'channel' rust-toolchain.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
         with:
-          components: clippy
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
@@ -42,7 +48,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: echo "version=$(grep 'channel' rust-toolchain.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
@@ -56,7 +67,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        run: echo "version=$(grep 'channel' rust-toolchain.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
