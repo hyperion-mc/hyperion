@@ -280,6 +280,7 @@ impl Inventory {
         &self.slots
     }
 
+    #[must_use]
     pub const fn slots_mut(&mut self) -> &mut Vec<ItemSlot> {
         &mut self.slots
     }
@@ -487,6 +488,7 @@ impl PlayerInventory {
         &self.slots[9..=44]
     }
 
+    #[must_use]
     pub fn slots_inventory_mut(&mut self) -> &mut [ItemSlot] {
         &mut self.slots[9..=44]
     }
