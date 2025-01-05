@@ -9,28 +9,56 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
-    # Set permissions if you're using OIDC token authentication
-    permissions:
-      contents: read
-      id-token: write
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          fetch-depth: 1
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - uses: depot/build-push-action@v1
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
         with:
-          # if no depot.json file is at the root of your repo, you must specify the project id
-          project: qln0fqqvvd
-          # Pass project token or user access token if you're not using OIDC token authentication
-          token: ${{ secrets.DEPOT_TOKEN }}
-          push: false
-          context: .
-          file: Dockerfile
-          target: ci
+          cache-on-failure: "true"
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+      - name: Clippy check
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+      - name: Check documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --all-features
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+      - name: Run tests
+        run: cargo test --all-features
