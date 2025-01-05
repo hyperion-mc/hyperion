@@ -522,7 +522,7 @@ pub fn custom_payload(
 fn click_slot(mut data: &'static [u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
     let packet = play::ClickSlotC2s::decode(&mut data)?;
 
-    handle_click_slot(packet, query);
+    handle_click_slot(&packet, query);
 
     Ok(())
 }

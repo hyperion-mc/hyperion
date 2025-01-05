@@ -68,7 +68,9 @@ impl Gui {
                             return;
                         }
 
-                        let slot = usize::from(event.slot_idx);
+                        let Ok(slot) = usize::try_from(event.slot_idx) else {
+                            return;
+                        };
                         let Some(item) = items.get(&slot) else {
                             return;
                         };

@@ -313,7 +313,7 @@ impl Module for EntityStateSyncModule {
 
             let system = it.system();
             let world = system.world();
-            let _entity = it.entity(row);
+            let entity = it.entity(row);
 
             if velocity.0 != Vec3::ZERO {
                     position.x += velocity.0.x;
@@ -355,7 +355,7 @@ impl Module for EntityStateSyncModule {
                                 events.push(
                                     event::ProjectileEntityEvent {
                                         client: *entity,
-                                        projectile: *_entity,
+                                        projectile: *entity,
                                     },
                                     &world
                                 )
@@ -368,7 +368,7 @@ impl Module for EntityStateSyncModule {
                                 events.push(
                                     event::ProjectileBlockEvent {
                                         collision,
-                                        projectile: *_entity,
+                                        projectile: *entity,
                                     },
                                     &world
                                 )

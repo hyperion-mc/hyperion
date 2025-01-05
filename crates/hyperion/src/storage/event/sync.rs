@@ -1,4 +1,3 @@
-use anyhow::Context;
 use flecs_ecs::{core::Entity, macros::Component};
 use valence_protocol::{
     Hand, ItemStack,
@@ -26,7 +25,7 @@ pub struct InteractEvent {
 pub struct ClickSlotEvent {
     pub window_id: u8,
     pub state_id: i32,
-    pub slot_idx: u16,
+    pub slot_idx: i16,
     /// The button used to click the slot. An enum can't easily be used for this
     /// because the meaning of this value depends on the mode.
     pub button: i8,
@@ -50,7 +49,6 @@ impl TryFrom<play::ClickSlotC2s<'static>> for ClickSlotEvent {
         } = event;
 
         let slot_changes = slot_changes.into_owned();
-        let slot_idx = u16::try_from(slot_idx).context("slot index is negative")?;
 
         Ok(Self {
             window_id,
