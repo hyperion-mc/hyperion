@@ -25,9 +25,6 @@ pub struct Inventory {
     hand_slot: u16,
     title: String,
     kind: WindowType,
-    // how many times the inventory has been changed
-    // used to determine if the client needs to be updated
-    changed: Wrapping<u64>,
     readonly: bool,
 }
 
@@ -167,7 +164,6 @@ impl Default for Inventory {
             title: "Inventory".to_string(),
             kind: WindowType::Generic9x3,
             hand_slot: 36,
-            changed: std::num::Wrapping(0),
             readonly: false,
         }
     }
@@ -199,29 +195,13 @@ impl Inventory {
             title,
             kind,
             hand_slot: 36,
-            changed: std::num::Wrapping(0),
             readonly,
         }
     }
 
     pub fn increment_slot(&mut self, index: usize) {
-        // set the slot as changed and increment the changed counter
+        // set the slot as changed
         self.slots[index].changed = true;
-        self.changed += 1 << index;
-    }
-
-    #[must_use]
-    pub const fn changed(&self) -> u64 {
-        self.changed.0
-    }
-
-    #[must_use]
-    pub const fn has_changed(&self) -> bool {
-        self.changed.0 != 0
-    }
-
-    pub fn set_changed(&mut self, changed: u64) {
-        self.changed.0 = changed;
     }
 
     #[must_use]
