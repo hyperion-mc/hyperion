@@ -62,6 +62,7 @@ define_events! {
     event::ClientStatusEvent
 }
 
+// TODO: merge with new lifetime trait
 pub trait ReducedLifetime {
     type Reduced<'a>
     where

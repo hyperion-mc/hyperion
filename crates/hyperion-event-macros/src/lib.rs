@@ -137,7 +137,7 @@ impl EventType {
 
                 impl sealed::Sealed for #path::#ident<'static> {}
 
-                unsafe impl crate::common::util::Lifetime for #path::#ident<'_> {
+                unsafe impl ::hyperion_utils::Lifetime for #path::#ident<'_> {
                     type WithLifetime<'a> = #path::#ident<'a>;
                 }
 
@@ -163,7 +163,7 @@ impl EventType {
 
                 impl sealed::Sealed for #path::#ident {}
 
-                unsafe impl crate::common::util::Lifetime for #path::#ident {
+                unsafe impl ::hyperion_utils::Lifetime for #path::#ident {
                     type WithLifetime<'a> = #path::#ident;
                 }
 
@@ -212,7 +212,7 @@ impl EventsInput {
                     }
                 }
 
-                pub fn clear(&mut self) {
+                pub fn clear2(&mut self) {
                     #(
                         let ptr = self.#field_idents.0;
                         let ptr = ptr.cast_mut();

@@ -1,5 +1,4 @@
 use std::{
-    marker::PhantomData,
     mem::{ManuallyDrop, size_of},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -14,7 +13,6 @@ unsafe fn transmute_unchecked<Src, Dst>(src: Src) -> Dst {
     unsafe { std::ptr::read(std::ptr::from_ref(&src).cast()) }
 }
 
-// TODO: create derive macro to implement Lifetime
 /// # Safety
 /// The type of [`Lifetime::WithLifetime`] must be the same type as `Self` aside from lifetimes. In
 /// addition, [`Lifetime::WithLifetime`] may not use `'static` in a lifetime parameter if the original
@@ -22,24 +20,34 @@ unsafe fn transmute_unchecked<Src, Dst>(src: Src) -> Dst {
 pub unsafe trait Lifetime {
     type WithLifetime<'a>: Lifetime + 'a;
 
-    // TODO: this function is unused, but deleting it causes a "missing required bound" error?
+    /// # Safety
+    /// This may change references to have the lifetime of `'a`, which may impose additional safety
+    /// requirements.
     #[must_use]
-    fn _unused<'a>() -> Self::WithLifetime<'a> {
-        unimplemented!()
+    unsafe fn change_lifetime<'a>(self) -> Self::WithLifetime<'a>
+    where
+        Self: Sized,
+    {
+        // SAFETY: This lifetime cast is checked by the caller, and the safety requirements on implementors of
+        // the [`Lifetime`] trait ensure that no type cast or cast to a longer lifetime is occuring.
+        unsafe { transmute_unchecked(self) }
     }
 
     fn shorten_lifetime<'a>(self) -> Self::WithLifetime<'a>
     where
         Self: 'a + Sized,
     {
-        // SAFETY: Shortening a lifetime is allowed, and the safety requirements on implementors of
-        // the [`Lifetime`] trait ensure that no type cast or cast to a longer lifetime is occuring.
-        unsafe { transmute_unchecked(self) }
+        // SAFETY: Shortening a lifetime is allowed
+        unsafe { self.change_lifetime() }
     }
-}
 
-unsafe impl<T: Lifetime> Lifetime for &T {
-    type WithLifetime<'a> = &'a T::WithLifetime<'a>;
+    fn shorten_lifetime_ref<'a>(&self) -> &Self::WithLifetime<'a>
+    where
+        Self: 'a + Sized,
+    {
+        // SAFETY: Shortening a lifetime is allowed
+        unsafe { &*std::ptr::from_ref(self).cast::<Self::WithLifetime<'a>>() }
+    }
 }
 
 hyperion_packet_macros::for_each_static_play_c2s_packet! {
@@ -60,6 +68,27 @@ pub struct RuntimeLifetime<T> {
 }
 
 impl<T: Lifetime> RuntimeLifetime<T> {
+    #[must_use]
+    pub fn new<'a>(
+        value: T,
+        handle: &dyn LifetimeHandle<'a>,
+    ) -> RuntimeLifetime<T::WithLifetime<'static>>
+    where
+        T: 'a,
+    {
+        // SAFETY: [`RuntimeLifetime::get`] ensures that the `'static` referencs are not exposed
+        // publicly and that users can only access `T` with an appropriate lifetime.
+        let value = unsafe { value.change_lifetime::<'static>() };
+
+        let references = handle.references();
+        references.fetch_add(1, Ordering::SeqCst);
+
+        RuntimeLifetime {
+            value,
+            references: std::ptr::from_ref(references),
+        }
+    }
+
     #[must_use]
     pub const fn get<'a>(&'a self) -> &'a T::WithLifetime<'a> {
         // SAFETY: The program will abort if `self` is not dropped before
@@ -85,29 +114,18 @@ mod sealed {
     pub trait Sealed {}
 }
 
-pub trait LifetimeHandle<'a>: sealed::Sealed + Copy + Clone {
+pub trait LifetimeHandle<'a>: sealed::Sealed {
     #[must_use]
-    fn runtime_lifetime<T>(&self, value: T) -> RuntimeLifetime<T>
-    where
-        T: 'a;
+    fn references(&self) -> &AtomicUsize;
 }
 
-#[derive(Copy, Clone)]
 struct LifetimeHandleObject<'a> {
     references: &'a AtomicUsize,
 }
 impl sealed::Sealed for LifetimeHandleObject<'_> {}
 impl<'a> LifetimeHandle<'a> for LifetimeHandleObject<'a> {
-    fn runtime_lifetime<T>(&self, value: T) -> RuntimeLifetime<T>
-    where
-        T: 'a,
-    {
-        self.references.fetch_add(1, Ordering::SeqCst);
-
-        RuntimeLifetime {
-            value,
-            references: std::ptr::from_ref(self.references),
-        }
+    fn references(&self) -> &AtomicUsize {
+        self.references
     }
 }
 
@@ -128,21 +146,16 @@ impl LifetimeTracker {
     }
 
     /// # Safety
-    /// Data which might be passed to the resulting [`LifetimeHandle::runtime_lifetime`] and outlives the `'handle`
-    /// lifetime must only be dropped after [`LifetimeTracker::assert_no_references`] is called on this tracker. The
-    /// only purpose of the `'handle` lifetime is to allow users to control which values are allowed to be passed to
-    /// [`LifetimeHandle::runtime_lifetime`] since values passed there must outlive `'handle`. The length of the
-    /// `'handle` lifetime itself does not matter, and `'handle` may expire before
-    /// [`LifetimeTracker::assert_no_references`] is called.
-    ///
-    /// It is very important to **specify the `'handle` lifetime parameter**. Allowing `'handle` to be
-    /// inferred is likely to violate the above safety requirements.
+    /// Data which outlives the `'handle` lifetime and might have a [`RuntimeLifetime`] constructed with the resulting
+    /// [`LifetimeHandle`] must only be dropped after [`LifetimeTracker::assert_no_references`] is called on this
+    /// tracker. The only purpose of the `'handle` lifetime is to allow users to control which values can be wrapped
+    /// in a [`RuntimeLifetime`] since wrapped values must outlive `'handle`. The length of the `'handle` lifetime
+    /// itself does not matter, and `'handle` may expire before [`LifetimeTracker::assert_no_references`] is called.
     #[must_use]
-    unsafe fn handle<'handle>(&'handle self) -> impl LifetimeHandle<'handle> {
-        // Storing the lifetime generic in a trait ([`LifetimeHandle`]) instead of a struct is necessary to prohibit
+    pub unsafe fn handle<'handle>(&'handle self) -> impl LifetimeHandle<'handle> {
+        // Storing the lifetime parameter in a trait ([`LifetimeHandle`]) instead of a struct is necessary to prohibit
         // casts to a shorter lifetime. If the [`LifetimeHandle`]'s lifetime could be shortened, the user could safely
-        // pass values of any lifetime to [`LifetimeHandle::runtime_lifetime`], which would defeat the purpose of the
-        // `'handle` lifetime.
+        // wrap values of any lifetime in [`RuntimeLifetime`], which would defeat the purpose of the `'handle` lifetime.
         LifetimeHandleObject::<'handle> {
             references: &self.references,
         }
@@ -155,7 +168,6 @@ impl Default for LifetimeTracker {
             references: Box::new(AtomicUsize::new(0)),
         }
     }
-
 }
 
 impl Drop for LifetimeTracker {

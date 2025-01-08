@@ -7,9 +7,10 @@ use flecs_ecs::{
 };
 use hyperion::{
     net::agnostic,
-    simulation::{event, packet::HandlerRegistry},
+    simulation::{event, handlers::PacketSwitchQuery, packet::HandlerRegistry},
     storage::{CommandCompletionRequest, EventQueue},
 };
+use hyperion_utils::LifetimeHandle;
 
 use crate::component::CommandRegistry;
 
@@ -66,31 +67,36 @@ impl Module for CommandSystemModule {
         });
 
         world.get::<&mut HandlerRegistry>(|registry| {
-            registry.add_handler(Box::new(|completion: &CommandCompletionRequest<'_>, query| {
-                let input = completion.query;
+            registry.add_handler(Box::new(
+                |completion: &CommandCompletionRequest<'_>,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
+                    let input = completion.query;
 
-                // should be in form "/{command}"
-                let command = input
-                    .strip_prefix("/")
-                    .unwrap_or(input)
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("");
+                    // should be in form "/{command}"
+                    let command = input
+                        .strip_prefix("/")
+                        .unwrap_or(input)
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("");
 
-                if command.is_empty() {
-                    return Ok(());
-                }
+                    if command.is_empty() {
+                        return Ok(());
+                    }
 
-                query.world.get::<&CommandRegistry>(|registry| {
-                    let Some(cmd) = registry.commands.get(command) else {
-                        return;
-                    };
-                    let on_tab = &cmd.on_tab_complete;
-                    on_tab(query, completion);
-                });
+                    query.world.get::<&CommandRegistry>(|registry| {
+                        let Some(cmd) = registry.commands.get(command) else {
+                            return;
+                        };
+                        let on_tab = &cmd.on_tab_complete;
+                        // TODO:
+                        // on_tab(query, completion);
+                    });
 
-                Ok(())
-            }));
+                    Ok(())
+                },
+            ));
         });
     }
 }

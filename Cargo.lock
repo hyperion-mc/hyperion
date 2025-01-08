@@ -2834,6 +2834,7 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
+ "hyperion-utils",
  "indexmap",
  "tracing",
 ]
@@ -2875,6 +2876,7 @@ dependencies = [
  "anyhow",
  "flecs_ecs",
  "hyperion",
+ "hyperion-utils",
  "serde",
  "valence_protocol",
 ]
@@ -2899,6 +2901,7 @@ dependencies = [
  "flecs_ecs",
  "hyperion",
  "hyperion-inventory",
+ "hyperion-utils",
  "valence_protocol",
 ]
 
@@ -2915,7 +2918,6 @@ name = "hyperion-packet-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
- "quote",
  "syn 2.0.90",
 ]
 
@@ -3032,12 +3034,14 @@ dependencies = [
  "flecs_ecs",
  "futures-util",
  "hex",
+ "hyperion-packet-macros",
  "reqwest",
  "sha2",
  "tar",
  "tokio",
  "tokio-util",
  "tracing",
+ "valence_protocol",
 ]
 
 [[package]]

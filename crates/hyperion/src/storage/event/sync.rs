@@ -1,4 +1,5 @@
 use flecs_ecs::{core::Entity, macros::Component};
+use hyperion_utils::Lifetime;
 use valence_protocol::{
     Hand, ItemStack,
     packets::{
@@ -7,7 +8,7 @@ use valence_protocol::{
     },
 };
 
-use crate::{common::util::Lifetime, simulation::handlers::PacketSwitchQuery};
+use crate::simulation::handlers::PacketSwitchQuery;
 
 pub type EventFn<T> = Box<dyn Fn(&mut PacketSwitchQuery<'_>, &T) + 'static + Send + Sync>;
 
@@ -26,7 +27,7 @@ pub struct InteractEvent {
 }
 
 unsafe impl Lifetime for InteractEvent {
-    type WithLifetime<'a> = InteractEvent;
+    type WithLifetime<'a> = Self;
 }
 
 // TODO: remove this
