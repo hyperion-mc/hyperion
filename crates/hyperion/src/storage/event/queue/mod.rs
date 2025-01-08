@@ -43,18 +43,17 @@ fn register_and_pointer<T: ComponentId + DataComponent + ComponentType<Struct>>(
     world.get::<&T>(|x: &T| std::ptr::from_ref::<T>(x))
 }
 
-// TODO: Remote the Events struct
 // Create the Events struct
 define_events! {
     event::ItemInteract,
     event::SetSkin,
     event::AttackEntity,
-    event::ChatMessage<'static>,
-    event::Command<'static>,
+    event::ChatMessage,
+    event::Command,
     event::DestroyBlock,
     event::ItemDropEvent,
     event::PlaceBlock,
-    event::PluginMessage<'static>,
+    event::PluginMessage,
     event::PostureUpdate,
     event::SwingArm,
     event::ToggleDoor,

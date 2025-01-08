@@ -1,12 +1,6 @@
 use flecs_ecs::{core::Entity, macros::Component};
 use hyperion_utils::Lifetime;
-use valence_protocol::{
-    Hand, ItemStack,
-    packets::{
-        play,
-        play::click_slot_c2s::{ClickMode, SlotChange},
-    },
-};
+use valence_protocol::Hand;
 
 use crate::simulation::handlers::PacketSwitchQuery;
 

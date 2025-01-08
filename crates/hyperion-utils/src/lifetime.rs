@@ -50,6 +50,13 @@ pub unsafe trait Lifetime {
     }
 }
 
+unsafe impl<T> Lifetime for &T
+where
+    T: ?Sized + 'static,
+{
+    type WithLifetime<'a> = &'a T;
+}
+
 hyperion_packet_macros::for_each_static_play_c2s_packet! {
     unsafe impl Lifetime for PACKET {
         type WithLifetime<'a> = PACKET;
@@ -99,6 +106,9 @@ impl<T: Lifetime> RuntimeLifetime<T> {
         unsafe { &*(&raw const self.value).cast::<T::WithLifetime<'a>>() }
     }
 }
+
+unsafe impl<T> Send for RuntimeLifetime<T> where T: Send {}
+unsafe impl<T> Sync for RuntimeLifetime<T> where T: Sync {}
 
 impl<T> Drop for RuntimeLifetime<T> {
     fn drop(&mut self) {

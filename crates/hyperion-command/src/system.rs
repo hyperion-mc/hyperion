@@ -22,7 +22,7 @@ impl Module for CommandSystemModule {
         system!(
             "execute_command",
             world,
-            &mut EventQueue<event::Command<'_>>($),
+            &mut EventQueue<event::Command>($),
             &CommandRegistry($)
         )
         .each_iter(|it, _, (event_queue, registry)| {
@@ -30,6 +30,7 @@ impl Module for CommandSystemModule {
 
             let world = it.world();
             for event::Command { raw, by } in event_queue.drain() {
+                let raw = raw.get();
                 let Some(first_word) = raw.split_whitespace().next() else {
                     tracing::warn!("command is empty");
                     continue;
@@ -90,8 +91,7 @@ impl Module for CommandSystemModule {
                             return;
                         };
                         let on_tab = &cmd.on_tab_complete;
-                        // TODO:
-                        // on_tab(query, completion);
+                        on_tab(query, completion);
                     });
 
                     Ok(())

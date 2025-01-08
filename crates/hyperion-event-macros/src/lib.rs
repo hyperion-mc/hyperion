@@ -44,6 +44,7 @@ impl Parse for EventsInput {
 struct EventType {
     path: syn::Ident,
     ty: Type,
+    // TODO: Remove lifetime
     lifetime: Option<Lifetime>,
     ident: syn::Ident,
 }

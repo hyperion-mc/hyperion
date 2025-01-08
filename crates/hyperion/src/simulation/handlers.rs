@@ -1,19 +1,23 @@
 //! <https://wiki.vg/index.php?title=Protocol&oldid=18375>
 
+// The RegistryHandler requires a specific function signature
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
 use std::borrow::Cow;
 
 use anyhow::{Context, bail};
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
-use hyperion_utils::{EntityExt, LifetimeHandle};
-use tracing::{info, instrument, trace, warn};
+use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
+use tracing::{info, instrument, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
 };
 use valence_protocol::{
-    Bounded, Decode, Hand, ItemStack, Packet, VarInt,
+    Hand, ItemStack, VarInt,
     packets::play::{
         self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
         player_interact_entity_c2s::EntityInteraction,
@@ -197,20 +201,20 @@ fn position_and_on_ground(
     Ok(())
 }
 
-fn chat_command(
-    pkt: &play::CommandExecutionC2s<'_>,
-    _: &dyn LifetimeHandle<'_>,
+fn chat_command<'a>(
+    pkt: &play::CommandExecutionC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    //    let command = pkt.command.0;
+    let command = RuntimeLifetime::new(pkt.command.0, handle);
 
-    //    query.events.push(
-    //        event::Command {
-    //            raw: command,
-    //            by: query.id,
-    //        },
-    //        query.world,
-    //    );
+    query.events.push(
+        event::Command {
+            raw: command,
+            by: query.id,
+        },
+        query.world,
+    );
 
     Ok(())
 }
@@ -246,14 +250,14 @@ fn player_interact_entity(
     let target = packet.entity_id.0;
     let target = Entity::from_minecraft_id(target);
 
-    //    query.events.push(
-    //        event::AttackEntity {
-    //            origin: query.id,
-    //            target,
-    //            damage: 1.0,
-    //        },
-    //        query.world,
-    //    );
+    query.events.push(
+        event::AttackEntity {
+            origin: query.id,
+            target,
+            damage: 1.0,
+        },
+        query.world,
+    );
 
     Ok(())
 }
@@ -272,6 +276,7 @@ pub struct PacketSwitchQuery<'a> {
     pub world: &'a World,
     pub blocks: &'a Blocks,
     pub pose: &'a mut Pose,
+    pub events: &'a Events,
     pub confirm_block_sequences: &'a mut ConfirmBlockSequences,
     pub system: EntityView<'a>,
     pub inventory: &'a mut hyperion_inventory::PlayerInventory,
@@ -296,7 +301,7 @@ fn player_action(
                 sequence,
             };
 
-            // query.events.push(event, query.world);
+            query.events.push(event, query.world);
         }
         PlayerAction::ReleaseUseItem => {
             let event = event::ReleaseUseItem {
@@ -304,7 +309,7 @@ fn player_action(
                 item: query.inventory.get_cursor().item,
             };
 
-            // query.events.push(event, query.world);
+            query.events.push(event, query.world);
         }
         action => bail!("unimplemented {action:?}"),
     }
@@ -410,14 +415,14 @@ pub fn player_interact_block(
         // todo: place block instead of toggling door if the player is crouching and holding a
         // block
 
-        //        query.events.push(
-        //            event::ToggleDoor {
-        //                position: interacted_block_pos_vec,
-        //                from: query.id,
-        //                sequence: packet.sequence.0,
-        //            },
-        //            query.world,
-        //        );
+        query.events.push(
+            event::ToggleDoor {
+                position: interacted_block_pos_vec,
+                from: query.id,
+                sequence: packet.sequence.0,
+            },
+            query.world,
+        );
     } else {
         // Attempt to place a block
 
@@ -455,15 +460,15 @@ pub fn player_interact_block(
             return Ok(());
         }
 
-        //        query.events.push(
-        //            event::PlaceBlock {
-        //                position,
-        //                from: query.id,
-        //                sequence: packet.sequence.0,
-        //                block: block_state,
-        //            },
-        //            query.world,
-        //        );
+        query.events.push(
+            event::PlaceBlock {
+                position,
+                from: query.id,
+                sequence: packet.sequence.0,
+                block: block_state,
+            },
+            query.world,
+        );
     }
 
     Ok(())
@@ -496,23 +501,23 @@ pub fn creative_inventory_action(
     Ok(())
 }
 
-pub fn custom_payload(
-    packet: &play::CustomPayloadC2s<'_>,
-    _: &dyn LifetimeHandle<'_>,
+pub fn custom_payload<'a>(
+    packet: &play::CustomPayloadC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // let channel = packet.channel.into_inner();
+    let channel = packet.channel.clone().into_inner();
 
-    //    let Cow::Borrowed(borrow) = channel else {
-    //        bail!("NO")
-    //    };
-    //
-    //    let event = PluginMessage {
-    //        channel: borrow,
-    //        data: packet.data.0.0,
-    //    };
-    //
-    //    query.events.push(event, query.world);
+    let Cow::Borrowed(borrow) = channel else {
+        bail!("NO")
+    };
+
+    let event = PluginMessage {
+        channel: RuntimeLifetime::new(borrow, handle),
+        data: RuntimeLifetime::new(packet.data.0.0, handle),
+    };
+
+    query.events.push(event, query.world);
 
     Ok(())
 }
@@ -575,17 +580,16 @@ fn click_slot(
     Ok(())
 }
 
-fn chat_message(
-    pkt: &play::ChatMessageC2s<'_>,
-    _: &dyn LifetimeHandle<'_>,
+fn chat_message<'a>(
+    pkt: &play::ChatMessageC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // todo: we could technically remove allocations &[u8] exists until end of tick
-    let msg = pkt.message.0;
+    let msg = RuntimeLifetime::new(pkt.message.0, handle);
 
-    //    query
-    //        .events
-    //        .push(event::ChatMessage { msg, by: query.id }, query.world);
+    query
+        .events
+        .push(event::ChatMessage { msg, by: query.id }, query.world);
 
     Ok(())
 }
@@ -624,7 +628,7 @@ pub fn client_status(
         },
     };
 
-    // query.events.push(command, query.world);
+    query.events.push(command, query.world);
 
     Ok(())
 }
