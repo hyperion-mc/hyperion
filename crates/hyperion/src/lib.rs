@@ -48,7 +48,7 @@ use ingress::IngressModule;
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
-use storage::{Events, GlobalEventHandlers, LocalDb, SkinHandler, ThreadLocal};
+use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
 pub use uuid;
@@ -325,9 +325,6 @@ impl HyperionCore {
 
         world.component::<HandlerRegistry>();
         world.set(HandlerRegistry::default());
-
-        world.component::<GlobalEventHandlers>();
-        world.set(GlobalEventHandlers::default());
 
         info!("initializing database");
         let db = LocalDb::new()?;

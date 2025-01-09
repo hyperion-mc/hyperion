@@ -1,4 +1,4 @@
-use flecs_ecs::{core::Entity, macros::Component};
+use flecs_ecs::core::Entity;
 use hyperion_utils::Lifetime;
 use valence_protocol::Hand;
 
@@ -22,42 +22,6 @@ pub struct InteractEvent {
 
 unsafe impl Lifetime for InteractEvent {
     type WithLifetime<'a> = Self;
-}
-
-// TODO: remove this
-#[derive(Component, Default)]
-pub struct GlobalEventHandlers {
-    pub interact: EventHandlers<InteractEvent>,
-
-    // todo: this should be a lifetime for<'a>
-    pub completion: EventHandlers<CommandCompletionRequest<'static>>,
-}
-
-pub struct EventHandlers<T> {
-    handlers: Vec<EventFn<T>>,
-}
-
-impl<T> Default for EventHandlers<T> {
-    fn default() -> Self {
-        Self {
-            handlers: Vec::new(),
-        }
-    }
-}
-
-impl<T> EventHandlers<T> {
-    pub fn trigger_all(&self, world: &mut PacketSwitchQuery<'_>, event: &T) {
-        for handler in &self.handlers {
-            handler(world, event);
-        }
-    }
-
-    pub fn register2(
-        &mut self,
-        handler: impl Fn(&mut PacketSwitchQuery<'_>, &T) + 'static + Send + Sync,
-    ) {
-        self.handlers.push(Box::new(handler));
-    }
 }
 
 pub struct PlayerJoinServer {

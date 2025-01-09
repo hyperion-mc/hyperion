@@ -34,7 +34,7 @@ use crate::{
         packet::HandlerRegistry,
         skin::PlayerSkin,
     },
-    storage::{Events, GlobalEventHandlers, PlayerJoinServer, SkinHandler},
+    storage::{Events, PlayerJoinServer, SkinHandler},
     util::{SendableRef, TracingExt, mojang::MojangClient},
 };
 
@@ -461,7 +461,6 @@ impl Module for IngressModule {
             &Comms($),
             &SkinHandler($),
             &MojangClient($),
-            &GlobalEventHandlers($),
             &HandlerRegistry($),
             &mut PacketDecoder,
             &mut PacketState,
@@ -490,7 +489,6 @@ impl Module for IngressModule {
                 comms,
                 skins_collection,
                 mojang,
-                handlers,
                 handler_registry,
                 decoder,
                 login_state,
@@ -612,7 +610,6 @@ impl Module for IngressModule {
                                     inventory,
                                     animation,
                                     crafting_registry,
-                                    handlers,
                                     handler_registry,
                                 };
 

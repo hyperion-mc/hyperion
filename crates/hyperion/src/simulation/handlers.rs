@@ -40,7 +40,7 @@ use crate::{
         Pitch, Yaw, aabb, event, event::PluginMessage, metadata::entity::Pose,
         packet::HandlerRegistry,
     },
-    storage::{CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent},
+    storage::{CommandCompletionRequest, Events, InteractEvent},
 };
 
 fn full(
@@ -264,7 +264,6 @@ fn player_interact_entity(
 
 pub struct PacketSwitchQuery<'a> {
     pub id: Entity,
-    pub handlers: &'a GlobalEventHandlers,
     pub handler_registry: &'a HandlerRegistry,
     pub view: EntityView<'a>,
     pub compose: &'a Compose,
