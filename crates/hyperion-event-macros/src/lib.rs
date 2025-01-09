@@ -141,16 +141,6 @@ impl EventType {
                 unsafe impl ::hyperion_utils::Lifetime for #path::#ident<'_> {
                     type WithLifetime<'a> = #path::#ident<'a>;
                 }
-
-                impl ReducedLifetime for #path::#ident<'static> {
-                    type Reduced<'a> = #path::#ident<'a>
-                    where
-                        Self: 'a;
-
-                    fn reduce<'a>(self) -> Self::Reduced<'a> {
-                        self
-                    }
-                }
             }
         } else {
             quote! {
@@ -166,16 +156,6 @@ impl EventType {
 
                 unsafe impl ::hyperion_utils::Lifetime for #path::#ident {
                     type WithLifetime<'a> = #path::#ident;
-                }
-
-                impl ReducedLifetime for #path::#ident {
-                    type Reduced<'a> = Self
-                    where
-                        Self: 'a;
-
-                    fn reduce<'a>(self) -> Self::Reduced<'a> {
-                        self
-                    }
                 }
             }
         }
@@ -213,7 +193,7 @@ impl EventsInput {
                     }
                 }
 
-                pub fn clear2(&mut self) {
+                pub fn clear(&mut self) {
                     #(
                         let ptr = self.#field_idents.0;
                         let ptr = ptr.cast_mut();

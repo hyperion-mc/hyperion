@@ -28,7 +28,7 @@ mod sealed {
     pub trait Sealed {}
 }
 
-pub trait Event: ReducedLifetime + sealed::Sealed + Send + Sync + 'static {
+pub trait Event: sealed::Sealed + Send + Sync + 'static {
     fn input(elem: Self, events: &Events, world: &World);
 }
 
@@ -59,13 +59,4 @@ define_events! {
     event::ToggleDoor,
     event::ReleaseUseItem,
     event::ClientStatusEvent
-}
-
-// TODO: merge with new lifetime trait
-pub trait ReducedLifetime {
-    type Reduced<'a>
-    where
-        Self: 'a;
-
-    fn reduce<'a>(self) -> Self::Reduced<'a>;
 }
