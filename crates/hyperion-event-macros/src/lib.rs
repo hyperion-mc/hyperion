@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    Lifetime, Token, Type,
+    Token, Type,
     parse::{Parse, ParseStream, Result},
     parse_macro_input,
     punctuated::Punctuated,
@@ -40,20 +40,16 @@ impl Parse for EventsInput {
     }
 }
 
-/// Struct representing a single event type, possibly with a lifetime
+/// Struct representing a single event type
 struct EventType {
     path: syn::Ident,
     ty: Type,
-    // TODO: Remove lifetime
-    lifetime: Option<Lifetime>,
     ident: syn::Ident,
 }
 
 impl EventType {
     /// Extracts necessary components from a `syn::Type`
     fn from_type(ty: Type) -> Result<Self> {
-        let mut lifetime = None;
-
         let Type::Path(type_path) = &ty else {
             return Err(syn::Error::new(ty.span(), "expected a path"));
         };
@@ -70,12 +66,14 @@ impl EventType {
         let ident = last_segment.ident.clone();
         let generics = last_segment.arguments.clone();
 
-        // Extract lifetime if present
         if let syn::PathArguments::AngleBracketed(args) = &generics {
             for generic_arg in &args.args {
                 if let syn::GenericArgument::Lifetime(l) = generic_arg {
-                    lifetime = Some(l.clone());
-                    break;
+                    return Err(syn::Error::new(
+                        l.span(),
+                        "lifetimes are not allowed in events, consider using \
+                         hyperion_utils::RuntimeLifetime to store references",
+                    ));
                 }
             }
         }
@@ -89,12 +87,7 @@ impl EventType {
 
         let path = first_segment.ident.clone();
 
-        Ok(Self {
-            path,
-            ty,
-            lifetime,
-            ident,
-        })
+        Ok(Self { path, ty, ident })
     }
 
     /// Generates the field definition for the Events struct
@@ -126,38 +119,16 @@ impl EventType {
         let field_name = self.ident.to_string().to_case(Case::Snake);
         let field_ident = format_ident!("{field_name}");
 
-        if self.lifetime.is_some() {
-            quote! {
-                impl Event for #path::#ident<'static> {
-                    fn input(elem: Self, events: &Events, world: &World) {
-                        unsafe {
-                            (*events.#field_ident.0).push(elem, world);
-                        }
+        quote! {
+            impl Event for #path::#ident {
+                fn input(elem: Self, events: &Events, world: &World) {
+                    unsafe {
+                        (*events.#field_ident.0).push(elem, world);
                     }
                 }
-
-                impl sealed::Sealed for #path::#ident<'static> {}
-
-                unsafe impl ::hyperion_utils::Lifetime for #path::#ident<'_> {
-                    type WithLifetime<'a> = #path::#ident<'a>;
-                }
             }
-        } else {
-            quote! {
-                impl Event for #path::#ident {
-                    fn input(elem: Self, events: &Events, world: &World) {
-                        unsafe {
-                            (*events.#field_ident.0).push(elem, world);
-                        }
-                    }
-                }
 
-                impl sealed::Sealed for #path::#ident {}
-
-                unsafe impl ::hyperion_utils::Lifetime for #path::#ident {
-                    type WithLifetime<'a> = #path::#ident;
-                }
-            }
+            impl sealed::Sealed for #path::#ident {}
         }
     }
 }
