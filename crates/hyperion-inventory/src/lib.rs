@@ -11,9 +11,6 @@ use valence_protocol::{
     packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
 };
 
-pub mod action;
-pub mod parser;
-
 pub type PlayerInventory = Inventory;
 
 #[derive(Component, Clone, Debug, PartialEq)]
@@ -664,53 +661,3 @@ impl ItemKindExt for ItemKind {
         self.is_helmet() || self.is_chestplate() || self.is_leggings() || self.is_boots()
     }
 }
-
-// pub fn is_helmet(kind: ItemKind) -> bool {
-// matches!(
-// kind,
-// ItemKind::LeatherHelmet |
-// ItemKind::ChainmailHelmet |
-// ItemKind::IronHelmet |
-// ItemKind::GoldenHelmet |
-// ItemKind::DiamondHelmet |
-// ItemKind::NetheriteHelmet |
-// ItemKind::TurtleHelmet |
-// ItemKind::PlayerHead
-// )
-// }
-//
-// pub fn is_chestplate(kind: ItemKind) -> bool {
-// matches!(
-// kind,
-// ItemKind::LeatherChestplate |
-// ItemKind::ChainmailChestplate |
-// ItemKind::IronChestplate |
-// ItemKind::GoldenChestplate |
-// ItemKind::DiamondChestplate |
-// ItemKind::NetheriteChestplate
-// )
-// }
-//
-// pub fn is_leggings(kind: ItemKind) -> bool {
-// matches!(
-// kind,
-// ItemKind::LeatherLeggings |
-// ItemKind::ChainmailLeggings |
-// ItemKind::IronLeggings |
-// ItemKind::GoldenLeggings |
-// ItemKind::DiamondLeggings |
-// ItemKind::NetheriteLeggings
-// )
-// }
-//
-// pub fn is_boots(kind: ItemKind) -> bool {
-// matches!(
-// kind,
-// ItemKind::LeatherBoots |
-// ItemKind::ChainmailBoots |
-// ItemKind::IronBoots |
-// ItemKind::GoldenBoots |
-// ItemKind::DiamondBoots |
-// ItemKind::NetheriteBoots
-// )
-// }
