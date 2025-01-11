@@ -10,7 +10,6 @@ use hyperion::{
 };
 
 pub mod inventory;
-pub mod skin;
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq, Component, Default)]
 #[repr(C)]

@@ -467,7 +467,7 @@ impl Module for IngressModule {
             &ConnectionId,
             ?&mut Pose,
             &Events($),
-            &EntitySize,
+            &mut EntitySize,
             ?&mut Position,
             &mut Yaw,
             &mut Pitch,

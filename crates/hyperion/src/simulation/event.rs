@@ -3,7 +3,7 @@
 use derive_more::Constructor;
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
-use hyperion_utils::RuntimeLifetime;
+use hyperion_utils::{Lifetime, RuntimeLifetime};
 use valence_generated::block::BlockState;
 use valence_protocol::Hand;
 use valence_server::{ItemKind, entity::item_frame::ItemStack};
@@ -48,6 +48,13 @@ pub struct AttackEntity {
 pub struct HealthUpdate {
     pub from: f32,
     pub to: f32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct StartDestroyBlock {
+    pub position: IVec3,
+    pub from: Entity,
+    pub sequence: i32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -144,4 +151,8 @@ pub enum ClientStatusCommand {
 pub struct ClientStatusEvent {
     pub client: Entity,
     pub status: ClientStatusCommand,
+}
+
+unsafe impl Lifetime for ClientStatusEvent {
+    type WithLifetime<'a> = Self;
 }
