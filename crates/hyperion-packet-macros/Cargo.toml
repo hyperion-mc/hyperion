@@ -1,0 +1,17 @@
+[dependencies]
+proc-macro2.workspace = true
+syn.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "hyperion-packet-macros"
+publish = false
+readme = "README.md"
+version.workspace = true

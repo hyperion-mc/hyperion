@@ -2,13 +2,15 @@
 
 use std::{borrow::Cow, cell::Cell, collections::HashMap};
 
+use anyhow::Context;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
     net::{Compose, ConnectionId},
-    storage::GlobalEventHandlers,
+    simulation::{handlers::PacketSwitchQuery, packet::HandlerRegistry},
     valence_protocol::{
         ItemStack, VarInt,
         packets::play::{
+            ClickSlotC2s,
             click_slot_c2s::ClickMode,
             close_screen_s2c::CloseScreenS2c,
             inventory_s2c::InventoryS2c,
@@ -17,6 +19,7 @@ use hyperion::{
         text::IntoText,
     },
 };
+use hyperion_utils::LifetimeHandle;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -152,44 +155,50 @@ impl Gui {
 
         self.draw(system, player);
 
-        world.get::<&mut GlobalEventHandlers>(|event_handlers| {
+        world.get::<&mut HandlerRegistry>(|registry| {
             let window_id = self.window_id;
             let items = self.items.clone();
             let gui = self.clone();
-            event_handlers.click.register(move |query, event| {
-                let system = query.system;
-                let button = event.mode;
+            registry.add_handler(Box::new(
+                move |event: &ClickSlotC2s<'_>,
+                      _: &dyn LifetimeHandle<'_>,
+                      query: &mut PacketSwitchQuery<'_>| {
+                    let system = query.system;
+                    let button = event.mode;
 
-                if event.window_id != window_id {
-                    return;
-                }
+                    if event.window_id != window_id {
+                        return Ok(());
+                    }
 
-                let slot = usize::from(event.slot_idx);
-                let Some(item) = items.get(&slot) else {
-                    return;
-                };
+                    let slot = usize::try_from(event.slot_idx).context("invalid slot index")?;
+                    let Some(item) = items.get(&slot) else {
+                        return Ok(());
+                    };
 
-                (item.on_click)(player, button);
-                gui.draw(query.system, player);
+                    (item.on_click)(player, button);
+                    gui.draw(query.system, player);
 
-                let inventory = &*query.inventory;
-                let compose = query.compose;
-                let stream = query.io_ref;
+                    let inventory = &*query.inventory;
+                    let compose = query.compose;
+                    let stream = query.io_ref;
 
-                // re-draw the inventory
-                let player_inv = inventory.slots();
+                    // re-draw the inventory
+                    let player_inv = inventory.slots();
 
-                let set_content_packet = InventoryS2c {
-                    window_id: 0,
-                    state_id: VarInt(0),
-                    slots: Cow::Borrowed(player_inv),
-                    carried_item: Cow::Borrowed(&ItemStack::EMPTY),
-                };
+                    let set_content_packet = InventoryS2c {
+                        window_id: 0,
+                        state_id: VarInt(0),
+                        slots: Cow::Borrowed(player_inv),
+                        carried_item: Cow::Borrowed(&ItemStack::EMPTY),
+                    };
 
-                compose
-                    .unicast(&set_content_packet, stream, system)
-                    .unwrap();
-            });
+                    compose
+                        .unicast(&set_content_packet, stream, system)
+                        .unwrap();
+
+                    Ok(())
+                },
+            ));
         });
     }
 

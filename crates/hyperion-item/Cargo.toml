@@ -12,6 +12,7 @@ bytemuck = "1.19.0"
 valence_protocol = { workspace = true }
 hyperion = { workspace = true }
 hyperion-inventory = { workspace = true }
+hyperion-utils = { workspace = true }
 derive_more = { workspace = true }
 
 [lints]

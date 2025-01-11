@@ -5,7 +5,9 @@ use flecs_ecs::{
 };
 
 mod cached_save;
+mod lifetime;
 pub use cached_save::cached_save;
+pub use lifetime::*;
 
 pub trait EntityExt {
     fn minecraft_id(&self) -> i32;

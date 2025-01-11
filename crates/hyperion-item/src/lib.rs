@@ -4,7 +4,11 @@ use flecs_ecs::{
     macros::Component,
     prelude::Module,
 };
-use hyperion::storage::{EventFn, GlobalEventHandlers, InteractEvent};
+use hyperion::{
+    simulation::{handlers::PacketSwitchQuery, packet::HandlerRegistry},
+    storage::{EventFn, InteractEvent},
+};
+use hyperion_utils::LifetimeHandle;
 use valence_protocol::nbt;
 
 pub mod builder;
@@ -22,38 +26,44 @@ impl Module for ItemModule {
         world.import::<hyperion_inventory::InventoryModule>();
         world.component::<Handler>();
 
-        world.get::<&mut GlobalEventHandlers>(|handlers| {
-            handlers.interact.register(|query, event| {
-                let world = query.world;
-                let inventory = &mut *query.inventory;
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |event: &InteractEvent,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
+                    let world = query.world;
+                    let inventory = &mut *query.inventory;
 
-                let stack = inventory.get_cursor();
+                    let stack = inventory.get_cursor();
 
-                if stack.is_empty() {
-                    return;
-                }
+                    if stack.is_empty() {
+                        return Ok(());
+                    }
 
-                let Some(nbt) = stack.nbt.as_ref() else {
-                    return;
-                };
+                    let Some(nbt) = stack.nbt.as_ref() else {
+                        return Ok(());
+                    };
 
-                let Some(handler) = nbt.get("Handler") else {
-                    return;
-                };
+                    let Some(handler) = nbt.get("Handler") else {
+                        return Ok(());
+                    };
 
-                let nbt::Value::Long(id) = handler else {
-                    return;
-                };
+                    let nbt::Value::Long(id) = handler else {
+                        return Ok(());
+                    };
 
-                let id: u64 = bytemuck::cast(*id);
+                    let id: u64 = bytemuck::cast(*id);
 
-                let handler = world.entity_from_id(id);
+                    let handler = world.entity_from_id(id);
 
-                handler.try_get::<&Handler>(|handler| {
-                    let on_interact = &handler.on_click;
-                    on_interact(query, event);
-                });
-            });
+                    handler.try_get::<&Handler>(|handler| {
+                        let on_interact = &handler.on_click;
+                        on_interact(query, event);
+                    });
+
+                    Ok(())
+                },
+            ));
         });
     }
 }

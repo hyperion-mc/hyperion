@@ -8,7 +8,7 @@ use flecs_ecs::{
 use hyperion::{
     net::{Compose, ConnectionId, DataBundle, agnostic},
     simulation::{IgnMap, command::get_root_command_entity, handlers::PacketSwitchQuery},
-    storage::{CommandCompletionRequest, EventFn},
+    storage::CommandCompletionRequest,
 };
 pub use hyperion_clap_macros::CommandPermission;
 pub use hyperion_command;
@@ -111,7 +111,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
             };
         };
 
-        let on_tab_complete: EventFn<CommandCompletionRequest<'static>> = Box::new(
+        let on_tab_complete = Box::new(
             |packet_switch_query: &mut PacketSwitchQuery<'_>,
              completion: &CommandCompletionRequest<'_>| {
                 let full_query = completion.query;
