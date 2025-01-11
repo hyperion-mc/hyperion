@@ -87,7 +87,7 @@ impl<T: Lifetime> RuntimeLifetime<T> {
         // publicly and that users can only access `T` with an appropriate lifetime.
         let value = unsafe { value.change_lifetime::<'static>() };
 
-        let references = handle.references();
+        let references = unsafe { handle.__private_references(sealed::Sealed) };
         references.fetch_add(1, Ordering::SeqCst);
 
         RuntimeLifetime {
@@ -121,20 +121,23 @@ impl<T> Drop for RuntimeLifetime<T> {
 }
 
 mod sealed {
-    pub trait Sealed {}
+    pub struct Sealed;
 }
 
-pub trait LifetimeHandle<'a>: sealed::Sealed {
+pub trait LifetimeHandle<'a> {
+    /// # Safety
+    /// The returned references value must only be used in increment-decrement pairs. In other words, it can only be
+    /// decremented if it were previously incremented.
     #[must_use]
-    fn references(&self) -> &AtomicUsize;
+    unsafe fn __private_references(&self, _: sealed::Sealed) -> &AtomicUsize;
 }
 
 struct LifetimeHandleObject<'a> {
     references: &'a AtomicUsize,
 }
-impl sealed::Sealed for LifetimeHandleObject<'_> {}
+
 impl<'a> LifetimeHandle<'a> for LifetimeHandleObject<'a> {
-    fn references(&self) -> &AtomicUsize {
+    unsafe fn __private_references(&self, _: sealed::Sealed) -> &AtomicUsize {
         self.references
     }
 }
