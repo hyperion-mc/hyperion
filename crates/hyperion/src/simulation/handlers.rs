@@ -664,14 +664,16 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(update_selected_slot));
 }
 
-pub fn packet_switch<'a>(
+/// # Safety
+/// The [`BorrowedPacketFrame`] must borrow data from the [`Compose::bump`] in
+/// [`PacketSwitchQuery::Compose`]
+pub unsafe fn packet_switch<'a>(
     raw: BorrowedPacketFrame<'a>,
     query: &mut PacketSwitchQuery<'a>,
 ) -> anyhow::Result<()> {
     let packet_id = raw.id;
     let data = raw.body;
 
-    // TODO: add unsafe somewhere because the bytes must come from the compose bump
     // SAFETY: The only data that [`HandlerRegistry::process_packet`] is aware of outliving 'a is the packet bytes.
     // The packet bytes are stored in the compose bump allocator.
     // [`LifetimeTracker::assert_no_references`] will be called on the bump tracker before the
