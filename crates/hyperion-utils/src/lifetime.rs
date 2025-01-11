@@ -88,7 +88,17 @@ impl<T: Lifetime> RuntimeLifetime<T> {
         let value = unsafe { value.change_lifetime::<'static>() };
 
         let references = unsafe { handle.__private_references(sealed::Sealed) };
-        references.fetch_add(1, Ordering::SeqCst);
+
+        // Relaxed ordering is used here because a shared reference is being held to the
+        // LifetimeTracker, meaning that LifetimeTracker::assert_no_references cannot be called
+        // concurrently in another thread becuase it requires an exclusive reference to the
+        // LifetimeTracker. In a multi-threaded scenario where the LifetimeTracker is shared
+        // across threads, there will always be a happens-before relationship where this increment
+        // occurs before LifetimeTracker::assert_no_references is called and reads this value
+        // because the synchronization primitive needed to get an exclusive reference to
+        // LifetimeTracker should form a happens-before relationship, so using a stricter ordering
+        // here is not needed.
+        references.fetch_add(1, Ordering::Relaxed);
 
         RuntimeLifetime {
             value,
@@ -114,9 +124,19 @@ impl<T> Drop for RuntimeLifetime<T> {
     fn drop(&mut self) {
         // SAFETY: `self.references` is safe to dereference because the underlying [`LifetimeTracker`] would
         // have already aborted if it were dropped before this
-        unsafe {
-            (*self.references).fetch_sub(1, Ordering::Relaxed);
-        }
+        let references = unsafe { &*self.references };
+
+        // Relaxed ordering is used here because user code must guarantee that this will be dropped before another
+        // thread calls LifetimeTracker::assert_no_references, or else assert_no_references will abort. In a
+        // multi-threaded scenario, user code will already need to do something which would form a
+        // happens-before relationship to fulfill this guarantee, so any ordering stricter than
+        // Relaxed is not needed.
+        references.fetch_sub(1, Ordering::Relaxed);
+
+        // Dropping the inner value is sound despite having 'static lifetime parameters because
+        // Drop implementations cannot be specialized, meaning that the Drop implementation cannot
+        // change its behavior to do something unsound (such as by keeping those 'static references
+        // after the value is dropped) when the type has 'static lifetime parameters.
     }
 }
 
@@ -148,8 +168,7 @@ pub struct LifetimeTracker {
 
 impl LifetimeTracker {
     pub fn assert_no_references(&mut self) {
-        // TODO: determine better ordering to use
-        let references = self.references.load(Ordering::SeqCst);
+        let references = self.references.load(Ordering::Relaxed);
         if references != 0 {
             tracing::error!("{references} values were held too long - aborting");
             // abort is needed to avoid a panic handler allowing those values to continue being
