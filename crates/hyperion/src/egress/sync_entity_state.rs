@@ -452,7 +452,7 @@ impl Module for EntityStateSyncModule {
                                     projectile: *arrow_entity,
                                 },
                                 &world,
-                            )
+                            );
                         });
                     }
                     Either::Right(collision) => {
@@ -464,7 +464,7 @@ impl Module for EntityStateSyncModule {
                                     projectile: *arrow_entity,
                                 },
                                 &world,
-                            )
+                            );
                         });
                     }
                 }
