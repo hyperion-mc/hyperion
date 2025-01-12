@@ -171,10 +171,7 @@ impl Module for EgressModule {
         .each(move |compose| {
             let span = info_span!("clear_bump");
             let _enter = span.enter();
-
-            for bump in &mut compose.bump {
-                bump.reset();
-            }
+            compose.clear_bump();
         });
     }
 }

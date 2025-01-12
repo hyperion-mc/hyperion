@@ -8,18 +8,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y \
-        binutils \
-        build-essential \
-        cmake \
-        curl \
-        gcc \
-        libclang-dev \
-        libclang1 \
-        libssl-dev \
-        linux-headers-generic \
-        llvm-dev \
-        perl \
-        pkg-config \
+    binutils \
+    build-essential \
+    cmake \
+    curl \
+    gcc \
+    libclang-dev \
+    libclang1 \
+    libssl-dev \
+    linux-headers-generic \
+    llvm-dev \
+    perl \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Base builder stage with Rust installation
@@ -35,7 +35,9 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain ${RUST_NIGH
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 WORKDIR /app
 
-RUN cargo install cargo-machete cargo-nextest
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash && \
+    cargo binstall -y cargo-machete cargo-nextest && \
+    rm -rf /root/.cargo/registry /root/.cargo/git
 
 COPY . .
 
@@ -56,22 +58,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=/app/target \
     cargo clippy --workspace --benches --tests --examples --all-features --frozen -- -D warnings && \
-    cargo nextest archive --all-features --frozen --archive-file tests.tar.zst
-
-FROM builder-ci AS doc
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=${CARGO_HOME}/git \
-    --mount=type=cache,target=/app/target \
-    cargo doc --all-features --workspace --frozen --no-deps && \
-    touch doc-done
-
-
-FROM builder-base AS nextest
-
-COPY --from=builder-ci /app/tests.tar.zst /app/tests.tar.zst
-RUN cargo nextest run --archive-file tests.tar.zst && \
-    touch nextest-done
+    #    cargo doc --all-features --workspace --frozen --no-deps && \
+    cargo nextest run --all-features --frozen && \
+    touch ci-done
 
 
 FROM builder-base AS fmt
@@ -82,46 +71,7 @@ FROM builder-base AS ci
 
 COPY --from=machete /app/machete-done /app/machete-done
 COPY --from=fmt /app/fmt-done /app/fmt-done
-COPY --from=nextest /app/nextest-done /app/nextest-done
-COPY --from=doc /app/doc-done /app/doc-done
-
-FROM builder-base AS antithesis
-
-# todo: assert target is amd64
-# https://antithesis.com/docs/using_antithesis/sdk/rust/instrumentation/
-
-COPY ./libvoidstar.so /usr/lib/libvoidstar.so
-
-# Assumes libvoidstar.so is in /usr/lib
-ENV LIBVOIDSTAR_PATH=/usr/lib
-ENV LD_LIBRARY_PATH=/usr/lib
-
-ENV RUSTFLAGS="-Ccodegen-units=1 \
-    -Cpasses=sancov-module \
-    -Cllvm-args=-sanitizer-coverage-level=3 \
-    -Cllvm-args=-sanitizer-coverage-trace-pc-guard \
-    -Clink-args=-Wl,--build-id \
-    -Clink-args=-Wl,-z,nostart-stop-gc \
-    -L/usr/lib \
-    -lvoidstar"
-
-ENV LIBVOIDSTAR_PATH=/usr/lib
-ENV LD_LIBRARY_PATH=/usr/lib
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=${CARGO_HOME}/git \
-    --mount=type=cache,target=/antithesis-target \
-    cargo build --frozen --target-dir /antithesis-target && \
-    cp /antithesis-target/debug/hyperion-proxy /app/hyperion-proxy && \
-    cp /antithesis-target/debug/tag /app/tag && \
-    cp /antithesis-target/debug/antithesis-bot /app/antithesis-bot
-
-# Verify instrumentation was successful
-RUN --mount=type=cache,target=/antithesis-target \
-    nm /antithesis-target/debug/hyperion-proxy | grep "sanitizer_cov_trace_pc_guard" && \
-    ldd /antithesis-target/debug/hyperion-proxy | grep "libvoidstar" && \
-    nm /antithesis-target/debug/tag | grep "sanitizer_cov_trace_pc_guard" && \
-    ldd /antithesis-target/debug/tag | grep "libvoidstar"
+COPY --from=builder-ci /app/ci-done /app/ci-done
 
 # Release builder
 FROM builder-base AS build-release
@@ -129,7 +79,7 @@ FROM builder-base AS build-release
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=${CARGO_HOME}/git \
     --mount=type=cache,target=/app/target \
-    cargo build --profile release-full --frozen --workspace --exclude antithesis-bot && \
+    cargo build --profile release-full --frozen --workspace && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
     cp target/release-full/tag /app/build/
@@ -138,7 +88,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 FROM ubuntu:24.04 AS runtime-base
 RUN apt-get update && \
     apt-get install -y \
-        ca-certificates \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV RUST_BACKTRACE=1 \
     RUST_LOG=info
@@ -147,8 +97,8 @@ ENV RUST_BACKTRACE=1 \
 FROM runtime-base AS hyperion-proxy
 COPY --from=build-release /app/build/hyperion-proxy /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-      org.opencontainers.image.description="Hyperion Proxy Server" \
-      org.opencontainers.image.version="0.1.0"
+    org.opencontainers.image.description="Hyperion Proxy Server" \
+    org.opencontainers.image.version="0.1.0"
 EXPOSE 8080
 ENTRYPOINT ["/hyperion-proxy"]
 CMD ["0.0.0.0:8080"]
@@ -156,31 +106,7 @@ CMD ["0.0.0.0:8080"]
 FROM runtime-base AS tag
 COPY --from=build-release /app/build/tag /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-      org.opencontainers.image.description="Hyperion Tag Event" \
-      org.opencontainers.image.version="0.1.0"
+    org.opencontainers.image.description="Hyperion Tag Event" \
+    org.opencontainers.image.version="0.1.0"
 ENTRYPOINT ["/tag"]
 CMD ["--ip", "0.0.0.0", "--port", "35565"]
-
-FROM runtime-base AS antithesis-hyperion-proxy
-COPY --from=antithesis /app/hyperion-proxy /
-LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-      org.opencontainers.image.description="Hyperion Proxy Server" \
-      org.opencontainers.image.version="0.1.0"
-EXPOSE 8080
-ENTRYPOINT ["/hyperion-proxy"]
-CMD ["0.0.0.0:8080"]
-
-FROM runtime-base AS antithesis-tag
-COPY --from=antithesis /app/tag /
-LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-      org.opencontainers.image.description="Hyperion Tag Event" \
-      org.opencontainers.image.version="0.1.0"
-
-FROM runtime-base AS antithesis-bot
-
-ENV LD_LIBRARY_PATH=/usr/lib
-COPY --from=antithesis /usr/lib/libvoidstar.so /usr/lib/libvoidstar.so
-COPY --from=antithesis /app/antithesis-bot /
-LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-      org.opencontainers.image.description="Hyperion Antithesis Bot" \
-      org.opencontainers.image.version="0.1.0"

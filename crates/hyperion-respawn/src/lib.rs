@@ -1,38 +1,39 @@
 use hyperion::{
     flecs_ecs::{
         self,
-        core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World},
-        macros::{system, Component},
+        core::{EntityViewGet, World, WorldGet},
+        macros::Component,
         prelude::Module,
     },
-    net::{Compose, ConnectionId},
+    net::{ConnectionId, DataBundle},
     protocol::{game_mode::OptGameMode, packets::play, ByteAngle, VarInt},
     server::{ident, GameMode},
     simulation::{
         event::{ClientStatusCommand, ClientStatusEvent},
+        handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
-        Pitch, Position, Uuid, Yaw,
+        packet::HandlerRegistry,
+        Pitch, Position, Uuid, Xp, Yaw,
     },
-    storage::EventQueue,
 };
-use hyperion_utils::EntityExt;
+use hyperion_utils::{EntityExt, LifetimeHandle};
 
 #[derive(Component)]
 pub struct RespawnModule;
 
 impl Module for RespawnModule {
     fn module(world: &World) {
-        system!("handle_respawn", world, &mut EventQueue<ClientStatusEvent>($),  &Compose($))
-            .multi_threaded()
-            .each_iter(|it, _, (event_queue, compose)| {
-                let world = it.world();
-                let system = it.system();
-                for event in event_queue.drain() {
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |event: &ClientStatusEvent,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
                     if event.status == ClientStatusCommand::RequestStats {
-                        continue;
+                        return Ok(());
                     }
 
-                    let client = event.client.entity_view(world);
+                    let client = event.client.entity_view(query.world);
+
                     client.get::<(
                         &ConnectionId,
                         &mut Health,
@@ -41,8 +42,9 @@ impl Module for RespawnModule {
                         &Position,
                         &Yaw,
                         &Pitch,
+                        &Xp,
                     )>(
-                        |(connection, health, pose, uuid, position, yaw, pitch)| {
+                        |(connection, health, pose, uuid, position, yaw, pitch, xp)| {
                             health.heal(20.);
 
                             *pose = Pose::Standing;
@@ -67,6 +69,12 @@ impl Module for RespawnModule {
                                 portal_cooldown: VarInt::default(),
                             };
 
+                            let pkt_xp = play::ExperienceBarUpdateS2c {
+                                bar: xp.get_visual().prop,
+                                level: VarInt(i32::from(xp.get_visual().level)),
+                                total_xp: VarInt::default(),
+                            };
+
                             let pkt_add_player = play::PlayerSpawnS2c {
                                 entity_id: VarInt(client.minecraft_id()),
                                 player_uuid: uuid.0,
@@ -75,12 +83,23 @@ impl Module for RespawnModule {
                                 pitch: ByteAngle::from_degrees(**pitch),
                             };
 
-                            compose.unicast(&pkt_health, *connection, system).unwrap();
-                            compose.unicast(&pkt_respawn, *connection, system).unwrap();
-                            compose.broadcast(&pkt_add_player, system).send().unwrap();
+                            let mut bundle = DataBundle::new(query.compose, query.system);
+                            bundle.add_packet(&pkt_health).unwrap();
+                            bundle.add_packet(&pkt_respawn).unwrap();
+                            bundle.add_packet(&pkt_xp).unwrap();
+
+                            bundle.unicast(*connection).unwrap();
+                            query
+                                .compose
+                                .broadcast(&pkt_add_player, query.system)
+                                .send()
+                                .unwrap();
                         },
                     );
-                }
-            });
+
+                    Ok(())
+                },
+            ));
+        });
     }
 }
