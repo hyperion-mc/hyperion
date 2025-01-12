@@ -666,7 +666,7 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
 
 /// # Safety
 /// The [`BorrowedPacketFrame`] must borrow data from the [`Compose::bump`] in
-/// [`PacketSwitchQuery::Compose`]
+/// [`PacketSwitchQuery::compose`]
 pub unsafe fn packet_switch<'a>(
     raw: BorrowedPacketFrame<'a>,
     query: &mut PacketSwitchQuery<'a>,
