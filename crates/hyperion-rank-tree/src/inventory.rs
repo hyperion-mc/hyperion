@@ -61,7 +61,7 @@ impl Class {
             )
             .build();
 
-        inventory.set_hotbar(HELP_SLOT, book);
+        inventory.set_hotbar(HELP_SLOT, book).unwrap();
 
         let color = match team {
             Team::Red => Color(255, 0, 0),
@@ -103,15 +103,17 @@ impl Class {
                 }
 
                 let item = item.build();
-                inventory.set_hotbar(slot, item);
+                inventory.set_hotbar(slot, item).unwrap();
             }
         });
 
         let default_pickaxe = ItemBuilder::new(ItemKind::WoodenPickaxe).build();
-        inventory.set_hotbar(PICKAXE_SLOT, default_pickaxe);
+        inventory.set_hotbar(PICKAXE_SLOT, default_pickaxe).unwrap();
 
         let default_build_item = team.build_item().count(build_count).build();
-        inventory.set_hotbar(BLOCK_SLOT, default_build_item);
+        inventory
+            .set_hotbar(BLOCK_SLOT, default_build_item)
+            .unwrap();
 
         match self {
             Self::Stick => {
@@ -121,13 +123,13 @@ impl Class {
                     .add_attribute(AttackDamage(3.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, stick);
+                inventory.set_hotbar(MAIN_SLOT, stick).unwrap();
             }
 
             Self::Archer => {
                 let bow = ItemBuilder::new(ItemKind::Bow).build();
 
-                inventory.set_hotbar(MAIN_SLOT, bow);
+                inventory.set_hotbar(MAIN_SLOT, bow).unwrap();
 
                 let arrow = ItemBuilder::new(ItemKind::Arrow).count(64).build();
 
@@ -139,7 +141,7 @@ impl Class {
                     .add_attribute(AttackDamage(3.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, sword);
+                inventory.set_hotbar(MAIN_SLOT, sword).unwrap();
             }
 
             Self::Miner => {
@@ -149,13 +151,13 @@ impl Class {
                     .add_attribute(AttackDamage(3.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, torch);
+                inventory.set_hotbar(MAIN_SLOT, torch).unwrap();
 
                 let pickaxe = ItemBuilder::new(ItemKind::StonePickaxe)
                     .add_attribute(AttackDamage(2.0))
                     .build();
 
-                inventory.set_hotbar(PICKAXE_SLOT, pickaxe);
+                inventory.set_hotbar(PICKAXE_SLOT, pickaxe).unwrap();
             }
 
             Self::Mage => {
@@ -164,7 +166,7 @@ impl Class {
                     .add_attribute(AttackDamage(2.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, wand);
+                inventory.set_hotbar(MAIN_SLOT, wand).unwrap();
             }
             Self::Knight => {
                 let knight_sword = ItemBuilder::new(ItemKind::IronSword)
@@ -173,19 +175,19 @@ impl Class {
                     .add_attribute(AttackDamage(4.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, knight_sword);
+                inventory.set_hotbar(MAIN_SLOT, knight_sword).unwrap();
             }
             Self::Builder => {
                 let builder_tool = ItemBuilder::new(ItemKind::GoldenPickaxe)
                     .add_attribute(AttackDamage(5.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, builder_tool);
+                inventory.set_hotbar(MAIN_SLOT, builder_tool).unwrap();
             }
             Self::Excavator => {
                 let pickaxe = ItemBuilder::new(ItemKind::IronPickaxe).build();
 
-                inventory.set_hotbar(PICKAXE_SLOT, pickaxe);
+                inventory.set_hotbar(PICKAXE_SLOT, pickaxe).unwrap();
 
                 let minecart = ItemBuilder::new(ItemKind::Minecart)
                     .name("§3§lMINECART")
@@ -193,7 +195,7 @@ impl Class {
                     .add_attribute(AttackDamage(3.0))
                     .build();
 
-                inventory.set_hotbar(MAIN_SLOT, minecart);
+                inventory.set_hotbar(MAIN_SLOT, minecart).unwrap();
             }
         }
 
@@ -204,6 +206,8 @@ impl Class {
         }
 
         let upgrade_item = upgrade_item.build();
-        inventory.set_hotbar(UPGRADE_CLASS_SLOT, upgrade_item);
+        inventory
+            .set_hotbar(UPGRADE_CLASS_SLOT, upgrade_item)
+            .unwrap();
     }
 }

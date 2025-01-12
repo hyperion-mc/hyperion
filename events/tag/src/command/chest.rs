@@ -51,7 +51,9 @@ impl MinecraftCommand for ChestCommand {
             gui_inventory
                 .set(18, ItemStack::new(ItemKind::GoldIngot, 64, None))
                 .unwrap();
-            gui_inventory.set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)));
+            gui_inventory
+                .set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)))
+                .unwrap();
 
             let gui = Gui::new(gui_inventory, &world, 28);
 

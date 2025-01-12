@@ -252,15 +252,9 @@ pub fn handle_update_selected_slot(
         return;
     };
 
-    if slot > 8 {
+    if query.inventory.set_cursor(u16::from(slot)).is_err() {
         return;
-    }
-
-    // set the cursor slot from 36-44
-    // 36 is the first slot in the hotbar
-    let slot_offset = slot + 36;
-
-    query.inventory.set_cursor(u16::from(slot_offset));
+    };
 
     let event = event::UpdateSelectedSlotEvent {
         client: query.id,

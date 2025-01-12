@@ -15,11 +15,12 @@ pub type PlayerInventory = Inventory;
 
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct Inventory {
-    // doing this lets us create multiple pages from one inventory
-    // size of the inventory window
+    /// Doing this lets us create multiple pages from one inventory
+    /// size of the inventory window
     size: usize,
-    // the slots in the inventory
+    /// The slots in the inventory
     slots: Vec<ItemSlot>,
+    /// Index to the slot held in the player's hand. This is guaranteed to be a valid index.
     hand_slot: u16,
     title: String,
     kind: WindowType,
@@ -183,6 +184,7 @@ enum AddSlot {
 }
 
 const HAND_START_SLOT: u16 = 36;
+const HAND_END_SLOT: u16 = 45;
 
 impl Inventory {
     #[must_use]
@@ -226,16 +228,14 @@ impl Inventory {
     }
 
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
-        let index = usize::from(index);
-        let slot = &mut self.slots[index];
-        slot.stack = stack;
-        slot.changed = true;
+        self.get_mut(index)?.stack = stack;
         Ok(())
     }
 
-    pub fn set_slot(&mut self, index: usize, mut slot: ItemSlot) {
+    pub fn set_slot(&mut self, index: u16, mut slot: ItemSlot) -> Result<(), InventoryAccessError> {
         slot.changed = true;
-        self.slots[index] = slot;
+        *self.get_mut_maybe_change(index)? = slot;
+        Ok(())
     }
 
     pub fn items(&self) -> impl Iterator<Item = (u16, &ItemStack)> + '_ {
@@ -268,20 +268,25 @@ impl Inventory {
         }
     }
 
-    pub fn set_cursor(&mut self, index: u16) {
+    pub fn set_cursor(&mut self, index: u16) -> Result<(), InventoryAccessError> {
+        let index = self.hand_slot_index(index)?;
         if self.hand_slot == index {
-            return;
+            return Ok(());
         }
 
         debug!("Setting cursor to slot {}", index);
 
+        // Mark the slot as changed
+        self.get_mut(index)?;
+
         self.hand_slot = index;
-        self.slots[usize::from(index)].changed = true;
+        Ok(())
     }
 
     #[must_use]
     pub fn get_cursor(&self) -> &ItemSlot {
-        &self.slots[self.hand_slot as usize]
+        self.get(self.hand_slot)
+            .expect("hand_slot is a valid index")
     }
 
     #[must_use]
@@ -302,35 +307,36 @@ impl Inventory {
         self.slots.swap(index_a, index_b);
     }
 
-    pub fn get_hand_slot(&self, idx: u16) -> Result<&ItemSlot, InventoryAccessError> {
-        const HAND_END_SLOT: u16 = 45;
-
+    pub fn hand_slot_index(&self, idx: u16) -> Result<u16, InventoryAccessError> {
         let idx = idx + HAND_START_SLOT;
 
-        if idx >= HAND_END_SLOT {
+        if idx >= HAND_END_SLOT || usize::from(idx) >= self.size() {
             return Err(InventoryAccessError::InvalidSlot { index: idx });
         }
 
-        self.get(idx)
+        Ok(idx)
+    }
+
+    pub fn get_hand_slot(&self, idx: u16) -> Result<&ItemSlot, InventoryAccessError> {
+        self.get(self.hand_slot_index(idx)?)
     }
 
     pub fn get_hand_slot_mut(&mut self, idx: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
-        const HAND_START_SLOT: u16 = 36;
-        const HAND_END_SLOT: u16 = 45;
-
-        let idx = idx + HAND_START_SLOT;
-
-        if idx >= HAND_END_SLOT {
-            return Err(InventoryAccessError::InvalidSlot { index: idx });
-        }
-
-        self.get_mut(idx)
+        self.get_mut(self.hand_slot_index(idx)?)
     }
 
     pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
+        let slot = self.get_mut_maybe_change(index)?;
+        slot.changed = true;
+        Ok(slot)
+    }
+
+    pub fn get_mut_maybe_change(
+        &mut self,
+        index: u16,
+    ) -> Result<&mut ItemSlot, InventoryAccessError> {
         let index = usize::from(index);
         let slot = &mut self.slots[index];
-        slot.changed = true;
         Ok(slot)
     }
 
@@ -340,10 +346,9 @@ impl Inventory {
         slot: u16,
         to_add: &mut ItemStack,
         can_add_to_empty: bool,
-    ) -> AddSlot {
+    ) -> Result<AddSlot, InventoryAccessError> {
+        let slot = self.get_mut_maybe_change(slot)?;
         let max_stack_size: i8 = to_add.item.max_stack();
-
-        let slot = &mut self.slots[usize::from(slot)];
 
         if slot.stack.is_empty() {
             return if can_add_to_empty {
@@ -352,12 +357,12 @@ impl Inventory {
                 slot.stack = to_add.clone().with_count(new_count);
                 slot.changed = true;
                 return if to_add.count > 0 {
-                    AddSlot::Partial
+                    Ok(AddSlot::Partial)
                 } else {
-                    AddSlot::Complete
+                    Ok(AddSlot::Complete)
                 };
             } else {
-                AddSlot::Skipped
+                Ok(AddSlot::Skipped)
             };
         }
 
@@ -370,16 +375,16 @@ impl Inventory {
                 slot.stack.count += to_add.count;
                 slot.changed = true;
                 *to_add = ItemStack::EMPTY;
-                AddSlot::Complete
+                Ok(AddSlot::Complete)
             } else {
                 slot.stack.count = max_stack_size;
                 slot.changed = true;
                 to_add.count -= space_left;
-                AddSlot::Partial
+                Ok(AddSlot::Partial)
             };
         }
 
-        AddSlot::Skipped
+        Ok(AddSlot::Skipped)
     }
 
     pub fn swap_slot(&mut self, slot: u16, other_slot: u16) {
@@ -440,16 +445,9 @@ impl PlayerInventory {
         &mut self.slots[9..=44]
     }
 
-    pub fn set_hotbar(&mut self, idx: u16, stack: ItemStack) {
-        const HAND_END_SLOT: u16 = 45;
-
-        let idx = idx + HAND_START_SLOT;
-
-        if idx >= HAND_END_SLOT {
-            return;
-        }
-
-        self.set(idx, stack).unwrap();
+    pub fn set_hotbar(&mut self, idx: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
+        self.get_hand_slot_mut(idx)?.stack = stack;
+        Ok(())
     }
 
     pub fn set_offhand(&mut self, stack: ItemStack) {
@@ -502,27 +500,18 @@ impl PlayerInventory {
 
         // Try to add to hot bar (36-45) first, then the rest of the inventory (9-35)
         // try to stack first
-        for slot in (36..=44).chain(9..36) {
-            let add_slot = self.add_to_slot(slot, &mut item, false);
+        for can_add_to_empty in [false, true] {
+            for slot in (36..=44).chain(9..36) {
+                let add_slot = self
+                    .add_to_slot(slot, &mut item, can_add_to_empty)
+                    .expect("slot index is in bounds");
 
-            match add_slot {
-                AddSlot::Complete => {
-                    return result;
+                match add_slot {
+                    AddSlot::Complete => {
+                        return result;
+                    }
+                    AddSlot::Partial | AddSlot::Skipped => {}
                 }
-                AddSlot::Partial | AddSlot::Skipped => {}
-            }
-        }
-
-        // Try to add to hot bar (36-44) first, then the rest of the inventory (9-35)
-        // now try to add to empty slots
-        for slot in (36..=44).chain(9..36) {
-            let add_slot = self.add_to_slot(slot, &mut item, true);
-
-            match add_slot {
-                AddSlot::Complete => {
-                    return result;
-                }
-                AddSlot::Partial | AddSlot::Skipped => {}
             }
         }
 
@@ -533,21 +522,6 @@ impl PlayerInventory {
 
         result
     }
-}
-
-#[must_use]
-pub fn slot_index_from_hand(hand_idx: u8) -> u16 {
-    const HAND_START_SLOT: u16 = 36;
-    const HAND_END_SLOT: u16 = 45;
-
-    let hand_idx = u16::from(hand_idx);
-    let hand_idx = hand_idx + HAND_START_SLOT;
-
-    if hand_idx >= HAND_END_SLOT {
-        return 0;
-    }
-
-    hand_idx
 }
 
 // todo: not sure if this is correct
