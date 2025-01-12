@@ -39,7 +39,7 @@ pub fn get_first_collision(
     let block = world.get::<&Blocks>(|blocks| blocks.first_collision(ray));
 
     // make sure the entity is not the owner
-    let entity = entity.filter(|(entity, _)| owner.map_or(true, |owner| *entity != owner));
+    let entity = entity.filter(|(entity, _)| owner.is_none_or(|owner| *entity != owner));
 
     // check which one is closest to the Ray don't forget to account for entity size
     entity.map_or(block.map(Either::Right), |(entity, _)| {

@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use anyhow::{Context, bail};
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use flecs_ecs::core::{Entity, EntityView, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -28,7 +28,7 @@ use valence_text::IntoText;
 
 use super::{
     ConfirmBlockSequences, EntitySize, Position,
-    animation::{self, ActiveAnimation, Kind},
+    animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
     event::ClientStatusEvent,

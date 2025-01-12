@@ -18,7 +18,7 @@ use rayon::iter::ParallelIterator;
 use roaring::RoaringBitmap;
 use rustc_hash::FxBuildHasher;
 use shared::WorldShared;
-use tracing::{debug, error};
+use tracing::error;
 use valence_generated::block::BlockState;
 use valence_server::layer::chunk::Chunk;
 

@@ -1,10 +1,9 @@
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use flecs_ecs::{
     core::{EntityViewGet, World},
     prelude::*,
 };
-use glam::I16Vec2;
 use hyperion::{
     ItemKind, ItemStack,
     glam::Vec3,
@@ -66,7 +65,7 @@ impl BowCharging {
         // - Takes 1.2 second to fully charge
         // - Minimum charge is 0.000001
         // - Maximum charge is 1.0
-        secs.min(1.2).max(0.01)
+        secs.clamp(0.01, 1.2)
     }
 }
 
@@ -126,8 +125,7 @@ impl Module for BowModule {
                 let player = world.entity_from_id(event.from);
 
                 // Check the cooldown
-                let can_fire =
-                    player.get::<&LastFireTime>(|last_fire_time| last_fire_time.can_fire());
+                let can_fire = player.get::<&LastFireTime>(LastFireTime::can_fire);
 
                 if !can_fire {
                     continue;
@@ -166,7 +164,7 @@ impl Module for BowModule {
                         }
 
                         // Get how charged the bow is
-                        let charge = player.get::<&BowCharging>(|charging| charging.get_charge());
+                        let charge = player.get::<&BowCharging>(BowCharging::get_charge);
 
                         debug!(
                             "Player {} fired an arrow with charge {}",
@@ -221,7 +219,7 @@ impl Module for BowModule {
                             let chunck_pos = event
                                 .client
                                 .entity_view(world)
-                                .get::<&Position>(|pos| pos.to_chunk());
+                                .get::<&Position>(hyperion::simulation::Position::to_chunk);
                             (velocity.0.length() * 2.0, owner.entity, chunck_pos)
                         });
 
@@ -237,7 +235,7 @@ impl Module for BowModule {
                     });
 
                 let packet = play::EntitiesDestroyS2c {
-                    entity_ids: vec![VarInt(event.projectile.minecraft_id() as i32)].into(),
+                    entity_ids: vec![VarInt(event.projectile.minecraft_id())].into(),
                 };
                 compose
                     .broadcast_local(&packet, chunk_pos, system)
@@ -251,11 +249,11 @@ impl Module for BowModule {
                         event::AttackEntity {
                             origin: owner,
                             target: event.client,
-                            damage: damage,
+                            damage,
                         },
                         &world,
                     );
-                })
+                });
             }
         });
 

@@ -55,6 +55,6 @@ fn arrow() {
         // gravity! drag! this is what was returned from the test but I am unsure if it actually
         // what we should be getting
         // todo: make a bunch more tests and compare to the vanilla velocity and positions
-        assert_eq!(*position, Position::new(0.0, 21.842_704_875_625, 0.0));
+        assert_eq!(*position, Position::new(0.0, 21.842_705, 0.0));
     });
 }

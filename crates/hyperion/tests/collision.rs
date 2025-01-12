@@ -5,31 +5,27 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use std::{assert_matches::assert_matches, collections::HashSet};
-
-use approx::assert_relative_eq;
-use flecs_ecs::{
-    core::{
-        Entity, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, WorldGet, flecs,
-    },
-    macros::system,
+use flecs_ecs::core::{
+    EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs,
 };
-use geometry::{aabb::Aabb, ray::Ray};
-use glam::{IVec3, Vec3};
+use glam::Vec3;
 use hyperion::{
     HyperionCore,
-    runtime::AsyncRuntime,
-    simulation::{
-        EntitySize, Owner, Pitch, Position, Spawn, Velocity, Yaw, blocks::Blocks,
-        entity_kind::EntityKind, event,
-    },
-    spatial::{self, Spatial, SpatialIndex, SpatialModule},
-    storage::EventQueue,
+    simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
+    spatial::{Spatial, SpatialModule},
 };
-use spatial::get_first_collision;
 
 #[test]
 fn test_get_first_collision() {
+    /// Function to spawn arrows at different angles
+    fn spawn_arrow(world: &World, position: Vec3, direction: Vec3) -> EntityView<'_> {
+        world
+            .entity()
+            .add_enum(EntityKind::Arrow)
+            .set(Velocity::new(direction.x, direction.y, direction.z))
+            .set(Position::new(position.x, position.y, position.z))
+    }
+
     let world = World::new();
     world.import::<HyperionCore>();
     world.import::<SpatialModule>();
@@ -53,15 +49,6 @@ fn test_get_first_collision() {
         .set(Yaw::new(0.0))
         .set(Pitch::new(90.0));
 
-    // Function to spawn arrows at different angles
-    fn spawn_arrow(world: &World, position: Vec3, direction: Vec3) -> EntityView<'_> {
-        world
-            .entity()
-            .add_enum(EntityKind::Arrow)
-            .set(Velocity::new(direction.x, direction.y, direction.z))
-            .set(Position::new(position.x, position.y, position.z))
-    }
-
     // Spawn arrows at different angles
     let arrow_velocities = [
         Vec3::new(0.0, -1.0, 0.0),
@@ -79,20 +66,20 @@ fn test_get_first_collision() {
     world.progress();
 
     // Get all entities with Position and Velocity components
-    arrows.iter().for_each(|arrow| {
+    for arrow in &arrows {
         arrow.get::<(&Position, &Velocity)>(|(position, velocity)| {
             println!("position: {position:?}");
             println!("velocity: {velocity:?}");
         });
-    });
+    }
 
     world.progress();
 
     // Get all entities with Position and Velocity components
-    arrows.iter().for_each(|arrow| {
+    for arrow in &arrows {
         arrow.get::<(&Position, &Velocity)>(|(position, velocity)| {
             println!("position: {position:?}");
             println!("velocity: {velocity:?}");
         });
-    });
+    }
 }

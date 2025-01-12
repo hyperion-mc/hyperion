@@ -6,12 +6,11 @@ use glam::Vec3;
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
 use itertools::Either;
-use tracing::{debug, error};
+use tracing::error;
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self, entity_equipment_update_s2c::EquipmentEntry},
 };
-use valence_server::BlockState;
 
 use crate::{
     Prev,
@@ -419,7 +418,7 @@ impl Module for EntityStateSyncModule {
 
                 let system = it.system();
                 let world = system.world();
-                let _entity = it.entity(row);
+                let arrow_entity = it.entity(row);
 
                 if velocity.0 != Vec3::ZERO {
                     // let (new_yaw, new_pitch) = get_rotation_from_velocity(velocity.0);
@@ -454,7 +453,7 @@ impl Module for EntityStateSyncModule {
                             world.get::<&mut Events>(|events| events.push(
                                 event::ProjectileEntityEvent {
                                     client: *entity,
-                                    projectile: *_entity,
+                                    projectile: *arrow_entity,
                                 },
                                 &world,
                             ));
@@ -463,8 +462,8 @@ impl Module for EntityStateSyncModule {
                             // send event
                             world.get::<&mut Events>(|events| events.push(
                                 event::ProjectileBlockEvent {
-                                    collision: collision,
-                                    projectile: *_entity,
+                                    collision,
+                                    projectile: *arrow_entity,
                                 },
                                 &world,
                             ));
