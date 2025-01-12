@@ -383,7 +383,6 @@ fn handle_click_slot_inner<'a>(
             }
         }
         ClickMode::Drag => {
-            // debug!("Slot Changed: {:?}", packet.slot_changes);
             // We iterate through the slot changes,
             // if slots changed is empty return
             // if the button is 2 it means the player dragged with left click

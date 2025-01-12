@@ -116,7 +116,6 @@ impl Module for BowModule {
                             .set(Velocity::new(velocity.x, velocity.y, velocity.z))
                             .set(Pitch::new(**pitch))
                             .set(Yaw::new(**yaw))
-                            //.set(Owner::new(*player))
                             .enqueue(Spawn);
                     },
                 );

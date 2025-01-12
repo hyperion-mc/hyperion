@@ -637,8 +637,6 @@ impl Module for SimModule {
         world.component::<BowCharging>();
         component!(world, BowCharging).opaque_func(meta_ser_stringify_type_display::<BowCharging>);
 
-        // world.component::<InventoryModule>();
-
         observer!(
             world,
             Spawn,

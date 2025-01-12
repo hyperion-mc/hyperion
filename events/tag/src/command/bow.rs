@@ -27,17 +27,6 @@ impl MinecraftCommand for BowCommand {
                     count: 64,
                     nbt: None,
                 });
-                // inventory.set_slot(36, ItemStack {
-                // item: ItemKind::Bow,
-                // count: 1,
-                // nbt: None,
-                // });
-                //
-                // inventory.set_slot(37, ItemStack {
-                // item: ItemKind::Arrow,
-                // count: 64,
-                // nbt: None,
-                // });
             });
     }
 }

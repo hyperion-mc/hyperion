@@ -17,27 +17,7 @@ pub struct GuiCommand;
 
 impl MinecraftCommand for GuiCommand {
     fn execute(self, system: EntityView<'_>, caller: Entity) {
-        // let mut gui = Gui::new(27, "Test Chest GUI".to_string(), ContainerType::Chest);
-        //
-        // let info_item = GuiItem::new(
-        // ItemBuilder::new(hyperion::ItemKind::GoldIngot)
-        // .name("Information")
-        // .glowing()
-        // .build(),
-        // |_player, click_mode| match click_mode {
-        // ClickMode::Click => debug!("Left Click"),
-        // ClickMode::ShiftClick => debug!("Shift Click"),
-        // ClickMode::Hotbar => debug!("Hotbar"),
-        // ClickMode::CreativeMiddleClick => debug!("Creative Middle Click"),
-        // ClickMode::DropKey => debug!("Drop Key"),
-        // ClickMode::Drag => debug!("Drag"),
-        // ClickMode::DoubleClick => debug!("Double Click"),
-        // },
-        // );
-        //
-        // gui.add_item(13, info_item).unwrap();
         let world = system.world();
-        // world.get::<&Gui>(|gui| {});
         // get a list of all the guis
         let gui = world.query::<&Gui>().build();
         let mut found = false;
@@ -90,7 +70,5 @@ impl MinecraftCommand for GuiCommand {
                 .set(gui)
                 .enqueue(Spawn);
         }
-
-        // gui.open(system, caller);
     }
 }

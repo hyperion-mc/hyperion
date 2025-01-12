@@ -436,7 +436,6 @@ pub fn player_interact_block(
         let position_dvec3 = position.as_vec3();
 
         // todo(hack): technically players can do some crazy position stuff to abuse this probably
-        // let player_aabb = query.position.bounding.shrink(0.01);
         let player_aabb = aabb(**query.position, *query.size);
 
         let collides_player = block_state

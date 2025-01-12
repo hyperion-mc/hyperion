@@ -54,15 +54,6 @@ impl MinecraftCommand for ChestCommand {
             gui_inventory.set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)));
 
             let gui = Gui::new(gui_inventory, &world, 28);
-            // gui.add_command(13, |player, click_mode| match click_mode {
-            // ClickMode::Click => debug!("Left Click"),
-            // ClickMode::ShiftClick => debug!("Shift Click"),
-            // ClickMode::Hotbar => debug!("Hotbar"),
-            // ClickMode::CreativeMiddleClick => debug!("Creative Middle Click"),
-            // ClickMode::DropKey => debug!("Drop Key"),
-            // ClickMode::Drag => debug!("Drag"),
-            // ClickMode::DoubleClick => debug!("Double Click"),
-            // });
 
             gui.open(system, caller);
             // add the gui to the world

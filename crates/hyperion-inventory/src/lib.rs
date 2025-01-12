@@ -289,39 +289,11 @@ impl Inventory {
         self.hand_slot
     }
 
-    // pub fn get_cursor_mut(&mut self) -> &mut ItemStack {
-    // self.get_hand_slot_mut(self.hand_slot).unwrap()
-    // }
-
-    // pub fn take_one_held(&mut self) -> ItemStack {
-    // decrement the held item
-    // let held_item = &mut self.slots[usize::from(self.hand_slot)].stack;
-    //
-    // if held_item.is_empty() {
-    // return ItemStack::EMPTY;
-    // }
-    //
-    // held_item.count -= 1;
-    //
-    // ItemStack::new(held_item.item, 1, held_item.nbt.clone())
-    // }
-
     pub fn get(&self, index: u16) -> Result<&ItemSlot, InventoryAccessError> {
         self.slots
             .get(usize::from(index))
             .ok_or(InventoryAccessError::InvalidSlot { index })
     }
-
-    // pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
-    // let Some(slot) = self.slots.get_mut(index as usize) else {
-    // return Err(InventoryAccessError::InvalidSlot { index });
-    // };
-    //
-    // assume that the slot is updated
-    // self.increment_slot(index as usize);
-    //
-    // Ok(slot)
-    // }
 
     pub fn swap(&mut self, index_a: u16, index_b: u16) {
         let index_a = usize::from(index_a);

@@ -205,10 +205,6 @@ impl Module for EntityStateSyncModule {
                     row,
                     (compose, prev_position, prev_yaw, prev_pitch, position, velocity, yaw, pitch)
                 | {
-                    // if io.is_none() {
-                    // return;
-                    // }
-
                     let world = it.system().world();
                     let system = it.system();
                     let entity = it.entity(row);
@@ -319,7 +315,6 @@ impl Module for EntityStateSyncModule {
                     position.x += velocity.0.x;
                     position.y += velocity.0.y;
                     position.z += velocity.0.z;
-                    // let (new_yaw, new_pitch) = get_rotation_from_velocity(velocity.0);
 
                     let center = **position;
 
