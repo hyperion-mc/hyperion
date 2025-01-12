@@ -15,11 +15,8 @@ pub type PlayerInventory = Inventory;
 
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct Inventory {
-    /// Doing this lets us create multiple pages from one inventory
-    /// size of the inventory window
-    size: usize,
     /// The slots in the inventory
-    slots: Vec<ItemSlot>,
+    slots: Box<[ItemSlot]>,
     /// Index to the slot held in the player's hand. This is guaranteed to be a valid index.
     hand_slot: u16,
     title: String,
@@ -157,14 +154,7 @@ pub struct AddItemResult {
 
 impl Default for Inventory {
     fn default() -> Self {
-        Self {
-            size: 46,
-            slots: vec![ItemSlot::default(); 46],
-            title: "Inventory".to_string(),
-            kind: WindowType::Generic9x3,
-            hand_slot: 36,
-            readonly: false,
-        }
+        Self::new(46, "Inventory".to_string(), WindowType::Generic9x3, false)
     }
 }
 
@@ -189,9 +179,9 @@ const HAND_END_SLOT: u16 = 45;
 impl Inventory {
     #[must_use]
     pub fn new(size: usize, title: String, kind: WindowType, readonly: bool) -> Self {
+        // TODO: calculate size from WindowType to avoid invalid states
         Self {
-            size,
-            slots: vec![ItemSlot::default(); size],
+            slots: vec![ItemSlot::default(); size].into_boxed_slice(),
             title,
             kind,
             hand_slot: 36,
@@ -224,7 +214,7 @@ impl Inventory {
 
     #[must_use]
     pub const fn size(&self) -> usize {
-        self.size
+        self.slots.len()
     }
 
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
@@ -249,12 +239,12 @@ impl Inventory {
     }
 
     #[must_use]
-    pub const fn slots(&self) -> &Vec<ItemSlot> {
+    pub const fn slots(&self) -> &[ItemSlot] {
         &self.slots
     }
 
     #[must_use]
-    pub const fn slots_mut(&mut self) -> &mut Vec<ItemSlot> {
+    pub const fn slots_mut(&mut self) -> &mut [ItemSlot] {
         &mut self.slots
     }
 
