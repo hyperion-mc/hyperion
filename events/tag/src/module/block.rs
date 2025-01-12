@@ -258,7 +258,7 @@ impl Module for BlockModule {
                     if block.collision_shapes().is_empty() {
                         mc.to_confirm.push(EntityAndSequence::new(from, sequence));
 
-                        from.entity_view(world).get::<(&mut PlayerInventory, &ConnectionId)>(|(inventory, stream)| {
+                        from.entity_view(world).get::<(&mut PlayerInventory, &ConnectionId)>(|(_inventory, stream)| {
                             // so we send update to player
 
                             let msg = chat!("§cYou can't place this block");
