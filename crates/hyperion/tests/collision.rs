@@ -5,9 +5,7 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::core::{
-    EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs,
-};
+use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs};
 use glam::Vec3;
 use hyperion::{
     HyperionCore,
@@ -50,9 +48,7 @@ fn test_get_first_collision() {
         .set(Pitch::new(90.0));
 
     // Spawn arrows at different angles
-    let arrow_velocities = [
-        Vec3::new(0.0, -1.0, 0.0),
-    ];
+    let arrow_velocities = [Vec3::new(0.0, -1.0, 0.0)];
 
     let arrows: Vec<EntityView<'_>> = arrow_velocities
         .iter()
