@@ -137,7 +137,7 @@ default-features = false
 version = '1.0.30'
 
 [workspace.dependencies.flecs_ecs]
-features = ['flecs_manual_registration', "flecs_system"]
+features = ['flecs_manual_registration']
 git = 'https://github.com/Indra-db/Flecs-Rust'
 
 [workspace.dependencies.geometry]
