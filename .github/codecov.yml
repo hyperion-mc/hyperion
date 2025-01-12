@@ -1,0 +1,43 @@
+coverage:
+  status:
+    project:
+      default:
+        # basic
+        target: auto
+        threshold: 1%
+        base: auto
+        # advanced
+        branches:
+          - main
+        if_ci_failed: error
+        informational: false
+        only_pulls: false
+
+    patch:
+      default:
+        # basic
+        target: auto
+        threshold: 1%
+        base: auto
+        # advanced
+        branches:
+          - main
+        if_ci_failed: error
+        informational: false
+        only_pulls: false
+
+ignore:
+  - "**/benches/**/*"  # Ignore benchmarks
+  - "**/*_test.rs"  # Ignore test files
+  - "**/tests/**/*" # Ignore test directories
+
+github_checks:
+  annotations: true
+
+comment:
+  layout: "diff, flags, files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  hide_project_coverage: false 
