@@ -216,11 +216,11 @@ impl Module for BowModule {
                         .projectile
                         .entity_view(world)
                         .get::<(&Velocity, &Owner)>(|(velocity, owner)| {
-                            let chunck_pos = event
+                            let chunk_pos = event
                                 .client
                                 .entity_view(world)
                                 .get::<&Position>(hyperion::simulation::Position::to_chunk);
-                            (velocity.0.length() * 2.0, owner.entity, chunck_pos)
+                            (velocity.0.length() * 2.0, owner.entity, chunk_pos)
                         });
 
                 if damage == 0.0 && owner == event.client {
