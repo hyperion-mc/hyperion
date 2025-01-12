@@ -3,12 +3,14 @@ use flecs_ecs::{
     macros::Component,
     prelude::Module,
 };
-use hyperion::storage::{CommandCompletionRequest, EventFn};
+use hyperion::{simulation::handlers::PacketSwitchQuery, storage::CommandCompletionRequest};
 use indexmap::IndexMap;
 
+pub type OnTabComplete =
+    Box<dyn Fn(&mut PacketSwitchQuery<'_>, &CommandCompletionRequest<'_>) + 'static + Send + Sync>;
 pub struct CommandHandler {
     pub on_execute: fn(input: &str, system: EntityView<'_>, caller: Entity),
-    pub on_tab_complete: EventFn<CommandCompletionRequest<'static>>,
+    pub on_tab_complete: OnTabComplete,
     pub has_permissions: fn(world: &World, caller: Entity) -> bool,
 }
 

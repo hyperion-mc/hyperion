@@ -28,6 +28,7 @@ members = [
     'crates/hyperion-item',
     'crates/hyperion-minecraft-proto',
     'crates/hyperion-nerd-font',
+    'crates/hyperion-packet-macros',
     'crates/hyperion-palette',
     'crates/hyperion-permission',
     'crates/hyperion-proto',
@@ -181,6 +182,9 @@ path = 'crates/hyperion-item'
 
 [workspace.dependencies.hyperion-nerd-font]
 path = 'crates/hyperion-nerd-font'
+
+[workspace.dependencies.hyperion-packet-macros]
+path = 'crates/hyperion-packet-macros'
 
 [workspace.dependencies.hyperion-palette]
 path = 'crates/hyperion-palette'

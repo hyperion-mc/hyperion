@@ -1,19 +1,23 @@
 //! <https://wiki.vg/index.php?title=Protocol&oldid=18375>
 
+// The RegistryHandler requires a specific function signature
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
 use std::borrow::Cow;
 
 use anyhow::{Context, bail};
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
-use hyperion_utils::EntityExt;
-use tracing::{info, instrument, trace, warn};
+use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
+use tracing::{info, instrument, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
 };
 use valence_protocol::{
-    Decode, Hand, ItemStack, Packet, VarInt,
+    Hand, ItemStack, VarInt,
     packets::play::{
         self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
         player_interact_entity_c2s::EntityInteraction,
@@ -36,22 +40,21 @@ use crate::{
         Pitch, Yaw, aabb,
         event::{self, PluginMessage},
         metadata::entity::Pose,
+        packet::HandlerRegistry,
     },
-    storage::{
-        ClickSlotEvent, CommandCompletionRequest, Events, GlobalEventHandlers, InteractEvent,
-    },
+    storage::{CommandCompletionRequest, Events, InteractEvent},
 };
 
-fn full(query: &mut PacketSwitchQuery<'_>, mut data: &[u8]) -> anyhow::Result<()> {
-    let pkt = play::FullC2s::decode(&mut data)?;
-
-    let play::FullC2s {
+fn full(
+    &play::FullC2s {
         position,
         yaw,
         pitch,
         ..
-    } = pkt;
-
+    }: &play::FullC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     // check to see if the player is moving too fast
     // if they are, ignore the packet
 
@@ -179,11 +182,11 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
     res.is_break()
 }
 
-fn look_and_on_ground(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let pkt = play::LookAndOnGroundC2s::decode(&mut data)?;
-
-    let play::LookAndOnGroundC2s { yaw, pitch, .. } = pkt;
-
+fn look_and_on_ground(
+    &play::LookAndOnGroundC2s { yaw, pitch, .. }: &play::LookAndOnGroundC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     **query.yaw = yaw;
     **query.pitch = pitch;
 
@@ -191,22 +194,21 @@ fn look_and_on_ground(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> any
 }
 
 fn position_and_on_ground(
+    &play::PositionAndOnGroundC2s { position, .. }: &play::PositionAndOnGroundC2s,
+    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
-    mut data: &[u8],
 ) -> anyhow::Result<()> {
-    let pkt = play::PositionAndOnGroundC2s::decode(&mut data)?;
-
-    let play::PositionAndOnGroundC2s { position, .. } = pkt;
-
     change_position_or_correct_client(query, position.as_vec3());
 
     Ok(())
 }
 
-fn chat_command(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let pkt = play::CommandExecutionC2s::decode(&mut data)?;
-
-    let command = pkt.command.0;
+fn chat_command<'a>(
+    pkt: &play::CommandExecutionC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let command = RuntimeLifetime::new(pkt.command.0, handle);
 
     query.events.push(
         event::Command {
@@ -219,9 +221,11 @@ fn chat_command(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyho
     Ok(())
 }
 
-fn hand_swing(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let packet = play::HandSwingC2s::decode(&mut data)?;
-
+fn hand_swing(
+    &packet: &play::HandSwingC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     match packet.hand {
         Hand::Main => {
             query.animation.push(animation::Kind::SwingMainArm);
@@ -235,9 +239,11 @@ fn hand_swing(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Res
 }
 
 #[instrument(skip_all)]
-fn player_interact_entity(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let packet = play::PlayerInteractEntityC2s::decode(&mut data)?;
-
+fn player_interact_entity(
+    packet: &play::PlayerInteractEntityC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     // attack
     if packet.interact != EntityInteraction::Attack {
         return Ok(());
@@ -260,7 +266,7 @@ fn player_interact_entity(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> any
 
 pub struct PacketSwitchQuery<'a> {
     pub id: Entity,
-    pub handlers: &'a GlobalEventHandlers,
+    pub handler_registry: &'a HandlerRegistry,
     pub view: EntityView<'a>,
     pub compose: &'a Compose,
     pub io_ref: ConnectionId,
@@ -268,10 +274,10 @@ pub struct PacketSwitchQuery<'a> {
     pub yaw: &'a mut Yaw,
     pub pitch: &'a mut Pitch,
     pub size: &'a mut EntitySize,
-    pub events: &'a Events,
     pub world: &'a World,
     pub blocks: &'a Blocks,
     pub pose: &'a mut Pose,
+    pub events: &'a Events,
     pub confirm_block_sequences: &'a mut ConfirmBlockSequences,
     pub system: EntityView<'a>,
     pub inventory: &'a mut hyperion_inventory::PlayerInventory,
@@ -280,9 +286,11 @@ pub struct PacketSwitchQuery<'a> {
 }
 
 // i.e., shooting a bow, digging a block, etc
-fn player_action(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let packet = play::PlayerActionC2s::decode(&mut data)?;
-
+fn player_action(
+    &packet: &play::PlayerActionC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     let sequence = packet.sequence.0;
     let position = IVec3::new(packet.position.x, packet.position.y, packet.position.z);
 
@@ -321,9 +329,11 @@ fn player_action(mut data: &[u8], query: &PacketSwitchQuery<'_>) -> anyhow::Resu
 }
 
 // for sneaking/crouching/etc
-fn client_command(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let packet = play::ClientCommandC2s::decode(&mut data)?;
-
+fn client_command(
+    &packet: &play::ClientCommandC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     match packet.action {
         ClientCommand::StartSneaking => {
             *query.pose = Pose::Sneaking;
@@ -353,12 +363,10 @@ fn client_command(mut data: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow:
 /// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
 /// - Activating items with duration effects (e.g. chorus fruit teleport)
 pub fn player_interact_item(
-    mut data: &'static [u8],
+    &play::PlayerInteractItemC2s { hand, sequence }: &play::PlayerInteractItemC2s,
+    handle: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let play::PlayerInteractItemC2s { hand, sequence } =
-        play::PlayerInteractItemC2s::decode(&mut data)?;
-
     let event = InteractEvent {
         hand,
         sequence: sequence.0,
@@ -382,17 +390,16 @@ pub fn player_interact_item(
         }
     }
 
-    query.handlers.interact.trigger_all(query, &event);
+    query.handler_registry.trigger(&event, handle, query)?;
 
     Ok(())
 }
 
 pub fn player_interact_block(
-    mut data: &[u8],
+    &packet: &play::PlayerInteractBlockC2s,
+    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let packet = play::PlayerInteractBlockC2s::decode(&mut data)?;
-
     // PlayerInteractBlockC2s contains:
     // - hand: Hand (enum: MainHand or OffHand)
     // - position: BlockPos (x, y, z coordinates of the block)
@@ -479,55 +486,46 @@ pub fn player_interact_block(
 }
 
 pub fn update_selected_slot(
-    mut data: &[u8],
+    &play::UpdateSelectedSlotC2s { slot }: &play::UpdateSelectedSlotC2s,
+    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // "Set Selected Slot" packet (ID 0x0B)
-    let packet = play::UpdateSelectedSlotC2s::decode(&mut data)?;
-
-    let play::UpdateSelectedSlotC2s { slot } = packet;
-
     query.inventory.set_cursor(slot);
 
     Ok(())
 }
 
 pub fn creative_inventory_action(
-    mut data: &[u8],
+    play::CreativeInventoryActionC2s { slot, clicked_item }: &play::CreativeInventoryActionC2s,
+    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // "Creative Inventory Action" packet (ID 0x0C)
-    let packet = play::CreativeInventoryActionC2s::decode(&mut data)?;
-
-    let play::CreativeInventoryActionC2s { slot, clicked_item } = packet;
-
     info!("creative inventory action: {slot} {clicked_item:?}");
 
-    let Ok(slot) = u16::try_from(slot) else {
+    let Ok(slot) = u16::try_from(*slot) else {
         warn!("invalid slot {slot}");
         return Ok(());
     };
 
-    query.inventory.set(slot, clicked_item)?;
+    query.inventory.set(slot, clicked_item.clone())?;
 
     Ok(())
 }
 
-pub fn custom_payload(
-    mut data: &'static [u8],
+pub fn custom_payload<'a>(
+    packet: &play::CustomPayloadC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let packet: play::CustomPayloadC2s<'static> = play::CustomPayloadC2s::decode(&mut data)?;
-
-    let channel = packet.channel.into_inner();
+    let channel = packet.channel.clone().into_inner();
 
     let Cow::Borrowed(borrow) = channel else {
         bail!("NO")
     };
 
     let event = PluginMessage {
-        channel: borrow,
-        data: packet.data.0.0,
+        channel: RuntimeLifetime::new(borrow, handle),
+        data: RuntimeLifetime::new(packet.data.0.0, handle),
     };
 
     query.events.push(event, query.world);
@@ -536,9 +534,11 @@ pub fn custom_payload(
 }
 
 // keywords: inventory
-fn click_slot(mut data: &'static [u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    let pkt = play::ClickSlotC2s::decode(&mut data)?;
-
+fn click_slot(
+    pkt: &play::ClickSlotC2s<'_>,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     let to_send_pkt = play::ScreenHandlerSlotUpdateS2c {
         window_id: -1,
         state_id: VarInt::default(),
@@ -588,16 +588,15 @@ fn click_slot(mut data: &'static [u8], query: &mut PacketSwitchQuery<'_>) -> any
         .compose
         .unicast(&set_item_pkt, query.io_ref, query.system)?;
 
-    let event = ClickSlotEvent::try_from(pkt)?;
-    query.handlers.click.trigger_all(query, &event);
-
     Ok(())
 }
 
-fn chat_message(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
-    // todo: we could technically remove allocations &[u8] exists until end of tick
-    let pkt = play::ChatMessageC2s::decode(&mut data)?;
-    let msg = pkt.message.0;
+fn chat_message<'a>(
+    pkt: &play::ChatMessageC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let msg = RuntimeLifetime::new(pkt.message.0, handle);
 
     query
         .events
@@ -606,15 +605,14 @@ fn chat_message(mut data: &'static [u8], query: &PacketSwitchQuery<'_>) -> anyho
     Ok(())
 }
 
-pub fn request_command_completions(
-    mut data: &'static [u8],
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let play::RequestCommandCompletionsC2s {
+pub fn request_command_completions<'a>(
+    play::RequestCommandCompletionsC2s {
         transaction_id,
         text,
-    } = play::RequestCommandCompletionsC2s::decode(&mut data)?;
-
+    }: &play::RequestCommandCompletionsC2s<'a>,
+    handle: &dyn LifetimeHandle<'a>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
     let text = text.0;
     let transaction_id = transaction_id.0;
 
@@ -623,17 +621,16 @@ pub fn request_command_completions(
         id: transaction_id,
     };
 
-    query.handlers.completion.trigger_all(query, &completion);
+    query.handler_registry.trigger(&completion, handle, query)?;
 
     Ok(())
 }
 
 pub fn client_status(
-    mut data: &'static [u8],
+    pkt: &play::ClientStatusC2s,
+    handle: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let pkt = play::ClientStatusC2s::decode(&mut data)?;
-
     let command = ClientStatusEvent {
         client: query.id,
         status: match pkt {
@@ -642,42 +639,51 @@ pub fn client_status(
         },
     };
 
-    query.handlers.client_status.trigger_all(query, &command);
+    query.handler_registry.trigger(&command, handle, query)?;
 
     Ok(())
 }
 
-pub fn packet_switch(
-    raw: BorrowedPacketFrame<'_>,
-    query: &mut PacketSwitchQuery<'_>,
+pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
+    registry.add_handler(Box::new(chat_message));
+    registry.add_handler(Box::new(click_slot));
+    registry.add_handler(Box::new(client_command));
+    registry.add_handler(Box::new(client_status));
+    registry.add_handler(Box::new(chat_command));
+    registry.add_handler(Box::new(creative_inventory_action));
+    registry.add_handler(Box::new(custom_payload));
+    registry.add_handler(Box::new(full));
+    registry.add_handler(Box::new(hand_swing));
+    registry.add_handler(Box::new(look_and_on_ground));
+    registry.add_handler(Box::new(player_action));
+    registry.add_handler(Box::new(player_interact_block));
+    registry.add_handler(Box::new(player_interact_entity));
+    registry.add_handler(Box::new(player_interact_item));
+    registry.add_handler(Box::new(position_and_on_ground));
+    registry.add_handler(Box::new(request_command_completions));
+    registry.add_handler(Box::new(update_selected_slot));
+}
+
+/// # Safety
+/// The [`BorrowedPacketFrame`] must borrow data from the [`Compose::bump`] in
+/// [`PacketSwitchQuery::compose`]
+pub unsafe fn packet_switch<'a>(
+    raw: BorrowedPacketFrame<'a>,
+    query: &mut PacketSwitchQuery<'a>,
 ) -> anyhow::Result<()> {
     let packet_id = raw.id;
     let data = raw.body;
 
-    // ideally we wouldn't have to do this. The lifetime is the same as the entire tick.
-    // as the data is bump-allocated and reset occurs at the end of the tick
-    let data: &'static [u8] = unsafe { core::mem::transmute(data) };
+    // SAFETY: The only data that HandlerRegistry::process_packet is aware of outliving 'a is the packet bytes.
+    // The packet bytes are stored in the compose bump allocator.
+    // LifetimeTracker::assert_no_references will be called on the bump tracker before the
+    // bump allocator is cleared.
+    let handle = unsafe { query.compose.bump_tracker.handle() };
+    let handle: &dyn LifetimeHandle<'a> = &handle;
 
-    match packet_id {
-        play::ChatMessageC2s::ID => chat_message(data, query)?,
-        play::ClickSlotC2s::ID => click_slot(data, query)?,
-        play::ClientCommandC2s::ID => client_command(data, query)?,
-        play::ClientStatusC2s::ID => client_status(data, query)?,
-        play::CommandExecutionC2s::ID => chat_command(data, query)?,
-        play::CreativeInventoryActionC2s::ID => creative_inventory_action(data, query)?,
-        play::CustomPayloadC2s::ID => custom_payload(data, query)?,
-        play::FullC2s::ID => full(query, data)?,
-        play::HandSwingC2s::ID => hand_swing(data, query)?,
-        play::LookAndOnGroundC2s::ID => look_and_on_ground(data, query)?,
-        play::PlayerActionC2s::ID => player_action(data, query)?,
-        play::PlayerInteractBlockC2s::ID => player_interact_block(data, query)?,
-        play::PlayerInteractEntityC2s::ID => player_interact_entity(data, query)?,
-        play::PlayerInteractItemC2s::ID => player_interact_item(data, query)?,
-        play::PositionAndOnGroundC2s::ID => position_and_on_ground(query, data)?,
-        play::RequestCommandCompletionsC2s::ID => request_command_completions(data, query)?,
-        play::UpdateSelectedSlotC2s::ID => update_selected_slot(data, query)?,
-        _ => trace!("unknown packet id: 0x{:02X}", packet_id),
-    }
+    query
+        .handler_registry
+        .process_packet(packet_id, data, handle, query)?;
 
     Ok(())
 }

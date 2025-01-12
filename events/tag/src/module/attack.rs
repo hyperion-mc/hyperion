@@ -18,10 +18,12 @@ use hyperion::{
     simulation::{
         PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
-        event::{self, ClientStatusCommand},
+        event::{self, ClientStatusCommand, ClientStatusEvent},
+        handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
+        packet::HandlerRegistry,
     },
-    storage::{EventQueue, GlobalEventHandlers},
+    storage::EventQueue,
     uuid::Uuid,
     valence_protocol::{
         ItemKind, ItemStack, Particle, VarInt, ident,
@@ -37,7 +39,7 @@ use hyperion::{
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
-use hyperion_utils::EntityExt;
+use hyperion_utils::{EntityExt, LifetimeHandle};
 use tracing::info_span;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
@@ -507,52 +509,58 @@ impl Module for AttackModule {
                 },
             );
 
-        world.get::<&mut GlobalEventHandlers>(|handlers| {
-            handlers.client_status.register(|query, client_status| {
-                if client_status.status == ClientStatusCommand::RequestStats {
-                    return;
-                }
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |client_status: &ClientStatusEvent,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
+                    if client_status.status == ClientStatusCommand::RequestStats {
+                        return Ok(());
+                    }
 
-                let client = client_status.client.entity_view(query.world);
+                    let client = client_status.client.entity_view(query.world);
 
-                client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
-                    |(team, position, yaw, pitch, connection)| {
-                        let mut pos_vec = vec![];
-
-                        query
-                            .world
-                            .query::<(&Position, &Team)>()
-                            .build()
-                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
-                                if team != candidate_team || candidate == client {
-                                    return;
-                                }
-                                pos_vec.push(*candidate_pos);
-                            });
-
-                        let random_index = fastrand::usize(..pos_vec.len());
-
-                        if let Some(random_mate) = pos_vec.get(random_index) {
-                            let respawn_pos = get_respawn_pos(query.world, random_mate);
-
-                            *position = Position::from(respawn_pos.as_vec3());
-
-                            let pkt_teleport = play::PlayerPositionLookS2c {
-                                position: respawn_pos,
-                                yaw: **yaw,
-                                pitch: **pitch,
-                                flags: PlayerPositionLookFlags::default(),
-                                teleport_id: VarInt(fastrand::i32(..)),
-                            };
+                    client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
+                        |(team, position, yaw, pitch, connection)| {
+                            let mut pos_vec = vec![];
 
                             query
-                                .compose
-                                .unicast(&pkt_teleport, *connection, query.system)
-                                .unwrap();
-                        }
-                    },
-                );
-            });
+                                .world
+                                .query::<(&Position, &Team)>()
+                                .build()
+                                .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                                    if team != candidate_team || candidate == client {
+                                        return;
+                                    }
+                                    pos_vec.push(*candidate_pos);
+                                });
+
+                            let random_index = fastrand::usize(..pos_vec.len());
+
+                            if let Some(random_mate) = pos_vec.get(random_index) {
+                                let respawn_pos = get_respawn_pos(query.world, random_mate);
+
+                                *position = Position::from(respawn_pos.as_vec3());
+
+                                let pkt_teleport = play::PlayerPositionLookS2c {
+                                    position: respawn_pos,
+                                    yaw: **yaw,
+                                    pitch: **pitch,
+                                    flags: PlayerPositionLookFlags::default(),
+                                    teleport_id: VarInt(fastrand::i32(..)),
+                                };
+
+                                query
+                                    .compose
+                                    .unicast(&pkt_teleport, *connection, query.system)
+                                    .unwrap();
+                            }
+                        },
+                    );
+
+                    Ok(())
+                },
+            ));
         });
     }
 }
