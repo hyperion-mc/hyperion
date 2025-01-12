@@ -52,7 +52,6 @@ fn test_get_first_collision() {
     // Spawn arrows at different angles
     let arrow_velocities = [
         Vec3::new(0.0, -1.0, 0.0),
-        // Vec3::new(1.0, 0.0, 0.0),
     ];
 
     let arrows: Vec<EntityView<'_>> = arrow_velocities

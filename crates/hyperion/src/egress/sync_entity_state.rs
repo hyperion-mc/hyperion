@@ -311,10 +311,6 @@ impl Module for EntityStateSyncModule {
                      yaw,
                      pitch,
                  )| {
-                    // if io.is_none() {
-                    // return;
-                    // }
-
                     let world = it.system().world();
                     let system = it.system();
                     let entity = it.entity(row);
@@ -421,7 +417,6 @@ impl Module for EntityStateSyncModule {
                 let arrow_entity = it.entity(row);
 
                 if velocity.0 != Vec3::ZERO {
-                    // let (new_yaw, new_pitch) = get_rotation_from_velocity(velocity.0);
                     let center = **position;
 
                     // getting max distance
@@ -469,17 +464,6 @@ impl Module for EntityStateSyncModule {
                             ));
                         }
                     }
-
-                    /* debug!("collision = {collision:?}");
-    
-                    velocity.0 = Vec3::ZERO; */
-
-                    /* // Set arrow position to the collision location
-                    **position = collision.normal;
-    
-                    blocks
-                        .set_block(collision.location, BlockState::DIRT)
-                        .unwrap(); */
                 }
             });
 

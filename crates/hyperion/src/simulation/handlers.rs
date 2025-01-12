@@ -384,17 +384,6 @@ pub fn player_interact_item(
         if cursor.item == ItemKind::WrittenBook {
             let packet = play::OpenWrittenBookS2c { hand };
             query.compose.unicast(&packet, query.io_ref, query.system)?;
-        } else if cursor.item == ItemKind::Bow {
-            // Start charging bow
-            // let entity = query.world.entity_from_id(query.id);
-            // entity.get::<Option<&BowCharging>>(|charging| {
-            // if charging.is_some() {
-            // return;
-            // }
-            // entity.set(BowCharging::now());
-            //
-            // entity.set(HandStates::new(1));
-            // });
         }
         query.events.push(flecs_event, query.world);
     }
