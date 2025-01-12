@@ -674,9 +674,9 @@ pub unsafe fn packet_switch<'a>(
     let packet_id = raw.id;
     let data = raw.body;
 
-    // SAFETY: The only data that [`HandlerRegistry::process_packet`] is aware of outliving 'a is the packet bytes.
+    // SAFETY: The only data that HandlerRegistry::process_packet is aware of outliving 'a is the packet bytes.
     // The packet bytes are stored in the compose bump allocator.
-    // [`LifetimeTracker::assert_no_references`] will be called on the bump tracker before the
+    // LifetimeTracker::assert_no_references will be called on the bump tracker before the
     // bump allocator is cleared.
     let handle = unsafe { query.compose.bump_tracker.handle() };
     let handle: &dyn LifetimeHandle<'a> = &handle;

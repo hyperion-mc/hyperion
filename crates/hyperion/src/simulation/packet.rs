@@ -18,8 +18,6 @@ type DeserializerFn = for<'packet> fn(
     &dyn LifetimeHandle<'packet>,
     &mut PacketSwitchQuery<'_>,
 ) -> Result<()>;
-// type AnyFn = unsafe fn();
-// type Handler<T> = fn(&T, &mut PacketSwitchQuery<'_>) -> Result<()>;
 type AnyFn = Box<dyn Send + Sync>;
 type Handler<T> = Box<
     dyn for<'packet> Fn(
@@ -65,9 +63,6 @@ pub struct HandlerRegistry {
     deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,
     handlers: HashMap<TypeId, Vec<AnyFn>, FxBuildHasher>,
 }
-
-// pub trait Handler2<'a, P> {}
-// impl<'a, F, P> Handler2<'a, P> for F where F:  {}
 
 impl HandlerRegistry {
     // Add a handler

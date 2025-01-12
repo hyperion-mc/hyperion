@@ -29,7 +29,7 @@ pub unsafe trait Lifetime {
         Self: Sized,
     {
         // SAFETY: This lifetime cast is checked by the caller, and the safety requirements on implementors of
-        // the [`Lifetime`] trait ensure that no type cast or cast to a longer lifetime is occuring.
+        // the Lifetime trait ensure that no type cast or cast to a longer lifetime is occuring.
         unsafe { transmute_unchecked(self) }
     }
 
@@ -83,8 +83,8 @@ impl<T: Lifetime> RuntimeLifetime<T> {
     where
         T: 'a,
     {
-        // SAFETY: [`RuntimeLifetime::get`] ensures that the `'static` referencs are not exposed
-        // publicly and that users can only access `T` with an appropriate lifetime.
+        // SAFETY: RuntimeLifetime::get ensures that the 'static referencs are not exposed
+        // publicly and that users can only access T with an appropriate lifetime.
         let value = unsafe { value.change_lifetime::<'static>() };
 
         let references = unsafe { handle.__private_references(sealed::Sealed) };
@@ -109,9 +109,9 @@ impl<T: Lifetime> RuntimeLifetime<T> {
     #[must_use]
     pub const fn get<'a>(&'a self) -> &'a T::WithLifetime<'a> {
         // SAFETY: The program will abort if `self` is not dropped before
-        // [`LifetimeTracker::assert_no_references`] is called. `'a` will expire before `self` is
-        // dropped. Therefore, it is safe to change these references to `'a`, because if `'a`
-        // were to live after [`LifetimeTracker::assert_no_references`] is called, the program
+        // LifetimeTracker::assert_no_references is called. 'a will expire before self is
+        // dropped. Therefore, it is safe to change these references to 'a, because if 'a
+        // were to live after LifetimeTracker::assert_no_references is called, the program
         // would abort before user code could use the invalid reference.
         unsafe { &*(&raw const self.value).cast::<T::WithLifetime<'a>>() }
     }
@@ -122,7 +122,7 @@ unsafe impl<T> Sync for RuntimeLifetime<T> where T: Sync {}
 
 impl<T> Drop for RuntimeLifetime<T> {
     fn drop(&mut self) {
-        // SAFETY: `self.references` is safe to dereference because the underlying [`LifetimeTracker`] would
+        // SAFETY: `self.references` is safe to dereference because the underlying LifetimeTracker would
         // have already aborted if it were dropped before this
         let references = unsafe { &*self.references };
 
@@ -185,9 +185,9 @@ impl LifetimeTracker {
     /// itself does not matter, and `'handle` may expire before [`LifetimeTracker::assert_no_references`] is called.
     #[must_use]
     pub unsafe fn handle<'handle>(&'handle self) -> impl LifetimeHandle<'handle> {
-        // Storing the lifetime parameter in a trait ([`LifetimeHandle`]) instead of a struct is necessary to prohibit
-        // casts to a shorter lifetime. If the [`LifetimeHandle`]'s lifetime could be shortened, the user could safely
-        // wrap values of any lifetime in [`RuntimeLifetime`], which would defeat the purpose of the `'handle` lifetime.
+        // Storing the lifetime parameter in a trait (LifetimeHandle) instead of a struct is necessary to prohibit
+        // casts to a shorter lifetime. If the LifetimeHandle's lifetime could be shortened, the user could safely
+        // wrap values of any lifetime in RuntimeLifetime, which would defeat the purpose of the 'handle lifetime.
         LifetimeHandleObject::<'handle> {
             references: &self.references,
         }
@@ -204,9 +204,9 @@ impl Default for LifetimeTracker {
 
 impl Drop for LifetimeTracker {
     fn drop(&mut self) {
-        // Even if data associated with this tracker will live for `'static`, the [`Box`] storing
+        // Even if data associated with this tracker will live for 'static, the Box storing
         // the references will be dropped, so this ensures that there are no
-        // [`RuntimeLifetime`]s which might still have a pointer to the references.
+        // RuntimeLifetimes which might still have a pointer to the references.
         self.assert_no_references();
     }
 }
