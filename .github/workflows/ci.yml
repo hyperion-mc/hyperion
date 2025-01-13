@@ -83,7 +83,7 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          # token: ${{ secrets.CODECOV_TOKEN }}
           slug: hyperion-mc/hyperion
 
   test:
