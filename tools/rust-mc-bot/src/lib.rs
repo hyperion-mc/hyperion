@@ -19,10 +19,9 @@ use std::{
 };
 
 use libdeflater::{CompressionLvl, Compressor, Decompressor};
-use mio::{
-    Events, Interest, Poll, Registry, Token, event,
-    net::{TcpStream, UnixStream},
-};
+#[cfg(unix)]
+use mio::net::UnixStream;
+use mio::{Events, Interest, Poll, Registry, Token, event, net::TcpStream};
 use rand::{Rng, prelude::SliceRandom};
 
 use crate::{
