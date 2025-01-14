@@ -91,7 +91,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, macos-14]  # macos-14 is for Apple Silicon
+        os: [ubuntu-latest, macos-latest, macos-14, windows-latest]  # macos-14 is for Apple Silicon
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
