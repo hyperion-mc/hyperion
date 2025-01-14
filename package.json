@@ -5,7 +5,12 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
+    "@braintree/sanitize-url": "^7.1.1",
     "@nolebase/vitepress-plugin-inline-link-preview": "^2.10.0",
+    "cytoscape": "^3.31.0",
+    "cytoscape-cose-bilkent": "^4.1.0",
+    "dayjs": "^1.11.13",
+    "debug": "^4.4.0",
     "markdown-it-footnote": "^4.0.0",
     "markdown-it-mathjax3": "^4.3.2",
     "medium-zoom": "^1.1.0",
