@@ -12,9 +12,24 @@ importers:
         specifier: ^5.1.0
         version: 5.1.1
     devDependencies:
+      '@braintree/sanitize-url':
+        specifier: ^7.1.1
+        version: 7.1.1
       '@nolebase/vitepress-plugin-inline-link-preview':
         specifier: ^2.10.0
         version: 2.12.0(@algolia/client-search@5.19.0)(markdown-it-mathjax3@4.3.2)(postcss@8.5.1)(search-insights@2.17.3)
+      cytoscape:
+        specifier: ^3.31.0
+        version: 3.31.0
+      cytoscape-cose-bilkent:
+        specifier: ^4.1.0
+        version: 4.1.0(cytoscape@3.31.0)
+      dayjs:
+        specifier: ^1.11.13
+        version: 1.11.13
+      debug:
+        specifier: ^4.4.0
+        version: 4.4.0
       markdown-it-footnote:
         specifier: ^4.0.0
         version: 4.0.0
