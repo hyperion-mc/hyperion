@@ -9,7 +9,10 @@ use flecs_ecs::{
     macros::Component,
     prelude::Module,
 };
-use hyperion::simulation::{Position, Uuid, Velocity, entity_kind::EntityKind};
+use hyperion::{
+    simulation::{Owner, Position, Uuid, Velocity, entity_kind::EntityKind},
+    spatial::SpatialModule,
+};
 
 #[derive(Component)]
 struct TestModule;
@@ -17,6 +20,7 @@ struct TestModule;
 impl Module for TestModule {
     fn module(world: &World) {
         world.import::<hyperion::HyperionCore>();
+        world.import::<SpatialModule>();
     }
 }
 
@@ -26,6 +30,7 @@ fn arrow() {
     world.import::<TestModule>();
 
     let arrow = world.entity().add_enum(EntityKind::Arrow);
+    let owner = world.entity();
 
     assert!(
         arrow.has::<Uuid>(),
@@ -38,7 +43,8 @@ fn arrow() {
 
     arrow
         .set(Velocity::new(0.0, 1.0, 0.0))
-        .set(Position::new(0.0, 20.0, 0.0));
+        .set(Position::new(0.0, 20.0, 0.0))
+        .set(Owner::new(*owner));
 
     println!("arrow = {arrow:?}");
 
