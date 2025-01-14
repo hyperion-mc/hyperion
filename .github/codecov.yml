@@ -10,7 +10,7 @@ coverage:
         branches:
           - main
         if_ci_failed: error
-        informational: false
+        informational: true
         only_pulls: false
 
     patch:
@@ -23,7 +23,7 @@ coverage:
         branches:
           - main
         if_ci_failed: error
-        informational: false
+        informational: true
         only_pulls: false
 
 ignore:
