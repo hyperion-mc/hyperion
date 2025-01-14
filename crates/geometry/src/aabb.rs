@@ -314,6 +314,10 @@ impl Aabb {
             return None; // Ray is parallel to Z slab and outside the slab
         }
 
+        if t_min > t_max {
+            return None;
+        }
+
         // At this point, t_min and t_max define the intersection range.
         // If t_min < 0.0, it means we start “behind” the origin; if t_max < 0.0, no intersection in front.
         let t_hit = if t_min >= 0.0 { t_min } else { t_max };
