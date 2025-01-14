@@ -1,6 +1,6 @@
 name: Bench
 on:
-  pull_request:
+  pull_request_target:
     branches: [ main ]
   push:
     branches: [ main ]
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        benchmark: [ general ] # Add your benchmarks here
+        benchmark: [ general ]
     steps:
       - uses: actions/checkout@v4
       - uses: rui314/setup-mold@v1
@@ -36,23 +36,26 @@ jobs:
           path: target/benchmarks/${{ matrix.benchmark }}
 
   compare:
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        benchmark: [ general ] # Add your benchmarks here
+        benchmark: [ general ]
     permissions:
       pull-requests: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Download Artifact
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Download base benchmark
         id: download
         uses: dawidd6/action-download-artifact@v7
         continue-on-error: true
         with:
-          commit: ${{ github.event.pull_request.base.sha }}
           name: bench_${{ matrix.benchmark }}
           path: /tmp/bench/
+          if_no_artifact_found: ignore
       - uses: rui314/setup-mold@v1
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -72,17 +75,11 @@ jobs:
             const fs = require('fs');
             const path = `bench_output_${{ matrix.benchmark }}.txt`;
             const output = fs.readFileSync(path, 'utf8');
-            const originalSha = context.payload.pull_request.base.sha;
             
-            const issue_number = context.issue.number;
-            if(issue_number) {
-              const comment = {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue_number,
-                body: `### Benchmark Results for ${{ matrix.benchmark }}\n\`\`\`\n${output}\`\`\`\n\nComparing to ${originalSha}`,
-              };
-              await github.rest.issues.createComment(comment);
-            } else {
-              console.log('This action must be run in the context of a pull request');
-            }
+            const comment = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### Benchmark Results for ${{ matrix.benchmark }}\n\`\`\`\n${output}\`\`\`\n\nComparing to main branch`,
+            };
+            await github.rest.issues.createComment(comment);
