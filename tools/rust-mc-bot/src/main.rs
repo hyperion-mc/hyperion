@@ -38,7 +38,7 @@ fn main() {
     let addrs: Address = if arg1.starts_with(UDS_PREFIX) {
         #[cfg(unix)]
         {
-            Address::UNIX(PathBuf::from(arg1))
+            Address::UNIX(PathBuf::from(arg1.strip_prefix(UDS_PREFIX).unwrap()))
         }
         #[cfg(not(unix))]
         {
