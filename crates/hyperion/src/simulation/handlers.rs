@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use anyhow::{Context, bail};
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use flecs_ecs::core::{Entity, EntityView, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -31,7 +31,6 @@ use super::{
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
-    bow::BowCharging,
     event::ClientStatusEvent,
 };
 use crate::{
@@ -39,7 +38,7 @@ use crate::{
     simulation::{
         Pitch, Yaw, aabb,
         event::{self, PluginMessage},
-        metadata::entity::Pose,
+        metadata::{entity::Pose, living_entity::HandStates},
         packet::HandlerRegistry,
     },
     storage::{CommandCompletionRequest, Events, InteractEvent},
@@ -318,6 +317,8 @@ fn player_action(
                 item: query.inventory.get_cursor().item,
             };
 
+            query.id.entity_view(query.world).set(HandStates::new(0));
+
             query.events.push(event, query.world);
         }
         action => bail!("unimplemented {action:?}"),
@@ -375,19 +376,16 @@ pub fn player_interact_item(
     let cursor = query.inventory.get_cursor();
 
     if !cursor.is_empty() {
+        let flecs_event = event::ItemInteract {
+            entity: query.id,
+            hand,
+            sequence: sequence.0,
+        };
         if cursor.item == ItemKind::WrittenBook {
             let packet = play::OpenWrittenBookS2c { hand };
             query.compose.unicast(&packet, query.io_ref, query.system)?;
-        } else if cursor.item == ItemKind::Bow {
-            // Start charging bow
-            let entity = query.world.entity_from_id(query.id);
-            entity.get::<Option<&BowCharging>>(|charging| {
-                if charging.is_some() {
-                    return;
-                }
-                entity.set(BowCharging::now());
-            });
         }
+        query.events.push(flecs_event, query.world);
     }
 
     query.handler_registry.trigger(&event, handle, query)?;

@@ -5,24 +5,27 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
-use tracing::{debug, error};
+use itertools::Either;
+use tracing::error;
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self, entity_equipment_update_s2c::EquipmentEntry},
 };
-use valence_server::BlockState;
 
 use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Pitch, Position, Velocity, Xp, Yaw,
+        Owner, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
+        event,
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
+    spatial::get_first_collision,
+    storage::Events,
 };
 
 #[derive(Component)]
@@ -293,69 +296,84 @@ impl Module for EntityStateSyncModule {
             &Yaw,
             &Pitch,
         )
-        .multi_threaded()
-        .kind::<flecs::pipeline::PreStore>()
-        .each_iter(
-            |it,
-             row,
-             (
-                compose,
-                prev_position,
-                prev_yaw,
-                prev_pitch,
-                position,
-                velocity,
-                yaw,
-                pitch,
-            )| {
-                // if io.is_none() {
-                // return;
-                // }
+            .multi_threaded()
+            .kind::<flecs::pipeline::PreStore>()
+            .each_iter(
+                |it,
+                 row,
+                 (
+                     compose,
+                     prev_position,
+                     prev_yaw,
+                     prev_pitch,
+                     position,
+                     velocity,
+                     yaw,
+                     pitch,
+                 )| {
+                    let world = it.system().world();
+                    let system = it.system();
+                    let entity = it.entity(row);
+                    let entity_id = VarInt(entity.minecraft_id());
 
-                let world = it.system().world();
-                let system = it.system();
-                let entity = it.entity(row);
-                let entity_id = VarInt(entity.minecraft_id());
+                    let chunk_pos = position.to_chunk();
 
-                let chunk_pos = position.to_chunk();
+                    let position_delta = **position - **prev_position;
+                    let needs_teleport = position_delta.abs().max_element() >= 8.0;
+                    let changed_position = **position != **prev_position;
 
-                let position_delta = **position - **prev_position;
-                let needs_teleport = position_delta.abs().max_element() >= 8.0;
-                let changed_position = **position != **prev_position;
+                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
 
-                let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
+                    let mut bundle = DataBundle::new(compose, system);
 
-                let mut bundle = DataBundle::new(compose, system);
+                    world.get::<&mut Blocks>(|blocks| {
+                        let grounded = is_grounded(position, blocks);
 
-                world.get::<&mut Blocks>(|blocks| {
-                    let grounded = is_grounded(position, blocks);
-
-                    if changed_position && !needs_teleport && look_changed {
-                        let packet = play::RotateAndMoveRelativeS2c {
-                            entity_id,
-                            #[allow(clippy::cast_possible_truncation)]
-                            delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                            yaw: ByteAngle::from_degrees(**yaw),
-                            pitch: ByteAngle::from_degrees(**pitch),
-                            on_ground: grounded,
-                        };
-
-                        bundle.add_packet(&packet).unwrap();
-                    } else {
-                        if changed_position && !needs_teleport {
-                            let packet = play::MoveRelativeS2c {
+                        if changed_position && !needs_teleport && look_changed {
+                            let packet = play::RotateAndMoveRelativeS2c {
                                 entity_id,
                                 #[allow(clippy::cast_possible_truncation)]
                                 delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                                yaw: ByteAngle::from_degrees(**yaw),
+                                pitch: ByteAngle::from_degrees(**pitch),
                                 on_ground: grounded,
+                            };
+
+                            bundle.add_packet(&packet).unwrap();
+                        } else {
+                            if changed_position && !needs_teleport {
+                                let packet = play::MoveRelativeS2c {
+                                    entity_id,
+                                    #[allow(clippy::cast_possible_truncation)]
+                                    delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                                    on_ground: grounded,
+                                };
+
+                                bundle.add_packet(&packet).unwrap();
+                            }
+
+                            if look_changed {
+                                let packet = play::RotateS2c {
+                                    entity_id,
+                                    yaw: ByteAngle::from_degrees(**yaw),
+                                    pitch: ByteAngle::from_degrees(**pitch),
+                                    on_ground: grounded,
+                                };
+
+                                bundle.add_packet(&packet).unwrap();
+                            }
+                            let packet = play::EntitySetHeadYawS2c {
+                                entity_id,
+                                head_yaw: ByteAngle::from_degrees(**yaw),
                             };
 
                             bundle.add_packet(&packet).unwrap();
                         }
 
-                        if look_changed {
-                            let packet = play::RotateS2c {
+                        if needs_teleport {
+                            let packet = play::EntityPositionS2c {
                                 entity_id,
+                                position: position.as_dvec3(),
                                 yaw: ByteAngle::from_degrees(**yaw),
                                 pitch: ByteAngle::from_degrees(**pitch),
                                 on_ground: grounded,
@@ -363,95 +381,93 @@ impl Module for EntityStateSyncModule {
 
                             bundle.add_packet(&packet).unwrap();
                         }
-                        let packet = play::EntitySetHeadYawS2c {
+                    });
+
+                    if velocity.0 != Vec3::ZERO {
+                        let packet = play::EntityVelocityUpdateS2c {
                             entity_id,
-                            head_yaw: ByteAngle::from_degrees(**yaw),
+                            velocity: velocity.to_packet_units(),
                         };
 
                         bundle.add_packet(&packet).unwrap();
                     }
 
-                    if needs_teleport {
-                        let packet = play::EntityPositionS2c {
-                            entity_id,
-                            position: position.as_dvec3(),
-                            yaw: ByteAngle::from_degrees(**yaw),
-                            pitch: ByteAngle::from_degrees(**pitch),
-                            on_ground: grounded,
-                        };
-
-                        bundle.add_packet(&packet).unwrap();
-                    }
-                });
-
-                if velocity.0 != Vec3::ZERO {
-
-                    let packet = play::EntityVelocityUpdateS2c {
-                        entity_id,
-                        velocity: velocity.to_packet_units(),
-                    };
-
-                    bundle.add_packet(&packet).unwrap();
-                }
-
-                bundle.broadcast_local(chunk_pos).unwrap();
-            },
-        );
+                    bundle.broadcast_local(chunk_pos).unwrap();
+                },
+            );
 
         system!(
             "update_projectile_positions",
             world,
             &mut Position,
             &mut Velocity,
+            &Owner,
             ?&ConnectionId
         )
         .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
         .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (position, velocity, connection_id)| {
+        .each_iter(|it, row, (position, velocity, owner, connection_id)| {
             if let Some(_connection_id) = connection_id {
                 return;
             }
 
-            let world = it.system().world();
-            let _entity = it.entity(row);
+            let system = it.system();
+            let world = system.world();
+            let arrow_entity = it.entity(row);
 
             if velocity.0 != Vec3::ZERO {
-                position.x += velocity.0.x;
-                position.y += velocity.0.y;
-                position.z += velocity.0.z;
-                // let (new_yaw, new_pitch) = get_rotation_from_velocity(velocity.0);
-
                 let center = **position;
 
-                let ray = geometry::ray::Ray::new(center, velocity.0);
+                // getting max distance
+                let distance = velocity.0.length();
 
-                #[allow(clippy::excessive_nesting)]
-                world.get::<&mut Blocks>(|blocks| {
-                    let Some(collision) = blocks.first_collision(ray) else {
-                        // Drag (0.99 / 20.0)
-                        // 1.0 - (0.99 / 20.0) * 0.05
-                        velocity.0 *= 0.997_525;
+                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
-                        // Gravity (20 MPSS)
-                        velocity.0.y -= 0.05;
+                let Some(collision) = get_first_collision(ray, &world, Some(owner.entity)) else {
+                    // Drag (0.99 / 20.0)
+                    // 1.0 - (0.99 / 20.0) * 0.05
+                    velocity.0 *= 0.997_525;
 
-                        // Terminal Velocity (100.0)
-                        velocity.0 = velocity.0.clamp_length(0.0, 100.0);
-                        return;
-                    };
+                    // Gravity (20 MPSS)
+                    velocity.0.y -= 0.05;
 
-                    debug!("collision = {collision:?}");
+                    // Terminal Velocity max (100.0)
+                    velocity.0 = velocity.0.clamp_length_max(100.0);
 
-                    velocity.0 = Vec3::ZERO;
+                    position.x += velocity.0.x;
+                    position.y += velocity.0.y;
+                    position.z += velocity.0.z;
+                    return;
+                };
 
-                    // Set arrow position to the collision location
-                    **position = collision.normal;
-
-                    blocks
-                        .set_block(collision.location, BlockState::DIRT)
-                        .unwrap();
-                });
+                match collision {
+                    Either::Left(entity) => {
+                        let entity = entity.entity_view(world);
+                        // send event
+                        world.get::<&mut Events>(|events| {
+                            events.push(
+                                event::ProjectileEntityEvent {
+                                    client: *entity,
+                                    projectile: *arrow_entity,
+                                },
+                                &world,
+                            );
+                        });
+                    }
+                    Either::Right(collision) => {
+                        // send event
+                        world.get::<&mut Events>(|events| {
+                            events.push(
+                                event::ProjectileBlockEvent {
+                                    collision,
+                                    projectile: *arrow_entity,
+                                },
+                                &world,
+                            );
+                        });
+                    }
+                }
             }
         });
 
