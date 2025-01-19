@@ -36,8 +36,7 @@ use super::{
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
     simulation::{
-        Pitch, Yaw, aabb,
-        event::{self, PluginMessage},
+        Pitch, Yaw, aabb, event,
         metadata::{entity::Pose, living_entity::HandStates},
         packet::HandlerRegistry,
     },
@@ -510,27 +509,6 @@ pub fn creative_inventory_action(
     Ok(())
 }
 
-pub fn custom_payload<'a>(
-    packet: &play::CustomPayloadC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let channel = packet.channel.clone().into_inner();
-
-    let Cow::Borrowed(borrow) = channel else {
-        bail!("NO")
-    };
-
-    let event = PluginMessage {
-        channel: RuntimeLifetime::new(borrow, handle),
-        data: RuntimeLifetime::new(packet.data.0.0, handle),
-    };
-
-    query.events.push(event, query.world);
-
-    Ok(())
-}
-
 // keywords: inventory
 fn click_slot(
     pkt: &play::ClickSlotC2s<'_>,
@@ -649,7 +627,6 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(client_status));
     registry.add_handler(Box::new(chat_command));
     registry.add_handler(Box::new(creative_inventory_action));
-    registry.add_handler(Box::new(custom_payload));
     registry.add_handler(Box::new(full));
     registry.add_handler(Box::new(hand_swing));
     registry.add_handler(Box::new(look_and_on_ground));

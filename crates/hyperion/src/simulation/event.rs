@@ -91,22 +91,6 @@ pub struct ReleaseUseItem {
     pub item: ItemKind,
 }
 
-pub struct PluginMessage {
-    pub channel: RuntimeLifetime<&'static str>,
-    pub data: RuntimeLifetime<&'static [u8]>,
-}
-
-impl std::fmt::Debug for PluginMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = bytes::Bytes::copy_from_slice(self.data.get());
-
-        f.debug_struct("PluginMessage")
-            .field("channel", self.channel.get())
-            .field("data", &bytes)
-            .finish()
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]
 #[expect(missing_docs, reason = "self explanatory")]
