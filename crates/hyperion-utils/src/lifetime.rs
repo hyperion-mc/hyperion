@@ -1,7 +1,11 @@
 use std::{
     mem::{ManuallyDrop, size_of},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::Mutex,
+    thread::{self, Thread},
+    time::{Duration, Instant},
 };
+
+use tracing::{info, warn};
 
 /// # Safety
 /// Same safety requirements as [`std::mem::transmute`]. In addition, both types must have the same
@@ -69,9 +73,203 @@ hyperion_packet_macros::for_each_lifetime_play_c2s_packet! {
     }
 }
 
+#[cfg(debug_assertions)]
+struct Reference {
+    trace: std::backtrace::Backtrace,
+    ty: &'static str,
+}
+
+#[derive(Copy, Clone)]
+struct ReferenceId(#[cfg(debug_assertions)] usize);
+
+#[derive(Default)]
+#[doc(hidden)]
+pub struct References {
+    waiting_thread: Mutex<Option<Thread>>,
+
+    #[cfg(debug_assertions)]
+    references: Mutex<Vec<Option<Reference>>>,
+    #[cfg(not(debug_assertions))]
+    reference_count: std::sync::atomic::AtomicUsize,
+}
+
+impl References {
+    #[cfg(debug_assertions)]
+    fn status(&self) -> String {
+        use std::backtrace::BacktraceStatus;
+
+        let references = self.references.lock().unwrap();
+        if references.iter().any(Option::is_some) {
+            references
+                .iter()
+                .flatten()
+                .enumerate()
+                .map(|(i, Reference { trace, ty })| match trace.status() {
+                    BacktraceStatus::Disabled => {
+                        format!(
+                            "RuntimeLifetime #{i} to {ty} was not dropped yet. consider setting \
+                             RUST_BACKTRACE=1 to show a backtrace of where the RuntimeLifetime \
+                             was created."
+                        )
+                    }
+                    BacktraceStatus::Captured => {
+                        format!(
+                            "RuntimeLifetime #{i} to {ty} was not dropped yet. the \
+                             RuntimeLifetime was created at the following location:\n{trace}"
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "RuntimeLifetime #{i} to {ty} was not dropped yet. backtraces are not \
+                             supported on the current platform."
+                        )
+                    }
+                })
+                .fold(String::new(), |a, b| a + "\n" + &b)
+        } else {
+            "no active references".to_string()
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn status(&self) -> String {
+        let references = self
+            .reference_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if references != 0 {
+            format!(
+                "{references} active references - consider compiling with debug_assertions \
+                 enabled (such as by compiling in debug mode) for more debug information"
+            )
+        } else {
+            "no active references".to_string()
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn has_references(&self) -> bool {
+        self.references.lock().unwrap().iter().any(Option::is_some)
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn has_references(&self) -> bool {
+        self.reference_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+            != 0
+    }
+
+    fn wait_no_references(&self) {
+        // The waiting thread is set first before checking if there are any references to avoid
+        // race conditions. If the last reference is dropped after the waiting thread is set, this
+        // thread will be unparked. Even if this thread is unparked after the has_references check
+        // returns true and before the call to park_timeout, park_timeout will return immediately.
+        {
+            let mut waiting_thread = self.waiting_thread.lock().unwrap();
+            assert!(
+                waiting_thread.is_none(),
+                "cannot call wait_no_references from multiple threads"
+            );
+            *waiting_thread = Some(thread::current());
+        }
+
+        if self.has_references() {
+            info!("blocking until there are no more references");
+            let start = Instant::now();
+            loop {
+                thread::park_timeout(Duration::from_secs(5));
+                if !self.has_references() {
+                    break;
+                }
+
+                warn!(
+                    "thread is blocked because there are still references after {:?}: {}",
+                    start.elapsed(),
+                    self.status()
+                );
+            }
+            info!("there are no more references after {:?}", start.elapsed());
+        }
+
+        {
+            let mut waiting_thread = self.waiting_thread.lock().unwrap();
+            debug_assert_eq!(
+                waiting_thread.as_ref().map(Thread::id),
+                Some(thread::current().id())
+            );
+            *waiting_thread = None;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn acquire<T>(&self) -> ReferenceId {
+        let mut references = self.references.lock().unwrap();
+        let id = ReferenceId(references.len());
+        references.push(Some(Reference {
+            trace: std::backtrace::Backtrace::capture(),
+            ty: std::any::type_name::<T>(),
+        }));
+        id
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[expect(clippy::extra_unused_type_parameters)]
+    fn acquire<T>(&self) -> ReferenceId {
+        // Relaxed ordering is used here because a shared reference is being held to the
+        // LifetimeTracker, meaning that LifetimeTracker::wait_no_references cannot be called
+        // concurrently in another thread becuase it requires an exclusive reference to the
+        // LifetimeTracker. In a multi-threaded scenario where the LifetimeTracker is shared
+        // across threads, there will always be a happens-before relationship where this increment
+        // occurs before LifetimeTracker::wait_no_references is called and reads this value
+        // because the synchronization primitive needed to get an exclusive reference to
+        // LifetimeTracker should form a happens-before relationship, so using a stricter ordering
+        // here is not needed.
+        self.reference_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ReferenceId()
+    }
+
+    #[cfg(debug_assertions)]
+    unsafe fn release(&self, id: ReferenceId) {
+        let remaining;
+        {
+            let mut references = self.references.lock().unwrap();
+            references[id.0] = None;
+            remaining = references.iter().any(Option::is_some);
+
+            if !remaining {
+                // Clear the references to reduce memory usage; no more references exist so reference ids can be invalidated
+                references.clear();
+            }
+        }
+
+        if !remaining {
+            let waiting_thread = self.waiting_thread.lock().unwrap();
+            if let Some(waiting_thread) = &*waiting_thread {
+                waiting_thread.unpark();
+            }
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    unsafe fn release(&self, _id: ReferenceId) {
+        let remaining = self
+            .reference_count
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
+            == 1;
+
+        if !remaining {
+            let waiting_thread = self.waiting_thread.lock().unwrap();
+            if let Some(waiting_thread) = &*waiting_thread {
+                waiting_thread.unpark();
+            }
+        }
+    }
+}
+
 pub struct RuntimeLifetime<T> {
     value: T,
-    references: *const AtomicUsize,
+    references: *const References,
+    id: ReferenceId,
 }
 
 impl<T: Lifetime> RuntimeLifetime<T> {
@@ -87,32 +285,21 @@ impl<T: Lifetime> RuntimeLifetime<T> {
         // publicly and that users can only access T with an appropriate lifetime.
         let value = unsafe { value.change_lifetime::<'static>() };
 
-        let references = unsafe { handle.__private_references(sealed::Sealed) };
-
-        // Relaxed ordering is used here because a shared reference is being held to the
-        // LifetimeTracker, meaning that LifetimeTracker::assert_no_references cannot be called
-        // concurrently in another thread becuase it requires an exclusive reference to the
-        // LifetimeTracker. In a multi-threaded scenario where the LifetimeTracker is shared
-        // across threads, there will always be a happens-before relationship where this increment
-        // occurs before LifetimeTracker::assert_no_references is called and reads this value
-        // because the synchronization primitive needed to get an exclusive reference to
-        // LifetimeTracker should form a happens-before relationship, so using a stricter ordering
-        // here is not needed.
-        references.fetch_add(1, Ordering::Relaxed);
+        let references = handle.__private_references(sealed::Sealed);
+        let id = references.acquire::<T>();
 
         RuntimeLifetime {
             value,
             references: std::ptr::from_ref(references),
+            id,
         }
     }
 
     #[must_use]
     pub const fn get<'a>(&'a self) -> &'a T::WithLifetime<'a> {
-        // SAFETY: The program will abort if `self` is not dropped before
-        // LifetimeTracker::assert_no_references is called. 'a will expire before self is
-        // dropped. Therefore, it is safe to change these references to 'a, because if 'a
-        // were to live after LifetimeTracker::assert_no_references is called, the program
-        // would abort before user code could use the invalid reference.
+        // SAFETY: LifetimeTracker::wait_no_references will wait until `self` is dropped
+        // before any references are invalidated. 'a will expire before self is
+        // dropped. Therefore, it is safe to change these references to 'a.
         unsafe { &*(&raw const self.value).cast::<T::WithLifetime<'a>>() }
     }
 }
@@ -126,12 +313,7 @@ impl<T> Drop for RuntimeLifetime<T> {
         // have already aborted if it were dropped before this
         let references = unsafe { &*self.references };
 
-        // Relaxed ordering is used here because user code must guarantee that this will be dropped before another
-        // thread calls LifetimeTracker::assert_no_references, or else assert_no_references will abort. In a
-        // multi-threaded scenario, user code will already need to do something which would form a
-        // happens-before relationship to fulfill this guarantee, so any ordering stricter than
-        // Relaxed is not needed.
-        references.fetch_sub(1, Ordering::Relaxed);
+        unsafe { references.release(self.id) };
 
         // Dropping the inner value is sound despite having 'static lifetime parameters because
         // Drop implementations cannot be specialized, meaning that the Drop implementation cannot
@@ -145,44 +327,37 @@ mod sealed {
 }
 
 pub trait LifetimeHandle<'a> {
-    /// # Safety
-    /// The returned references value must only be used in increment-decrement pairs. In other words, it can only be
-    /// decremented if it were previously incremented.
     #[must_use]
-    unsafe fn __private_references(&self, _: sealed::Sealed) -> &AtomicUsize;
+    #[doc(hidden)]
+    fn __private_references(&self, _: sealed::Sealed) -> &References;
 }
 
 struct LifetimeHandleObject<'a> {
-    references: &'a AtomicUsize,
+    references: &'a References,
 }
 
 impl<'a> LifetimeHandle<'a> for LifetimeHandleObject<'a> {
-    unsafe fn __private_references(&self, _: sealed::Sealed) -> &AtomicUsize {
+    fn __private_references(&self, _: sealed::Sealed) -> &References {
         self.references
     }
 }
 
+#[derive(Default)]
 pub struct LifetimeTracker {
-    references: Box<AtomicUsize>,
+    references: Box<References>,
 }
 
 impl LifetimeTracker {
-    pub fn assert_no_references(&mut self) {
-        let references = self.references.load(Ordering::Relaxed);
-        if references != 0 {
-            tracing::error!("{references} values were held too long - aborting");
-            // abort is needed to avoid a panic handler allowing those values to continue being
-            // used
-            std::process::abort();
-        }
+    pub fn wait_no_references(&mut self) {
+        self.references.wait_no_references();
     }
 
     /// # Safety
     /// Data which outlives the `'handle` lifetime and might have a [`RuntimeLifetime`] constructed with the resulting
-    /// [`LifetimeHandle`] must only be dropped after [`LifetimeTracker::assert_no_references`] is called on this
+    /// [`LifetimeHandle`] must only be dropped after [`LifetimeTracker::wait_no_references`] is called on this
     /// tracker. The only purpose of the `'handle` lifetime is to allow users to control which values can be wrapped
     /// in a [`RuntimeLifetime`] since wrapped values must outlive `'handle`. The length of the `'handle` lifetime
-    /// itself does not matter, and `'handle` may expire before [`LifetimeTracker::assert_no_references`] is called.
+    /// itself does not matter, and `'handle` may expire before [`LifetimeTracker::wait_no_references`] is called.
     #[must_use]
     pub unsafe fn handle<'handle>(&'handle self) -> impl LifetimeHandle<'handle> {
         // Storing the lifetime parameter in a trait (LifetimeHandle) instead of a struct is necessary to prohibit
@@ -194,19 +369,11 @@ impl LifetimeTracker {
     }
 }
 
-impl Default for LifetimeTracker {
-    fn default() -> Self {
-        Self {
-            references: Box::new(AtomicUsize::new(0)),
-        }
-    }
-}
-
 impl Drop for LifetimeTracker {
     fn drop(&mut self) {
         // Even if data associated with this tracker will live for 'static, the Box storing
         // the references will be dropped, so this ensures that there are no
         // RuntimeLifetimes which might still have a pointer to the references.
-        self.assert_no_references();
+        self.wait_no_references();
     }
 }

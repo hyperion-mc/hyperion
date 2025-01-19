@@ -308,7 +308,7 @@ impl Compose {
     }
 
     pub fn clear_bump(&mut self) {
-        self.bump_tracker.assert_no_references();
+        self.bump_tracker.wait_no_references();
         for bump in &mut self.bump {
             bump.reset();
         }
