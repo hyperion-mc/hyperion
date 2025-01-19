@@ -13,6 +13,12 @@ ordered-float = "4.5.0"
 
 [dev-dependencies]
 approx = { workspace = true }
+rand = { workspace = true }
+tango-bench = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "general"
+harness = false

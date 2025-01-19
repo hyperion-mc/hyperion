@@ -1,2 +1,0 @@
-FROM scratch
-COPY antithesis/docker-compose.yaml /docker-compose.yaml

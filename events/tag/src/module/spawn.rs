@@ -19,7 +19,7 @@ use rustc_hash::FxHashMap;
 pub struct SpawnModule;
 
 const RADIUS: i32 = 0;
-const SPAWN_MIN_Y: i16 = 40;
+const SPAWN_MIN_Y: i16 = 3;
 const SPAWN_MAX_Y: i16 = 100;
 
 fn position_in_radius() -> IVec2 {
@@ -38,7 +38,7 @@ use hyperion::{glam::I16Vec2, valence_protocol::BlockState};
 use roaring::RoaringBitmap;
 use tracing::info;
 
-fn avoid_blocks() -> RoaringBitmap {
+pub fn avoid_blocks() -> RoaringBitmap {
     let mut blocks = RoaringBitmap::new();
     let spawnable = [BlockKind::Lava];
 
@@ -87,7 +87,7 @@ fn find_spawn_position(
     runtime: &AsyncRuntime,
     avoid_blocks: &RoaringBitmap,
 ) -> Vec3 {
-    const MAX_TRIES: usize = 1;
+    const MAX_TRIES: usize = 3;
     const FALLBACK_POSITION: Vec3 = Vec3::new(0.0, 120.0, 0.0);
 
     for _ in 0..MAX_TRIES {
@@ -122,7 +122,7 @@ fn try_chunk_for_spawn(
     Some(position)
 }
 
-fn is_valid_spawn_block(
+pub fn is_valid_spawn_block(
     pos: IVec3,
     state: BlockState,
     blocks: &Blocks,

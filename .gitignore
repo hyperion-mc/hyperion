@@ -4,6 +4,8 @@
 *.svg
 *.zip
 
+/result
+
 # IDE Configs
 /.vscode
 .idea
@@ -24,6 +26,7 @@ perf.data
 # Misc
 /extractor/build
 /extractor/out
+vendor/
 /extractor/classes
 /extractor/run
 /extractor/bin

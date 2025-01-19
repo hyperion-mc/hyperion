@@ -50,7 +50,7 @@ use ingress::IngressModule;
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
-use storage::{Events, GlobalEventHandlers, LocalDb, SkinHandler, ThreadLocal};
+use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
 pub use uuid;
@@ -81,7 +81,7 @@ use crate::{
     ingress::PendingRemove,
     net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
     runtime::Tasks,
-    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player},
+    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
     util::mojang::ApiProvider,
 };
 
@@ -326,8 +326,8 @@ impl HyperionCore {
         let tasks = Tasks { tasks: task_rx };
         world.set(tasks);
 
-        world.component::<GlobalEventHandlers>();
-        world.set(GlobalEventHandlers::default());
+        world.component::<HandlerRegistry>();
+        world.set(HandlerRegistry::default());
 
         info!("initializing database");
         let db = LocalDb::new()?;

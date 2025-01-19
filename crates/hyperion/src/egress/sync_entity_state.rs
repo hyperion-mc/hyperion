@@ -4,7 +4,6 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion_utils::EntityExt;
 use itertools::Either;
-use tracing::debug;
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self},
@@ -14,7 +13,7 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Pitch, Position, Velocity, Xp, Yaw,
+        Owner, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -200,11 +199,18 @@ impl Module for EntityStateSyncModule {
             .multi_threaded()
             .kind::<flecs::pipeline::PreStore>()
             .each_iter(
-                |
-                    it,
-                    row,
-                    (compose, prev_position, prev_yaw, prev_pitch, position, velocity, yaw, pitch)
-                | {
+                |it,
+                 row,
+                 (
+                     compose,
+                     prev_position,
+                     prev_yaw,
+                     prev_pitch,
+                     position,
+                     velocity,
+                     yaw,
+                     pitch,
+                 )| {
                     let world = it.system().world();
                     let system = it.system();
                     let entity = it.entity(row);
@@ -216,9 +222,7 @@ impl Module for EntityStateSyncModule {
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
                     let changed_position = **position != **prev_position;
 
-                    let look_changed =
-                        (**yaw - **prev_yaw).abs() >= 0.01 ||
-                        (**pitch - **prev_pitch).abs() >= 0.01;
+                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
 
                     let mut bundle = DataBundle::new(compose, system);
 
@@ -289,7 +293,7 @@ impl Module for EntityStateSyncModule {
                     }
 
                     bundle.broadcast_local(chunk_pos).unwrap();
-                }
+                },
             );
 
         system!(
@@ -297,91 +301,74 @@ impl Module for EntityStateSyncModule {
             world,
             &mut Position,
             &mut Velocity,
+            &Owner,
             ?&ConnectionId
         )
         .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
         .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (position, velocity, connection_id)| {
+        .each_iter(|it, row, (position, velocity, owner, connection_id)| {
             if let Some(_connection_id) = connection_id {
                 return;
             }
 
             let system = it.system();
             let world = system.world();
-            let entity = it.entity(row);
+            let arrow_entity = it.entity(row);
 
             if velocity.0 != Vec3::ZERO {
+                let center = **position;
+
+                // getting max distance
+                let distance = velocity.0.length();
+
+                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
+
+                let Some(collision) = get_first_collision(ray, &world, Some(owner.entity)) else {
+                    // Drag (0.99 / 20.0)
+                    // 1.0 - (0.99 / 20.0) * 0.05
+                    velocity.0 *= 0.997_525;
+
+                    // Gravity (20 MPSS)
+                    velocity.0.y -= 0.05;
+
+                    // Terminal Velocity max (100.0)
+                    velocity.0 = velocity.0.clamp_length_max(100.0);
+
                     position.x += velocity.0.x;
                     position.y += velocity.0.y;
                     position.z += velocity.0.z;
+                    return;
+                };
 
-                    let center = **position;
-
-                    let distance = velocity.0.length();
-
-                    debug!("Creatign Ray");
-
-                    let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
-
-                    debug!("ray = {ray:?}");
-
-                    let Some(collision) = get_first_collision(ray, &world) else {
-                        // Drag (0.99 / 20.0)
-                        // 1.0 - (0.99 / 20.0) * 0.05
-                        velocity.0 *= 0.997_525;
-
-                        // Gravity (20 MPSS)
-                        velocity.0.y -= 0.05;
-
-                        // Terminal Velocity (100.0)
-                        velocity.0 = velocity.0.clamp_length(0.0, 100.0);
-                        return;
-                    };
-
-                    debug!("Collision: {collision:?}");
-
-                    match collision {
-                        Either::Left(entity) => {
-                            let entity = entity.entity_view(world);
-                            debug!("entity: {entity:?}");
-                            // send event
-                            world.get::<&mut Events>(|events|
-                                events.push(
-                                    event::ProjectileEntityEvent {
-                                        client: *entity,
-                                        projectile: *entity,
-                                    },
-                                    &world
-                                )
+                match collision {
+                    Either::Left(entity) => {
+                        let entity = entity.entity_view(world);
+                        // send event
+                        world.get::<&mut Events>(|events| {
+                            events.push(
+                                event::ProjectileEntityEvent {
+                                    client: *entity,
+                                    projectile: *arrow_entity,
+                                },
+                                &world,
                             );
-                        }
-                        Either::Right(collision) => {
-                            debug!("block: {collision:?}");
-                            // send event
-                            world.get::<&mut Events>(|events|
-                                events.push(
-                                    event::ProjectileBlockEvent {
-                                        collision,
-                                        projectile: *entity,
-                                    },
-                                    &world
-                                )
-                            );
-                        }
+                        });
                     }
-
-                    /* debug!("collision = {collision:?}");
-
-                velocity.0 = Vec3::ZERO; */
-
-                    /* // Set arrow position to the collision location
-                **position = collision.normal;
-
-                blocks
-                    .set_block(collision.location, BlockState::DIRT)
-                    .unwrap(); */
+                    Either::Right(collision) => {
+                        // send event
+                        world.get::<&mut Events>(|events| {
+                            events.push(
+                                event::ProjectileBlockEvent {
+                                    collision,
+                                    projectile: *arrow_entity,
+                                },
+                                &world,
+                            );
+                        });
+                    }
                 }
+            }
         });
 
         track_previous::<Position>(world);

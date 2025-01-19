@@ -31,6 +31,7 @@ hyperion-crafting = { workspace = true }
 hyperion-event-macros = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-nerd-font = { workspace = true }
+hyperion-packet-macros = { workspace = true }
 hyperion-palette = { workspace = true }
 hyperion-proto = { workspace = true }
 hyperion-text = { workspace = true }
@@ -77,6 +78,7 @@ ordered-float = { workspace = true }
 approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
+hyperion-genmap = { workspace = true }
 
 [lints]
 workspace = true

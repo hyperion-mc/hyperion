@@ -56,101 +56,48 @@ impl Ray {
         self.origin + self.direction * t
     }
 
-    /// Efficiently traverse through grid cells that the ray intersects using an optimized DDA algorithm.
+    /// Efficiently traverse through grid cells that the ray intersects using the Amanatides and Woo algorithm.
     /// Returns an iterator over the grid cells ([`IVec3`]) that the ray passes through.
     pub fn voxel_traversal(&self, bounds_min: IVec3, bounds_max: IVec3) -> VoxelTraversal {
-        // Convert ray origin to grid coordinates and handle negative coordinates correctly
         let current_pos = self.origin.as_ivec3();
 
-        // Ensure that the traversal includes the current block
-        let min_block = IVec3::new(
-            current_pos.x.min(bounds_min.x),
-            current_pos.y.min(bounds_min.y),
-            current_pos.z.min(bounds_min.z),
-        );
-
-        let max_block = IVec3::new(
-            current_pos.x.max(bounds_max.x),
-            current_pos.y.max(bounds_max.y),
-            current_pos.z.max(bounds_max.z),
-        );
-
-        // Calculate step direction for each axis
+        // Determine stepping direction for each axis
         let step = IVec3::new(
-            if self.direction.x > 0.0 {
-                1
-            } else if self.direction.x < 0.0 {
-                -1
+            if self.direction.x > 0.0 { 1 } else { -1 },
+            if self.direction.y > 0.0 { 1 } else { -1 },
+            if self.direction.z > 0.0 { 1 } else { -1 },
+        );
+
+        // Calculate distance to next voxel boundary for each axis
+        let next_boundary = Vec3::new(
+            if step.x > 0 {
+                current_pos.x as f32 + 1.0 - self.origin.x
             } else {
-                0
+                self.origin.x - current_pos.x as f32
             },
-            if self.direction.y > 0.0 {
-                1
-            } else if self.direction.y < 0.0 {
-                -1
+            if step.y > 0 {
+                current_pos.y as f32 + 1.0 - self.origin.y
             } else {
-                0
+                self.origin.y - current_pos.y as f32
             },
-            if self.direction.z > 0.0 {
-                1
-            } else if self.direction.z < 0.0 {
-                -1
+            if step.z > 0 {
+                current_pos.z as f32 + 1.0 - self.origin.z
             } else {
-                0
+                self.origin.z - current_pos.z as f32
             },
         );
 
-        // Calculate t_max - distance to next voxel boundary for each axis
+        // Calculate t_max and t_delta using precomputed inv_direction
         let t_max = Vec3::new(
-            if self.direction.x == 0.0 {
-                f32::INFINITY
-            } else {
-                let next_x = if self.direction.x > 0.0 {
-                    current_pos.x as f32 + 1.0 - self.origin.x
-                } else {
-                    self.origin.x - current_pos.x as f32
-                };
-                next_x * self.inv_direction.x.abs()
-            },
-            if self.direction.y == 0.0 {
-                f32::INFINITY
-            } else {
-                let next_y = if self.direction.y > 0.0 {
-                    current_pos.y as f32 + 1.0 - self.origin.y
-                } else {
-                    self.origin.y - current_pos.y as f32
-                };
-                next_y * self.inv_direction.y.abs()
-            },
-            if self.direction.z == 0.0 {
-                f32::INFINITY
-            } else {
-                let next_z = if self.direction.z > 0.0 {
-                    current_pos.z as f32 + 1.0 - self.origin.z
-                } else {
-                    self.origin.z - current_pos.z as f32
-                };
-                next_z * self.inv_direction.z.abs()
-            },
+            next_boundary.x * self.inv_direction.x.abs(),
+            next_boundary.y * self.inv_direction.y.abs(),
+            next_boundary.z * self.inv_direction.z.abs(),
         );
 
-        // Calculate t_delta - distance between voxel boundaries
         let t_delta = Vec3::new(
-            if self.direction.x == 0.0 {
-                f32::INFINITY
-            } else {
-                self.inv_direction.x.abs()
-            },
-            if self.direction.y == 0.0 {
-                f32::INFINITY
-            } else {
-                self.inv_direction.y.abs()
-            },
-            if self.direction.z == 0.0 {
-                f32::INFINITY
-            } else {
-                self.inv_direction.z.abs()
-            },
+            self.inv_direction.x.abs(),
+            self.inv_direction.y.abs(),
+            self.inv_direction.z.abs(),
         );
 
         VoxelTraversal {
@@ -158,8 +105,8 @@ impl Ray {
             step,
             t_max,
             t_delta,
-            bounds_min: min_block,
-            bounds_max: max_block,
+            bounds_min,
+            bounds_max,
         }
     }
 }

@@ -3,6 +3,7 @@
 use derive_more::Constructor;
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
+use hyperion_utils::{Lifetime, RuntimeLifetime};
 use valence_generated::block::BlockState;
 use valence_protocol::{
     Hand, ItemStack,
@@ -26,9 +27,8 @@ pub struct ItemInteract {
     pub sequence: i32,
 }
 
-#[derive(Debug)]
-pub struct ChatMessage<'a> {
-    pub msg: &'a str,
+pub struct ChatMessage {
+    pub msg: RuntimeLifetime<&'static str>,
     pub by: Entity,
 }
 
@@ -52,6 +52,13 @@ pub struct AttackEntity {
 pub struct HealthUpdate {
     pub from: f32,
     pub to: f32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct StartDestroyBlock {
+    pub position: IVec3,
+    pub from: Entity,
+    pub sequence: i32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -87,17 +94,17 @@ pub struct ReleaseUseItem {
     pub item: ItemKind,
 }
 
-pub struct PluginMessage<'a> {
-    pub channel: &'a str,
-    pub data: &'a [u8],
+pub struct PluginMessage {
+    pub channel: RuntimeLifetime<&'static str>,
+    pub data: RuntimeLifetime<&'static [u8]>,
 }
 
-impl std::fmt::Debug for PluginMessage<'_> {
+impl std::fmt::Debug for PluginMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = bytes::Bytes::copy_from_slice(self.data);
+        let bytes = bytes::Bytes::copy_from_slice(self.data.get());
 
         f.debug_struct("PluginMessage")
-            .field("channel", &self.channel)
+            .field("channel", self.channel.get())
             .field("data", &bytes)
             .finish()
     }
@@ -131,9 +138,8 @@ pub struct PostureUpdate {
     pub state: Posture,
 }
 
-#[derive(Debug)]
-pub struct Command<'a> {
-    pub raw: &'a str,
+pub struct Command {
+    pub raw: RuntimeLifetime<&'static str>,
     pub by: Entity,
 }
 
@@ -149,6 +155,10 @@ pub enum ClientStatusCommand {
 pub struct ClientStatusEvent {
     pub client: Entity,
     pub status: ClientStatusCommand,
+}
+
+unsafe impl Lifetime for ClientStatusEvent {
+    type WithLifetime<'a> = Self;
 }
 
 #[derive(Clone, Debug)]

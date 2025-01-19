@@ -72,6 +72,7 @@ impl Module for TagModule {
         world.import::<ChatModule>();
         world.import::<StatsModule>();
         world.import::<BlockModule>();
+        world.import::<hyperion_respawn::RespawnModule>();
         world.import::<AttackModule>();
         world.import::<LevelModule>();
         world.import::<BowModule>();
@@ -82,7 +83,6 @@ impl Module for TagModule {
         world.import::<SkinModule>();
         world.import::<VanishModule>();
         world.import::<hyperion_genmap::GenMapModule>();
-        world.import::<hyperion_respawn::RespawnModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
             command::register(registry, world);

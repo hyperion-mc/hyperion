@@ -1,6 +1,5 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
-use bow::BowCharging;
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use flecs_ecs::prelude::*;
@@ -28,13 +27,13 @@ use crate::{
 
 pub mod animation;
 pub mod blocks;
-pub mod bow;
 pub mod command;
 pub mod entity_kind;
 pub mod event;
 pub mod handlers;
 pub mod inventory;
 pub mod metadata;
+pub mod packet;
 pub mod skin;
 pub mod util;
 
@@ -358,6 +357,18 @@ impl Default for RunningSpeed {
     }
 }
 
+#[derive(Component)]
+pub struct Owner {
+    pub entity: Entity,
+}
+
+impl Owner {
+    #[must_use]
+    pub const fn new(entity: Entity) -> Self {
+        Self { entity }
+    }
+}
+
 /// If the entity can be targeted by non-player entities.
 #[derive(Component)]
 pub struct AiTargetable;
@@ -589,6 +600,7 @@ impl Module for SimModule {
         world.component::<Player>();
         world.component::<Visible>();
         world.component::<Spawn>();
+        world.component::<Owner>();
 
         world.component::<EntityKind>().meta();
 
@@ -633,9 +645,6 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
-
-        world.component::<BowCharging>();
-        component!(world, BowCharging).opaque_func(meta_ser_stringify_type_display::<BowCharging>);
 
         observer!(
             world,
@@ -733,7 +742,7 @@ pub struct Visible;
 
 #[must_use]
 pub fn get_rotation_from_velocity(velocity: Vec3) -> (f32, f32) {
-    let yaw = (-velocity.x).atan2(velocity.z).to_degrees().abs(); // Correct yaw calculation
+    let yaw = (-velocity.x).atan2(velocity.z).to_degrees(); // Correct yaw calculation
     let pitch = (-velocity.y).atan2(velocity.length()).to_degrees(); // Correct pitch calculation
     (yaw, pitch)
 }

@@ -5,13 +5,24 @@ use flecs_ecs::{
     macros::Component,
 };
 use hyperion::{
-    simulation::{Spawn, Uuid, entity_kind::EntityKind},
-    storage::GlobalEventHandlers,
+    simulation::{
+        Spawn, Uuid, entity_kind::EntityKind, handlers::PacketSwitchQuery, packet::HandlerRegistry,
+    },
     valence_protocol::packets::play::{
-        click_slot_c2s::ClickMode, close_screen_s2c::CloseScreenS2c,
+        ClickSlotC2s, click_slot_c2s::ClickMode, close_screen_s2c::CloseScreenS2c,
     },
 };
 use hyperion_inventory::{Inventory, InventoryState, OpenInventory};
+use hyperion_utils::LifetimeHandle;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InventoryItem {
+    pub id: String,
+    pub name: String,
+    pub lore: Option<String>,
+    pub quantity: u32,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerType {
@@ -54,30 +65,36 @@ impl Gui {
     }
 
     pub fn init(&mut self, world: &World) {
-        world.get::<&mut GlobalEventHandlers>(|event_handlers| {
+        world.get::<&mut HandlerRegistry>(|registry| {
             let items = self.items.clone();
-            event_handlers.click.register(move |query, event| {
-                let system = query.system;
-                let world = system.world();
-                let button = event.mode;
-                query
-                    .id
-                    .entity_view(world)
-                    .get::<&InventoryState>(|inv_state| {
-                        if event.window_id != inv_state.window_id() {
-                            return;
-                        }
+            registry.add_handler(Box::new(
+                move |event: &ClickSlotC2s<'_>,
+                      _: &dyn LifetimeHandle<'_>,
+                      query: &mut PacketSwitchQuery<'_>| {
+                    let system = query.system;
+                    let world = system.world();
+                    let button = event.mode;
+                    query
+                        .id
+                        .entity_view(world)
+                        .get::<&InventoryState>(|inv_state| {
+                            if event.window_id != inv_state.window_id() {
+                                return;
+                            }
 
-                        let Ok(slot) = usize::try_from(event.slot_idx) else {
-                            return;
-                        };
-                        let Some(item) = items.get(&slot) else {
-                            return;
-                        };
+                            let Ok(slot) = usize::try_from(event.slot_idx) else {
+                                return;
+                            };
+                            let Some(item) = items.get(&slot) else {
+                                return;
+                            };
 
-                        item(query.id, button);
-                    });
-            });
+                            item(query.id, button);
+                        });
+
+                    Ok(())
+                },
+            ));
         });
     }
 

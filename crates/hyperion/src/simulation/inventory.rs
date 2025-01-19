@@ -24,7 +24,6 @@ use super::{Player, event, handlers::PacketSwitchQuery};
 use crate::{
     net::{Compose, ConnectionId, DataBundle},
     simulation::Position,
-    storage,
 };
 
 #[derive(Component)]
@@ -267,7 +266,7 @@ pub fn handle_update_selected_slot(
 #[expect(clippy::too_many_arguments)]
 fn handle_click_slot_inner<'a>(
     packet: &ClickSlotC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
+    query: &PacketSwitchQuery<'_>,
     inv_state: &mut InventoryState,
     player_inventory: &'a mut PlayerInventory,
     cursor_item: &mut CursorItem,
@@ -321,18 +320,6 @@ fn handle_click_slot_inner<'a>(
             cursor_item,
             query.io_ref,
         );
-
-        let event = storage::ClickSlotEvent {
-            window_id: inv_state.window_id(),
-            state_id: inv_state.state_id(),
-            slot_idx: packet.slot_idx,
-            mode: packet.mode,
-            button: packet.button,
-            slot_changes: packet.slot_changes.to_vec(),
-            carried_item: cursor_item.0.clone(),
-        };
-
-        query.handlers.click.trigger_all(query, &event);
 
         return;
     }

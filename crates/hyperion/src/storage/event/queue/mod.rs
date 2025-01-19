@@ -28,7 +28,7 @@ mod sealed {
     pub trait Sealed {}
 }
 
-pub trait Event: ReducedLifetime + sealed::Sealed + Send + Sync + 'static {
+pub trait Event: sealed::Sealed + Send + Sync + 'static {
     fn input(elem: Self, events: &Events, world: &World);
 }
 
@@ -48,12 +48,12 @@ define_events! {
     event::ItemInteract,
     event::SetSkin,
     event::AttackEntity,
-    event::ChatMessage<'static>,
-    event::Command<'static>,
+    event::ChatMessage,
+    event::Command,
     event::DestroyBlock,
     event::ItemDropEvent,
     event::PlaceBlock,
-    event::PluginMessage<'static>,
+    event::PluginMessage,
     event::PostureUpdate,
     event::SwingArm,
     event::ToggleDoor,
@@ -64,12 +64,5 @@ define_events! {
     event::ClickSlotEvent,
     event::DropItemStackEvent,
     event::UpdateSelectedSlotEvent,
-}
-
-pub trait ReducedLifetime {
-    type Reduced<'a>
-    where
-        Self: 'a;
-
-    fn reduce<'a>(self) -> Self::Reduced<'a>;
+    event::StartDestroyBlock,
 }

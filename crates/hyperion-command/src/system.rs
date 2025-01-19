@@ -7,9 +7,10 @@ use flecs_ecs::{
 };
 use hyperion::{
     net::agnostic,
-    simulation::event,
-    storage::{EventQueue, GlobalEventHandlers},
+    simulation::{event, handlers::PacketSwitchQuery, packet::HandlerRegistry},
+    storage::{CommandCompletionRequest, EventQueue},
 };
+use hyperion_utils::LifetimeHandle;
 
 use crate::component::CommandRegistry;
 
@@ -21,7 +22,7 @@ impl Module for CommandSystemModule {
         system!(
             "execute_command",
             world,
-            &mut EventQueue<event::Command<'_>>($),
+            &mut EventQueue<event::Command>($),
             &CommandRegistry($)
         )
         .each_iter(|it, _, (event_queue, registry)| {
@@ -29,6 +30,7 @@ impl Module for CommandSystemModule {
 
             let world = it.world();
             for event::Command { raw, by } in event_queue.drain() {
+                let raw = raw.get();
                 let Some(first_word) = raw.split_whitespace().next() else {
                     tracing::warn!("command is empty");
                     continue;
@@ -65,30 +67,36 @@ impl Module for CommandSystemModule {
             }
         });
 
-        world.get::<&mut GlobalEventHandlers>(|handlers| {
-            handlers.completion.register(|query, completion| {
-                let input = completion.query;
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |completion: &CommandCompletionRequest<'_>,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
+                    let input = completion.query;
 
-                // should be in form "/{command}"
-                let command = input
-                    .strip_prefix("/")
-                    .unwrap_or(input)
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("");
+                    // should be in form "/{command}"
+                    let command = input
+                        .strip_prefix("/")
+                        .unwrap_or(input)
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("");
 
-                if command.is_empty() {
-                    return;
-                }
+                    if command.is_empty() {
+                        return Ok(());
+                    }
 
-                query.world.get::<&CommandRegistry>(|registry| {
-                    let Some(cmd) = registry.commands.get(command) else {
-                        return;
-                    };
-                    let on_tab = &cmd.on_tab_complete;
-                    on_tab(query, completion);
-                });
-            });
+                    query.world.get::<&CommandRegistry>(|registry| {
+                        let Some(cmd) = registry.commands.get(command) else {
+                            return;
+                        };
+                        let on_tab = &cmd.on_tab_complete;
+                        on_tab(query, completion);
+                    });
+
+                    Ok(())
+                },
+            ));
         });
     }
 }

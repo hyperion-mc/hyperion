@@ -16,6 +16,7 @@ use flecs_ecs::{
 };
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
+use hyperion_utils::LifetimeTracker;
 use libdeflater::CompressionLvl;
 use rkyv::util::AlignedVec;
 use system_order::SystemOrder;
@@ -69,27 +70,6 @@ impl Compressors {
 /// - Target or exclude specific clients in broadcast operations
 /// - Track connection state through the proxy layer
 ///
-/// # Example
-/// ```no_run
-/// // Create a new connection ID
-/// # use flecs_ecs::core::{EntityView, World};
-/// use hyperion::net::ConnectionId;
-/// # use hyperion::simulation::Compose;
-/// use valence_protocol::packets::play;
-/// # let compose: Compose = todo!();
-/// # let system: EntityView<'_> = todo!();
-/// # let world: &World = todo!();
-/// let conn_id = ConnectionId::new(12345);
-///
-/// let packet: play::ChatMessageS2c = todo!();
-///
-/// // Use it to send a packet to a specific client
-/// compose.unicast(&packet, conn_id, system).unwrap();
-///
-/// // Exclude a client from a broadcast
-/// compose.broadcast(&packet, system).exclude(conn_id).send()?;
-/// ```
-///
 /// Note: Connection IDs are managed internally by the networking system and should be obtained
 /// through the appropriate connection establishment handlers rather than created directly.
 #[derive(Component, Copy, Clone, Debug)]
@@ -129,6 +109,7 @@ pub struct Compose {
     global: Global,
     io_buf: IoBuf,
     pub bump: ThreadLocal<Bump>,
+    pub bump_tracker: LifetimeTracker,
 }
 
 #[must_use]
@@ -195,6 +176,7 @@ impl Compose {
             global,
             io_buf,
             bump: ThreadLocal::new_defaults(),
+            bump_tracker: LifetimeTracker::default(),
         }
     }
 
@@ -322,6 +304,13 @@ impl Compose {
     #[must_use]
     pub fn compressor(&self, world: &World) -> &RefCell<libdeflater::Compressor> {
         self.compressor.get(world)
+    }
+
+    pub fn clear_bump(&mut self) {
+        self.bump_tracker.assert_no_references();
+        for bump in &mut self.bump {
+            bump.reset();
+        }
     }
 }
 
