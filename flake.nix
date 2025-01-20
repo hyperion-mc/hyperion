@@ -55,7 +55,7 @@
             outputHashes = {
               "bvh-0.1.0" = "sha256-yOsM6r96zOE0LD0JRWushzrxDVqncXHzZvrnOm7xNGc=";
               "divan-0.1.17" = "sha256-UZNINS/JOgQfUUlJf8AUZkUuLH2y6tCZsDt0TasrYb0=";
-              "flecs_ecs-0.1.3" = "sha256-AhrLWfxppssVEXXJZYFRk9mfTJzYUykcJV35JNMmRjE=";
+              "flecs_ecs-0.1.3" = "sha256-YzvlWJzh/K5rkn590BD5Q/GWYx9JDU+KPXqnB0tUc9U=";
               "valence_anvil-0.1.0" = "sha256-0ALeK1kCgusExf57ssPDkKinu8iNeveCBoV9hMBB/Y8=";
             };
           };
