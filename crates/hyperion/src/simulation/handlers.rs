@@ -4,7 +4,6 @@
 #![allow(clippy::unnecessary_wraps)]
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
-
 use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, World};
 use geometry::aabb::Aabb;
