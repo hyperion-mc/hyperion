@@ -5,8 +5,11 @@ use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
 use hyperion_utils::{Lifetime, RuntimeLifetime};
 use valence_generated::block::BlockState;
-use valence_protocol::Hand;
-use valence_server::{ItemKind, entity::item_frame::ItemStack};
+use valence_protocol::{
+    Hand, ItemStack,
+    packets::play::click_slot_c2s::{ClickMode, SlotChange},
+};
+use valence_server::ItemKind;
 
 use super::blocks::RayCollision;
 use crate::simulation::skin::PlayerSkin;
@@ -152,4 +155,29 @@ pub struct ProjectileEntityEvent {
 pub struct ProjectileBlockEvent {
     pub collision: RayCollision,
     pub projectile: Entity,
+}
+
+#[derive(Clone, Debug)]
+pub struct ClickSlotEvent {
+    pub client: Entity,
+    pub window_id: u8,
+    pub state_id: i32,
+    pub slot: i16,
+    pub button: i8,
+    pub mode: ClickMode,
+    pub slot_changes: Vec<SlotChange>,
+    pub carried_item: ItemStack,
+}
+
+#[derive(Clone, Debug)]
+pub struct DropItemStackEvent {
+    pub client: Entity,
+    pub from_slot: Option<i16>,
+    pub item: ItemStack,
+}
+
+#[derive(Clone, Debug)]
+pub struct UpdateSelectedSlotEvent {
+    pub client: Entity,
+    pub slot: u8,
 }

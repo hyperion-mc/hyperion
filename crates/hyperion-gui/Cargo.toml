@@ -7,9 +7,11 @@ edition.workspace = true
 anyhow = { workspace = true }
 flecs_ecs = { workspace = true }
 hyperion = { workspace = true }
+hyperion-inventory = { workspace = true }
 hyperion-utils = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 valence_protocol = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

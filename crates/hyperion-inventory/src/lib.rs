@@ -1,36 +1,160 @@
-use std::cmp::min;
+#![feature(get_many_mut)]
+#![feature(thread_local)]
+use std::{cell::Cell, cmp::min, num::Wrapping};
 
-use flecs_ecs::{core::World, macros::Component, prelude::Module};
-use roaring::RoaringBitmap;
-use valence_protocol::{ItemKind, ItemStack};
+use derive_more::{Deref, DerefMut};
+use flecs_ecs::{core::Entity, macros::Component};
+use tracing::debug;
+use valence_protocol::{
+    ItemKind, ItemStack,
+    nbt::Compound,
+    packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
+};
 
-pub mod action;
-pub mod parser;
+pub type PlayerInventory = Inventory;
 
-pub type PlayerInventory = Inventory<46>;
-
-/// Placeholder; this will be added later.
-#[derive(Component, Debug, PartialEq)]
-pub struct Inventory<const T: usize> {
-    slots: [ItemStack; T],
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct Inventory {
+    /// The slots in the inventory
+    slots: Box<[ItemSlot]>,
+    /// Index to the slot held in the player's hand. This is guaranteed to be a valid index.
     hand_slot: u16,
-    pub updated_since_last_tick: RoaringBitmap, // todo: maybe make this private
-    pub hand_slot_updated_since_last_tick: bool, // todo: maybe make this private
+    title: String,
+    kind: WindowType,
+    readonly: bool,
 }
+
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct InventoryState {
+    window_id: u8,
+    state_id: Wrapping<i32>,
+    // i64 is the last tick
+    last_stack_clicked: (ItemStack, i64),
+    last_button: (i8, i64),
+    last_mode: (ClickMode, i64),
+}
+
+impl Default for InventoryState {
+    fn default() -> Self {
+        Self {
+            window_id: 0,
+            state_id: Wrapping(0),
+            last_stack_clicked: (ItemStack::EMPTY, 0),
+            last_button: (0, 0),
+            last_mode: (ClickMode::Click, 0),
+        }
+    }
+}
+
+impl InventoryState {
+    #[must_use]
+    pub const fn state_id(&self) -> i32 {
+        self.state_id.0
+    }
+
+    pub fn increment_state_id(&mut self) {
+        self.state_id += 1;
+    }
+
+    #[must_use]
+    pub const fn window_id(&self) -> u8 {
+        self.window_id
+    }
+
+    pub fn set_window_id(&mut self) {
+        self.window_id = non_zero_window_id();
+    }
+
+    pub fn reset_window_id(&mut self) {
+        self.window_id = 0;
+    }
+
+    #[must_use]
+    pub const fn last_stack_clicked(&self) -> (&ItemStack, i64) {
+        (&self.last_stack_clicked.0, self.last_stack_clicked.1)
+    }
+
+    pub fn set_last_stack_clicked(&mut self, stack: ItemStack, tick: i64) {
+        self.last_stack_clicked.0 = stack;
+        self.last_stack_clicked.1 = tick;
+    }
+
+    #[must_use]
+    pub const fn last_button(&self) -> (i8, i64) {
+        self.last_button
+    }
+
+    pub fn set_last_button(&mut self, button: i8, tick: i64) {
+        self.last_button.0 = button;
+        self.last_button.1 = tick;
+    }
+
+    #[must_use]
+    pub const fn last_mode(&self) -> (ClickMode, i64) {
+        self.last_mode
+    }
+
+    pub fn set_last_mode(&mut self, mode: ClickMode, tick: i64) {
+        self.last_mode.0 = mode;
+        self.last_mode.1 = tick;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ItemSlot {
+    pub readonly: bool,
+    pub stack: ItemStack,
+    pub changed: bool,
+}
+
+impl Default for ItemSlot {
+    fn default() -> Self {
+        Self {
+            readonly: false,
+            stack: ItemStack::EMPTY,
+            changed: false,
+        }
+    }
+}
+
+impl ItemSlot {
+    #[must_use]
+    pub fn new(item: ItemKind, count: i8, nbt: Option<Compound>, readonly: Option<bool>) -> Self {
+        Self {
+            readonly: readonly.unwrap_or(false),
+            stack: ItemStack::new(item, count, nbt),
+            changed: false,
+        }
+    }
+}
+
+#[derive(Component, Clone, Debug)]
+pub struct OpenInventory {
+    pub entity: Entity,
+    pub client_changed: u64,
+}
+
+impl OpenInventory {
+    #[must_use]
+    pub const fn new(entity: Entity) -> Self {
+        Self {
+            entity,
+            client_changed: 0,
+        }
+    }
+}
+
+#[derive(Component, Clone, PartialEq, Default, Debug, Deref, DerefMut)]
+pub struct CursorItem(pub ItemStack);
 
 #[derive(Debug)]
 pub struct AddItemResult {
     pub remaining: Option<ItemStack>,
 }
 
-impl<const T: usize> Default for Inventory<T> {
+impl Default for Inventory {
     fn default() -> Self {
-        Self {
-            slots: [ItemStack::EMPTY; T],
-            hand_slot: 0,
-            updated_since_last_tick: RoaringBitmap::new(),
-            hand_slot_updated_since_last_tick: false,
-        }
+        Self::new(46, "Inventory".to_string(), WindowType::Generic9x3, false)
     }
 }
 
@@ -43,99 +167,127 @@ pub enum InventoryAccessError {
     InvalidSlot { index: u16 },
 }
 
-enum TryAddSlot {
+enum AddSlot {
     Complete,
     Partial,
     Skipped,
 }
 
 const HAND_START_SLOT: u16 = 36;
+const HAND_END_SLOT: u16 = 45;
 
-impl<const N: usize> Inventory<N> {
+impl Inventory {
+    #[must_use]
+    pub fn new(size: usize, title: String, kind: WindowType, readonly: bool) -> Self {
+        // TODO: calculate size from WindowType to avoid invalid states
+        Self {
+            slots: vec![ItemSlot::default(); size].into_boxed_slice(),
+            title,
+            kind,
+            hand_slot: 36,
+            readonly,
+        }
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> WindowType {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn readonly(&self) -> bool {
+        self.readonly
+    }
+
+    pub fn set_readonly(&mut self, readonly: bool) {
+        self.readonly = readonly;
+    }
+
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn set_title(&mut self, title: String) {
+        self.title = title;
+    }
+
+    #[must_use]
+    pub const fn size(&self) -> usize {
+        self.slots.len()
+    }
+
     pub fn set(&mut self, index: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
-        let item = self.get_mut(index)?;
-        *item = stack;
-        self.updated_since_last_tick.insert(u32::from(index));
+        self.get_mut(index)?.stack = stack;
+        Ok(())
+    }
+
+    pub fn set_slot(&mut self, index: u16, mut slot: ItemSlot) -> Result<(), InventoryAccessError> {
+        slot.changed = true;
+        *self.get_mut_maybe_change(index)? = slot;
         Ok(())
     }
 
     pub fn items(&self) -> impl Iterator<Item = (u16, &ItemStack)> + '_ {
         self.slots.iter().enumerate().filter_map(|(idx, item)| {
-            if item.is_empty() {
+            if item.stack.is_empty() {
                 None
             } else {
-                Some((u16::try_from(idx).unwrap(), item))
+                Some((u16::try_from(idx).unwrap(), &item.stack))
             }
         })
     }
 
     #[must_use]
-    pub const fn slots(&self) -> &[ItemStack; N] {
+    pub const fn slots(&self) -> &[ItemSlot] {
         &self.slots
     }
 
+    #[must_use]
+    pub const fn slots_mut(&mut self) -> &mut [ItemSlot] {
+        &mut self.slots
+    }
+
     pub fn clear(&mut self) {
-        for (idx, slot) in self.slots.iter_mut().enumerate() {
-            if slot.is_empty() {
+        for slot in &mut self.slots {
+            if slot.stack.is_empty() {
                 continue;
             }
-            *slot = ItemStack::EMPTY;
-            self.updated_since_last_tick
-                .insert(u32::try_from(idx).unwrap());
+            slot.stack = ItemStack::EMPTY;
+            slot.changed = true;
         }
     }
 
-    pub fn set_cursor(&mut self, index: u16) {
+    pub fn set_cursor(&mut self, index: u16) -> Result<(), InventoryAccessError> {
+        let index = self.hand_slot_index(index)?;
         if self.hand_slot == index {
-            return;
+            return Ok(());
         }
 
+        debug!("Setting cursor to slot {}", index);
+
+        // Mark the slot as changed
+        self.get_mut(index)?;
+
         self.hand_slot = index;
-        self.hand_slot_updated_since_last_tick = true;
+        Ok(())
     }
 
     #[must_use]
-    pub fn get_cursor(&self) -> &ItemStack {
-        self.get_hand_slot(self.hand_slot).unwrap()
+    pub fn get_cursor(&self) -> &ItemSlot {
+        self.get(self.hand_slot)
+            .expect("hand_slot is a valid index")
     }
 
     #[must_use]
     pub const fn get_cursor_index(&self) -> u16 {
-        self.hand_slot + HAND_START_SLOT
+        self.hand_slot
     }
 
-    pub fn get_cursor_mut(&mut self) -> &mut ItemStack {
-        self.get_hand_slot_mut(self.hand_slot).unwrap()
-    }
-
-    pub fn take_one_held(&mut self) -> ItemStack {
-        // decrement the held item
-        let held_item = self.get_cursor_mut();
-
-        if held_item.is_empty() {
-            return ItemStack::EMPTY;
-        }
-
-        held_item.count -= 1;
-
-        ItemStack::new(held_item.item, 1, held_item.nbt.clone())
-    }
-
-    pub fn get(&self, index: u16) -> Result<&ItemStack, InventoryAccessError> {
+    pub fn get(&self, index: u16) -> Result<&ItemSlot, InventoryAccessError> {
         self.slots
             .get(usize::from(index))
             .ok_or(InventoryAccessError::InvalidSlot { index })
-    }
-
-    pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemStack, InventoryAccessError> {
-        let Some(slot) = self.slots.get_mut(index as usize) else {
-            return Err(InventoryAccessError::InvalidSlot { index });
-        };
-
-        // assume that the slot is updated
-        self.updated_since_last_tick.insert(u32::from(index));
-
-        Ok(slot)
     }
 
     pub fn swap(&mut self, index_a: u16, index_b: u16) {
@@ -145,77 +297,98 @@ impl<const N: usize> Inventory<N> {
         self.slots.swap(index_a, index_b);
     }
 
-    pub fn get_hand_slot(&self, idx: u16) -> Result<&ItemStack, InventoryAccessError> {
-        const HAND_END_SLOT: u16 = 45;
-
+    pub fn hand_slot_index(&self, idx: u16) -> Result<u16, InventoryAccessError> {
         let idx = idx + HAND_START_SLOT;
 
-        if idx >= HAND_END_SLOT {
+        if idx >= HAND_END_SLOT || usize::from(idx) >= self.size() {
             return Err(InventoryAccessError::InvalidSlot { index: idx });
         }
 
-        self.get(idx)
+        Ok(idx)
     }
 
-    pub fn get_hand_slot_mut(&mut self, idx: u16) -> Result<&mut ItemStack, InventoryAccessError> {
-        const HAND_START_SLOT: u16 = 36;
-        const HAND_END_SLOT: u16 = 45;
+    pub fn get_hand_slot(&self, idx: u16) -> Result<&ItemSlot, InventoryAccessError> {
+        self.get(self.hand_slot_index(idx)?)
+    }
 
-        let idx = idx + HAND_START_SLOT;
+    pub fn get_hand_slot_mut(&mut self, idx: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
+        self.get_mut(self.hand_slot_index(idx)?)
+    }
 
-        if idx >= HAND_END_SLOT {
-            return Err(InventoryAccessError::InvalidSlot { index: idx });
-        }
+    pub fn get_mut(&mut self, index: u16) -> Result<&mut ItemSlot, InventoryAccessError> {
+        let slot = self.get_mut_maybe_change(index)?;
+        slot.changed = true;
+        Ok(slot)
+    }
 
-        self.get_mut(idx)
+    pub fn get_mut_maybe_change(
+        &mut self,
+        index: u16,
+    ) -> Result<&mut ItemSlot, InventoryAccessError> {
+        let index = usize::from(index);
+        let slot = &mut self.slots[index];
+        Ok(slot)
     }
 
     /// Returns remaining [`ItemStack`] if not all of the item was added to the slot
-    fn try_add_to_slot(
+    fn add_to_slot(
         &mut self,
         slot: u16,
         to_add: &mut ItemStack,
         can_add_to_empty: bool,
-    ) -> Result<TryAddSlot, InventoryAccessError> {
+    ) -> Result<AddSlot, InventoryAccessError> {
+        let slot = self.get_mut_maybe_change(slot)?;
         let max_stack_size: i8 = to_add.item.max_stack();
 
-        let existing_stack = self.get_mut(slot)?;
-
-        if existing_stack.is_empty() {
+        if slot.stack.is_empty() {
             return if can_add_to_empty {
                 let new_count = min(to_add.count, max_stack_size);
-                *existing_stack = to_add.clone().with_count(new_count);
                 to_add.count -= new_count;
-                self.updated_since_last_tick.insert(u32::from(slot));
+                slot.stack = to_add.clone().with_count(new_count);
+                slot.changed = true;
                 return if to_add.count > 0 {
-                    Ok(TryAddSlot::Partial)
+                    Ok(AddSlot::Partial)
                 } else {
-                    Ok(TryAddSlot::Complete)
+                    Ok(AddSlot::Complete)
                 };
             } else {
-                Ok(TryAddSlot::Skipped)
+                Ok(AddSlot::Skipped)
             };
         }
 
-        let stackable = existing_stack.item == to_add.item && existing_stack.nbt == to_add.nbt;
+        let stackable = slot.stack.item == to_add.item && slot.stack.nbt == to_add.nbt;
 
-        if stackable && existing_stack.count < max_stack_size {
-            let space_left = max_stack_size - existing_stack.count;
+        if stackable && slot.stack.count < max_stack_size {
+            let space_left = max_stack_size - slot.stack.count;
 
             return if to_add.count <= space_left {
-                existing_stack.count += to_add.count;
+                slot.stack.count += to_add.count;
+                slot.changed = true;
                 *to_add = ItemStack::EMPTY;
-                self.updated_since_last_tick.insert(u32::from(slot));
-                Ok(TryAddSlot::Complete)
+                Ok(AddSlot::Complete)
             } else {
-                existing_stack.count = max_stack_size;
+                slot.stack.count = max_stack_size;
+                slot.changed = true;
                 to_add.count -= space_left;
-                self.updated_since_last_tick.insert(u32::from(slot));
-                Ok(TryAddSlot::Partial)
+                Ok(AddSlot::Partial)
             };
         }
 
-        Ok(TryAddSlot::Skipped)
+        Ok(AddSlot::Skipped)
+    }
+
+    pub fn swap_slot(&mut self, slot: u16, other_slot: u16) {
+        if slot == other_slot {
+            return;
+        }
+
+        let slot = usize::from(slot);
+        let other_slot = usize::from(other_slot);
+
+        let [slot, other_slot] = self.slots.get_many_mut([slot, other_slot]).unwrap();
+        std::mem::swap(slot, other_slot);
+        slot.changed = true;
+        other_slot.changed = true;
     }
 }
 
@@ -229,12 +402,12 @@ impl PlayerInventory {
 
     #[must_use]
     pub fn crafting_result(&self, registry: &CraftingRegistry) -> ItemStack {
-        let indices = core::array::from_fn::<u16, 4, _>(|i| (u16::try_from(i).unwrap() + 1));
+        let indices = core::array::from_fn::<u16, 4, _>(|i| u16::try_from(i).unwrap() + 1);
 
         let mut min_count = i8::MAX;
 
         let items: Crafting2x2 = indices.map(|idx| {
-            let stack = self.get(idx).unwrap();
+            let stack = &self.get(idx).unwrap().stack;
 
             if stack.is_empty() {
                 return ItemKind::Air;
@@ -252,16 +425,19 @@ impl PlayerInventory {
         result
     }
 
-    pub fn set_hotbar(&mut self, idx: u16, stack: ItemStack) {
-        const HAND_END_SLOT: u16 = 45;
+    #[must_use]
+    pub fn slots_inventory(&self) -> &[ItemSlot] {
+        &self.slots[9..=44]
+    }
 
-        let idx = idx + HAND_START_SLOT;
+    #[must_use]
+    pub fn slots_inventory_mut(&mut self) -> &mut [ItemSlot] {
+        &mut self.slots[9..=44]
+    }
 
-        if idx >= HAND_END_SLOT {
-            return;
-        }
-
-        self.set(idx, stack).unwrap();
+    pub fn set_hotbar(&mut self, idx: u16, stack: ItemStack) -> Result<(), InventoryAccessError> {
+        self.get_hand_slot_mut(idx)?.stack = stack;
+        Ok(())
     }
 
     pub fn set_offhand(&mut self, stack: ItemStack) {
@@ -285,27 +461,27 @@ impl PlayerInventory {
     }
 
     #[must_use]
-    pub fn get_helmet(&self) -> &ItemStack {
+    pub fn get_helmet(&self) -> &ItemSlot {
         self.get(Self::HELMET_SLOT).unwrap()
     }
 
     #[must_use]
-    pub fn get_chestplate(&self) -> &ItemStack {
+    pub fn get_chestplate(&self) -> &ItemSlot {
         self.get(Self::CHESTPLATE_SLOT).unwrap()
     }
 
     #[must_use]
-    pub fn get_leggings(&self) -> &ItemStack {
+    pub fn get_leggings(&self) -> &ItemSlot {
         self.get(Self::LEGGINGS_SLOT).unwrap()
     }
 
     #[must_use]
-    pub fn get_boots(&self) -> &ItemStack {
+    pub fn get_boots(&self) -> &ItemSlot {
         self.get(Self::BOOTS_SLOT).unwrap()
     }
 
     #[must_use]
-    pub fn get_offhand(&self) -> &ItemStack {
+    pub fn get_offhand(&self) -> &ItemSlot {
         self.get(Self::OFFHAND_SLOT).unwrap()
     }
 
@@ -314,31 +490,18 @@ impl PlayerInventory {
 
         // Try to add to hot bar (36-45) first, then the rest of the inventory (9-35)
         // try to stack first
-        for slot in (36..=44).chain(9..36) {
-            let Ok(add_slot) = self.try_add_to_slot(slot, &mut item, false) else {
-                unreachable!("try_add_item should always return Ok");
-            };
+        for can_add_to_empty in [false, true] {
+            for slot in (36..=44).chain(9..36) {
+                let add_slot = self
+                    .add_to_slot(slot, &mut item, can_add_to_empty)
+                    .expect("slot index is in bounds");
 
-            match add_slot {
-                TryAddSlot::Complete => {
-                    return result;
+                match add_slot {
+                    AddSlot::Complete => {
+                        return result;
+                    }
+                    AddSlot::Partial | AddSlot::Skipped => {}
                 }
-                TryAddSlot::Partial | TryAddSlot::Skipped => {}
-            }
-        }
-
-        // Try to add to hot bar (36-44) first, then the rest of the inventory (9-35)
-        // now try to add to empty slots
-        for slot in (36..=44).chain(9..36) {
-            let Ok(add_slot) = self.try_add_to_slot(slot, &mut item, true) else {
-                unreachable!("try_add_item should always return Ok");
-            };
-
-            match add_slot {
-                TryAddSlot::Complete => {
-                    return result;
-                }
-                TryAddSlot::Partial | TryAddSlot::Skipped => {}
             }
         }
 
@@ -351,29 +514,86 @@ impl PlayerInventory {
     }
 }
 
-#[must_use]
-pub fn slot_index_from_hand(hand_idx: u8) -> u16 {
-    const HAND_START_SLOT: u16 = 36;
-    const HAND_END_SLOT: u16 = 45;
-
-    let hand_idx = u16::from(hand_idx);
-    let hand_idx = hand_idx + HAND_START_SLOT;
-
-    if hand_idx >= HAND_END_SLOT {
-        return 0;
-    }
-
-    hand_idx
-}
-
 // todo: not sure if this is correct
 pub const OFFHAND_SLOT: u16 = 45;
 
-#[derive(Component)]
-pub struct InventoryModule;
+/// Thread-local non-zero id means that it will be very unlikely that one player will have two
+/// of the same IDs at the same time when opening GUIs in succession.
+///
+/// We are skipping 0 because it is reserved for the player's inventory.
+pub fn non_zero_window_id() -> u8 {
+    #[thread_local]
+    static ID: Cell<u8> = Cell::new(0);
 
-impl Module for InventoryModule {
-    fn module(world: &World) {
-        world.component::<PlayerInventory>();
+    ID.set(ID.get().wrapping_add(1));
+
+    if ID.get() == 0 {
+        ID.set(1);
+    }
+
+    ID.get()
+}
+
+pub trait ItemKindExt {
+    fn is_helmet(&self) -> bool;
+    fn is_chestplate(&self) -> bool;
+    fn is_leggings(&self) -> bool;
+    fn is_boots(&self) -> bool;
+    fn is_armor(&self) -> bool;
+}
+
+impl ItemKindExt for ItemKind {
+    fn is_helmet(&self) -> bool {
+        matches!(
+            self,
+            Self::LeatherHelmet
+                | Self::ChainmailHelmet
+                | Self::IronHelmet
+                | Self::GoldenHelmet
+                | Self::DiamondHelmet
+                | Self::NetheriteHelmet
+                | Self::TurtleHelmet
+                | Self::PlayerHead
+        )
+    }
+
+    fn is_chestplate(&self) -> bool {
+        matches!(
+            self,
+            Self::LeatherChestplate
+                | Self::ChainmailChestplate
+                | Self::IronChestplate
+                | Self::GoldenChestplate
+                | Self::DiamondChestplate
+                | Self::NetheriteChestplate
+        )
+    }
+
+    fn is_leggings(&self) -> bool {
+        matches!(
+            self,
+            Self::LeatherLeggings
+                | Self::ChainmailLeggings
+                | Self::IronLeggings
+                | Self::GoldenLeggings
+                | Self::DiamondLeggings
+                | Self::NetheriteLeggings
+        )
+    }
+
+    fn is_boots(&self) -> bool {
+        matches!(
+            self,
+            Self::LeatherBoots
+                | Self::ChainmailBoots
+                | Self::IronBoots
+                | Self::GoldenBoots
+                | Self::DiamondBoots
+                | Self::NetheriteBoots
+        )
+    }
+
+    fn is_armor(&self) -> bool {
+        self.is_helmet() || self.is_chestplate() || self.is_leggings() || self.is_boots()
     }
 }

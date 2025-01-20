@@ -1,5 +1,6 @@
 //! Hyperion
 
+#![feature(get_many_mut)]
 #![feature(type_alias_impl_trait)]
 #![feature(io_error_more)]
 #![feature(trusted_len)]
@@ -23,6 +24,7 @@
 #![feature(portable_simd)]
 #![feature(trivial_bounds)]
 #![feature(pointer_is_aligned_to)]
+#![feature(thread_local)]
 
 pub const NUM_THREADS: usize = 8;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384

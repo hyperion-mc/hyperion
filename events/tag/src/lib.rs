@@ -8,6 +8,7 @@ use std::{collections::HashSet, net::SocketAddr};
 use flecs_ecs::prelude::*;
 use hyperion::{GameServerEndpoint, HyperionCore, simulation::Player};
 use hyperion_clap::hyperion_command::CommandRegistry;
+use hyperion_gui::Gui;
 use module::{block::BlockModule, vanish::VanishModule};
 
 mod module;
@@ -52,6 +53,7 @@ impl Module for TagModule {
 
         world.component::<FollowClosestPlayer>();
         world.component::<MainBlockCount>();
+        world.component::<Gui>();
 
         world
             .component::<Player>()

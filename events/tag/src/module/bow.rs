@@ -97,7 +97,7 @@ impl Module for BowModule {
                     .entity_view(world)
                     .get::<&PlayerInventory>(|inventory| {
                         let cursor = inventory.get_cursor();
-                        if cursor.item != ItemKind::Bow {
+                        if cursor.stack.item != ItemKind::Bow {
                             return;
                         }
 

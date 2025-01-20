@@ -1,15 +1,12 @@
-use std::{borrow::Cow, fmt::Debug};
+use std::fmt::Debug;
 
-use anyhow::Context;
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
 use itertools::Either;
-use tracing::error;
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
-    packets::play::{self, entity_equipment_update_s2c::EquipmentEntry},
+    packets::play::{self},
 };
 
 use crate::{
@@ -184,103 +181,6 @@ impl Module for EntityStateSyncModule {
                 animation.clear();
             },
         );
-
-        system!(
-            "player_inventory_sync",
-            world,
-            &Compose($),
-            &mut PlayerInventory,
-            &ConnectionId,
-        )
-        .multi_threaded()
-        .kind::<flecs::pipeline::OnStore>()
-        .each_iter(move |it, _, (compose, inventory, io)| {
-            let mut run = || {
-                let io = *io;
-                let system = it.system();
-
-                for slot in &inventory.updated_since_last_tick {
-                    let Ok(slot) = u16::try_from(slot) else {
-                        error!("failed to convert slot to u16 {slot}");
-                        continue;
-                    };
-                    let item = inventory
-                        .get(slot)
-                        .with_context(|| format!("failed to get item for slot {slot}"))?;
-                    let Ok(slot) = i16::try_from(slot) else {
-                        error!("failed to convert slot to i16 {slot}");
-                        continue;
-                    };
-                    let pkt = play::ScreenHandlerSlotUpdateS2c {
-                        window_id: 0,
-                        state_id: VarInt::default(),
-                        slot_idx: slot,
-                        slot_data: Cow::Borrowed(item),
-                    };
-                    compose
-                        .unicast(&pkt, io, system)
-                        .context("failed to send inventory update")?;
-                }
-
-                inventory.updated_since_last_tick.clear();
-                inventory.hand_slot_updated_since_last_tick = false;
-
-                anyhow::Ok(())
-            };
-
-            if let Err(e) = run() {
-                error!("Failed to sync player inventory: {}", e);
-            }
-        });
-
-        system!(
-            "sync_equipped_items",
-            world,
-            &Compose($),
-            &Position,
-            &PlayerInventory,
-        )
-        .multi_threaded()
-        .kind::<flecs::pipeline::OnStore>()
-        .each_iter(move |it, row, (compose, position, inventory)| {
-            // let entity = it.entity(row);
-            let system = it.system();
-            // get armor and hand
-            let hand = EquipmentEntry {
-                slot: 0,
-                item: inventory.get_cursor().clone(),
-            };
-            let helmet = EquipmentEntry {
-                slot: 5,
-                item: inventory.get_helmet().clone(),
-            };
-            let chestplate = EquipmentEntry {
-                slot: 4,
-                item: inventory.get_chestplate().clone(),
-            };
-            let leggings = EquipmentEntry {
-                slot: 3,
-                item: inventory.get_leggings().clone(),
-            };
-            let boots = EquipmentEntry {
-                slot: 2,
-                item: inventory.get_boots().clone(),
-            };
-            let off_hand = EquipmentEntry {
-                slot: 1,
-                item: inventory.get_offhand().clone(),
-            };
-
-            let packet = play::EntityEquipmentUpdateS2c {
-                entity_id: VarInt(it.entity(row).minecraft_id()),
-                equipment: vec![hand, helmet, chestplate, leggings, boots, off_hand],
-            };
-
-            compose
-                .broadcast_local(&packet, position.to_chunk(), system)
-                .send()
-                .unwrap();
-        });
 
         // What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
         // IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs

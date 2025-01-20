@@ -60,5 +60,8 @@ define_events! {
     event::ClientStatusEvent,
     event::ProjectileEntityEvent,
     event::ProjectileBlockEvent,
-    event::StartDestroyBlock
+    event::ClickSlotEvent,
+    event::DropItemStackEvent,
+    event::UpdateSelectedSlotEvent,
+    event::StartDestroyBlock,
 }

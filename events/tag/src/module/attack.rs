@@ -309,7 +309,7 @@ impl Module for AttackModule {
                                         match kill_count.kill_count {
                                             0 => {}
                                             1 => inventory
-                                                .set_hotbar(0, ItemStack::new(ItemKind::WoodenSword, 1, None)),
+                                                .set_hotbar(0, ItemStack::new(ItemKind::WoodenSword, 1, None)).unwrap(),
                                             2 => inventory
                                                 .set_boots(ItemStack::new(ItemKind::LeatherBoots, 1, None)),
                                             3 => inventory
@@ -319,7 +319,7 @@ impl Module for AttackModule {
                                             5 => inventory
                                                 .set_helmet(ItemStack::new(ItemKind::LeatherHelmet, 1, None)),
                                             6 => inventory
-                                                .set_hotbar(0, ItemStack::new(ItemKind::StoneSword, 1, None)),
+                                                .set_hotbar(0, ItemStack::new(ItemKind::StoneSword, 1, None)).unwrap(),
                                             7 => inventory
                                                 .set_boots(ItemStack::new(ItemKind::ChainmailBoots, 1, None)),
                                             8 => inventory
@@ -329,7 +329,7 @@ impl Module for AttackModule {
                                             10 => inventory
                                                 .set_helmet(ItemStack::new(ItemKind::ChainmailHelmet, 1, None)),
                                             11 => inventory
-                                                .set_hotbar(0, ItemStack::new(ItemKind::IronSword, 1, None)),
+                                                .set_hotbar(0, ItemStack::new(ItemKind::IronSword, 1, None)).unwrap(),
                                             12 => inventory
                                                 .set_boots(ItemStack::new(ItemKind::IronBoots, 1, None)),
                                             13 => inventory
@@ -339,7 +339,7 @@ impl Module for AttackModule {
                                             15 => inventory
                                                 .set_helmet(ItemStack::new(ItemKind::IronHelmet, 1, None)),
                                             16 => inventory
-                                                .set_hotbar(0, ItemStack::new(ItemKind::DiamondSword, 1, None)),
+                                                .set_hotbar(0, ItemStack::new(ItemKind::DiamondSword, 1, None)).unwrap(),
                                             17 => inventory
                                                 .set_boots(ItemStack::new(ItemKind::DiamondBoots, 1, None)),
                                             18 => inventory
@@ -349,7 +349,7 @@ impl Module for AttackModule {
                                             20 => inventory
                                                 .set_helmet(ItemStack::new(ItemKind::DiamondHelmet, 1, None)),
                                             21 => inventory
-                                                .set_hotbar(0, ItemStack::new(ItemKind::NetheriteSword, 1, None)),
+                                                .set_hotbar(0, ItemStack::new(ItemKind::NetheriteSword, 1, None)).unwrap(),
                                             22 => inventory
                                                 .set_boots(ItemStack::new(ItemKind::NetheriteBoots, 1, None)),
                                             23 => inventory
@@ -653,16 +653,16 @@ const fn calculate_toughness(item: &ItemStack) -> f32 {
 
 fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
     let hand = inventory.get_cursor();
-    let damage = calculate_damage(hand);
-    let armor = calculate_armor(inventory.get_helmet())
-        + calculate_armor(inventory.get_chestplate())
-        + calculate_armor(inventory.get_leggings())
-        + calculate_armor(inventory.get_boots());
+    let damage = calculate_damage(&hand.stack);
+    let armor = calculate_armor(&inventory.get_helmet().stack)
+        + calculate_armor(&inventory.get_chestplate().stack)
+        + calculate_armor(&inventory.get_leggings().stack)
+        + calculate_armor(&inventory.get_boots().stack);
 
-    let armor_toughness = calculate_toughness(inventory.get_helmet())
-        + calculate_toughness(inventory.get_chestplate())
-        + calculate_toughness(inventory.get_leggings())
-        + calculate_toughness(inventory.get_boots());
+    let armor_toughness = calculate_toughness(&inventory.get_helmet().stack)
+        + calculate_toughness(&inventory.get_chestplate().stack)
+        + calculate_toughness(&inventory.get_leggings().stack)
+        + calculate_toughness(&inventory.get_boots().stack);
 
     CombatStats {
         armor,

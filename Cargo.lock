@@ -2915,8 +2915,10 @@ dependencies = [
  "anyhow",
  "flecs_ecs",
  "hyperion",
+ "hyperion-inventory",
  "hyperion-utils",
  "serde",
+ "tracing",
  "valence_protocol",
 ]
 
@@ -2924,10 +2926,12 @@ dependencies = [
 name = "hyperion-inventory"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "flecs_ecs",
  "hyperion-crafting",
  "roaring",
  "snafu",
+ "tracing",
  "valence_protocol",
 ]
 
