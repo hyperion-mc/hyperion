@@ -13,7 +13,7 @@ use module::{block::BlockModule, vanish::VanishModule};
 mod module;
 
 use derive_more::{Deref, DerefMut};
-use hyperion::{glam::IVec3, simulation::Position};
+use hyperion::{glam::IVec3, simulation::Position, spatial};
 use hyperion_rank_tree::Team;
 use module::{attack::AttackModule, level::LevelModule, regeneration::RegenerationModule};
 use spatial::SpatialIndex;

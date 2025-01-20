@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use anyhow::{Context, bail};
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use flecs_ecs::core::{Entity, EntityView, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -31,15 +31,13 @@ use super::{
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
-    bow::BowCharging,
     event::ClientStatusEvent,
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
     simulation::{
-        Pitch, Yaw, aabb,
-        event::{self, PluginMessage},
-        metadata::entity::Pose,
+        Pitch, Yaw, aabb, event,
+        metadata::{entity::Pose, living_entity::HandStates},
         packet::HandlerRegistry,
     },
     storage::{CommandCompletionRequest, Events, InteractEvent},
@@ -318,6 +316,8 @@ fn player_action(
                 item: query.inventory.get_cursor().item,
             };
 
+            query.id.entity_view(query.world).set(HandStates::new(0));
+
             query.events.push(event, query.world);
         }
         action => bail!("unimplemented {action:?}"),
@@ -375,19 +375,16 @@ pub fn player_interact_item(
     let cursor = query.inventory.get_cursor();
 
     if !cursor.is_empty() {
+        let flecs_event = event::ItemInteract {
+            entity: query.id,
+            hand,
+            sequence: sequence.0,
+        };
         if cursor.item == ItemKind::WrittenBook {
             let packet = play::OpenWrittenBookS2c { hand };
             query.compose.unicast(&packet, query.io_ref, query.system)?;
-        } else if cursor.item == ItemKind::Bow {
-            // Start charging bow
-            let entity = query.world.entity_from_id(query.id);
-            entity.get::<Option<&BowCharging>>(|charging| {
-                if charging.is_some() {
-                    return;
-                }
-                entity.set(BowCharging::now());
-            });
         }
+        query.events.push(flecs_event, query.world);
     }
 
     query.handler_registry.trigger(&event, handle, query)?;
@@ -512,27 +509,6 @@ pub fn creative_inventory_action(
     Ok(())
 }
 
-pub fn custom_payload<'a>(
-    packet: &play::CustomPayloadC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let channel = packet.channel.clone().into_inner();
-
-    let Cow::Borrowed(borrow) = channel else {
-        bail!("NO")
-    };
-
-    let event = PluginMessage {
-        channel: RuntimeLifetime::new(borrow, handle),
-        data: RuntimeLifetime::new(packet.data.0.0, handle),
-    };
-
-    query.events.push(event, query.world);
-
-    Ok(())
-}
-
 // keywords: inventory
 fn click_slot(
     pkt: &play::ClickSlotC2s<'_>,
@@ -651,7 +627,6 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(client_status));
     registry.add_handler(Box::new(chat_command));
     registry.add_handler(Box::new(creative_inventory_action));
-    registry.add_handler(Box::new(custom_payload));
     registry.add_handler(Box::new(full));
     registry.add_handler(Box::new(hand_swing));
     registry.add_handler(Box::new(look_and_on_ground));

@@ -87,6 +87,7 @@ pub mod egress;
 pub mod ingress;
 pub mod net;
 pub mod simulation;
+pub mod spatial;
 pub mod storage;
 
 /// Relationship for previous values

@@ -53,11 +53,12 @@ define_events! {
     event::DestroyBlock,
     event::ItemDropEvent,
     event::PlaceBlock,
-    event::PluginMessage,
     event::PostureUpdate,
     event::SwingArm,
     event::ToggleDoor,
     event::ReleaseUseItem,
     event::ClientStatusEvent,
+    event::ProjectileEntityEvent,
+    event::ProjectileBlockEvent,
     event::StartDestroyBlock
 }

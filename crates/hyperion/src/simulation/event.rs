@@ -8,6 +8,7 @@ use valence_generated::block::BlockState;
 use valence_protocol::Hand;
 use valence_server::{ItemKind, entity::item_frame::ItemStack};
 
+use super::blocks::RayCollision;
 use crate::simulation::skin::PlayerSkin;
 
 #[derive(Component, Default, Debug)]
@@ -90,22 +91,6 @@ pub struct ReleaseUseItem {
     pub item: ItemKind,
 }
 
-pub struct PluginMessage {
-    pub channel: RuntimeLifetime<&'static str>,
-    pub data: RuntimeLifetime<&'static [u8]>,
-}
-
-impl std::fmt::Debug for PluginMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let bytes = bytes::Bytes::copy_from_slice(self.data.get());
-
-        f.debug_struct("PluginMessage")
-            .field("channel", self.channel.get())
-            .field("data", &bytes)
-            .finish()
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(i32)]
 #[expect(missing_docs, reason = "self explanatory")]
@@ -155,4 +140,16 @@ pub struct ClientStatusEvent {
 
 unsafe impl Lifetime for ClientStatusEvent {
     type WithLifetime<'a> = Self;
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectileEntityEvent {
+    pub client: Entity,
+    pub projectile: Entity,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectileBlockEvent {
+    pub collision: RayCollision,
+    pub projectile: Entity,
 }

@@ -7,7 +7,10 @@ use flecs_ecs::{
     prelude::Module,
 };
 use geometry::{aabb::Aabb, ray::Ray};
-use hyperion::{
+use ordered_float::NotNan;
+use rayon::iter::Either;
+
+use super::{
     egress::player_join::RayonWorldStages,
     glam::Vec3,
     simulation::{
@@ -15,8 +18,6 @@ use hyperion::{
         blocks::{Blocks, RayCollision},
     },
 };
-use ordered_float::NotNan;
-use rayon::iter::Either;
 
 #[derive(Component)]
 pub struct SpatialModule;
@@ -31,10 +32,14 @@ pub struct SpatialIndex {
 pub fn get_first_collision(
     ray: Ray,
     world: &World,
+    owner: Option<Entity>,
 ) -> Option<Either<EntityView<'_>, RayCollision>> {
     // Check for collisions with entities
     let entity = world.get::<&SpatialIndex>(|index| index.first_ray_collision(ray, world));
     let block = world.get::<&Blocks>(|blocks| blocks.first_collision(ray));
+
+    // make sure the entity is not the owner
+    let entity = entity.filter(|(entity, _)| owner.is_none_or(|owner| *entity != owner));
 
     // check which one is closest to the Ray don't forget to account for entity size
     entity.map_or(block.map(Either::Right), |(entity, _)| {

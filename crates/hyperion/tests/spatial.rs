@@ -14,6 +14,7 @@ use glam::Vec3;
 use hyperion::{
     HyperionCore,
     simulation::{EntitySize, Position, entity_kind::EntityKind},
+    spatial,
 };
 use spatial::{Spatial, SpatialIndex, SpatialModule};
 

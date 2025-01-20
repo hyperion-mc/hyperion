@@ -6,6 +6,7 @@ use valence_protocol::{VarInt, packets::play::EntityAnimationS2c};
 #[repr(u8)]
 pub enum Kind {
     SwingMainArm = 0,
+    UseItem = 1,
     LeaveBed = 2,
     SwingOffHand = 3,
     Critical = 4,
