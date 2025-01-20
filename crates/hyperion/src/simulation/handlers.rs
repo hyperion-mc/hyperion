@@ -4,7 +4,6 @@
 #![allow(clippy::unnecessary_wraps)]
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
-use std::borrow::Cow;
 
 use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, World};
