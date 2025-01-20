@@ -29,8 +29,23 @@
           llvmPackages.libclang
         ];
 
+        # GenMap derivation
+        genmap = pkgs.stdenv.mkDerivation {
+          name = "genmap";
+          src = pkgs.fetchurl {
+            url = "https://github.com/andrewgazelka/maps/raw/main/GenMap.tar.gz";
+            sha256 = "sha256-ViX+qDEBf++HwbXu1rTAi05Ju/3JAS16Ld4Uq0sStQg=";
+          };
+
+          installPhase = ''
+            mkdir -p $out
+            cp -r . $out/
+          '';
+        };
+
         buildInputs = with pkgs; [
           openssl
+          genmap
         ] ++ lib.optionals stdenv.isDarwin [
           darwin.apple_sdk.frameworks.Security
           darwin.apple_sdk.frameworks.SystemConfiguration
@@ -42,6 +57,7 @@
           inherit buildInputs nativeBuildInputs;
 
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+          HYPERION_GENMAP_PATH = "${genmap}";
         };
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
@@ -50,6 +66,7 @@
           src = ./.;
 
           inherit buildInputs nativeBuildInputs;
+          HYPERION_GENMAP_PATH = "${genmap}";
 
           cargoLock = {
             lockFile = ./Cargo.lock;

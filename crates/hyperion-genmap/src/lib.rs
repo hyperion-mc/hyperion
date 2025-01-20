@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use flecs_ecs::{
     core::{World, WorldGet},
     macros::Component,
@@ -13,16 +15,21 @@ impl Module for GenMapModule {
         world.import::<hyperion::HyperionCore>();
         world.import::<hyperion_utils::HyperionUtilsModule>();
 
-        world.get::<&AsyncRuntime>(|runtime| {
-            const URL: &str = "https://github.com/andrewgazelka/maps/raw/main/GenMap.tar.gz";
+        let save_path = std::env::var("HYPERION_GENMAP_PATH").map_or_else(
+            |_| {
+                world.get::<&AsyncRuntime>(|runtime| {
+                    const URL: &str =
+                        "https://github.com/andrewgazelka/maps/raw/main/GenMap.tar.gz";
+                    let f = hyperion_utils::cached_save(world, URL);
 
-            let f = hyperion_utils::cached_save(world, URL);
+                    runtime.block_on(f).unwrap_or_else(|e| {
+                        panic!("failed to download map {URL}: {e}");
+                    })
+                })
+            },
+            PathBuf::from,
+        );
 
-            let save = runtime.block_on(f).unwrap_or_else(|e| {
-                panic!("failed to download map {URL}: {e}");
-            });
-
-            world.set(Blocks::new(world, &save).unwrap());
-        });
+        world.set(Blocks::new(world, &save_path).unwrap());
     }
 }
