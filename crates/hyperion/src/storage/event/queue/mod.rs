@@ -53,7 +53,6 @@ define_events! {
     event::DestroyBlock,
     event::ItemDropEvent,
     event::PlaceBlock,
-    event::PluginMessage,
     event::PostureUpdate,
     event::SwingArm,
     event::ToggleDoor,
