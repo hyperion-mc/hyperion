@@ -26,6 +26,7 @@
           rustToolchain
           pkg-config
           cmake
+          llvmPackages.libclang
         ];
 
         buildInputs = with pkgs; [
