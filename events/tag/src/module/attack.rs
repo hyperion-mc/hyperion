@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use compact_str::format_compact;
 use flecs_ecs::{
     core::{
-        Builder, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
-        World, WorldGet, flecs,
+        Builder, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter,
+        TermBuilderImpl, World, WorldGet, flecs,
     },
     macros::{Component, system},
     prelude::Module,
@@ -152,8 +152,9 @@ impl Module for AttackModule {
                     for event in event_queue.drain() {
                         let target = world.entity_from_id(event.target);
                         let origin = world.entity_from_id(event.origin);
+                        let critical_hit = can_critical_hit(origin);
                         origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team, &mut Xp)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team, origin_xp)| {
-                            let damage = from_stats.damage + calculate_stats(from_inventory).damage;
+                            let damage = from_stats.damage + calculate_stats(from_inventory, critical_hit).damage;
                             target.try_get::<(
                                 &ConnectionId,
                                 Option<&mut ImmuneUntil>,
@@ -185,7 +186,7 @@ impl Module for AttackModule {
                                         return;
                                     }
 
-                                    let calculated_stats = calculate_stats(target_inventory);
+                                    let calculated_stats = calculate_stats(target_inventory, critical_hit);
                                     let armor = stats.armor + calculated_stats.armor;
                                     let toughness = stats.armor_toughness + calculated_stats.armor_toughness;
                                     let protection = stats.protection + calculated_stats.protection;
@@ -196,7 +197,7 @@ impl Module for AttackModule {
                                     health.damage(damage_after_protection);
 
                                     let pkt_health = play::HealthUpdateS2c {
-                                        health: health.abs(),
+                                        health: **health,
                                         food: VarInt(20),
                                         food_saturation: 5.0
                                     };
@@ -651,9 +652,11 @@ const fn calculate_toughness(item: &ItemStack) -> f32 {
     }
 }
 
-fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
+// TODO: split this up into separate functions
+fn calculate_stats(inventory: &PlayerInventory, critical_hit: bool) -> CombatStats {
     let hand = inventory.get_cursor();
-    let damage = calculate_damage(&hand.stack);
+    let multiplier = if critical_hit { 1.5 } else { 1.0 };
+    let damage = calculate_damage(&hand.stack) * multiplier;
     let armor = calculate_armor(&inventory.get_helmet().stack)
         + calculate_armor(&inventory.get_chestplate().stack)
         + calculate_armor(&inventory.get_leggings().stack)
@@ -671,4 +674,11 @@ fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
         // TODO
         protection: 0.0,
     }
+}
+
+fn can_critical_hit(player: EntityView<'_>) -> bool {
+    player.get::<&Velocity>(|velocity| {
+        // TODO: add all conditions for a critical hit here
+        velocity.0.y < 0.0
+    })
 }
