@@ -2873,7 +2873,6 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
- "hyperion-utils",
  "indexmap",
  "tracing",
  "valence_protocol",
@@ -2917,7 +2916,6 @@ dependencies = [
  "flecs_ecs",
  "hyperion",
  "hyperion-inventory",
- "hyperion-utils",
  "serde",
  "tracing",
  "valence_protocol",
@@ -2945,7 +2943,6 @@ dependencies = [
  "flecs_ecs",
  "hyperion",
  "hyperion-inventory",
- "hyperion-utils",
  "valence_protocol",
 ]
 

@@ -39,7 +39,7 @@ use hyperion::{
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
-use hyperion_utils::{EntityExt, LifetimeHandle};
+use hyperion_utils::EntityExt;
 use tracing::info_span;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
@@ -511,9 +511,7 @@ impl Module for AttackModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |client_status: &ClientStatusEvent,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |client_status: &ClientStatusEvent, query: &mut PacketSwitchQuery<'_>| {
                     if client_status.status == ClientStatusCommand::RequestStats {
                         return Ok(());
                     }

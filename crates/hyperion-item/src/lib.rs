@@ -8,7 +8,6 @@ use hyperion::{
     simulation::{handlers::PacketSwitchQuery, packet::HandlerRegistry},
     storage::{EventFn, InteractEvent},
 };
-use hyperion_utils::LifetimeHandle;
 use valence_protocol::nbt;
 
 pub mod builder;
@@ -28,9 +27,7 @@ impl Module for ItemModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |event: &InteractEvent,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |event: &InteractEvent, query: &mut PacketSwitchQuery<'_>| {
                     let world = query.world;
                     let inventory = &mut *query.inventory;
 

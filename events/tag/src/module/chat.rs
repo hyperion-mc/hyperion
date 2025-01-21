@@ -11,7 +11,6 @@ use hyperion::{
     },
 };
 use hyperion_rank_tree::Team;
-use hyperion_utils::LifetimeHandle;
 use tracing::info_span;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 15; // 15 seconds
@@ -36,9 +35,7 @@ impl Module for ChatModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |packet: &ChatMessageC2s<'_>,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |packet: &ChatMessageC2s<'_>, query: &mut PacketSwitchQuery<'_>| {
                     let span = info_span!("handle_chat_messages");
                     let _enter = span.enter();
 

@@ -10,7 +10,6 @@ use hyperion::{
     simulation::{handlers::PacketSwitchQuery, packet::HandlerRegistry},
     storage::CommandCompletionRequest,
 };
-use hyperion_utils::LifetimeHandle;
 use valence_protocol::packets::play::CommandExecutionC2s;
 
 use crate::component::CommandRegistry;
@@ -22,9 +21,7 @@ impl Module for CommandSystemModule {
     fn module(world: &World) {
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |pkt: &CommandExecutionC2s<'_>,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |pkt: &CommandExecutionC2s<'_>, query: &mut PacketSwitchQuery<'_>| {
                     let raw = pkt.command.0;
                     let by = query.id;
                     let Some(first_word) = raw.split_whitespace().next() else {
@@ -66,9 +63,7 @@ impl Module for CommandSystemModule {
                 },
             ));
             registry.add_handler(Box::new(
-                |completion: &CommandCompletionRequest<'_>,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |completion: &CommandCompletionRequest<'_>, query: &mut PacketSwitchQuery<'_>| {
                     let input = completion.query;
 
                     // should be in form "/{command}"

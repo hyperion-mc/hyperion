@@ -16,7 +16,6 @@ use flecs_ecs::{
 };
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
-use hyperion_utils::LifetimeTracker;
 use libdeflater::CompressionLvl;
 use rkyv::util::AlignedVec;
 use system_order::SystemOrder;
@@ -109,7 +108,6 @@ pub struct Compose {
     global: Global,
     io_buf: IoBuf,
     pub bump: ThreadLocal<Bump>,
-    pub bump_tracker: LifetimeTracker,
 }
 
 #[must_use]
@@ -176,7 +174,6 @@ impl Compose {
             global,
             io_buf,
             bump: ThreadLocal::new_defaults(),
-            bump_tracker: LifetimeTracker::default(),
         }
     }
 
@@ -307,7 +304,6 @@ impl Compose {
     }
 
     pub fn clear_bump(&mut self) {
-        self.bump_tracker.assert_no_references();
         for bump in &mut self.bump {
             bump.reset();
         }

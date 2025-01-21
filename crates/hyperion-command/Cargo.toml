@@ -9,7 +9,6 @@ publish = false
 [dependencies]
 flecs_ecs = { workspace = true }
 hyperion = { workspace = true }
-hyperion-utils = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
 valence_protocol = { workspace = true }
