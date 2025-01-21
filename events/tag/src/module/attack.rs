@@ -11,6 +11,7 @@ use flecs_ecs::{
 };
 use glam::IVec3;
 use hyperion::{
+    Prev,
     net::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
@@ -129,6 +130,7 @@ impl Module for AttackModule {
             compose.unicast(&pkt, *stream, system).unwrap();
         });
 
+        // TODO: This code should be split between melee attacks and bow attacks
         system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
             .multi_threaded()
             .each_iter(
@@ -220,7 +222,7 @@ impl Module for AttackModule {
                                         source_pos: Option::None
                                     };
                                     let sound = agnostic::sound(
-                                        ident!("minecraft:entity.player.attack.knockback"),
+                                        if critical_hit { ident!("minecraft:entity.player.attack.crit") } else { ident!("minecraft:entity.player.attack.knockback") },
                                         **target_position,
                                     ).volume(1.)
                                     .pitch(1.)
@@ -229,6 +231,21 @@ impl Module for AttackModule {
 
                                     compose.unicast(&pkt_hurt, *target_connection, system).unwrap();
                                     compose.unicast(&pkt_health, *target_connection, system).unwrap();
+
+                                    if critical_hit {
+                                        let particle_pkt = play::ParticleS2c {
+                                            particle: Cow::Owned(Particle::Crit),
+                                            long_distance: true,
+                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            max_speed: 0.5,
+                                            count: 100,
+                                            offset: Vec3::new(0.5, 0.5, 0.5),
+                                        };
+
+                                        // origin is excluded because the crit particles are
+                                        // already generated on the client side of the attacker
+                                        compose.broadcast(&particle_pkt, system).exclude(*origin_connection).send().unwrap();
+                                    }
 
                                     if health.is_dead() {
                                         let attacker_name = origin.name();
@@ -677,8 +694,10 @@ fn calculate_stats(inventory: &PlayerInventory, critical_hit: bool) -> CombatSta
 }
 
 fn can_critical_hit(player: EntityView<'_>) -> bool {
-    player.get::<&Velocity>(|velocity| {
-        // TODO: add all conditions for a critical hit here
-        velocity.0.y < 0.0
+    player.get::<(&(Prev, Position), &Position)>(|(prev_position, position)| {
+        // TODO: Do not allow critical hits if the player is on a ladder, vine, or water. None of
+        // these special blocks are currently on the map.
+        let position_delta_y = position.y - prev_position.y;
+        position_delta_y < 0.0
     })
 }
