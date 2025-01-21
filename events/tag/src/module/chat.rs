@@ -1,15 +1,17 @@
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, flecs},
-    macros::{Component, system},
+    core::{EntityViewGet, World, WorldGet, flecs},
+    macros::Component,
     prelude::Module,
 };
 use hyperion::{
-    net::ConnectionId,
-    simulation::{Name, Player, Position, event},
-    storage::EventQueue,
-    valence_protocol::{packets::play, text::IntoText},
+    simulation::{Name, Player, handlers::PacketSwitchQuery, packet::HandlerRegistry},
+    valence_protocol::{
+        packets::play::{self, ChatMessageC2s},
+        text::IntoText,
+    },
 };
 use hyperion_rank_tree::Team;
+use hyperion_utils::LifetimeHandle;
 use tracing::info_span;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 15; // 15 seconds
@@ -32,42 +34,45 @@ impl Module for ChatModule {
             .component::<Player>()
             .add_trait::<(flecs::With, ChatCooldown)>();
 
-        system!("handle_chat_messages", world, &mut EventQueue<event::ChatMessage>($), &hyperion::net::Compose($))
-            .multi_threaded()
-            .each_iter(move |it: TableIter<'_, false>, _: usize, (event_queue, compose): (&mut EventQueue<event::ChatMessage>, &hyperion::net::Compose)| {
-                let world = it.world();
-                let span = info_span!("handle_chat_messages");
-                let _enter = span.enter();
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |packet: &ChatMessageC2s<'_>,
+                 _: &dyn LifetimeHandle<'_>,
+                 query: &mut PacketSwitchQuery<'_>| {
+                    let span = info_span!("handle_chat_messages");
+                    let _enter = span.enter();
 
-                let system = it.system();
-
-                let current_tick = compose.global().tick;
-
-                for event::ChatMessage { msg, by } in event_queue.drain() {
-                    let msg = msg.get();
-                    let by = world.entity_from_id(by);
+                    let current_tick = query.compose.global().tick;
+                    let by = query.view;
 
                     // todo: we should not need this; death should occur such that this is always valid
                     if !by.is_alive() {
-                        continue;
+                        return Ok(());
                     }
 
                     // Check cooldown
                     // todo: try_get if entity is dead/not found what will happen?
-                    by.get::<(&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>(|(name, position, cooldown, io, team)| {
+                    by.get::<(&Name, &mut ChatCooldown, &Team)>(|(name, cooldown, team)| {
                         // Check if player is still on cooldown
                         if cooldown.expires > current_tick {
                             let remaining_ticks = cooldown.expires - current_tick;
                             let remaining_secs = remaining_ticks as f32 / 20.0;
 
-                            let cooldown_msg = format!("§cPlease wait {remaining_secs:.2} seconds before sending another message").into_cow_text();
+                            let cooldown_msg = format!(
+                                "§cPlease wait {remaining_secs:.2} seconds before sending another \
+                                 message"
+                            )
+                            .into_cow_text();
 
                             let packet = play::GameMessageS2c {
                                 chat: cooldown_msg,
                                 overlay: false,
                             };
 
-                            compose.unicast(&packet, *io, system).unwrap();
+                            query
+                                .compose
+                                .unicast(&packet, query.io_ref, query.system)
+                                .unwrap();
                             return;
                         }
 
@@ -80,19 +85,26 @@ impl Module for ChatModule {
                             Team::Yellow => "§e",
                         };
 
+                        let msg = packet.message;
+
                         let chat = format!("§8<{color_prefix}{name}§8>§r {msg}").into_cow_text();
                         let packet = play::GameMessageS2c {
                             chat,
                             overlay: false,
                         };
 
-                        let center = position.to_chunk();
+                        let center = query.position.to_chunk();
 
-                        compose.broadcast_local(&packet, center, system)
+                        query
+                            .compose
+                            .broadcast_local(&packet, center, query.system)
                             .send()
                             .unwrap();
                     });
-                }
-            });
+
+                    Ok(())
+                },
+            ));
+        });
     }
 }

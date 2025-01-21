@@ -8,7 +8,7 @@ use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
-use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
+use hyperion_utils::{EntityExt, LifetimeHandle};
 use tracing::{info, instrument, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
@@ -196,24 +196,6 @@ fn position_and_on_ground(
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     change_position_or_correct_client(query, position.as_vec3());
-
-    Ok(())
-}
-
-fn chat_command<'a>(
-    pkt: &play::CommandExecutionC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let command = RuntimeLifetime::new(pkt.command.0, handle);
-
-    query.events.push(
-        event::Command {
-            raw: command,
-            by: query.id,
-        },
-        query.world,
-    );
 
     Ok(())
 }
@@ -519,20 +501,6 @@ fn click_slot(
     Ok(())
 }
 
-fn chat_message<'a>(
-    pkt: &play::ChatMessageC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let msg = RuntimeLifetime::new(pkt.message.0, handle);
-
-    query
-        .events
-        .push(event::ChatMessage { msg, by: query.id }, query.world);
-
-    Ok(())
-}
-
 pub fn request_command_completions<'a>(
     play::RequestCommandCompletionsC2s {
         transaction_id,
@@ -573,11 +541,9 @@ pub fn client_status(
 }
 
 pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
-    registry.add_handler(Box::new(chat_message));
     registry.add_handler(Box::new(click_slot));
     registry.add_handler(Box::new(client_command));
     registry.add_handler(Box::new(client_status));
-    registry.add_handler(Box::new(chat_command));
     registry.add_handler(Box::new(creative_inventory_action));
     registry.add_handler(Box::new(full));
     registry.add_handler(Box::new(hand_swing));

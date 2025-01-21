@@ -48,8 +48,6 @@ define_events! {
     event::ItemInteract,
     event::SetSkin,
     event::AttackEntity,
-    event::ChatMessage,
-    event::Command,
     event::DestroyBlock,
     event::ItemDropEvent,
     event::PlaceBlock,

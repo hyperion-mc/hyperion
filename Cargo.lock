@@ -2876,6 +2876,7 @@ dependencies = [
  "hyperion-utils",
  "indexmap",
  "tracing",
+ "valence_protocol",
 ]
 
 [[package]]
