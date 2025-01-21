@@ -15,6 +15,7 @@ use hyperion::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
     },
+    runtime::AsyncRuntime,
     simulation::{
         PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
@@ -43,7 +44,7 @@ use hyperion_utils::{EntityExt, LifetimeHandle};
 use tracing::info_span;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
-use super::spawn::{avoid_blocks, is_valid_spawn_block};
+use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -535,26 +536,33 @@ impl Module for AttackModule {
                                     pos_vec.push(*candidate_pos);
                                 });
 
-                            let random_index = fastrand::usize(..pos_vec.len());
+                            let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
+                                // Spawn the player near a teammate
+                                get_respawn_pos(query.world, &random_mate)
+                            } else {
+                                // There are no other teammates, so spawn the player in a random location
+                                query.world.get::<&AsyncRuntime>(|runtime| {
+                                    query.world.get::<&mut Blocks>(|blocks| {
+                                        find_spawn_position(blocks, runtime, &avoid_blocks())
+                                            .as_dvec3()
+                                    })
+                                })
+                            };
 
-                            if let Some(random_mate) = pos_vec.get(random_index) {
-                                let respawn_pos = get_respawn_pos(query.world, random_mate);
+                            *position = Position::from(respawn_pos.as_vec3());
 
-                                *position = Position::from(respawn_pos.as_vec3());
+                            let pkt_teleport = play::PlayerPositionLookS2c {
+                                position: respawn_pos,
+                                yaw: **yaw,
+                                pitch: **pitch,
+                                flags: PlayerPositionLookFlags::default(),
+                                teleport_id: VarInt(fastrand::i32(..)),
+                            };
 
-                                let pkt_teleport = play::PlayerPositionLookS2c {
-                                    position: respawn_pos,
-                                    yaw: **yaw,
-                                    pitch: **pitch,
-                                    flags: PlayerPositionLookFlags::default(),
-                                    teleport_id: VarInt(fastrand::i32(..)),
-                                };
-
-                                query
-                                    .compose
-                                    .unicast(&pkt_teleport, *connection, query.system)
-                                    .unwrap();
-                            }
+                            query
+                                .compose
+                                .unicast(&pkt_teleport, *connection, query.system)
+                                .unwrap();
                         },
                     );
 
