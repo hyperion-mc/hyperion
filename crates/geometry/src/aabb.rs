@@ -278,6 +278,7 @@ impl Aabb {
         lens.x * lens.y * lens.z
     }
 
+    #[inline]
     #[must_use]
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         // Optimized with SIMD and reduced branching
