@@ -3,18 +3,20 @@ use std::borrow::Cow;
 use compact_str::format_compact;
 use flecs_ecs::{
     core::{
-        Builder, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
-        World, WorldGet, flecs,
+        Builder, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter,
+        TermBuilderImpl, World, WorldGet, flecs,
     },
     macros::{Component, system},
     prelude::Module,
 };
 use glam::IVec3;
 use hyperion::{
+    Prev,
     net::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
     },
+    runtime::AsyncRuntime,
     simulation::{
         PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
@@ -43,7 +45,7 @@ use hyperion_utils::{EntityExt, LifetimeHandle};
 use tracing::info_span;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
-use super::spawn::{avoid_blocks, is_valid_spawn_block};
+use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -129,6 +131,7 @@ impl Module for AttackModule {
             compose.unicast(&pkt, *stream, system).unwrap();
         });
 
+        // TODO: This code should be split between melee attacks and bow attacks
         system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
             .multi_threaded()
             .each_iter(
@@ -152,8 +155,9 @@ impl Module for AttackModule {
                     for event in event_queue.drain() {
                         let target = world.entity_from_id(event.target);
                         let origin = world.entity_from_id(event.origin);
+                        let critical_hit = can_critical_hit(origin);
                         origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team, &mut Xp)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team, origin_xp)| {
-                            let damage = from_stats.damage + calculate_stats(from_inventory).damage;
+                            let damage = from_stats.damage + calculate_stats(from_inventory, critical_hit).damage;
                             target.try_get::<(
                                 &ConnectionId,
                                 Option<&mut ImmuneUntil>,
@@ -185,7 +189,7 @@ impl Module for AttackModule {
                                         return;
                                     }
 
-                                    let calculated_stats = calculate_stats(target_inventory);
+                                    let calculated_stats = calculate_stats(target_inventory, critical_hit);
                                     let armor = stats.armor + calculated_stats.armor;
                                     let toughness = stats.armor_toughness + calculated_stats.armor_toughness;
                                     let protection = stats.protection + calculated_stats.protection;
@@ -196,7 +200,7 @@ impl Module for AttackModule {
                                     health.damage(damage_after_protection);
 
                                     let pkt_health = play::HealthUpdateS2c {
-                                        health: health.abs(),
+                                        health: **health,
                                         food: VarInt(20),
                                         food_saturation: 5.0
                                     };
@@ -219,7 +223,7 @@ impl Module for AttackModule {
                                         source_pos: Option::None
                                     };
                                     let sound = agnostic::sound(
-                                        ident!("minecraft:entity.player.attack.knockback"),
+                                        if critical_hit { ident!("minecraft:entity.player.attack.crit") } else { ident!("minecraft:entity.player.attack.knockback") },
                                         **target_position,
                                     ).volume(1.)
                                     .pitch(1.)
@@ -228,6 +232,21 @@ impl Module for AttackModule {
 
                                     compose.unicast(&pkt_hurt, *target_connection, system).unwrap();
                                     compose.unicast(&pkt_health, *target_connection, system).unwrap();
+
+                                    if critical_hit {
+                                        let particle_pkt = play::ParticleS2c {
+                                            particle: Cow::Owned(Particle::Crit),
+                                            long_distance: true,
+                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            max_speed: 0.5,
+                                            count: 100,
+                                            offset: Vec3::new(0.5, 0.5, 0.5),
+                                        };
+
+                                        // origin is excluded because the crit particles are
+                                        // already generated on the client side of the attacker
+                                        compose.broadcast(&particle_pkt, system).exclude(*origin_connection).send().unwrap();
+                                    }
 
                                     if health.is_dead() {
                                         let attacker_name = origin.name();
@@ -535,26 +554,33 @@ impl Module for AttackModule {
                                     pos_vec.push(*candidate_pos);
                                 });
 
-                            let random_index = fastrand::usize(..pos_vec.len());
+                            let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
+                                // Spawn the player near a teammate
+                                get_respawn_pos(query.world, &random_mate)
+                            } else {
+                                // There are no other teammates, so spawn the player in a random location
+                                query.world.get::<&AsyncRuntime>(|runtime| {
+                                    query.world.get::<&mut Blocks>(|blocks| {
+                                        find_spawn_position(blocks, runtime, &avoid_blocks())
+                                            .as_dvec3()
+                                    })
+                                })
+                            };
 
-                            if let Some(random_mate) = pos_vec.get(random_index) {
-                                let respawn_pos = get_respawn_pos(query.world, random_mate);
+                            *position = Position::from(respawn_pos.as_vec3());
 
-                                *position = Position::from(respawn_pos.as_vec3());
+                            let pkt_teleport = play::PlayerPositionLookS2c {
+                                position: respawn_pos,
+                                yaw: **yaw,
+                                pitch: **pitch,
+                                flags: PlayerPositionLookFlags::default(),
+                                teleport_id: VarInt(fastrand::i32(..)),
+                            };
 
-                                let pkt_teleport = play::PlayerPositionLookS2c {
-                                    position: respawn_pos,
-                                    yaw: **yaw,
-                                    pitch: **pitch,
-                                    flags: PlayerPositionLookFlags::default(),
-                                    teleport_id: VarInt(fastrand::i32(..)),
-                                };
-
-                                query
-                                    .compose
-                                    .unicast(&pkt_teleport, *connection, query.system)
-                                    .unwrap();
-                            }
+                            query
+                                .compose
+                                .unicast(&pkt_teleport, *connection, query.system)
+                                .unwrap();
                         },
                     );
 
@@ -651,9 +677,11 @@ const fn calculate_toughness(item: &ItemStack) -> f32 {
     }
 }
 
-fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
+// TODO: split this up into separate functions
+fn calculate_stats(inventory: &PlayerInventory, critical_hit: bool) -> CombatStats {
     let hand = inventory.get_cursor();
-    let damage = calculate_damage(&hand.stack);
+    let multiplier = if critical_hit { 1.5 } else { 1.0 };
+    let damage = calculate_damage(&hand.stack) * multiplier;
     let armor = calculate_armor(&inventory.get_helmet().stack)
         + calculate_armor(&inventory.get_chestplate().stack)
         + calculate_armor(&inventory.get_leggings().stack)
@@ -671,4 +699,13 @@ fn calculate_stats(inventory: &PlayerInventory) -> CombatStats {
         // TODO
         protection: 0.0,
     }
+}
+
+fn can_critical_hit(player: EntityView<'_>) -> bool {
+    player.get::<(&(Prev, Position), &Position)>(|(prev_position, position)| {
+        // TODO: Do not allow critical hits if the player is on a ladder, vine, or water. None of
+        // these special blocks are currently on the map.
+        let position_delta_y = position.y - prev_position.y;
+        position_delta_y < 0.0
+    })
 }
