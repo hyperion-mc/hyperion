@@ -1,34 +1,19 @@
-use std::{fmt::{Debug, Display}, ops::Add};
-use glam::{Vec3, Vec3A}; 
+use std::{
+    fmt::{Debug, Display},
+    ops::Add,
+};
+
+use glam::Vec3;
 use ordered_float::NotNan;
 use serde::{Deserialize, Serialize};
+
 use crate::ray::Ray;
 
 pub trait HasAabb {
     fn aabb(&self) -> Aabb;
 }
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Aabb {
-    
-    min: Vec3A,
-    max: Vec3A,
-    
-    #[serde(skip)]
-    center: Vec3A,
-    #[serde(skip)]
-    half_extents: Vec3A,
-}
-
-impl Default for Aabb {
-    #[inline(always)]
-    fn default() -> Self {
-        Self::NULL
-    }
-}
-
 impl HasAabb for Aabb {
-    #[inline(always)]
     fn aabb(&self) -> Aabb {
         *self
     }
@@ -91,30 +76,8 @@ impl FromIterator<Self> for Aabb {
             min = min.min(aabb.min);
             max = max.max(aabb.max);
         }
-    
-        let center = (min + max) * 0.5;
-        let half_extents = (max - min) * 0.5;
-        Self {
-            min,
-            max,
-            center,
-            half_extents,
-        }
-    }
-} 
-// Implement necessary traits
-impl Add<Vec3> for Aabb {
-    type Output = Self;
 
-    #[inline(always)]
-    fn add(self, rhs: Vec3) -> Self::Output {
-        let rhs = Vec3A::from(rhs);
-        Self {
-            min: self.min + rhs,
-            max: self.max + rhs,
-            center: self.center + rhs,
-            half_extents: self.half_extents,
-        }
+        Self { min, max }
     }
 }
 
@@ -126,6 +89,7 @@ impl Debug for Aabb {
 
 impl Display for Aabb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // write [0.00, 0.00, 0.00] -> [1.00, 1.00, 1.00]
         write!(
             f,
             "[{:.2}, {:.2}, {:.2}] -> [{:.2}, {:.2}, {:.2}]",
@@ -430,13 +394,206 @@ impl<T: HasAabb> From<&[T]> for Aabb {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use approx::assert_relative_eq;
+    use glam::Vec3;
+    use ordered_float::NotNan;
 
+    use crate::{aabb::Aabb, ray::Ray};
 
+    #[test]
+    fn test_expand_to_fit() {
+        let mut aabb = Aabb {
+            min: Vec3::new(0.0, 0.0, 0.0),
+            max: Vec3::new(1.0, 1.0, 1.0),
+        };
 
+        let other = Aabb {
+            min: Vec3::new(-1.0, -1.0, -1.0),
+            max: Vec3::new(2.0, 2.0, 2.0),
+        };
 
+        aabb.expand_to_fit(&other);
 
+        assert_eq!(aabb.min, Vec3::new(-1.0, -1.0, -1.0));
+        assert_eq!(aabb.max, Vec3::new(2.0, 2.0, 2.0));
+    }
 
+    #[test]
+    fn containing_returns_correct_aabb_for_multiple_aabbs() {
+        let aabbs = vec![
+            Aabb {
+                min: Vec3::new(0.0, 0.0, 0.0),
+                max: Vec3::new(1.0, 1.0, 1.0),
+            },
+            Aabb {
+                min: Vec3::new(-1.0, -1.0, -1.0),
+                max: Vec3::new(2.0, 2.0, 2.0),
+            },
+            Aabb {
+                min: Vec3::new(0.5, 0.5, 0.5),
+                max: Vec3::new(1.5, 1.5, 1.5),
+            },
+        ];
 
+        let containing_aabb = Aabb::containing(&aabbs);
 
+        assert_eq!(containing_aabb.min, Vec3::new(-1.0, -1.0, -1.0));
+        assert_eq!(containing_aabb.max, Vec3::new(2.0, 2.0, 2.0));
+    }
 
+    #[test]
+    fn containing_returns_correct_aabb_for_single_aabb() {
+        let aabbs = vec![Aabb {
+            min: Vec3::new(0.0, 0.0, 0.0),
+            max: Vec3::new(1.0, 1.0, 1.0),
+        }];
 
+        let containing_aabb = Aabb::containing(&aabbs);
+
+        assert_eq!(containing_aabb.min, Vec3::new(0.0, 0.0, 0.0));
+        assert_eq!(containing_aabb.max, Vec3::new(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn containing_returns_null_aabb_for_empty_input() {
+        let aabbs: Vec<Aabb> = vec![];
+
+        let containing_aabb = Aabb::containing(&aabbs);
+
+        assert_eq!(
+            containing_aabb.min,
+            Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY)
+        );
+        assert_eq!(
+            containing_aabb.max,
+            Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY)
+        );
+    }
+
+    #[test]
+    fn test_ray_aabb_intersection() {
+        let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+
+        // Ray starting outside and hitting the box
+        let ray1 = Ray::new(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        assert!(aabb.intersect_ray(&ray1).is_some());
+
+        // Ray starting inside the box
+        let ray2 = Ray::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        assert!(aabb.intersect_ray(&ray2).is_some());
+
+        // Ray missing the box
+        let ray3 = Ray::new(Vec3::new(-2.0, 2.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        assert!(aabb.intersect_ray(&ray3).is_none());
+    }
+
+    #[test]
+    fn test_point_containment() {
+        let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+
+        // Test point inside
+        assert!(aabb.contains_point(Vec3::new(0.0, 0.0, 0.0)));
+
+        // Test point on boundary
+        assert!(aabb.contains_point(Vec3::new(1.0, 0.0, 0.0)));
+
+        // Test point outside
+        assert!(!aabb.contains_point(Vec3::new(2.0, 0.0, 0.0)));
+    }
+
+    #[test]
+    fn test_ray_at() {
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+
+        let point = ray.at(2.0);
+        assert_eq!(point, Vec3::new(2.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_degenerate_aabb_as_point() {
+        let aabb = Aabb::new(Vec3::new(1.0, 1.0, 1.0), Vec3::new(1.0, 1.0, 1.0));
+        let ray = Ray::new(Vec3::new(0.0, 1.0, 1.0), Vec3::new(1.0, 0.0, 0.0));
+        let intersection = aabb.intersect_ray(&ray);
+        assert!(
+            intersection.is_some(),
+            "Ray should hit the degenerate AABB point"
+        );
+        assert_relative_eq!(intersection.unwrap().into_inner(), 1.0, max_relative = 1e-6);
+    }
+
+    #[test]
+    fn test_degenerate_aabb_as_line() {
+        let aabb = Aabb::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(5.0, 0.0, 0.0));
+        let ray = Ray::new(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        let intersection = aabb.intersect_ray(&ray);
+        assert!(
+            intersection.is_some(),
+            "Ray should hit the line segment AABB"
+        );
+        assert_relative_eq!(intersection.unwrap().into_inner(), 1.0, max_relative = 1e-6);
+    }
+
+    #[test]
+    fn test_ray_touching_aabb_boundary() {
+        let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
+        // Ray parallel to one axis and just touches at x = -1
+        let ray = Ray::new(Vec3::new(-2.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
+        let intersection = aabb.intersect_ray(&ray);
+        assert!(
+            intersection.is_some(),
+            "Ray should intersect exactly at the boundary x = -1"
+        );
+        assert_relative_eq!(intersection.unwrap().into_inner(), 1.0, max_relative = 1e-6);
+    }
+
+    #[test]
+    fn test_ray_near_corner() {
+        let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(0.0, 0.0, 0.0));
+        // A ray that "just misses" the corner at (-1,-1,-1)
+        let ray = Ray::new(
+            Vec3::new(-2.0, -1.000_001, -1.000_001),
+            Vec3::new(1.0, 0.0, 0.0),
+        );
+        let intersection = aabb.intersect_ray(&ray);
+        // Depending on precision, this might fail if the intersection logic isn't robust.
+        // Checking that we correctly return None or an intersection close to the corner.
+        assert!(intersection.is_none(), "Ray should miss by a tiny margin");
+    }
+
+    #[test]
+    fn test_ray_origin_inside_single_aabb() {
+        let aabb = Aabb::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0));
+        let ray = Ray::new(Vec3::new(5.0, 5.0, 5.0), Vec3::new(1.0, 0.0, 0.0)); // Inside the box
+        let dist = aabb.intersect_ray(&ray);
+        assert!(
+            dist.is_some(),
+            "Ray from inside should intersect at t=0 or near 0"
+        );
+        assert_relative_eq!(dist.unwrap().into_inner(), 0.0, max_relative = 1e-6);
+    }
+
+    #[test]
+    fn test_ray_stationary_inside_aabb() {
+        let aabb = Aabb::new((0.0, 0.0, 0.0), (10.0, 10.0, 10.0));
+        let ray = Ray::new(Vec3::new(5.0, 5.0, 5.0), Vec3::new(0.0, 0.0, 0.0));
+        // With zero direction, we might choose to say intersection is at t=0 if inside, None if outside.
+        let intersection = aabb.intersect_ray(&ray);
+        assert_eq!(
+            intersection,
+            Some(NotNan::new(0.0).unwrap()),
+            "Inside and no direction should mean immediate intersection at t=0"
+        );
+    }
+
+    #[test]
+    fn test_ray_just_inside_boundary() {
+        let aabb = Aabb::new((0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        let ray = Ray::new(Vec3::new(0.999_999, 0.5, 0.5), Vec3::new(1.0, 0.0, 0.0));
+        let intersection = aabb.intersect_ray(&ray);
+        // If inside, intersection should be at t=0.0 or very close.
+        assert!(intersection.is_some());
+        assert_relative_eq!(intersection.unwrap().into_inner(), 0.0, max_relative = 1e-6);
+    }
+}
