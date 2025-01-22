@@ -114,6 +114,16 @@ fn simple() {
     assert_relative_eq!(dist2, 0.0);
 }
 
+#[test]
+fn test_empty_get_closest() {
+    let elements = vec![];
+
+    let target = Vec3::new(0.0, 0.0, 0.0);
+    let bvh = Bvh::build(elements, copied);
+
+    assert_eq!(bvh.get_closest(target, copied), None);
+}
+
 proptest! {
     #[test]
     fn test_get_closest_correctness(
