@@ -280,61 +280,29 @@ impl Aabb {
 
     #[must_use]
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
+        // Optimized with SIMD and reduced branching
         let origin = ray.origin();
-
-        // If the ray is originating inside the AABB, we can immediately return.
         if self.contains_point(origin) {
             return Some(NotNan::new(0.0).unwrap());
         }
-
+    
         let dir = ray.direction();
         let inv_dir = ray.inv_direction();
-
-        // Initialize t_min and t_max to the range of possible values
-        let (mut t_min, mut t_max) = (f32::NEG_INFINITY, f32::INFINITY);
-
-        // X-axis
-        if dir.x != 0.0 {
-            let tx1 = (self.min.x - origin.x) * inv_dir.x;
-            let tx2 = (self.max.x - origin.x) * inv_dir.x;
-            t_min = t_min.max(tx1.min(tx2));
-            t_max = t_max.min(tx1.max(tx2));
-        } else if origin.x < self.min.x || origin.x > self.max.x {
-            return None; // Ray is parallel to X slab and outside the slab
+        
+        let t1 = (self.min - origin) * inv_dir;
+        let t2 = (self.max - origin) * inv_dir;
+        
+        let t_min = t1.min(t2);
+        let t_max = t1.max(t2);
+        
+        let t_enter = t_min.max_element();
+        let t_exit = t_max.min_element();
+        
+        if t_enter <= t_exit && t_exit >= 0.0 {
+            Some(NotNan::new(if t_enter >= 0.0 { t_enter } else { t_exit }).unwrap())
+        } else {
+            None
         }
-
-        // Y-axis
-        if dir.y != 0.0 {
-            let ty1 = (self.min.y - origin.y) * inv_dir.y;
-            let ty2 = (self.max.y - origin.y) * inv_dir.y;
-            t_min = t_min.max(ty1.min(ty2));
-            t_max = t_max.min(ty1.max(ty2));
-        } else if origin.y < self.min.y || origin.y > self.max.y {
-            return None; // Ray is parallel to Y slab and outside the slab
-        }
-
-        // Z-axis
-        if dir.z != 0.0 {
-            let tz1 = (self.min.z - origin.z) * inv_dir.z;
-            let tz2 = (self.max.z - origin.z) * inv_dir.z;
-            t_min = t_min.max(tz1.min(tz2));
-            t_max = t_max.min(tz1.max(tz2));
-        } else if origin.z < self.min.z || origin.z > self.max.z {
-            return None; // Ray is parallel to Z slab and outside the slab
-        }
-
-        if t_min > t_max {
-            return None;
-        }
-
-        // At this point, t_min and t_max define the intersection range.
-        // If t_min < 0.0, it means we start “behind” the origin; if t_max < 0.0, no intersection in front.
-        let t_hit = if t_min >= 0.0 { t_min } else { t_max };
-        if t_hit < 0.0 {
-            return None;
-        }
-
-        Some(NotNan::new(t_hit).unwrap())
     }
 
     #[must_use]
