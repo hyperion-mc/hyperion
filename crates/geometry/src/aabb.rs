@@ -69,16 +69,16 @@ impl From<[f32; 6]> for Aabb {
 
 impl FromIterator<Self> for Aabb {
     fn from_iter<T: IntoIterator<Item = Self>>(iter: T) -> Self {
-        let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-        let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-
-        for aabb in iter {
-            min = min.min(aabb.min);
-            max = max.max(aabb.max);
-        }
-
+        
+        let infinity = Vec3::splat(f32::INFINITY);
+        let neg_infinity = Vec3::splat(f32::NEG_INFINITY);
+        let (min, max) = iter.into_iter().fold(
+            (infinity, neg_infinity),
+            |(min, max), aabb| (min.min(aabb.min), max.max(aabb.max))
+        );
         Self { min, max }
     }
+
 }
 
 impl Debug for Aabb {
@@ -183,6 +183,7 @@ impl Aabb {
         Self { min, max }
     }
 
+    #[inline]
     #[must_use]
     pub fn move_by(&self, offset: Vec3) -> Self {
         Self {
@@ -225,14 +226,22 @@ impl Aabb {
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn collides(&self, other: &Self) -> bool {
         (self.min.cmple(other.max) & self.max.cmpge(other.min)).all()
     }
 
+    #[inline]
     #[must_use]
     pub fn collides_point(&self, point: Vec3) -> bool {
         (self.min.cmple(point) & point.cmple(self.max)).all()
+    }
+
+    pub fn batch_collides(&self, others: &[Self]) -> Vec<bool> {
+        others.iter()
+            .map(|other| self.collides(other))
+            .collect()
     }
 
     #[must_use]
@@ -257,9 +266,10 @@ impl Aabb {
     #[must_use]
     pub fn surface_area(&self) -> f32 {
         let lens = self.lens();
-        2.0 * lens
-            .z
-            .mul_add(lens.x, lens.x.mul_add(lens.y, lens.y * lens.z))
+        let xy = lens.x * lens.y;
+        let yz = lens.y * lens.z;
+        let xz = lens.x * lens.z;
+        2.0 * (xy + yz + xz)
     }
 
     #[must_use]
@@ -333,6 +343,7 @@ impl Aabb {
         (self.min.z + self.max.z) / 2.0
     }
 
+    #[inline]
     #[must_use]
     pub fn lens(&self) -> Vec3 {
         self.max - self.min
@@ -353,6 +364,22 @@ impl Aabb {
             max: current_max,
         }
     }
+
+    // pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
+    //     if a.is_empty() || b.is_empty() {
+    //         return None;
+    //     }
+    
+    //     let min = a.min.max(b.min);
+    //     let max = a.max.min(b.max);
+        
+    //     // Use SIMD comparison
+    //     if (min.cmple(max)).all() {
+    //         Some(Self { min, max })
+    //     } else {
+    //         None
+    //     }
+    // }
 }
 
 impl<T: HasAabb> From<&[T]> for Aabb {
