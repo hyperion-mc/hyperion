@@ -191,8 +191,21 @@ impl Aabb {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        // Fast check if this is an empty AABB
+        self.min.x > self.max.x || 
+        self.min.y > self.max.y || 
+        self.min.z > self.max.z
+    }
+
+
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
+
+        if a.is_empty() || b.is_empty() {
+            return None;
+        }
+        
         let min_x = a.min.x.max(b.min.x);
         let min_y = a.min.y.max(b.min.y);
         let min_z = a.min.z.max(b.min.z);
@@ -234,15 +247,11 @@ impl Aabb {
 
     #[must_use]
     pub fn dist2(&self, point: Vec3) -> f64 {
-        let point = point.as_dvec3();
-        // Clamp the point into the box volume.
-        let clamped = point.clamp(self.min.as_dvec3(), self.max.as_dvec3());
-
-        // Distance vector from point to the clamped point inside the box.
-        let diff = point - clamped;
-
-        // The squared distance.
-        diff.length_squared()
+        let point_d = point.as_dvec3();
+        let min_d = self.min.as_dvec3();
+        let max_d = self.max.as_dvec3();
+        let clamped = point_d.clamp(min_d, max_d);
+        (point_d - clamped).length_squared()
     }
 
     pub fn overlaps<'a, T>(
