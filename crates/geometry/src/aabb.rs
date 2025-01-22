@@ -227,12 +227,7 @@ impl Aabb {
 
     #[must_use]
     pub fn collides(&self, other: &Self) -> bool {
-        self.min.x <= other.max.x
-            && self.max.x >= other.min.x
-            && self.min.y <= other.max.y
-            && self.max.y >= other.min.y
-            && self.min.z <= other.max.z
-            && self.max.z >= other.min.z
+        (self.min.cmple(other.max) & self.max.cmpge(other.min)).all()
     }
 
     #[must_use]
