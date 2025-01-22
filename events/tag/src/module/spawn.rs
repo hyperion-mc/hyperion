@@ -82,7 +82,7 @@ impl Module for SpawnModule {
     }
 }
 
-fn find_spawn_position(
+pub fn find_spawn_position(
     blocks: &mut Blocks,
     runtime: &AsyncRuntime,
     avoid_blocks: &RoaringBitmap,
