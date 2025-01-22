@@ -59,7 +59,7 @@ impl<T: Debug> Bvh<T> {
                         }));
                     }
                     Node::Leaf(leaf) => {
-                        let (elem, dist2) = leaf
+                        let Some((elem, dist2)) = leaf
                             .iter()
                             .map(|elem| {
                                 let aabb = get_aabb(elem);
@@ -67,7 +67,9 @@ impl<T: Debug> Bvh<T> {
                                 (elem, dist2)
                             })
                             .min_by_key(|(_, dist)| dist.to_bits())
-                            .unwrap();
+                        else {
+                            continue;
+                        };
 
                         if dist2 < min_dist2 {
                             min_dist2 = dist2;
