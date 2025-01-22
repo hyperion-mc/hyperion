@@ -379,6 +379,11 @@ impl Blocks {
         let y = u32::try_from(position.y - START_Y).unwrap();
         let z = u32::try_from(position.z - chunk_start_block[1]).unwrap();
 
+        if y >= chunk.height() {
+            // This block is above the chunk maximum height
+            return Some(BlockState::VOID_AIR);
+        }
+
         Some(chunk.block_state(x, y, z))
     }
 
