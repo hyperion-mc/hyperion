@@ -533,9 +533,6 @@ mod tests {
 
         let ray = Ray::new(Vec3::new(-2.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
         let intersection = aabb.intersect_ray(&ray);
-        println!("");
-        println!("Intersection {:?}", intersection);
-        println!("");
         assert!(
             intersection.is_some(),
             "Ray should intersect exactly at the boundary x = -1"
