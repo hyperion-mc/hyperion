@@ -191,12 +191,6 @@ impl Aabb {
         }
     }
 
-    // #[must_use]
-    // pub fn is_empty(&self) -> bool {
-    //     // Fast check if this is an empty AABB
-    //     self.min.x > self.max.x || self.min.y > self.max.y || self.min.z > self.max.z
-    // }
-
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
 
