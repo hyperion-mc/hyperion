@@ -69,14 +69,13 @@ impl From<[f32; 6]> for Aabb {
 
 impl FromIterator<Self> for Aabb {
     fn from_iter<T: IntoIterator<Item = Self>>(iter: T) -> Self {
-        let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-        let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-
-        for aabb in iter {
-            min = min.min(aabb.min);
-            max = max.max(aabb.max);
-        }
-
+        let infinity = Vec3::splat(f32::INFINITY);
+        let neg_infinity = Vec3::splat(f32::NEG_INFINITY);
+        let (min, max) = iter
+            .into_iter()
+            .fold((infinity, neg_infinity), |(min, max), aabb| {
+                (min.min(aabb.min), max.max(aabb.max))
+            });
         Self { min, max }
     }
 }
@@ -183,6 +182,7 @@ impl Aabb {
         Self { min, max }
     }
 
+    #[inline]
     #[must_use]
     pub fn move_by(&self, offset: Vec3) -> Self {
         Self {
@@ -193,56 +193,39 @@ impl Aabb {
 
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
-        let min_x = a.min.x.max(b.min.x);
-        let min_y = a.min.y.max(b.min.y);
-        let min_z = a.min.z.max(b.min.z);
-
-        let max_x = a.max.x.min(b.max.x);
-        let max_y = a.max.y.min(b.max.y);
-        let max_z = a.max.z.min(b.max.z);
-
-        // Check if there is an overlap. If any dimension does not overlap, return None.
-        if min_x < max_x && min_y < max_y && min_z < max_z {
-            Some(Self {
-                min: Vec3::new(min_x, min_y, min_z),
-                max: Vec3::new(max_x, max_y, max_z),
-            })
+        let min = a.min.max(b.min);
+        let max = a.max.min(b.max);
+        if min.cmplt(max).all() {
+            Some(Self { min, max })
         } else {
             None
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn collides(&self, other: &Self) -> bool {
-        self.min.x <= other.max.x
-            && self.max.x >= other.min.x
-            && self.min.y <= other.max.y
-            && self.max.y >= other.min.y
-            && self.min.z <= other.max.z
-            && self.max.z >= other.min.z
+        (self.min.cmple(other.max) & self.max.cmpge(other.min)).all()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn collides_point(&self, point: Vec3) -> bool {
+        (self.min.cmple(point) & point.cmple(self.max)).all()
     }
 
     #[must_use]
-    pub fn collides_point(&self, point: Vec3) -> bool {
-        self.min.x <= point.x
-            && point.x <= self.max.x
-            && self.min.y <= point.y
-            && point.y <= self.max.y
-            && self.min.z <= point.z
-            && point.z <= self.max.z
+    pub fn batch_collides(&self, others: &[Self]) -> Vec<bool> {
+        others.iter().map(|other| self.collides(other)).collect()
     }
 
     #[must_use]
     pub fn dist2(&self, point: Vec3) -> f64 {
-        let point = point.as_dvec3();
-        // Clamp the point into the box volume.
-        let clamped = point.clamp(self.min.as_dvec3(), self.max.as_dvec3());
-
-        // Distance vector from point to the clamped point inside the box.
-        let diff = point - clamped;
-
-        // The squared distance.
-        diff.length_squared()
+        let point_d = point.as_dvec3();
+        let min_d = self.min.as_dvec3();
+        let max_d = self.max.as_dvec3();
+        let clamped = point_d.clamp(min_d, max_d);
+        (point_d - clamped).length_squared()
     }
 
     pub fn overlaps<'a, T>(
@@ -258,9 +241,10 @@ impl Aabb {
     #[must_use]
     pub fn surface_area(&self) -> f32 {
         let lens = self.lens();
-        2.0 * lens
-            .z
-            .mul_add(lens.x, lens.x.mul_add(lens.y, lens.y * lens.z))
+        let xy = lens.x * lens.y;
+        let yz = lens.y * lens.z;
+        let xz = lens.x * lens.z;
+        2.0 * (xy + yz + xz)
     }
 
     #[must_use]
@@ -269,63 +253,34 @@ impl Aabb {
         lens.x * lens.y * lens.z
     }
 
+    #[inline]
     #[must_use]
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         let origin = ray.origin();
-
-        // If the ray is originating inside the AABB, we can immediately return.
-        if self.contains_point(origin) {
-            return Some(NotNan::new(0.0).unwrap());
-        }
-
         let dir = ray.direction();
         let inv_dir = ray.inv_direction();
 
-        // Initialize t_min and t_max to the range of possible values
-        let (mut t_min, mut t_max) = (f32::NEG_INFINITY, f32::INFINITY);
+        let mut t1 = (self.min - origin) * inv_dir;
+        let mut t2 = (self.max - origin) * inv_dir;
 
-        // X-axis
-        if dir.x != 0.0 {
-            let tx1 = (self.min.x - origin.x) * inv_dir.x;
-            let tx2 = (self.max.x - origin.x) * inv_dir.x;
-            t_min = t_min.max(tx1.min(tx2));
-            t_max = t_max.min(tx1.max(tx2));
-        } else if origin.x < self.min.x || origin.x > self.max.x {
-            return None; // Ray is parallel to X slab and outside the slab
+        for axis in 0..3 {
+            if dir[axis] == 0.0 {
+                if !(self.min[axis] <= origin[axis] && origin[axis] <= self.max[axis]) {
+                    return None;
+                }
+                t1[axis] = -f32::INFINITY;
+                t2[axis] = f32::INFINITY;
+            }
         }
 
-        // Y-axis
-        if dir.y != 0.0 {
-            let ty1 = (self.min.y - origin.y) * inv_dir.y;
-            let ty2 = (self.max.y - origin.y) * inv_dir.y;
-            t_min = t_min.max(ty1.min(ty2));
-            t_max = t_max.min(ty1.max(ty2));
-        } else if origin.y < self.min.y || origin.y > self.max.y {
-            return None; // Ray is parallel to Y slab and outside the slab
-        }
+        let t_min = t1.min(t2).max(Vec3::splat(0.0));
+        let t_max = t1.max(t2);
 
-        // Z-axis
-        if dir.z != 0.0 {
-            let tz1 = (self.min.z - origin.z) * inv_dir.z;
-            let tz2 = (self.max.z - origin.z) * inv_dir.z;
-            t_min = t_min.max(tz1.min(tz2));
-            t_max = t_max.min(tz1.max(tz2));
-        } else if origin.z < self.min.z || origin.z > self.max.z {
-            return None; // Ray is parallel to Z slab and outside the slab
+        if t_min.max_element() <= t_max.min_element() {
+            Some(NotNan::new(t_min.max_element()).unwrap())
+        } else {
+            None
         }
-
-        if t_min > t_max {
-            return None;
-        }
-
-        // At this point, t_min and t_max define the intersection range.
-        // If t_min < 0.0, it means we start “behind” the origin; if t_max < 0.0, no intersection in front.
-        let t_hit = if t_min >= 0.0 { t_min } else { t_max };
-        if t_hit < 0.0 {
-            return None;
-        }
-
-        Some(NotNan::new(t_hit).unwrap())
     }
 
     #[must_use]
@@ -366,6 +321,7 @@ impl Aabb {
         (self.min.z + self.max.z) / 2.0
     }
 
+    #[inline]
     #[must_use]
     pub fn lens(&self) -> Vec3 {
         self.max - self.min
@@ -538,7 +494,7 @@ mod tests {
     #[test]
     fn test_ray_touching_aabb_boundary() {
         let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
-        // Ray parallel to one axis and just touches at x = -1
+
         let ray = Ray::new(Vec3::new(-2.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
         let intersection = aabb.intersect_ray(&ray);
         assert!(
