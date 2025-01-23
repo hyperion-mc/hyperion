@@ -1,10 +1,8 @@
 use clap::Parser;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
-    net::{Compose, ConnectionId, DataBundle, agnostic},
-    valence_protocol::packets::play::{
-        PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-    },
+    net::{Compose, ConnectionId, agnostic},
+    simulation::FlyingSpeed,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 
@@ -23,24 +21,9 @@ impl MinecraftCommand for SpeedCommand {
 
         world.get::<&Compose>(|compose| {
             caller.entity_view(world).get::<&ConnectionId>(|stream| {
-                let packet = speed_packet(self.amount);
-
-                let mut bundle = DataBundle::new(compose, system);
-                bundle.add_packet(&packet).unwrap();
-                bundle.add_packet(&chat).unwrap();
-
-                bundle.unicast(*stream).unwrap();
+                caller.entity_view(world).set(FlyingSpeed::new(self.amount));
+                compose.unicast(&chat, *stream, system).unwrap();
             });
         });
-    }
-}
-
-fn speed_packet(amount: f32) -> PlayerAbilitiesS2c {
-    PlayerAbilitiesS2c {
-        flags: PlayerAbilitiesFlags::default()
-            .with_flying(true)
-            .with_allow_flying(true),
-        flying_speed: amount,
-        fov_modifier: 0.0,
     }
 }

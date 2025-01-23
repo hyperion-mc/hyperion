@@ -12,11 +12,17 @@ use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
-use valence_protocol::{ByteAngle, VarInt, packets::play};
+use valence_protocol::{
+    ByteAngle, VarInt,
+    packets::play::{
+        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
+        player_position_look_s2c::PlayerPositionLookFlags,
+    },
+};
 
 use crate::{
     Global,
-    net::{Compose, DataBundle},
+    net::{Compose, ConnectionId, DataBundle},
     simulation::{
         command::Command,
         entity_kind::EntityKind,
@@ -568,6 +574,36 @@ impl Velocity {
     }
 }
 
+#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
+pub struct PendingTeleportation {
+    pub teleport_id: i32,
+    pub destination: Vec3,
+    pub ttl: u8,
+}
+
+impl PendingTeleportation {
+    #[must_use]
+    pub fn new(destination: Vec3) -> Self {
+        Self {
+            teleport_id: fastrand::i32(..),
+            destination,
+            ttl: 20,
+        }
+    }
+}
+
+#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
+pub struct FlyingSpeed {
+    pub speed: f32,
+}
+
+impl FlyingSpeed {
+    #[must_use]
+    pub const fn new(speed: f32) -> Self {
+        Self { speed }
+    }
+}
+
 #[derive(Component)]
 pub struct SimModule;
 
@@ -601,6 +637,8 @@ impl Module for SimModule {
         world.component::<Visible>();
         world.component::<Spawn>();
         world.component::<Owner>();
+        world.component::<PendingTeleportation>();
+        world.component::<FlyingSpeed>();
 
         world.component::<EntityKind>().meta();
 
@@ -731,6 +769,46 @@ impl Module for SimModule {
                     _ => {}
                 });
             });
+
+        observer!(
+            world,
+            flecs::OnSet, &PendingTeleportation,
+            &Compose($), &Yaw, &Pitch, &ConnectionId
+        )
+        .each_iter(
+            |it, _, (pending_teleportation, compose, yaw, pitch, connection)| {
+                let system = it.system();
+
+                let pkt = play::PlayerPositionLookS2c {
+                    position: pending_teleportation.destination.as_dvec3(),
+                    yaw: **yaw,
+                    pitch: **pitch,
+                    flags: PlayerPositionLookFlags::default(),
+                    teleport_id: VarInt(pending_teleportation.teleport_id),
+                };
+
+                compose.unicast(&pkt, *connection, system).unwrap();
+            },
+        );
+
+        observer!(
+            world,
+            flecs::OnSet, &FlyingSpeed,
+            &Compose($), &ConnectionId
+        )
+        .each_iter(|it, _, (flying_speed, compose, connection)| {
+            let system = it.system();
+
+            let pkt = PlayerAbilitiesS2c {
+                flags: PlayerAbilitiesFlags::default()
+                    .with_flying(true)
+                    .with_allow_flying(true),
+                flying_speed: flying_speed.speed,
+                fov_modifier: 0.0,
+            };
+
+            compose.unicast(&pkt, *connection, system).unwrap();
+        });
     }
 }
 

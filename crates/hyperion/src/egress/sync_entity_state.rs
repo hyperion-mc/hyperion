@@ -13,7 +13,7 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Owner, Pitch, Position, Velocity, Xp, Yaw,
+        Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -195,34 +195,45 @@ impl Module for EntityStateSyncModule {
             &mut Velocity,
             &Yaw,
             &Pitch,
+            ?&mut PendingTeleportation,
         )
-            .multi_threaded()
-            .kind::<flecs::pipeline::PreStore>()
-            .each_iter(
-                |it,
-                 row,
-                 (
-                     compose,
-                     prev_position,
-                     prev_yaw,
-                     prev_pitch,
-                     position,
-                     velocity,
-                     yaw,
-                     pitch,
-                 )| {
-                    let world = it.system().world();
-                    let system = it.system();
-                    let entity = it.entity(row);
-                    let entity_id = VarInt(entity.minecraft_id());
+        .multi_threaded()
+        .kind::<flecs::pipeline::PreStore>()
+        .each_iter(
+            |it,
+             row,
+             (
+                compose,
+                prev_position,
+                prev_yaw,
+                prev_pitch,
+                position,
+                velocity,
+                yaw,
+                pitch,
+                pending_teleport,
+            )| {
+                let world = it.system().world();
+                let system = it.system();
+                let entity = it.entity(row);
+                let entity_id = VarInt(entity.minecraft_id());
 
+                if let Some(pending_teleport) = pending_teleport {
+                    if pending_teleport.ttl == 0 {
+                        entity.set::<PendingTeleportation>(PendingTeleportation::new(
+                            pending_teleport.destination,
+                        ));
+                    }
+                    pending_teleport.ttl -= 1;
+                } else {
                     let chunk_pos = position.to_chunk();
 
                     let position_delta = **position - **prev_position;
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
                     let changed_position = **position != **prev_position;
 
-                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
+                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01
+                        || (**pitch - **prev_pitch).abs() >= 0.01;
 
                     let mut bundle = DataBundle::new(compose, system);
 
@@ -290,11 +301,13 @@ impl Module for EntityStateSyncModule {
                         };
 
                         bundle.add_packet(&packet).unwrap();
+                        velocity.0 = Vec3::ZERO;
                     }
 
                     bundle.broadcast_local(chunk_pos).unwrap();
-                },
-            );
+                }
+            },
+        );
 
         system!(
             "update_projectile_positions",

@@ -5,7 +5,7 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, World};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
 use glam::{IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -19,13 +19,12 @@ use valence_protocol::{
     packets::play::{
         self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
         player_interact_entity_c2s::EntityInteraction,
-        player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, Position,
+    ConfirmBlockSequences, EntitySize, PendingTeleportation, Position,
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
@@ -80,18 +79,10 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             warn!("Failed to send error message to player: {e}");
         }
 
-        // Correct client position
-        let pkt = play::PlayerPositionLookS2c {
-            position: pose.position.as_dvec3(),
-            yaw: query.yaw.yaw,
-            pitch: query.pitch.pitch,
-            flags: PlayerPositionLookFlags::default(),
-            teleport_id: VarInt(fastrand::i32(..)),
-        };
-
-        if let Err(e) = query.compose.unicast(&pkt, query.io_ref, query.system) {
-            warn!("Failed to correct client position: {e}");
-        }
+        query
+            .id
+            .entity_view(query.world)
+            .set(PendingTeleportation::new(pose.position));
     }
 }
 
@@ -572,6 +563,27 @@ pub fn client_status(
     Ok(())
 }
 
+pub fn confirm_teleportation(
+    pkt: &play::TeleportConfirmC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<(Option<&PendingTeleportation>, &mut Position)>(|(pending_teleport, position)| {
+        if let Some(pending_teleport) = pending_teleport {
+            if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
+                return;
+            }
+
+            position.position = pending_teleport.destination;
+            entity.remove::<PendingTeleportation>();
+        }
+    });
+
+    Ok(())
+}
+
 pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(chat_message));
     registry.add_handler(Box::new(click_slot));
@@ -589,6 +601,7 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(position_and_on_ground));
     registry.add_handler(Box::new(request_command_completions));
     registry.add_handler(Box::new(update_selected_slot));
+    registry.add_handler(Box::new(confirm_teleportation));
 }
 
 /// # Safety
