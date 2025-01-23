@@ -6,25 +6,16 @@ use std::{
 
 use anyhow::Result;
 use flecs_ecs::macros::Component;
-use hyperion_utils::{Lifetime, LifetimeHandle};
+use hyperion_utils::Lifetime;
 use rustc_hash::FxBuildHasher;
 use valence_protocol::{Decode, Packet};
 
 use crate::simulation::handlers::{PacketSwitchQuery, add_builtin_handlers};
 
-type DeserializerFn = for<'packet> fn(
-    &HandlerRegistry,
-    &'packet [u8],
-    &dyn LifetimeHandle<'packet>,
-    &mut PacketSwitchQuery<'_>,
-) -> Result<()>;
+type DeserializerFn = fn(&HandlerRegistry, &[u8], &mut PacketSwitchQuery<'_>) -> Result<()>;
 type AnyFn = Box<dyn Send + Sync>;
 type Handler<T> = Box<
-    dyn for<'packet> Fn(
-            &<T as Lifetime>::WithLifetime<'packet>,
-            &dyn LifetimeHandle<'packet>,
-            &mut PacketSwitchQuery<'_>,
-        ) -> Result<()>
+    dyn Fn(&<T as Lifetime>::WithLifetime<'_>, &mut PacketSwitchQuery<'_>) -> Result<()>
         + Send
         + Sync,
 >;
@@ -32,7 +23,6 @@ type Handler<T> = Box<
 fn packet_deserializer<'p, P>(
     registry: &HandlerRegistry,
     mut bytes: &'p [u8],
-    handle: &dyn LifetimeHandle<'p>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> Result<()>
 where
@@ -52,7 +42,7 @@ where
     let packet = P::decode(unsafe { transmute::<&mut &'p [u8], &mut &'static [u8]>(&mut bytes) })?
         .shorten_lifetime::<'p>();
 
-    registry.trigger(&packet, handle, query)?;
+    registry.trigger(&packet, query)?;
 
     Ok(())
 }
@@ -66,18 +56,14 @@ pub struct HandlerRegistry {
 
 impl HandlerRegistry {
     // Add a handler
-    // TODO: With this current system, closures infer that 'a is a specific lifetime if the type isn't specified. Unsure if there's a way to fix it while allowing P to be inferred.
-    pub fn add_handler<'a, P, F>(&mut self, handler: Box<F>)
+    pub fn add_handler<P, F>(&mut self, handler: Box<F>)
     where
         P: Lifetime,
-        // Needed to allow compiler to infer type of P.
-        F: Fn(&P, &dyn LifetimeHandle<'a>, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync,
+        // Needed to allow compiler to infer type of P without the user needing to specify
+        // P::WithLifetime<'_>.
+        F: Fn(&P, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync,
         // Actual type bounds for Handler<P>
-        for<'packet> F: Fn(
-                &P::WithLifetime<'packet>,
-                &dyn LifetimeHandle<'packet>,
-                &mut PacketSwitchQuery<'_>,
-            ) -> Result<()>
+        F: Fn(&P::WithLifetime<'_>, &mut PacketSwitchQuery<'_>) -> Result<()>
             + Send
             + Sync
             + 'static,
@@ -90,11 +76,10 @@ impl HandlerRegistry {
     }
 
     // Process a packet, calling all registered handlers
-    pub fn process_packet<'p>(
+    pub fn process_packet(
         &self,
         id: i32,
-        bytes: &'p [u8],
-        handle: &dyn LifetimeHandle<'p>,
+        bytes: &[u8],
         query: &mut PacketSwitchQuery<'_>,
     ) -> Result<()> {
         // Get the deserializer
@@ -103,7 +88,7 @@ impl HandlerRegistry {
             .get(&id)
             .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {}", id))?;
 
-        deserializer(self, bytes, handle, query)
+        deserializer(self, bytes, query)
     }
 
     #[must_use]
@@ -115,14 +100,9 @@ impl HandlerRegistry {
             .contains_key(&TypeId::of::<T::WithLifetime<'static>>())
     }
 
-    pub fn trigger<'packet, T>(
-        &self,
-        value: &T,
-        handle: &dyn LifetimeHandle<'packet>,
-        query: &mut PacketSwitchQuery<'_>,
-    ) -> Result<()>
+    pub fn trigger<T>(&self, value: &T, query: &mut PacketSwitchQuery<'_>) -> Result<()>
     where
-        T: Lifetime + 'packet,
+        T: Lifetime,
     {
         // Get all handlers for this type
         let handlers = self
@@ -141,7 +121,7 @@ impl HandlerRegistry {
             let handler = unsafe { &*std::ptr::from_ref(handler).cast::<Handler<T>>() };
 
             // shorten_lifetime is only needed because the handler accepts T::WithLifetime
-            handler(value.shorten_lifetime_ref(), handle, query)?;
+            handler(value.shorten_lifetime_ref(), query)?;
         }
 
         Ok(())

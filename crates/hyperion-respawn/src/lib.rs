@@ -16,7 +16,7 @@ use hyperion::{
         Pitch, Position, Uuid, Xp, Yaw,
     },
 };
-use hyperion_utils::{EntityExt, LifetimeHandle};
+use hyperion_utils::EntityExt;
 
 #[derive(Component)]
 pub struct RespawnModule;
@@ -25,9 +25,7 @@ impl Module for RespawnModule {
     fn module(world: &World) {
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |event: &ClientStatusEvent,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |event: &ClientStatusEvent, query: &mut PacketSwitchQuery<'_>| {
                     if event.status == ClientStatusCommand::RequestStats {
                         return Ok(());
                     }

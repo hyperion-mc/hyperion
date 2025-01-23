@@ -3,7 +3,7 @@
 use derive_more::Constructor;
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
-use hyperion_utils::{Lifetime, RuntimeLifetime};
+use hyperion_utils::Lifetime;
 use valence_generated::block::BlockState;
 use valence_protocol::{
     Hand, ItemStack,
@@ -25,11 +25,6 @@ pub struct ItemInteract {
     pub entity: Entity,
     pub hand: Hand,
     pub sequence: i32,
-}
-
-pub struct ChatMessage {
-    pub msg: RuntimeLifetime<&'static str>,
-    pub by: Entity,
 }
 
 #[derive(Debug)]
@@ -120,11 +115,6 @@ pub enum Posture {
 pub struct PostureUpdate {
     /// The new posture of the entity.
     pub state: Posture,
-}
-
-pub struct Command {
-    pub raw: RuntimeLifetime<&'static str>,
-    pub by: Entity,
 }
 
 pub struct BlockInteract {}

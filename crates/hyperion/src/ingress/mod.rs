@@ -614,10 +614,9 @@ impl Module for IngressModule {
                                 };
 
                                 // info_span!("ingress", ign = name).in_scope(|| {
-                                // SAFETY: The packet bytes are allocated in the compose bump
-                                if let Err(err) = unsafe {
+                                if let Err(err) =
                                     crate::simulation::handlers::packet_switch(frame, &mut query)
-                                } {
+                                {
                                     error!("failed to process packet {frame:?}: {err}");
                                 }
                                 // });
