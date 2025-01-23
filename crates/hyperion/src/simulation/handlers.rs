@@ -572,7 +572,6 @@ pub fn confirm_teleportation(
 
     entity.get::<(Option<&PendingTeleportation>, &mut Position)>(|(pending_teleport, position)| {
         if let Some(pending_teleport) = pending_teleport {
-
             if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
                 return;
             }

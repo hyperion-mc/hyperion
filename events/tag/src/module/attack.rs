@@ -11,8 +11,7 @@ use flecs_ecs::{
 };
 use glam::IVec3;
 use hyperion::{
-    BlockKind,
-    Prev,
+    BlockKind, Prev,
     net::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
@@ -536,36 +535,34 @@ impl Module for AttackModule {
 
                     let client = client_status.client.entity_view(query.world);
 
-                    client.get::<&Team>(
-                        |team| {
-                            let mut pos_vec = vec![];
+                    client.get::<&Team>(|team| {
+                        let mut pos_vec = vec![];
 
-                            query
-                                .world
-                                .query::<(&Position, &Team)>()
-                                .build()
-                                .each_entity(|candidate, (candidate_pos, candidate_team)| {
-                                    if team != candidate_team || candidate == client {
-                                        return;
-                                    }
-                                    pos_vec.push(*candidate_pos);
-                                });
+                        query
+                            .world
+                            .query::<(&Position, &Team)>()
+                            .build()
+                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                                if team != candidate_team || candidate == client {
+                                    return;
+                                }
+                                pos_vec.push(*candidate_pos);
+                            });
 
-                            let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
-                                // Spawn the player near a teammate
-                                get_respawn_pos(query.world, &random_mate).as_vec3()
-                            } else {
-                                // There are no other teammates, so spawn the player in a random location
-                                query.world.get::<&AsyncRuntime>(|runtime| {
-                                    query.world.get::<&mut Blocks>(|blocks| {
-                                        find_spawn_position(blocks, runtime, &avoid_blocks())
-                                    })
+                        let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
+                            // Spawn the player near a teammate
+                            get_respawn_pos(query.world, &random_mate).as_vec3()
+                        } else {
+                            // There are no other teammates, so spawn the player in a random location
+                            query.world.get::<&AsyncRuntime>(|runtime| {
+                                query.world.get::<&mut Blocks>(|blocks| {
+                                    find_spawn_position(blocks, runtime, &avoid_blocks())
                                 })
-                            };
+                            })
+                        };
 
-                            client.set::<PendingTeleportation>(PendingTeleportation::new(respawn_pos));
-                        },
-                    );
+                        client.set::<PendingTeleportation>(PendingTeleportation::new(respawn_pos));
+                    });
 
                     Ok(())
                 },
