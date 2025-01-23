@@ -283,33 +283,32 @@ impl Aabb {
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         let origin = ray.origin();
         let dir = ray.direction();
-        let inv_dir = dir.recip();
+        let inv_dir = dir.map(|v| v.recip());
 
         let mut t1 = (self.min - origin) * inv_dir;
         let mut t2 = (self.max - origin) * inv_dir;
 
         for axis in 0..3 {
             if dir[axis] == 0.0 {
-                if origin[axis] < self.min[axis] || origin[axis] > self.max[axis] {
+                if !(self.min[axis] <= origin[axis] && origin[axis] <= self.max[axis]) {
                     return None;
                 }
                 t1[axis] = -f32::INFINITY;
                 t2[axis] = f32::INFINITY;
             }
         }
+        
 
-        let t_min = t1.min(t2);
+        let t_min = t1.min(t2).max(Vec3::splat(0.0));
         let t_max = t1.max(t2);
 
-        let t_enter = t_min.max_element().max(0.0);
-        let t_exit = t_max.min_element();
-
-        if t_enter <= t_exit {
-            Some(NotNan::new(t_enter).unwrap())
+        if t_min.max_element() <= t_max.min_element() {
+            Some(NotNan::new(t_min.max_element()).unwrap())
         } else {
             None
         }
     }
+
 
     #[must_use]
     pub fn expand(mut self, amount: f32) -> Self {
