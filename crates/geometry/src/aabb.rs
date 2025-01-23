@@ -281,20 +281,12 @@ impl Aabb {
     #[inline]
     #[must_use]
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
-        // Optimized with SIMD and reduced branching
         let origin = ray.origin();
-        if self.contains_point(origin) {
-            return Some(NotNan::new(0.0).unwrap());
-        }
-    
         let dir = ray.direction();
-        let inv_dir = dir.map(|v| if v.abs() > 1e-6 { 1.0 / v } else { 0.0 });
+        let inv_dir = dir.recip();
 
-        println!("inv_dir: {}", inv_dir);
-        
         let mut t1 = (self.min - origin) * inv_dir;
         let mut t2 = (self.max - origin) * inv_dir;
-
 
         for axis in 0..3 {
             if dir[axis] == 0.0 {
@@ -306,20 +298,14 @@ impl Aabb {
             }
         }
 
-        println!("t1: {}, t2: {}", t1, t2);
-        
         let t_min = t1.min(t2);
         let t_max = t1.max(t2);
 
-        println!("t_min: {}, t_max: {}", t_min, t_max);
-        
-        let t_enter = t_min.max_element();
+        let t_enter = t_min.max_element().max(0.0);
         let t_exit = t_max.min_element();
 
-        println!("t_enter: {}, t_exit: {}", t_enter, t_exit);
-        
-        if t_enter <= t_exit && t_exit >= 0.0 {
-            Some(NotNan::new(if t_enter >= 0.0 { t_enter } else { t_exit }).unwrap())
+        if t_enter <= t_exit {
+            Some(NotNan::new(t_enter).unwrap())
         } else {
             None
         }
