@@ -193,7 +193,6 @@ impl Aabb {
 
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
-
         let min = a.min.max(b.min);
         let max = a.max.min(b.max);
         if min.cmplt(max).all() {
@@ -201,7 +200,6 @@ impl Aabb {
         } else {
             None
         }
-
     }
 
     #[inline]
@@ -344,7 +342,6 @@ impl Aabb {
             max: current_max,
         }
     }
-
 }
 
 impl<T: HasAabb> From<&[T]> for Aabb {
