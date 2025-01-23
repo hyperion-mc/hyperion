@@ -191,35 +191,23 @@ impl Aabb {
         }
     }
 
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        // Fast check if this is an empty AABB
-        self.min.x > self.max.x || self.min.y > self.max.y || self.min.z > self.max.z
-    }
+    // #[must_use]
+    // pub fn is_empty(&self) -> bool {
+    //     // Fast check if this is an empty AABB
+    //     self.min.x > self.max.x || self.min.y > self.max.y || self.min.z > self.max.z
+    // }
 
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
-        if a.is_empty() || b.is_empty() {
-            return None;
-        }
 
-        let min_x = a.min.x.max(b.min.x);
-        let min_y = a.min.y.max(b.min.y);
-        let min_z = a.min.z.max(b.min.z);
-
-        let max_x = a.max.x.min(b.max.x);
-        let max_y = a.max.y.min(b.max.y);
-        let max_z = a.max.z.min(b.max.z);
-
-        // Check if there is an overlap. If any dimension does not overlap, return None.
-        if min_x < max_x && min_y < max_y && min_z < max_z {
-            Some(Self {
-                min: Vec3::new(min_x, min_y, min_z),
-                max: Vec3::new(max_x, max_y, max_z),
-            })
+        let min = a.min.max(b.min);
+        let max = a.max.min(b.max);
+        if min.cmplt(max).all() {
+            Some(Self { min, max })
         } else {
             None
         }
+
     }
 
     #[inline]
@@ -278,7 +266,7 @@ impl Aabb {
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         let origin = ray.origin();
         let dir = ray.direction();
-        let inv_dir = dir.map(f32::recip);
+        let inv_dir = ray.inv_direction();
 
         let mut t1 = (self.min - origin) * inv_dir;
         let mut t2 = (self.max - origin) * inv_dir;
@@ -363,21 +351,6 @@ impl Aabb {
         }
     }
 
-    // pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
-    //     if a.is_empty() || b.is_empty() {
-    //         return None;
-    //     }
-
-    //     let min = a.min.max(b.min);
-    //     let max = a.max.min(b.max);
-
-    //     // Use SIMD comparison
-    //     if (min.cmple(max)).all() {
-    //         Some(Self { min, max })
-    //     } else {
-    //         None
-    //     }
-    // }
 }
 
 impl<T: HasAabb> From<&[T]> for Aabb {
