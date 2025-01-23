@@ -69,16 +69,15 @@ impl From<[f32; 6]> for Aabb {
 
 impl FromIterator<Self> for Aabb {
     fn from_iter<T: IntoIterator<Item = Self>>(iter: T) -> Self {
-        
         let infinity = Vec3::splat(f32::INFINITY);
         let neg_infinity = Vec3::splat(f32::NEG_INFINITY);
-        let (min, max) = iter.into_iter().fold(
-            (infinity, neg_infinity),
-            |(min, max), aabb| (min.min(aabb.min), max.max(aabb.max))
-        );
+        let (min, max) = iter
+            .into_iter()
+            .fold((infinity, neg_infinity), |(min, max), aabb| {
+                (min.min(aabb.min), max.max(aabb.max))
+            });
         Self { min, max }
     }
-
 }
 
 impl Debug for Aabb {
@@ -192,21 +191,18 @@ impl Aabb {
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         // Fast check if this is an empty AABB
-        self.min.x > self.max.x || 
-        self.min.y > self.max.y || 
-        self.min.z > self.max.z
+        self.min.x > self.max.x || self.min.y > self.max.y || self.min.z > self.max.z
     }
-
 
     #[must_use]
     pub fn overlap(a: &Self, b: &Self) -> Option<Self> {
-
         if a.is_empty() || b.is_empty() {
             return None;
         }
-        
+
         let min_x = a.min.x.max(b.min.x);
         let min_y = a.min.y.max(b.min.y);
         let min_z = a.min.z.max(b.min.z);
@@ -238,10 +234,9 @@ impl Aabb {
         (self.min.cmple(point) & point.cmple(self.max)).all()
     }
 
+    #[must_use]
     pub fn batch_collides(&self, others: &[Self]) -> Vec<bool> {
-        others.iter()
-            .map(|other| self.collides(other))
-            .collect()
+        others.iter().map(|other| self.collides(other)).collect()
     }
 
     #[must_use]
@@ -283,7 +278,7 @@ impl Aabb {
     pub fn intersect_ray(&self, ray: &Ray) -> Option<NotNan<f32>> {
         let origin = ray.origin();
         let dir = ray.direction();
-        let inv_dir = dir.map(|v| v.recip());
+        let inv_dir = dir.map(f32::recip);
 
         let mut t1 = (self.min - origin) * inv_dir;
         let mut t2 = (self.max - origin) * inv_dir;
@@ -297,7 +292,6 @@ impl Aabb {
                 t2[axis] = f32::INFINITY;
             }
         }
-        
 
         let t_min = t1.min(t2).max(Vec3::splat(0.0));
         let t_max = t1.max(t2);
@@ -308,7 +302,6 @@ impl Aabb {
             None
         }
     }
-
 
     #[must_use]
     pub fn expand(mut self, amount: f32) -> Self {
@@ -374,10 +367,10 @@ impl Aabb {
     //     if a.is_empty() || b.is_empty() {
     //         return None;
     //     }
-    
+
     //     let min = a.min.max(b.min);
     //     let max = a.max.min(b.max);
-        
+
     //     // Use SIMD comparison
     //     if (min.cmple(max)).all() {
     //         Some(Self { min, max })
@@ -536,9 +529,8 @@ mod tests {
 
     #[test]
     fn test_ray_touching_aabb_boundary() {
-        
         let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
-    
+
         let ray = Ray::new(Vec3::new(-2.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
         let intersection = aabb.intersect_ray(&ray);
         println!("");
