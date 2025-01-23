@@ -567,6 +567,7 @@ impl Module for PlayerJoinModule {
                         |(uuid, name, position, yaw, pitch, &stream_id)| {
                             let query = &query;
                             let query = &query.0;
+                            entity.set_name(name);
 
                             // if we get an error joining, we should kick the player
                             if let Err(e) = player_join_world(
