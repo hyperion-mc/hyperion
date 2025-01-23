@@ -288,16 +288,35 @@ impl Aabb {
         }
     
         let dir = ray.direction();
-        let inv_dir = ray.inv_direction();
+        let inv_dir = dir.map(|v| if v.abs() > 1e-6 { 1.0 / v } else { 0.0 });
+
+        println!("inv_dir: {}", inv_dir);
         
-        let t1 = (self.min - origin) * inv_dir;
-        let t2 = (self.max - origin) * inv_dir;
+        let mut t1 = (self.min - origin) * inv_dir;
+        let mut t2 = (self.max - origin) * inv_dir;
+
+
+        for axis in 0..3 {
+            if dir[axis] == 0.0 {
+                if origin[axis] < self.min[axis] || origin[axis] > self.max[axis] {
+                    return None;
+                }
+                t1[axis] = -f32::INFINITY;
+                t2[axis] = f32::INFINITY;
+            }
+        }
+
+        println!("t1: {}, t2: {}", t1, t2);
         
         let t_min = t1.min(t2);
         let t_max = t1.max(t2);
+
+        println!("t_min: {}, t_max: {}", t_min, t_max);
         
         let t_enter = t_min.max_element();
         let t_exit = t_max.min_element();
+
+        println!("t_enter: {}, t_exit: {}", t_enter, t_exit);
         
         if t_enter <= t_exit && t_exit >= 0.0 {
             Some(NotNan::new(if t_enter >= 0.0 { t_enter } else { t_exit }).unwrap())
@@ -532,10 +551,14 @@ mod tests {
 
     #[test]
     fn test_ray_touching_aabb_boundary() {
+        
         let aabb = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0));
-        // Ray parallel to one axis and just touches at x = -1
+    
         let ray = Ray::new(Vec3::new(-2.0, 1.0, 0.0), Vec3::new(1.0, 0.0, 0.0));
         let intersection = aabb.intersect_ray(&ray);
+        println!("");
+        println!("Intersection {:?}", intersection);
+        println!("");
         assert!(
             intersection.is_some(),
             "Ray should intersect exactly at the boundary x = -1"
