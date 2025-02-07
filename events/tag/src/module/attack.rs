@@ -3,41 +3,41 @@ use std::borrow::Cow;
 use compact_str::format_compact;
 use flecs_ecs::{
     core::{
-        flecs, Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI,
-        QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, WorldGet,
+        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
+        SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs,
     },
-    macros::{system, Component},
+    macros::{Component, system},
     prelude::Module,
 };
 use glam::IVec3;
 use hyperion::{
+    Prev,
     net::{
-        agnostic, packets::{BossBarAction, BossBarS2c}, Compose,
-        ConnectionId,
+        Compose, ConnectionId, agnostic,
+        packets::{BossBarAction, BossBarS2c},
     },
     runtime::AsyncRuntime,
     simulation::{
-        blocks::Blocks, event::{self, ClientStatusCommand, ClientStatusEvent}, handlers::PacketSwitchQuery, metadata::{entity::Pose, living_entity::Health}, packet::HandlerRegistry, PacketState, Pitch,
-        Player,
-        Position,
-        Velocity,
-        Xp,
-        Yaw,
+        PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
+        blocks::Blocks,
+        event::{self, ClientStatusCommand, ClientStatusEvent},
+        handlers::PacketSwitchQuery,
+        metadata::{entity::Pose, living_entity::Health},
+        packet::HandlerRegistry,
     },
     storage::EventQueue,
     uuid::Uuid,
     valence_protocol::{
-        ident, math::{DVec3, Vec3}, nbt, packets::play::{
+        ItemKind, ItemStack, Particle, VarInt, ident,
+        math::{DVec3, Vec3},
+        nbt,
+        packets::play::{
             self,
             boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
             entity_attributes_s2c::AttributeProperty,
-        }, text::IntoText,
-        ItemKind,
-        ItemStack,
-        Particle,
-        VarInt,
+        },
+        text::IntoText,
     },
-    Prev,
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;

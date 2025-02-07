@@ -1,5 +1,4 @@
-use flecs_ecs::core::ComponentOrPairId;
-use flecs_ecs::macros::Component;
+use flecs_ecs::{core::ComponentOrPairId, macros::Component};
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]

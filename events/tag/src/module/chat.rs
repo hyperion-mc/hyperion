@@ -1,6 +1,8 @@
-use flecs_ecs::core::ComponentOrPairId;
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, flecs},
+    core::{
+        ComponentOrPairId, EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
+        World, flecs,
+    },
     macros::{Component, system},
     prelude::Module,
 };

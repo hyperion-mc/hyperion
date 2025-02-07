@@ -1,6 +1,8 @@
-use flecs_ecs::core::ComponentOrPairId;
 use flecs_ecs::{
-    core::{QueryBuilderImpl, SystemAPI, World, WorldProvider, flecs, term::TermBuilderImpl},
+    core::{
+        ComponentOrPairId, QueryBuilderImpl, SystemAPI, World, WorldProvider, flecs,
+        term::TermBuilderImpl,
+    },
     macros::Component,
     prelude::Module,
 };

@@ -6,9 +6,9 @@ use derive_more::{Deref, DerefMut};
 use flecs_ecs::{core::Entity, macros::Component};
 use tracing::debug;
 use valence_protocol::{
-    nbt::Compound, packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
-    ItemKind,
-    ItemStack,
+    ItemKind, ItemStack,
+    nbt::Compound,
+    packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
 };
 
 pub type PlayerInventory = Inventory;
