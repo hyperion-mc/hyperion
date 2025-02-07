@@ -164,7 +164,7 @@ impl MojangClient {
 
             if let Some(error) = json_object.get("error") {
                 bail!("API Error: {}", error.as_str().unwrap_or("Unknown error"));
-            };
+            }
             Ok(json_object)
         } else {
             bail!("Failed to retrieve data from API");

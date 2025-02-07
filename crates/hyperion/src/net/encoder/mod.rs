@@ -195,7 +195,7 @@ impl PacketEncoder {
     }
 
     /// Sets the compression threshold.
-    pub fn set_compression(&mut self, threshold: CompressionThreshold) {
+    pub const fn set_compression(&mut self, threshold: CompressionThreshold) {
         self.threshold = threshold;
     }
 }

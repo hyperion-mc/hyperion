@@ -253,7 +253,7 @@ pub fn handle_update_selected_slot(
 
     if query.inventory.set_cursor(u16::from(slot)).is_err() {
         return;
-    };
+    }
 
     let event = event::UpdateSelectedSlotEvent {
         client: query.id,

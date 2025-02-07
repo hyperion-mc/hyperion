@@ -1,4 +1,4 @@
-use std::{convert::TryInto, intrinsics::copy_nonoverlapping, io, io::Write, mem};
+use std::{convert::TryInto, io, io::Write, mem};
 
 pub struct Buf {
     pub buffer: Vec<u8>,
@@ -58,7 +58,7 @@ impl Buf {
     pub fn is_nonoverlapping<T>(src: *const T, dst: *const T, count: usize) -> bool {
         let src_usize = src as usize;
         let dst_usize = dst as usize;
-        let size = mem::size_of::<T>().checked_mul(count).unwrap();
+        let size = size_of::<T>().checked_mul(count).unwrap();
         let diff = if src_usize > dst_usize {
             src_usize - dst_usize
         } else {
@@ -88,7 +88,7 @@ impl Buf {
             let dst_ptr = dst.as_mut_ptr().offset(self.write_index as isize);
             let src_ptr = other.offset(start as isize);
             if Self::is_nonoverlapping(src_ptr, dst_ptr, len - start as usize) {
-                copy_nonoverlapping(src_ptr, dst_ptr, len - start as usize);
+                std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, len - start as usize);
             } else {
                 panic!("copy is overlapping")
             }
@@ -211,7 +211,7 @@ impl Buf {
 
     pub fn write_block_position(&mut self, x: i32, y: i32, z: i32) {
         self.write_u64(
-            (x as u64 & 0x03FF_FFFF) << 38 | (z as u64 & 0x03FF_FFFF) << 12 | y as u64 & 0xFFF,
+            ((x as u64 & 0x03FF_FFFF) << 38) | ((z as u64 & 0x03FF_FFFF) << 12) | y as u64 & 0xFFF,
         );
     }
 
@@ -334,7 +334,7 @@ impl Buf {
         (x, y, z)
     }
 
-    pub fn mark_reader(&mut self) {
+    pub const fn mark_reader(&mut self) {
         self.read_mark = self.read_index;
     }
 
@@ -343,7 +343,7 @@ impl Buf {
         self.advance_reader(0);
     }
 
-    pub fn mark_writer(&mut self) {
+    pub const fn mark_writer(&mut self) {
         self.write_mark = self.write_index;
     }
 

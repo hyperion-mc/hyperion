@@ -6,9 +6,9 @@ use derive_more::{Deref, DerefMut};
 use flecs_ecs::{core::Entity, macros::Component};
 use tracing::debug;
 use valence_protocol::{
-    ItemKind, ItemStack,
-    nbt::Compound,
-    packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
+    nbt::Compound, packets::play::{click_slot_c2s::ClickMode, open_screen_s2c::WindowType},
+    ItemKind,
+    ItemStack,
 };
 
 pub type PlayerInventory = Inventory;
@@ -65,7 +65,7 @@ impl InventoryState {
         self.window_id = non_zero_window_id();
     }
 
-    pub fn reset_window_id(&mut self) {
+    pub const fn reset_window_id(&mut self) {
         self.window_id = 0;
     }
 
@@ -84,7 +84,7 @@ impl InventoryState {
         self.last_button
     }
 
-    pub fn set_last_button(&mut self, button: i8, tick: i64) {
+    pub const fn set_last_button(&mut self, button: i8, tick: i64) {
         self.last_button.0 = button;
         self.last_button.1 = tick;
     }
@@ -94,7 +94,7 @@ impl InventoryState {
         self.last_mode
     }
 
-    pub fn set_last_mode(&mut self, mode: ClickMode, tick: i64) {
+    pub const fn set_last_mode(&mut self, mode: ClickMode, tick: i64) {
         self.last_mode.0 = mode;
         self.last_mode.1 = tick;
     }
@@ -199,11 +199,12 @@ impl Inventory {
         self.readonly
     }
 
-    pub fn set_readonly(&mut self, readonly: bool) {
+    pub const fn set_readonly(&mut self, readonly: bool) {
         self.readonly = readonly;
     }
 
     #[must_use]
+    #[allow(clippy::missing_const_for_fn, reason = "this is a false positive")]
     pub fn title(&self) -> &str {
         &self.title
     }

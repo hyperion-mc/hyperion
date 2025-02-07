@@ -82,7 +82,7 @@ impl Indirect {
             None => {
                 if self.palette_len == 16 {
                     return Err(Full);
-                };
+                }
                 let new_index = self.palette_len;
                 self.palette[new_index as usize] = value;
                 self.palette_len += 1;

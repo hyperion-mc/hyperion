@@ -285,9 +285,9 @@ impl TryFrom<&str> for RgbColor {
 
         if let &[b'#', r0, r1, g0, g1, b0, b1] = value.as_bytes() {
             Ok(Self {
-                r: to_num(r0)? << 4 | to_num(r1)?,
-                g: to_num(g0)? << 4 | to_num(g1)?,
-                b: to_num(b0)? << 4 | to_num(b1)?,
+                r: (to_num(r0)? << 4) | to_num(r1)?,
+                g: (to_num(g0)? << 4) | to_num(g1)?,
+                b: (to_num(b0)? << 4) | to_num(b1)?,
             })
         } else {
             Err(ColorError)

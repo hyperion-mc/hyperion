@@ -127,7 +127,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     } else {
         error!("Failed to get the current file handle limits");
         return Err(std::io::Error::last_os_error());
-    };
+    }
 
     if limits.rlim_max < recommended_min {
         warn!(

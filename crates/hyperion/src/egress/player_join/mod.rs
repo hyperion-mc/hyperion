@@ -587,7 +587,7 @@ impl Module for PlayerJoinModule {
                                 config,
                             ) {
                                 entity.set(PendingRemove::new(e.to_string()));
-                            };
+                            }
                         },
                     );
 

@@ -101,7 +101,7 @@ pub fn get_command_packet(
                     && !(command.has_permission)(world, player)
                 {
                     return;
-                };
+                }
 
                 let ptr = commands.len();
 

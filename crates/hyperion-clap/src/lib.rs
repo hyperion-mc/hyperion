@@ -108,7 +108,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
 
                     tracing::warn!("could not parse command {e}");
                 }
-            };
+            }
         };
 
         let on_tab_complete = Box::new(

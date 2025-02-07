@@ -423,7 +423,7 @@ impl Module for IngressModule {
             if let Err(e) = compose.broadcast(&pkt, system).send() {
                 error!("failed to send player remove packet: {e}");
                 return;
-            };
+            }
 
             let pkt = play::PlayerRemoveS2c {
                 uuids: Cow::Borrowed(uuids),
@@ -431,7 +431,7 @@ impl Module for IngressModule {
 
             if let Err(e) = compose.broadcast(&pkt, system).send() {
                 error!("failed to send player remove packet: {e}");
-            };
+            }
 
             if !pending_remove.reason.is_empty() {
                 let pkt = play::DisconnectS2c {

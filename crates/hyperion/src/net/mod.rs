@@ -187,7 +187,7 @@ impl Compose {
     }
 
     #[expect(missing_docs)]
-    pub fn global_mut(&mut self) -> &mut Global {
+    pub const fn global_mut(&mut self) -> &mut Global {
         &mut self.global
     }
 
@@ -217,7 +217,7 @@ impl Compose {
     }
 
     #[expect(missing_docs)]
-    pub fn io_buf_mut(&mut self) -> &mut IoBuf {
+    pub const fn io_buf_mut(&mut self) -> &mut IoBuf {
         &mut self.io_buf
     }
 
@@ -289,6 +289,7 @@ impl Compose {
     }
 
     #[must_use]
+    #[allow(clippy::missing_const_for_fn, reason = "this is a false positive")]
     pub(crate) fn encoder(&self) -> PacketEncoder {
         let threshold = self.global.shared.compression_threshold;
         PacketEncoder::new(threshold)
@@ -333,7 +334,7 @@ impl IoBuf {
     }
 
     pub fn order_id(&self, system_order: SystemOrder, world: &World) -> u32 {
-        u32::from(system_order.value()) << 16 | u32::from(self.fetch_add_idx(world))
+        (u32::from(system_order.value()) << 16) | u32::from(self.fetch_add_idx(world))
     }
 }
 

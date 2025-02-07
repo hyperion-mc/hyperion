@@ -4,10 +4,7 @@ use flecs_ecs::macros::Component;
 use crate::storage::{Event, ThreadLocalVec};
 
 #[derive(Component, Deref, DerefMut)]
-pub struct EventQueue<T>
-where
-    T: Event,
-{
+pub struct EventQueue<T: Event> {
     // todo: maybe change to SOA vec
     inner: ThreadLocalVec<T>,
 }

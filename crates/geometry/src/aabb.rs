@@ -183,6 +183,7 @@ impl Aabb {
     }
 
     #[inline]
+    #[allow(clippy::missing_const_for_fn, reason = "this is a false positive")]
     #[must_use]
     pub fn move_by(&self, offset: Vec3) -> Self {
         Self {

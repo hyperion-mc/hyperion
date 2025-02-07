@@ -10,7 +10,7 @@ use crate::simulation::blocks::loader::parse::section::Section;
 
 pub const START_Y: i16 = -64;
 
-#[repr(packed)]
+#[repr(Rust, packed)]
 #[derive(Copy, Clone)]
 pub struct OnChange {
     xz: u8, // 1
@@ -31,7 +31,7 @@ impl OnChange {
     #[must_use]
     pub const fn new(x: u8, y: u16, z: u8) -> Self {
         Self {
-            xz: x << 4 | (z & 0b1111),
+            xz: (x << 4) | (z & 0b1111),
             y,
         }
     }

@@ -1,3 +1,4 @@
+use flecs_ecs::core::ComponentOrPairId;
 use derive_more::Deref;
 use flecs_ecs::macros::Component;
 

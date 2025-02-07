@@ -198,7 +198,7 @@ impl BitStorage {
         let cell_index = self.cell_index(index as u64);
         let cell = &self.data[cell_index];
         let bit_index = (index - cell_index * self.values_per_long) * self.bits;
-        cell >> bit_index & self.mask
+        (cell >> bit_index) & self.mask
     }
 
     pub fn get_and_set(&mut self, index: usize, value: u64) -> u64 {
@@ -212,8 +212,8 @@ impl BitStorage {
         let cell_index = self.cell_index(index as u64);
         let cell = &mut self.data[cell_index];
         let bit_index = (index - cell_index * self.values_per_long) * self.bits;
-        let old_value = *cell >> (bit_index as u64) & self.mask;
-        *cell = *cell & !(self.mask << bit_index) | (value & self.mask) << bit_index;
+        let old_value = (*cell >> (bit_index as u64)) & self.mask;
+        *cell = *cell & !(self.mask << bit_index) | ((value & self.mask) << bit_index);
         old_value
     }
 
@@ -228,7 +228,7 @@ impl BitStorage {
         let cell_index = self.cell_index(index as u64);
         let cell = &mut self.data[cell_index];
         let bit_index = (index - cell_index * self.values_per_long) * self.bits;
-        *cell = *cell & !(self.mask << bit_index) | (value & self.mask) << bit_index;
+        *cell = *cell & !(self.mask << bit_index) | ((value & self.mask) << bit_index);
     }
 
     /// The number of entries.
