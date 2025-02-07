@@ -41,7 +41,7 @@ impl Section {
     pub fn idx_to_xyz(idx: usize) -> IVec3 {
         let idx = i32::try_from(idx).unwrap();
         let x = idx & 0xF;
-        let z = idx >> 4 & 0xF;
+        let z = (idx >> 4) & 0xF;
         let y = idx >> 8;
         IVec3::new(x, y, z)
     }
@@ -57,7 +57,7 @@ impl Section {
         self.block_states.iter().enumerate().map(|(idx, data)| {
             let idx = unsafe { u16::try_from(idx).unwrap_unchecked() };
             let x = idx & 0xF;
-            let z = idx >> 4 & 0xF;
+            let z = (idx >> 4) & 0xF;
             let y = (idx >> 8) & 0xF;
 
             (glam::U16Vec3::new(x, y, z), unsafe {

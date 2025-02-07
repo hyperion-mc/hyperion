@@ -270,7 +270,7 @@ pub fn parse_chunk(
             }
             Some(_) => return Err(ParseChunkError::MissingBlockLight),
             _ => {}
-        };
+        }
 
         match section.remove("SkyLight") {
             Some(Value::ByteArray(sky_light)) => {
@@ -286,7 +286,7 @@ pub fn parse_chunk(
             }
             Some(_) => return Err(ParseChunkError::MissingSkyLight),
             _ => {}
-        };
+        }
 
         let Some(Value::Compound(mut block_states)) = section.remove("block_states") else {
             warn!("missing block states was {section:?}");
@@ -351,7 +351,7 @@ pub fn parse_chunk(
 
             if long_count != data.len() {
                 return Err(ParseChunkError::BadBlockLongCount);
-            };
+            }
 
             let mut i: u32 = 0;
             for long in data {
@@ -421,7 +421,7 @@ pub fn parse_chunk(
 
             if long_count != data.len() {
                 return Err(ParseChunkError::BadBiomeLongCount);
-            };
+            }
 
             let mut i: u32 = 0;
             for &long in data {

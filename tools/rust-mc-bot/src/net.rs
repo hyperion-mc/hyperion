@@ -143,7 +143,7 @@ pub fn process_packet(
                             bot.kicked = true;
                             break;
                         }
-                    };
+                    }
                 }
 
                 packet_processors::process_decode(decompression_buf, bot, compression);

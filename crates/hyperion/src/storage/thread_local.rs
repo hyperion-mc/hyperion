@@ -229,7 +229,7 @@ impl<T, const N: usize> Drop for Drain<'_, T, N> {
 }
 
 impl<'a, T, const N: usize> Drain<'a, T, N> {
-    pub fn new(inner: &'a mut heapless::Vec<T, N>) -> Self {
+    pub const fn new(inner: &'a mut heapless::Vec<T, N>) -> Self {
         Self { inner, idx: 0 }
     }
 }

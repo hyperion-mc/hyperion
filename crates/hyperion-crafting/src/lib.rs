@@ -253,7 +253,7 @@ pub struct ShapelessRecipe<'a> {
 }
 
 impl CraftingRegistry {
-    fn mark_changed(&mut self) {
+    const fn mark_changed(&mut self) {
         self.epoch = self.epoch.wrapping_add(1);
     }
 

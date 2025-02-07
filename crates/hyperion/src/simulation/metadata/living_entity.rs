@@ -85,7 +85,7 @@ impl Health {
         self.update(self.value - damage);
     }
 
-    fn update(&mut self, value: f32) {
+    const fn update(&mut self, value: f32) {
         self.value = value.clamp(0.0, 20.0);
     }
 

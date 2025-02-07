@@ -87,7 +87,7 @@ impl Config {
                 );
                 return Ok(Self::default());
             }
-        };
+        }
 
         // write default config to file
         let default_config = Self::default();

@@ -199,7 +199,7 @@ impl Blocks {
         self.should_update.clear();
     }
 
-    pub fn cache_mut(&mut self) -> &mut IndexMap<I16Vec2, Column, FxBuildHasher> {
+    pub const fn cache_mut(&mut self) -> &mut IndexMap<I16Vec2, Column, FxBuildHasher> {
         &mut self.chunk_cache
     }
 
@@ -444,7 +444,7 @@ impl Blocks {
     pub fn get_cached_or_load(&self, position: I16Vec2) -> GetChunk<'_> {
         if let Some(result) = self.chunk_cache.get(&position) {
             return GetChunk::Loaded(result);
-        };
+        }
 
         self.loader_handle
             .send(position, self.tx_loaded_chunks.clone());

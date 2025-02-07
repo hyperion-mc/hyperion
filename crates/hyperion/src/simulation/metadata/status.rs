@@ -16,15 +16,15 @@ impl EntityStatus {
         self.0 & status.0 != 0
     }
 
-    pub fn set_status(&mut self, status: Self) {
+    pub const fn set_status(&mut self, status: Self) {
         self.0 |= status.0;
     }
 
-    pub fn clear_status(&mut self, status: Self) {
+    pub const fn clear_status(&mut self, status: Self) {
         self.0 &= !status.0;
     }
 
-    pub fn toggle_status(&mut self, status: Self) {
+    pub const fn toggle_status(&mut self, status: Self) {
         self.0 ^= status.0;
     }
 }

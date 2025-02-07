@@ -1,5 +1,4 @@
 //! Buffer implementations. todo: We might be able to scrap this for [`bytes::Buf`] in the future.
-use std::mem::MaybeUninit;
 
 /// # Safety
 /// - `get_contiguous` must return a slice of exactly `len` bytes long.
@@ -25,7 +24,7 @@ unsafe impl Buf for bytes::BytesMut {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { MaybeUninit::slice_assume_init_mut(cap) };
+        let cap = unsafe { cap.assume_init_mut() };
         cap
     }
 
@@ -43,7 +42,7 @@ unsafe impl Buf for Vec<u8> {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { MaybeUninit::slice_assume_init_mut(cap) };
+        let cap = unsafe { cap.assume_init_mut() };
         cap
     }
 

@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  RUST_NIGHTLY_TOOLCHAIN: nightly-2024-12-18
+  RUST_NIGHTLY_TOOLCHAIN: nightly-2025-02-07
   RUSTFLAGS: -Clinker=/usr/bin/clang -Clink-arg=--ld-path=/usr/local/bin/mold -Ctarget-cpu=native -Zshare-generics=y -Zthreads=0
 
 jobs:

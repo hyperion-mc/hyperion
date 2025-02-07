@@ -41,6 +41,7 @@ impl RegionManager {
         Ok(Self { root, sender })
     }
 
+    #[allow(clippy::missing_const_for_fn, reason = "this is a false positive")]
     pub fn root(&self) -> &Path {
         &self.root
     }

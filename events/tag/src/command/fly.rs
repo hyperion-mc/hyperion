@@ -1,6 +1,8 @@
 use clap::Parser;
 use flecs_ecs::{
-    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider, flecs},
+    core::{
+        ComponentOrPairId, Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider, flecs,
+    },
     macros::Component,
 };
 use hyperion::{

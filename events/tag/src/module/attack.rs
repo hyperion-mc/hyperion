@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use compact_str::format_compact;
 use flecs_ecs::{
     core::{
-        Builder, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl, SystemAPI, TableIter,
-        TermBuilderImpl, World, WorldGet, flecs,
+        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
+        SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs,
     },
     macros::{Component, system},
     prelude::Module,
@@ -220,7 +220,7 @@ impl Module for AttackModule {
                                         source_cause_id: VarInt(origin.minecraft_id() + 1), // this is an OptVarint
                                         source_direct_id: VarInt(origin.minecraft_id() + 1), // if hit by a projectile, it should be the projectile's entity id
                                         source_type_id: VarInt(31), // 31 = player_attack
-                                        source_pos: Option::None
+                                        source_pos: None
                                     };
                                     let sound = agnostic::sound(
                                         if critical_hit { ident!("minecraft:entity.player.attack.crit") } else { ident!("minecraft:entity.player.attack.knockback") },
@@ -234,7 +234,7 @@ impl Module for AttackModule {
                                     compose.unicast(&pkt_health, *target_connection, system).unwrap();
 
                                     if critical_hit {
-                                        let particle_pkt = play::ParticleS2c {
+                                    let particle_pkt = play::ParticleS2c {
                                             particle: Cow::Owned(Particle::Crit),
                                             long_distance: true,
                                             position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
@@ -598,14 +598,11 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
             for y in base_pos.as_i16vec3().y - 15..base_pos.as_i16vec3().y + 15 {
                 for z in base_pos.as_i16vec3().z - 15..base_pos.as_i16vec3().z + 15 {
                     let pos = IVec3::new(i32::from(x), i32::from(y), i32::from(z));
-                    match blocks.get_block(pos) {
-                        Some(state) => {
-                            if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
-                                position = pos.as_dvec3();
-                                return;
-                            }
+                    if let Some(state) = blocks.get_block(pos) {
+                        if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
+                            position = pos.as_dvec3();
+                            return;
                         }
-                        None => continue,
                     }
                 }
             }

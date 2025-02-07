@@ -1,8 +1,4 @@
 #![expect(
-    clippy::redundant_pub_crate,
-    reason = "tokio::select has issues with this"
-)]
-#![expect(
     clippy::cast_possible_truncation,
     reason = "todo: we should double check no truncation"
 )]
