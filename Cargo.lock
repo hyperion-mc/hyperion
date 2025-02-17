@@ -724,7 +724,7 @@ dependencies = [
  "bitflags 2.8.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1099,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.28"
+version = "4.5.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e77c3243bd94243c03672cb5154667347c457ca271254724f9f393aee1c05ff"
+checksum = "92b7b18d71fad5313a1e320fa9897994228ce274b60faa4d694fe0ea89cd9e6d"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1109,9 +1109,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.27"
+version = "4.5.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b26884eb4b57140e4d2d93652abfa49498b938b3c9179f9fc487b0acc3edad7"
+checksum = "a35db2071778a7344791a4fb4f95308b5673d219dee3ae348b86642574ecc90c"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1185,7 +1185,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -1563,7 +1563,7 @@ dependencies = [
 [[package]]
 name = "divan"
 version = "0.1.17"
-source = "git+https://github.com/nvzqz/divan#98d6e68c5f90ce47cfac1059bdfbf1fb228a76dd"
+source = "git+https://github.com/nvzqz/divan#26e2888da69adb99ab4807040ba2ec105416e615"
 dependencies = [
  "cfg-if",
  "clap",
@@ -1576,7 +1576,7 @@ dependencies = [
 [[package]]
 name = "divan-macros"
 version = "0.1.17"
-source = "git+https://github.com/nvzqz/divan#98d6e68c5f90ce47cfac1059bdfbf1fb228a76dd"
+source = "git+https://github.com/nvzqz/divan#26e2888da69adb99ab4807040ba2ec105416e615"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1914,7 +1914,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2025,7 +2025,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs"
 version = "0.1.3"
-source = "git+https://github.com/Indra-db/Flecs-Rust#fee1b736ae5e8d7267628d31d4ef9a182ff1de96"
+source = "git+https://github.com/Indra-db/Flecs-Rust#99d8b59e581785ae4033416515c9fbaacef021e0"
 dependencies = [
  "bitflags 2.8.0",
  "compact_str",
@@ -2037,7 +2037,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs_derive"
 version = "0.1.0"
-source = "git+https://github.com/Indra-db/Flecs-Rust#fee1b736ae5e8d7267628d31d4ef9a182ff1de96"
+source = "git+https://github.com/Indra-db/Flecs-Rust#99d8b59e581785ae4033416515c9fbaacef021e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2047,7 +2047,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs_sys"
 version = "0.1.2"
-source = "git+https://github.com/Indra-db/Flecs-Rust#fee1b736ae5e8d7267628d31d4ef9a182ff1de96"
+source = "git+https://github.com/Indra-db/Flecs-Rust#99d8b59e581785ae4033416515c9fbaacef021e0"
 dependencies = [
  "bindgen",
  "cc",
@@ -3317,7 +3317,7 @@ checksum = "e19b23d53f35ce9f56aebc7d1bb4e6ac1e9c0db7ac85c8d1760c04379edced37"
 dependencies = [
  "hermit-abi 0.4.0",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4316,9 +4316,9 @@ dependencies = [
 
 [[package]]
 name = "papaya"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc7c76487f7eaa00a0fc1d7f88dc6b295aec478d11b0fc79f857b62c2874124c"
+checksum = "aeb8b9616002a83f9779ea70a2a44364fe804f8b532b96989d0790a34ad76479"
 dependencies = [
  "equivalent",
  "seize",
@@ -4766,7 +4766,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5117,7 +5117,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5503,7 +5503,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03c3c6b7927ffe7ecaa769ee0e3994da3b8cafc8f444578982c83ecb161af917"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "proc-macro2",
  "quote",
  "syn 2.0.98",
@@ -5765,7 +5765,7 @@ dependencies = [
  "getrandom 0.3.1",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6963,7 +6963,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
