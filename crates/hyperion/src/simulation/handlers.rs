@@ -24,7 +24,7 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, PendingTeleportation, Position,
+    ConfirmBlockSequences, EntitySize, MovementTracking, PendingTeleportation, Position,
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
@@ -67,7 +67,7 @@ fn full(
 fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed: Vec3) {
     let pose = &mut *query.position;
 
-    if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
+    if let Err(e) = try_change_position(query.view, proposed, pose, *query.size, query.blocks) {
         // Send error message to player
         let msg = format!("§c{e}");
         let pkt = play::GameMessageS2c {
@@ -105,6 +105,7 @@ const MAX_BLOCKS_PER_TICK: f32 = 30.0;
 /// Only denies movement if starting outside a block and moving into a block.
 /// This prevents players from glitching into blocks while allowing them to move out.
 fn try_change_position(
+    entity: EntityView<'_>,
     proposed: Vec3,
     position: &mut Position,
     size: EntitySize,
@@ -118,6 +119,23 @@ fn try_change_position(
         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
     }
 
+    entity.get::<&mut MovementTracking>(|tracking| {
+        tracking.received_movement_packets += 1;
+
+        // Maximum number of movement packets allowed during 1 tick is 5
+        if tracking.received_movement_packets > 5 {
+            tracking.received_movement_packets = 1;
+        }
+
+        let position_delta = proposed - tracking.last_tick_position;
+        // Replace 100 by 300 if fall flying (aka elytra)
+        if position_delta.length_squared() - tracking.last_tick_velocity.length_squared()
+            > 100f32 * f32::from(tracking.received_movement_packets)
+        {
+            return Err(anyhow::anyhow!("Accelerated too quickly"));
+        }
+        Ok(())
+    })?;
     **position = proposed;
     Ok(())
 }

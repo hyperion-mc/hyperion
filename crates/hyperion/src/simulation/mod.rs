@@ -604,6 +604,15 @@ impl FlyingSpeed {
     }
 }
 
+#[derive(Component, Default, Debug, Copy, Clone)]
+pub struct MovementTracking {
+    pub received_movement_packets: u8,
+    pub last_tick_position: Vec3,
+    pub last_tick_velocity: Vec3,
+    pub fall_start_y: f32,
+    pub is_flying: bool,
+}
+
 #[derive(Component)]
 pub struct SimModule;
 
@@ -639,6 +648,7 @@ impl Module for SimModule {
         world.component::<Owner>();
         world.component::<PendingTeleportation>();
         world.component::<FlyingSpeed>();
+        world.component::<MovementTracking>();
 
         world.component::<EntityKind>().meta();
 

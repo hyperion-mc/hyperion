@@ -9,7 +9,7 @@ use flecs_ecs::prelude::*;
 use hyperion::{GameServerEndpoint, HyperionCore, simulation::Player};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
-use module::{block::BlockModule, vanish::VanishModule};
+use module::{block::BlockModule, damage::DamageModule, vanish::VanishModule};
 
 mod module;
 
@@ -83,6 +83,7 @@ impl Module for TagModule {
         world.import::<SkinModule>();
         world.import::<VanishModule>();
         world.import::<hyperion_genmap::GenMapModule>();
+        world.import::<DamageModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
             command::register(registry, world);

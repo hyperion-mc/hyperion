@@ -64,4 +64,5 @@ define_events! {
     event::DropItemStackEvent,
     event::UpdateSelectedSlotEvent,
     event::StartDestroyBlock,
+    event::HitGroundEvent,
 }
