@@ -24,12 +24,7 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
-    animation::{self, ActiveAnimation},
-    block_bounds,
-    blocks::Blocks,
-    event::ClientStatusEvent,
-    inventory::{handle_click_slot, handle_update_selected_slot},
+    animation::{self, ActiveAnimation}, block_bounds, blocks::Blocks, event::ClientStatusEvent, inventory::{handle_click_slot, handle_update_selected_slot}, ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
@@ -67,7 +62,7 @@ fn full(
 fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed: Vec3) {
     let pose = &mut *query.position;
 
-    if let Err(e) = try_change_position(query.view, proposed, pose, *query.size, query.blocks) {
+    if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
         // Send error message to player
         let msg = format!("§c{e}");
         let pkt = play::GameMessageS2c {
@@ -84,12 +79,10 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             .entity_view(query.world)
             .set(PendingTeleportation::new(pose.position));
     }
+    query.view.get::<&mut MovementTracking>(|tracking| {
+        tracking.received_movement_packets += 1;
+    });
 }
-
-/// Returns true if the position was changed, false if it was not.
-/// The vanilla server has a max speed of 100 blocks per tick.
-/// However, we are much more conservative.
-const MAX_BLOCKS_PER_TICK: f32 = 30.0;
 
 /// Returns true if the position was changed, false if it was not.
 ///
@@ -105,37 +98,17 @@ const MAX_BLOCKS_PER_TICK: f32 = 30.0;
 /// Only denies movement if starting outside a block and moving into a block.
 /// This prevents players from glitching into blocks while allowing them to move out.
 fn try_change_position(
-    entity: EntityView<'_>,
     proposed: Vec3,
     position: &mut Position,
     size: EntitySize,
     blocks: &Blocks,
 ) -> anyhow::Result<()> {
-    is_within_speed_limits(**position, proposed)?;
-
     // Only check collision if we're starting outside a block
     if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks)
     {
         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
     }
 
-    entity.get::<&mut MovementTracking>(|tracking| {
-        tracking.received_movement_packets += 1;
-
-        // Maximum number of movement packets allowed during 1 tick is 5
-        if tracking.received_movement_packets > 5 {
-            tracking.received_movement_packets = 1;
-        }
-
-        let position_delta = proposed - tracking.last_tick_position;
-        // Replace 100 by 300 if fall flying (aka elytra)
-        if position_delta.length_squared() - tracking.last_tick_velocity.length_squared()
-            > 100f32 * f32::from(tracking.received_movement_packets)
-        {
-            return Err(anyhow::anyhow!("Accelerated too quickly"));
-        }
-        Ok(())
-    })?;
     **position = proposed;
     Ok(())
 }
@@ -153,15 +126,6 @@ pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
         .get_block(IVec3::new(block_x, block_y, block_z))
         .unwrap()
         .is_air()
-}
-fn is_within_speed_limits(current: Vec3, proposed: Vec3) -> anyhow::Result<()> {
-    let delta = proposed - current;
-    if delta.length_squared() > MAX_BLOCKS_PER_TICK.powi(2) {
-        return Err(anyhow::anyhow!(
-            "Moving too fast! Maximum speed is {MAX_BLOCKS_PER_TICK} blocks per tick"
-        ));
-    }
-    Ok(())
 }
 
 fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {

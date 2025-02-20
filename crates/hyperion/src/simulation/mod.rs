@@ -833,8 +833,8 @@ impl Module for SimModule {
 
             let pkt = PlayerAbilitiesS2c {
                 flags: PlayerAbilitiesFlags::default()
-                    .with_flying(flight.allow)
-                    .with_allow_flying(flight.is_flying),
+                    .with_allow_flying(flight.allow)
+                    .with_flying(flight.is_flying),
                 flying_speed: flying_speed.speed,
                 fov_modifier: 0.0,
             };
