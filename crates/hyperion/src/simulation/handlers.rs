@@ -24,7 +24,7 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, MovementTracking, PendingTeleportation, Position,
+    ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
@@ -602,6 +602,20 @@ pub fn confirm_teleportation(
     Ok(())
 }
 
+pub fn player_abilities(
+    pkt: &play::UpdatePlayerAbilitiesC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<&mut Flight>(|flight| match pkt {
+        play::UpdatePlayerAbilitiesC2s::StopFlying => flight.is_flying = false,
+        play::UpdatePlayerAbilitiesC2s::StartFlying => flight.is_flying = flight.allow,
+    });
+    Ok(())
+}
+
 pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(chat_message));
     registry.add_handler(Box::new(click_slot));
@@ -620,6 +634,7 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(request_command_completions));
     registry.add_handler(Box::new(update_selected_slot));
     registry.add_handler(Box::new(confirm_teleportation));
+    registry.add_handler(Box::new(player_abilities));
 }
 
 /// # Safety

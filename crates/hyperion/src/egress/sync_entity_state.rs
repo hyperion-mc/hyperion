@@ -13,7 +13,7 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
+        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -143,8 +143,16 @@ impl Module for EntityStateSyncModule {
                         entity_id,
                         tracked_values: RawBytes(&view),
                     };
-
-                    // todo(perf): do so locally
+                    if entity.has::<Position>() {
+                        entity.get::<&Position>(|position| {
+                            compose
+                                .broadcast_local(&pkt, position.to_chunk(), system)
+                                .send()
+                                .unwrap();
+                        });
+                        return;
+                    }
+                    // Should never be reached but who knows
                     compose.broadcast(&pkt, system).send().unwrap();
                 }
             });
@@ -197,6 +205,7 @@ impl Module for EntityStateSyncModule {
             &Pitch,
             ?&mut PendingTeleportation,
             &mut MovementTracking,
+            &Flight,
         )
         .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
@@ -214,6 +223,7 @@ impl Module for EntityStateSyncModule {
                 pitch,
                 pending_teleport,
                 tracking,
+                flight,
             )| {
                 let world = it.system().world();
                 let system = it.system();
@@ -242,15 +252,19 @@ impl Module for EntityStateSyncModule {
 
                     world.get::<&mut Blocks>(|blocks| {
                         let grounded = is_grounded(position, blocks);
-                        if grounded && tracking.fall_start_y - position.y > 3. {
+                        if grounded
+                            && !tracking.last_tick_flying
+                            && tracking.fall_start_y - position.y > 3.
+                        {
                             let event = HitGroundEvent {
                                 client: *entity,
                                 fall_distance: tracking.fall_start_y - position.y,
                             };
                             events.push(event, &world);
+                            tracking.fall_start_y = position.y;
                         }
 
-                        if position_delta.y >= 0. {
+                        if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
                             tracking.fall_start_y = position.y;
                         }
 
@@ -323,6 +337,7 @@ impl Module for EntityStateSyncModule {
 
                 tracking.received_movement_packets = 0;
                 tracking.last_tick_position = **position;
+                tracking.last_tick_flying = flight.is_flying;
             },
         );
 

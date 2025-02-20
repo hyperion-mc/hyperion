@@ -79,10 +79,10 @@ pub fn player_join_world(
 
     entity.set(MovementTracking {
         received_movement_packets: 0,
+        last_tick_flying: false,
         last_tick_position: **position,
         last_tick_velocity: Vec3::ZERO,
         fall_start_y: position.y,
-        is_flying: false,
     });
 
     let registry_codec = registry_codec_raw();

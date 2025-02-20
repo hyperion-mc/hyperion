@@ -592,7 +592,7 @@ impl PendingTeleportation {
     }
 }
 
-#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct FlyingSpeed {
     pub speed: f32,
 }
@@ -604,12 +604,25 @@ impl FlyingSpeed {
     }
 }
 
+impl Default for FlyingSpeed {
+    fn default() -> Self {
+        Self { speed: 0.05 }
+    }
+}
+
 #[derive(Component, Default, Debug, Copy, Clone)]
 pub struct MovementTracking {
-    pub received_movement_packets: u8,
+    pub fall_start_y: f32,
+    pub last_tick_flying: bool,
     pub last_tick_position: Vec3,
     pub last_tick_velocity: Vec3,
-    pub fall_start_y: f32,
+    pub received_movement_packets: u8,
+}
+
+#[derive(Component, Default, Debug, Copy, Clone)]
+#[meta]
+pub struct Flight {
+    pub allow: bool,
     pub is_flying: bool,
 }
 
@@ -649,6 +662,7 @@ impl Module for SimModule {
         world.component::<PendingTeleportation>();
         world.component::<FlyingSpeed>();
         world.component::<MovementTracking>();
+        world.component::<Flight>().meta();
 
         world.component::<EntityKind>().meta();
 
@@ -780,6 +794,14 @@ impl Module for SimModule {
                 });
             });
 
+        // whenever a Player component is added, we add the Flight component to them.
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, Flight)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, FlyingSpeed)>();
+
         observer!(
             world,
             flecs::OnSet, &PendingTeleportation,
@@ -804,17 +826,36 @@ impl Module for SimModule {
         observer!(
             world,
             flecs::OnSet, &FlyingSpeed,
-            &Compose($), &ConnectionId
+            &Compose($), &ConnectionId, &Flight
         )
-        .each_iter(|it, _, (flying_speed, compose, connection)| {
+        .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
             let system = it.system();
 
             let pkt = PlayerAbilitiesS2c {
                 flags: PlayerAbilitiesFlags::default()
-                    .with_flying(true)
-                    .with_allow_flying(true),
+                    .with_flying(flight.allow)
+                    .with_allow_flying(flight.is_flying),
                 flying_speed: flying_speed.speed,
                 fov_modifier: 0.0,
+            };
+
+            compose.unicast(&pkt, *connection, system).unwrap();
+        });
+
+        observer!(
+            world,
+            flecs::OnSet, &Flight,
+            &Compose($), &ConnectionId, &FlyingSpeed
+        )
+        .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
+            let system = it.system();
+
+            let pkt = play::PlayerAbilitiesS2c {
+                flags: PlayerAbilitiesFlags::default()
+                    .with_allow_flying(flight.allow)
+                    .with_flying(flight.is_flying),
+                flying_speed: flying_speed.speed,
+                fov_modifier: 0.,
             };
 
             compose.unicast(&pkt, *connection, system).unwrap();
