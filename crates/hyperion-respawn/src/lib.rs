@@ -6,14 +6,18 @@ use hyperion::{
         prelude::Module,
     },
     net::{ConnectionId, DataBundle},
-    protocol::{game_mode::OptGameMode, packets::play, BlockPos, ByteAngle, GlobalPos, VarInt},
-    server::{ident, GameMode},
+    protocol::{
+        game_mode::OptGameMode,
+        packets::play::{self, PlayerAbilitiesS2c},
+        BlockPos, ByteAngle, GlobalPos, VarInt,
+    },
+    server::{abilities::PlayerAbilitiesFlags, ident, GameMode},
     simulation::{
         event::{ClientStatusCommand, ClientStatusEvent},
         handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
         packet::HandlerRegistry,
-        Pitch, Position, Uuid, Xp, Yaw,
+        Flight, FlyingSpeed, Pitch, Position, Uuid, Xp, Yaw,
     },
 };
 use hyperion_utils::{EntityExt, LifetimeHandle};
@@ -43,8 +47,21 @@ impl Module for RespawnModule {
                         &Yaw,
                         &Pitch,
                         &Xp,
+                        &Flight,
+                        &FlyingSpeed,
                     )>(
-                        |(connection, health, pose, uuid, position, yaw, pitch, xp)| {
+                        |(
+                            connection,
+                            health,
+                            pose,
+                            uuid,
+                            position,
+                            yaw,
+                            pitch,
+                            xp,
+                            flight,
+                            flying_speed,
+                        )| {
                             health.heal(20.);
 
                             *pose = Pose::Standing;
@@ -78,6 +95,14 @@ impl Module for RespawnModule {
                                 total_xp: VarInt::default(),
                             };
 
+                            let pkt_abilities = PlayerAbilitiesS2c {
+                                flags: PlayerAbilitiesFlags::default()
+                                    .with_flying(flight.allow)
+                                    .with_allow_flying(flight.is_flying),
+                                flying_speed: flying_speed.speed,
+                                fov_modifier: 0.0,
+                            };
+
                             let pkt_add_player = play::PlayerSpawnS2c {
                                 entity_id: VarInt(client.minecraft_id()),
                                 player_uuid: uuid.0,
@@ -90,6 +115,7 @@ impl Module for RespawnModule {
                             bundle.add_packet(&pkt_health).unwrap();
                             bundle.add_packet(&pkt_respawn).unwrap();
                             bundle.add_packet(&pkt_xp).unwrap();
+                            bundle.add_packet(&pkt_abilities).unwrap();
 
                             bundle.unicast(*connection).unwrap();
                             query
