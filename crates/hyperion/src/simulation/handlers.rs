@@ -24,7 +24,12 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use super::{
-    animation::{self, ActiveAnimation}, block_bounds, blocks::Blocks, event::ClientStatusEvent, inventory::{handle_click_slot, handle_update_selected_slot}, ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position
+    ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
+    animation::{self, ActiveAnimation},
+    block_bounds,
+    blocks::Blocks,
+    event::ClientStatusEvent,
+    inventory::{handle_click_slot, handle_update_selected_slot},
 };
 use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
