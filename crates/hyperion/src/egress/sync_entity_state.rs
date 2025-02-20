@@ -255,7 +255,8 @@ impl Module for EntityStateSyncModule {
                     }
 
                     // Replace 100 by 300 if fall flying (aka elytra)
-                    if position_delta.length_squared() - tracking.last_tick_velocity.length_squared()
+                    if position_delta.length_squared()
+                        - tracking.last_tick_velocity.length_squared()
                         > 100f32 * f32::from(tracking.received_movement_packets)
                     {
                         entity.set(PendingTeleportation::new(tracking.last_tick_position));
