@@ -248,6 +248,22 @@ impl Module for EntityStateSyncModule {
                         || (**pitch - **prev_pitch).abs() >= 0.01;
 
                     let mut bundle = DataBundle::new(compose, system);
+
+                    // Maximum number of movement packets allowed during 1 tick is 5
+                    if tracking.received_movement_packets > 5 {
+                        tracking.received_movement_packets = 1;
+                    }
+
+                    // Replace 100 by 300 if fall flying (aka elytra)
+                    if position_delta.length_squared() - tracking.last_tick_velocity.length_squared()
+                        > 100f32 * f32::from(tracking.received_movement_packets)
+                    {
+                        entity.set(PendingTeleportation::new(tracking.last_tick_position));
+                        tracking.last_tick_velocity = Vec3::ZERO;
+                        tracking.received_movement_packets = 0;
+                        return;
+                    }
+
                     tracking.last_tick_velocity = position_delta;
 
                     world.get::<&mut Blocks>(|blocks| {
