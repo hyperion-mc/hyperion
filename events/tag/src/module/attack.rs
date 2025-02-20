@@ -199,12 +199,6 @@ impl Module for AttackModule {
 
                                     health.damage(damage_after_protection);
 
-                                    let pkt_health = play::HealthUpdateS2c {
-                                        health: **health,
-                                        food: VarInt(20),
-                                        food_saturation: 5.0
-                                    };
-
                                     let delta_x: f64 = f64::from(target_position.x - origin_pos.x);
                                     let delta_z: f64 = f64::from(target_position.z - origin_pos.z);
 
@@ -231,7 +225,6 @@ impl Module for AttackModule {
                                     .build();
 
                                     compose.unicast(&pkt_hurt, *target_connection, system).unwrap();
-                                    compose.unicast(&pkt_health, *target_connection, system).unwrap();
 
                                     if critical_hit {
                                     let particle_pkt = play::ParticleS2c {

@@ -181,3 +181,10 @@ pub struct UpdateSelectedSlotEvent {
     pub client: Entity,
     pub slot: u8,
 }
+
+#[derive(Clone, Debug)]
+pub struct HitGroundEvent {
+    pub client: Entity,
+    /// This is at least 3
+    pub fall_distance: f32,
+}

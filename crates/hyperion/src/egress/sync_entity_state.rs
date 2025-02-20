@@ -13,11 +13,11 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
+        MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
-        event,
+        event::{self, HitGroundEvent},
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
@@ -188,7 +188,7 @@ impl Module for EntityStateSyncModule {
             "sync_player_entity",
             world,
             &Compose($),
-            &mut (Prev, Position),
+            &mut Events($),
             &mut (Prev, Yaw),
             &mut (Prev, Pitch),
             &mut Position,
@@ -196,6 +196,7 @@ impl Module for EntityStateSyncModule {
             &Yaw,
             &Pitch,
             ?&mut PendingTeleportation,
+            &mut MovementTracking,
         )
         .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
@@ -204,7 +205,7 @@ impl Module for EntityStateSyncModule {
              row,
              (
                 compose,
-                prev_position,
+                events,
                 prev_yaw,
                 prev_pitch,
                 position,
@@ -212,6 +213,7 @@ impl Module for EntityStateSyncModule {
                 yaw,
                 pitch,
                 pending_teleport,
+                tracking,
             )| {
                 let world = it.system().world();
                 let system = it.system();
@@ -228,17 +230,29 @@ impl Module for EntityStateSyncModule {
                 } else {
                     let chunk_pos = position.to_chunk();
 
-                    let position_delta = **position - **prev_position;
+                    let position_delta = **position - tracking.last_tick_position;
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
-                    let changed_position = **position != **prev_position;
+                    let changed_position = **position != tracking.last_tick_position;
 
                     let look_changed = (**yaw - **prev_yaw).abs() >= 0.01
                         || (**pitch - **prev_pitch).abs() >= 0.01;
 
                     let mut bundle = DataBundle::new(compose, system);
+                    tracking.last_tick_velocity = position_delta;
 
                     world.get::<&mut Blocks>(|blocks| {
                         let grounded = is_grounded(position, blocks);
+                        if grounded && tracking.fall_start_y - position.y > 3. {
+                            let event = HitGroundEvent {
+                                client: *entity,
+                                fall_distance: tracking.fall_start_y - position.y,
+                            };
+                            events.push(event, &world);
+                        }
+
+                        if position_delta.y >= 0. {
+                            tracking.fall_start_y = position.y;
+                        }
 
                         if changed_position && !needs_teleport && look_changed {
                             let packet = play::RotateAndMoveRelativeS2c {
@@ -306,6 +320,9 @@ impl Module for EntityStateSyncModule {
 
                     bundle.broadcast_local(chunk_pos).unwrap();
                 }
+
+                tracking.received_movement_packets = 0;
+                tracking.last_tick_position = **position;
             },
         );
 
