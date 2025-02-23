@@ -12,17 +12,17 @@ use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
-use valence_protocol::{ByteAngle, VarInt, packets::play};
+use valence_protocol::{packets::play, ByteAngle, VarInt};
 
 use crate::{
-    Global,
     net::{Compose, DataBundle},
     simulation::{
         command::Command,
         entity_kind::EntityKind,
-        metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
+        metadata::{entity::EntityFlags, Metadata, MetadataPrefabs},
     },
     storage::ThreadLocalVec,
+    Global,
 };
 
 pub mod animation;
@@ -419,14 +419,14 @@ pub struct Yaw {
     yaw: f32,
 }
 
-impl Display for Yaw {
+impl std::fmt::Display for Yaw {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let yaw = self.yaw;
         write!(f, "{yaw}")
     }
 }
 
-impl Display for Pitch {
+impl std::fmt::Display for Pitch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pitch = self.pitch;
         write!(f, "{pitch}")
@@ -459,7 +459,7 @@ pub struct EntitySize {
     pub height: f32,
 }
 
-impl Display for EntitySize {
+impl core::fmt::Display for EntitySize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let half_width = self.half_width;
         let height = self.height;

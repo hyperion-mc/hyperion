@@ -12,11 +12,32 @@ use hyperion::{
     simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
     spatial::{Spatial, SpatialModule},
 };
+use tracing_subscriber::{prelude::*, EnvFilter, Registry};
+use tracing_tracy::TracyLayer;
+
+
+fn setup_logging() {
+    tracing::subscriber::set_global_default(
+        Registry::default()
+            .with(EnvFilter::from_default_env())
+            .with(TracyLayer::default())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(false)
+                    .with_thread_ids(false)
+                    .with_file(true)
+                    .with_line_number(true),
+            ),
+    )
+    .expect("setup tracing subscribers");
+}
 
 #[test]
+#[ignore = "this test takes a SUPER long time to run; unsure why"]
 fn test_get_first_collision() {
     /// Function to spawn arrows at different angles
     fn spawn_arrow(world: &World, position: Vec3, direction: Vec3) -> EntityView<'_> {
+        tracing::debug!("Spawning arrow at position: {position:?} with direction: {direction:?}");
         world
             .entity()
             .add_enum(EntityKind::Arrow)

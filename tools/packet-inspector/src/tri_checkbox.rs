@@ -1,6 +1,6 @@
 use egui::{
-    NumExt, Response, Sense, Shape, TextStyle, Ui, Vec2, Widget, WidgetInfo, WidgetText,
-    WidgetType, epaint, pos2, vec2,
+    epaint, pos2, vec2, NumExt, Response, Sense, Shape, StrokeKind, TextStyle, Ui,
+    Vec2, Widget, WidgetInfo, WidgetText, WidgetType,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,9 +92,10 @@ impl Widget for TriCheckbox<'_> {
             let (small_icon_rect, big_icon_rect) = ui.spacing().icon_rectangles(rect);
             ui.painter().add(epaint::RectShape::new(
                 big_icon_rect.expand(visuals.expansion),
-                visuals.rounding,
+                visuals.corner_radius,
                 visuals.bg_fill,
                 visuals.bg_stroke,
+                StrokeKind::Inside,
             ));
 
             match *checked {

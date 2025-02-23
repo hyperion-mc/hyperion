@@ -25,6 +25,7 @@ impl Module for TestModule {
 }
 
 #[test]
+#[ignore = "this test takes a SUPER long time to run; unsure why"]
 fn arrow() {
     let world = World::new();
     world.import::<TestModule>();

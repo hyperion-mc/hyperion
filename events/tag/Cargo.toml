@@ -24,7 +24,7 @@ roaring = { workspace = true }
 rustc-hash = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tracing-tracy = { workspace = true }
+# tracing-tracy = { workspace = true }
 uuid = { workspace = true }
 hyperion-respawn = { workspace = true }
 valence_protocol = { workspace = true }

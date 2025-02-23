@@ -12,8 +12,8 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
         atomic::{AtomicU32, Ordering},
+        Arc,
     },
     time::{Duration, Instant},
 };
@@ -21,8 +21,8 @@ use std::{
 use libdeflater::{CompressionLvl, Compressor, Decompressor};
 #[cfg(unix)]
 use mio::net::UnixStream;
-use mio::{Events, Interest, Poll, Registry, Token, event, net::TcpStream};
-use rand::{Rng, prelude::SliceRandom};
+use mio::{event, net::TcpStream, Events, Interest, Poll, Registry, Token};
+use rand::{seq::IndexedRandom, Rng};
 
 use crate::{
     packet_utils::Buf,
@@ -204,12 +204,12 @@ impl BotManager {
                 bot.send_packet(play::write_current_pos(bot), &mut self.compression);
 
                 if (self.tick_counter + bot.id) % self.action_tick == 0 {
-                    match rand::thread_rng().gen_range(0..=4u8) {
+                    match rand::rng().random_range(0..=4u8) {
                         0 => {
                             // Send chat
                             bot.send_packet(
                                 play::write_chat_message(
-                                    MESSAGES.choose(&mut rand::thread_rng()).unwrap(),
+                                    MESSAGES.choose(&mut rand::rng()).unwrap(),
                                 ),
                                 &mut self.compression,
                             );
@@ -246,7 +246,7 @@ impl BotManager {
                         4 => {
                             // Held item
                             bot.send_packet(
-                                play::write_held_slot(rand::thread_rng().gen_range(0..9)),
+                                play::write_held_slot(rand::rng().random_range(0..9)),
                                 &mut self.compression,
                             );
                         }

@@ -7,68 +7,117 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system overlays;
-        };
+  outputs = { self, nixpkgs, rust-overlay, ... }:
+    let
+      forAllSystems = nixpkgs.lib.genAttrs [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
 
-        rustToolchain = pkgs.rust-bin.nightly."2024-12-18".default.override {
-          extensions = [ "rust-src" "rustfmt" "clippy" ];
-        };
+      mkSystem = system:
+        let
+          overlays = [ (import rust-overlay) ];
+          pkgs = import nixpkgs {
+            inherit system overlays;
+          };
 
-        nativeBuildInputs = with pkgs; [
-          rustToolchain
-          pkg-config
-          cmake
-        ];
+          rustToolchain = pkgs.rust-bin.nightly."2025-02-22".default.override {
+            extensions = [ "rust-src" "rustfmt" "clippy" ];
+          };
 
-        buildInputs = with pkgs; [
-          openssl
-        ] ++ lib.optionals stdenv.isDarwin [
-          darwin.apple_sdk.frameworks.Security
-          darwin.apple_sdk.frameworks.SystemConfiguration
-        ];
+          nativeBuildInputs = with pkgs; [
+            rustToolchain
+            pkg-config
+            cmake
+          ];
 
-      in
-      {
-        devShells.default = pkgs.mkShell {
-          inherit buildInputs nativeBuildInputs;
+          buildInputs = with pkgs; [
+            openssl
+          ] ++ lib.optionals stdenv.isDarwin [
+            darwin.apple_sdk.frameworks.Security
+            darwin.apple_sdk.frameworks.SystemConfiguration
+          ];
 
-          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
-        };
+          hyperion = pkgs.rustPlatform.buildRustPackage {
+            pname = "hyperion";
+            version = "0.1.0";
+            src = ./.;
 
-        packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "hyperion";
-          version = "0.1.0";
-          src = ./.;
+            inherit buildInputs nativeBuildInputs;
 
-          inherit buildInputs nativeBuildInputs;
-
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "bvh-0.1.0" = "sha256-yOsM6r96zOE0LD0JRWushzrxDVqncXHzZvrnOm7xNGc=";
-              "divan-0.1.17" = "sha256-UZNINS/JOgQfUUlJf8AUZkUuLH2y6tCZsDt0TasrYb0=";
-              "flecs_ecs-0.1.3" = "sha256-AhrLWfxppssVEXXJZYFRk9mfTJzYUykcJV35JNMmRjE=";
-              "valence_anvil-0.1.0" = "sha256-0ALeK1kCgusExf57ssPDkKinu8iNeveCBoV9hMBB/Y8=";
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes = {
+                "bvh-0.1.0" = "sha256-KHQ7Uh1Y4mGIYj16aX36dy927pf401bQFNKBnL+VwCo=";
+                "divan-0.1.17" = "sha256-0zrZsUAqU7f53FEPtAdueOD3rl+G0ekYRKoVEehneNg=";
+                "flecs_ecs-0.1.3" = "sha256-A4gLBl9aK/ThXdkIslouooKn/7jKbfl8OSfg0BRyLT4=";
+                "valence_anvil-0.1.0" = "sha256-sirOc/aNOCbkzvf/igm7PTA1+YOMgj9ov2BINprxNa0=";
+              };
             };
           };
 
-          #   checkPhase = ''
-          #     runHook preCheck
-          #     cargo test
-          #     cargo clippy -- -D warnings
-          #     cargo fmt --check
-          #     cargo deny check
-          #     runHook postCheck
-          #   '';
+          # Create minimal runtime environment
+          minimalEnv = pkgs.buildEnv {
+            name = "minimal-env";
+            paths = [
+              (pkgs.runCommand "hyperion-bins" { } ''
+                mkdir -p $out/bin
+                cp ${hyperion}/bin/hyperion-proxy $out/bin/
+                cp ${hyperion}/bin/tag $out/bin/
+              '')
+              pkgs.cacert # Required for SSL/TLS
+            ];
+          };
+
+          # Docker image for hyperion-proxy
+          hyperion-proxy-image = pkgs.dockerTools.buildLayeredImage {
+            name = "hyperion-proxy";
+            tag = "latest";
+            maxLayers = 5;
+            contents = [ minimalEnv ];
+
+            config = {
+              Cmd = [ "/bin/hyperion-proxy" "0.0.0.0:8080" ];
+              ExposedPorts = {
+                "8080/tcp" = { };
+              };
+            };
+          };
+
+          # Docker image for tag
+          tag-image = pkgs.dockerTools.buildLayeredImage {
+            name = "tag";
+            tag = "latest";
+            maxLayers = 5;
+            contents = [ minimalEnv ];
+
+            config = {
+              Cmd = [ "/bin/tag" "--ip" "0.0.0.0" "--port" "35565" ];
+              ExposedPorts = {
+                "35565/tcp" = { };
+              };
+            };
+          };
+        in
+        {
+          devShells.default = pkgs.mkShell {
+            inherit buildInputs nativeBuildInputs;
+            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+          };
+
+          packages = {
+            default = hyperion;
+            docker-hyperion-proxy = hyperion-proxy-image;
+            docker-tag = tag-image;
+          };
         };
-      }
-    );
+    in
+    {
+      devShells = forAllSystems (system: (mkSystem system).devShells);
+      packages = forAllSystems (system: (mkSystem system).packages);
+    };
 }

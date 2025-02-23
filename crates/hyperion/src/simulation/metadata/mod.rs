@@ -1,16 +1,15 @@
 use std::fmt::Debug;
 
-use derive_more::Deref;
 use flecs_ecs::{
     addons::Meta,
-    core::{ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs},
+    core::{flecs, ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider},
     macros::Component,
 };
 use valence_protocol::{Encode, VarInt};
 
 use crate::{
-    Prev,
     simulation::metadata::entity::{EntityFlags, Pose},
+    Prev,
 };
 
 pub mod block_display;
@@ -277,7 +276,7 @@ impl MetadataChanges {
 #[derive(Debug)]
 pub struct MetadataView<'a>(&'a mut MetadataChanges);
 
-impl Deref for MetadataView<'_> {
+impl core::ops::Deref for MetadataView<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {

@@ -1,6 +1,5 @@
 //! Hyperion
 
-#![feature(get_many_mut)]
 #![feature(type_alias_impl_trait)]
 #![feature(io_error_more)]
 #![feature(trusted_len)]
@@ -35,11 +34,11 @@ use std::{
     fmt::Debug,
     io::Write,
     net::SocketAddr,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use anyhow::Context;
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut};
 use egress::EgressModule;
 pub use flecs_ecs;
 use flecs_ecs::prelude::*;
@@ -47,9 +46,9 @@ pub use glam;
 use glam::{I16Vec2, IVec2};
 use ingress::IngressModule;
 #[cfg(unix)]
-use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
+use libc::{getrlimit, setrlimit, RLIMIT_NOFILE};
 use libdeflater::CompressionLvl;
-use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+use simulation::{blocks::Blocks, Comms, SimModule, StreamLookup};
 use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
@@ -58,15 +57,15 @@ pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
 // and then eventually do not re-export valence_protocol
 pub use valence_protocol;
-use valence_protocol::{CompressionThreshold, Encode, Packet};
 pub use valence_protocol::{
-    ItemKind, ItemStack, Particle,
-    block::{BlockKind, BlockState},
+    block::{BlockKind, BlockState}, ItemKind, ItemStack,
+    Particle,
 };
+use valence_protocol::{CompressionThreshold, Encode, Packet};
 pub use valence_server as server;
 
 use crate::{
-    net::{Compose, Compressors, IoBuf, MAX_PACKET_SIZE, proxy::init_proxy_comms},
+    net::{proxy::init_proxy_comms, Compose, Compressors, IoBuf, MAX_PACKET_SIZE},
     runtime::AsyncRuntime,
     simulation::{Pitch, Yaw},
 };
@@ -79,9 +78,9 @@ pub use valence_ident;
 
 use crate::{
     ingress::PendingRemove,
-    net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
+    net::{proxy::ReceiveState, ConnectionId, PacketDecoder},
     runtime::Tasks,
-    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
+    simulation::{packet::HandlerRegistry, EgressComm, EntitySize, IgnMap, PacketState, Player},
     util::mojang::ApiProvider,
 };
 
@@ -191,7 +190,7 @@ impl HyperionCore {
         // Denormals (numbers very close to 0) are flushed to zero because doing computations on them
         // is slow.
 
-        no_denormals::no_denormals(|| Self::init_with_helper(world))
+        Self::init_with_helper(world)
     }
 
     /// Initialize the server.
@@ -206,9 +205,7 @@ impl HyperionCore {
                 std::thread::Builder::new()
                     .stack_size(1024 * 1024)
                     .spawn(move || {
-                        no_denormals::no_denormals(|| {
-                            thread.run();
-                        });
+                        thread.run();
                     })
                     .expect("Failed to spawn thread");
                 Ok(())
