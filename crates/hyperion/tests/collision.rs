@@ -5,31 +5,13 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs};
+use flecs_ecs::core::{flecs, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World};
 use glam::Vec3;
 use hyperion::{
-    HyperionCore,
-    simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
+    simulation::{entity_kind::EntityKind, EntitySize, Owner, Pitch, Position, Velocity, Yaw},
     spatial::{Spatial, SpatialModule},
+    HyperionCore,
 };
-use tracing_subscriber::{EnvFilter, Registry, prelude::*};
-use tracing_tracy::TracyLayer;
-
-fn setup_logging() {
-    tracing::subscriber::set_global_default(
-        Registry::default()
-            .with(EnvFilter::from_default_env())
-            .with(TracyLayer::default())
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .with_target(false)
-                    .with_thread_ids(false)
-                    .with_file(true)
-                    .with_line_number(true),
-            ),
-    )
-    .expect("setup tracing subscribers");
-}
 
 #[test]
 #[ignore = "this test takes a SUPER long time to run; unsure why"]

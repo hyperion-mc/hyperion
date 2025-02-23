@@ -1,4 +1,4 @@
-use divan::{Bencher, black_box};
+use divan::{black_box, Bencher};
 use hyperion_stats::ParallelStats;
 use rand::Rng;
 
@@ -7,9 +7,9 @@ fn main() {
 }
 
 fn generate_test_data(width: usize, updates: usize) -> Vec<Vec<f64>> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..updates)
-        .map(|_| (0..width).map(|_| rng.r#gen::<f64>()).collect())
+        .map(|_| (0..width).map(|_| rng.random::<f64>()).collect())
         .collect()
 }
 
