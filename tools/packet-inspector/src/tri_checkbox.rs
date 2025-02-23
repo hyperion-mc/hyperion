@@ -1,6 +1,6 @@
 use egui::{
-    epaint, pos2, vec2, NumExt, Response, Sense, Shape, StrokeKind, TextStyle, Ui,
-    Vec2, Widget, WidgetInfo, WidgetText, WidgetType,
+    NumExt, Response, Sense, Shape, StrokeKind, TextStyle, Ui, Vec2, Widget, WidgetInfo,
+    WidgetText, WidgetType, epaint, pos2, vec2,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -12,17 +12,17 @@ use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
-use valence_protocol::{packets::play, ByteAngle, VarInt};
+use valence_protocol::{ByteAngle, VarInt, packets::play};
 
 use crate::{
+    Global,
     net::{Compose, DataBundle},
     simulation::{
         command::Command,
         entity_kind::EntityKind,
-        metadata::{entity::EntityFlags, Metadata, MetadataPrefabs},
+        metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
     },
     storage::ThreadLocalVec,
-    Global,
 };
 
 pub mod animation;

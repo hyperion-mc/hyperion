@@ -12,8 +12,8 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        atomic::{AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicU32, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -21,8 +21,8 @@ use std::{
 use libdeflater::{CompressionLvl, Compressor, Decompressor};
 #[cfg(unix)]
 use mio::net::UnixStream;
-use mio::{event, net::TcpStream, Events, Interest, Poll, Registry, Token};
-use rand::{seq::IndexedRandom, Rng};
+use mio::{Events, Interest, Poll, Registry, Token, event, net::TcpStream};
+use rand::{Rng, seq::IndexedRandom};
 
 use crate::{
     packet_utils::Buf,

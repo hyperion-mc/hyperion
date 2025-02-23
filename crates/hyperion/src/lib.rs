@@ -34,7 +34,7 @@ use std::{
     fmt::Debug,
     io::Write,
     net::SocketAddr,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use anyhow::Context;
@@ -46,9 +46,9 @@ pub use glam;
 use glam::{I16Vec2, IVec2};
 use ingress::IngressModule;
 #[cfg(unix)]
-use libc::{getrlimit, setrlimit, RLIMIT_NOFILE};
+use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
-use simulation::{blocks::Blocks, Comms, SimModule, StreamLookup};
+use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
 use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
@@ -57,15 +57,15 @@ pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
 // and then eventually do not re-export valence_protocol
 pub use valence_protocol;
-pub use valence_protocol::{
-    block::{BlockKind, BlockState}, ItemKind, ItemStack,
-    Particle,
-};
 use valence_protocol::{CompressionThreshold, Encode, Packet};
+pub use valence_protocol::{
+    ItemKind, ItemStack, Particle,
+    block::{BlockKind, BlockState},
+};
 pub use valence_server as server;
 
 use crate::{
-    net::{proxy::init_proxy_comms, Compose, Compressors, IoBuf, MAX_PACKET_SIZE},
+    net::{Compose, Compressors, IoBuf, MAX_PACKET_SIZE, proxy::init_proxy_comms},
     runtime::AsyncRuntime,
     simulation::{Pitch, Yaw},
 };
@@ -78,9 +78,9 @@ pub use valence_ident;
 
 use crate::{
     ingress::PendingRemove,
-    net::{proxy::ReceiveState, ConnectionId, PacketDecoder},
+    net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
     runtime::Tasks,
-    simulation::{packet::HandlerRegistry, EgressComm, EntitySize, IgnMap, PacketState, Player},
+    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
     util::mojang::ApiProvider,
 };
 

@@ -12,9 +12,8 @@ use hyperion::{
     simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
     spatial::{Spatial, SpatialModule},
 };
-use tracing_subscriber::{prelude::*, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, prelude::*};
 use tracing_tracy::TracyLayer;
-
 
 fn setup_logging() {
     tracing::subscriber::set_global_default(
