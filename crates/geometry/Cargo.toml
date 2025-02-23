@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 glam = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
-ordered-float = "4.5.0"
+ordered-float = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }

@@ -1,6 +1,5 @@
 //! Hyperion
 
-#![feature(get_many_mut)]
 #![feature(type_alias_impl_trait)]
 #![feature(io_error_more)]
 #![feature(trusted_len)]
@@ -39,7 +38,7 @@ use std::{
 };
 
 use anyhow::Context;
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut};
 use egress::EgressModule;
 pub use flecs_ecs;
 use flecs_ecs::prelude::*;
@@ -191,7 +190,7 @@ impl HyperionCore {
         // Denormals (numbers very close to 0) are flushed to zero because doing computations on them
         // is slow.
 
-        no_denormals::no_denormals(|| Self::init_with_helper(world))
+        Self::init_with_helper(world)
     }
 
     /// Initialize the server.
@@ -206,9 +205,7 @@ impl HyperionCore {
                 std::thread::Builder::new()
                     .stack_size(1024 * 1024)
                     .spawn(move || {
-                        no_denormals::no_denormals(|| {
-                            thread.run();
-                        });
+                        thread.run();
                     })
                     .expect("Failed to spawn thread");
                 Ok(())

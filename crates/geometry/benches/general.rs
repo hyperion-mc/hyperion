@@ -10,13 +10,13 @@ use tango_bench::{
 
 // Helper function to generate random AABBs
 fn random_aabb(rng: &mut SmallRng) -> Aabb {
-    let x = rng.gen_range(-10.0..10.0);
-    let y = rng.gen_range(-10.0..10.0);
-    let z = rng.gen_range(-10.0..10.0);
+    let x = rng.random_range(-10.0..10.0);
+    let y = rng.random_range(-10.0..10.0);
+    let z = rng.random_range(-10.0..10.0);
 
-    let width = rng.gen_range(0.1..5.0);
-    let height = rng.gen_range(0.1..5.0);
-    let depth = rng.gen_range(0.1..5.0);
+    let width = rng.random_range(0.1..5.0);
+    let height = rng.random_range(0.1..5.0);
+    let depth = rng.random_range(0.1..5.0);
 
     Aabb::new(
         Vec3::new(x, y, z),
@@ -27,16 +27,16 @@ fn random_aabb(rng: &mut SmallRng) -> Aabb {
 // Helper function to generate random rays
 fn random_ray(rng: &mut SmallRng) -> Ray {
     let origin = Vec3::new(
-        rng.gen_range(-15.0..15.0),
-        rng.gen_range(-15.0..15.0),
-        rng.gen_range(-15.0..15.0),
+        rng.random_range(-15.0..15.0),
+        rng.random_range(-15.0..15.0),
+        rng.random_range(-15.0..15.0),
     );
 
     // Generate random direction and normalize
     let direction = Vec3::new(
-        rng.gen_range(-1.0..1.0),
-        rng.gen_range(-1.0..1.0),
-        rng.gen_range(-1.0..1.0),
+        rng.random_range(-1.0..1.0),
+        rng.random_range(-1.0..1.0),
+        rng.random_range(-1.0..1.0),
     )
     .normalize();
 
@@ -121,9 +121,9 @@ fn point_containment_benchmarks() -> impl IntoBenchmarks {
         let aabb = Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0));
         b.iter(move || {
             let point = Vec3::new(
-                rng.gen_range(-0.9..0.9),
-                rng.gen_range(-0.9..0.9),
-                rng.gen_range(-0.9..0.9),
+                rng.random_range(-0.9..0.9),
+                rng.random_range(-0.9..0.9),
+                rng.random_range(-0.9..0.9),
             );
             black_box(aabb.contains_point(point))
         })
@@ -134,9 +134,9 @@ fn point_containment_benchmarks() -> impl IntoBenchmarks {
         let aabb = Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0));
         b.iter(move || {
             let point = Vec3::new(
-                rng.gen_range(1.1..2.0),
-                rng.gen_range(1.1..2.0),
-                rng.gen_range(1.1..2.0),
+                rng.random_range(1.1..2.0),
+                rng.random_range(1.1..2.0),
+                rng.random_range(1.1..2.0),
             );
             black_box(aabb.contains_point(point))
         })
@@ -148,9 +148,9 @@ fn point_containment_benchmarks() -> impl IntoBenchmarks {
         b.iter(move || {
             // Generate points very close to the boundary
             let point = Vec3::new(
-                rng.gen_range(-1.001..1.001),
-                rng.gen_range(-1.001..1.001),
-                rng.gen_range(-1.001..1.001),
+                rng.random_range(-1.001..1.001),
+                rng.random_range(-1.001..1.001),
+                rng.random_range(-1.001..1.001),
             );
             black_box(aabb.contains_point(point))
         })

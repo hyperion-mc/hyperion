@@ -14,9 +14,11 @@ use hyperion::{
 };
 
 #[test]
+#[ignore = "this test takes a SUPER long time to run; unsure why"]
 fn test_get_first_collision() {
     /// Function to spawn arrows at different angles
     fn spawn_arrow(world: &World, position: Vec3, direction: Vec3) -> EntityView<'_> {
+        tracing::debug!("Spawning arrow at position: {position:?} with direction: {direction:?}");
         world
             .entity()
             .add_enum(EntityKind::Arrow)

@@ -1,4 +1,3 @@
-#![feature(get_many_mut)]
 #![feature(thread_local)]
 use std::{cell::Cell, cmp::min, num::Wrapping};
 
@@ -386,7 +385,7 @@ impl Inventory {
         let slot = usize::from(slot);
         let other_slot = usize::from(other_slot);
 
-        let [slot, other_slot] = self.slots.get_many_mut([slot, other_slot]).unwrap();
+        let [slot, other_slot] = self.slots.get_disjoint_mut([slot, other_slot]).unwrap();
         std::mem::swap(slot, other_slot);
         slot.changed = true;
         other_slot.changed = true;

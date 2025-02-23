@@ -419,14 +419,14 @@ pub struct Yaw {
     yaw: f32,
 }
 
-impl Display for Yaw {
+impl std::fmt::Display for Yaw {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let yaw = self.yaw;
         write!(f, "{yaw}")
     }
 }
 
-impl Display for Pitch {
+impl std::fmt::Display for Pitch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pitch = self.pitch;
         write!(f, "{pitch}")
@@ -459,7 +459,7 @@ pub struct EntitySize {
     pub height: f32,
 }
 
-impl Display for EntitySize {
+impl core::fmt::Display for EntitySize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let half_width = self.half_width;
         let height = self.height;

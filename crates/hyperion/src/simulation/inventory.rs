@@ -902,7 +902,7 @@ fn handle_shift_click(
 
         if let Some(target_idx) = target_slot {
             let Ok([source_slot, target_slot]) =
-                inventories_mut.get_many_mut([slot_idx, target_idx])
+                inventories_mut.get_disjoint_mut([slot_idx, target_idx])
             else {
                 return;
             };
@@ -983,7 +983,7 @@ fn handle_hotbar_swap(
     let Ok(slot_idx) = usize::try_from(packet.slot_idx) else {
         return;
     };
-    let Ok([slot, hotbar_slot]) = inventories_mut.get_many_mut([slot_idx, hotbar_idx]) else {
+    let Ok([slot, hotbar_slot]) = inventories_mut.get_disjoint_mut([slot_idx, hotbar_idx]) else {
         return;
     };
 

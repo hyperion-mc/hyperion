@@ -1,5 +1,5 @@
 # Define base arguments for versioning and optimization
-ARG RUST_NIGHTLY_VERSION=nightly-2025-02-07
+ARG RUST_NIGHTLY_VERSION=nightly-2025-02-22
 ARG RUSTFLAGS="-Z share-generics=y -Z threads=8"
 ARG CARGO_HOME=/usr/local/cargo
 # Install essential build packages

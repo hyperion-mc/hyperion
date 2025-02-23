@@ -330,7 +330,7 @@ fn write_block_states(
 ) -> anyhow::Result<()> {
     states.encode_mc_format(
         writer,
-        derive_more::Into::into,
+        Into::into,
         4,
         8,
         bit_width(BlockState::max_raw().into()),

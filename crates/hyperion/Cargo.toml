@@ -44,7 +44,6 @@ libdeflater = { workspace = true }
 memmap2 = { workspace = true }
 more-asserts = { workspace = true }
 ndarray = { workspace = true }
-no_denormals = { workspace = true }
 once_cell = { workspace = true }
 ouroboros = { workspace = true }
 parking_lot = { workspace = true }
@@ -79,6 +78,8 @@ approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
 hyperion-genmap = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true
