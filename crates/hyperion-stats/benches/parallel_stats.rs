@@ -1,4 +1,4 @@
-use divan::{black_box, Bencher};
+use divan::{Bencher, black_box};
 use hyperion_stats::ParallelStats;
 use rand::Rng;
 

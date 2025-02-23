@@ -2,10 +2,10 @@ use std::hint::black_box;
 
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::Vec3;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 use tango_bench::{
-    benchmark_fn, tango_benchmarks, tango_main, IntoBenchmarks, MeasurementSettings,
-    DEFAULT_SETTINGS,
+    DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn, tango_benchmarks,
+    tango_main,
 };
 
 // Helper function to generate random AABBs

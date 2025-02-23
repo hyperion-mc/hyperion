@@ -5,12 +5,12 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::core::{flecs, EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World};
+use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs};
 use glam::Vec3;
 use hyperion::{
-    simulation::{entity_kind::EntityKind, EntitySize, Owner, Pitch, Position, Velocity, Yaw},
-    spatial::{Spatial, SpatialModule},
     HyperionCore,
+    simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
+    spatial::{Spatial, SpatialModule},
 };
 
 #[test]
