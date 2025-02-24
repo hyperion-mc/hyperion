@@ -37,7 +37,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: rust-mc-bot
-    command: [ "hyperion-proxy:25565", "100", "1" ]
+    command: [ "hyperion-proxy:25565", "500", "2" ]
     # restart: unless-stopped
     depends_on:
       - hyperion-proxy
