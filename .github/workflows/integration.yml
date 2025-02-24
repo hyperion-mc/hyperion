@@ -55,6 +55,12 @@ jobs:
             FOUND_ISSUES=1
           fi
 
+          # Check logs for ERROR messages
+          if docker compose logs | grep -i "ERROR"; then
+            echo "Found ERROR messages in logs."
+            FOUND_ISSUES=1
+          fi
+
           # Fail the build if any issues were found
           if [[ $FOUND_ISSUES -eq 1 ]]; then
             exit 1
