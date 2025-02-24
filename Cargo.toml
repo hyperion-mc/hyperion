@@ -79,7 +79,7 @@ humantime = '2.1.0'
 hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.0-pre8'
-libc = '0.2.155'
+libc = '0.2.170'
 libdeflater = '1.20.0'
 memmap2 = '0.9.5'
 mio = { version = '1.0.3', features = ['os-poll', 'net'] }
@@ -126,7 +126,7 @@ version = '1.19.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.30'
+version = '4.5.31'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
@@ -137,7 +137,7 @@ git = 'https://github.com/nvzqz/divan'
 
 [workspace.dependencies.flate2]
 default-features = false
-version = '1.0.30'
+version = '1.1.0'
 
 [workspace.dependencies.flecs_ecs]
 features = ['flecs_manual_registration']
