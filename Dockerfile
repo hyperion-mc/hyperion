@@ -82,7 +82,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo build --profile release-full --frozen --workspace && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
-    cp target/release-full/tag /app/build/
+    cp target/release-full/tag /app/build/ && \
+    cp target/release-full/rust-mc-bot /app/build/
 
 # Runtime base image
 FROM ubuntu:24.04 AS runtime-base
@@ -102,7 +103,7 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
 EXPOSE 8080
 ENTRYPOINT ["/hyperion-proxy"]
 CMD ["0.0.0.0:8080"]
-# NYC Release
+
 FROM runtime-base AS tag
 COPY --from=build-release /app/build/tag /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
@@ -110,3 +111,12 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
     org.opencontainers.image.version="0.1.0"
 ENTRYPOINT ["/tag"]
 CMD ["--ip", "0.0.0.0", "--port", "35565"]
+
+FROM runtime-base AS rust-mc-bot
+COPY --from=build-release /app/build/rust-mc-bot /
+LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/rust-mc-bot" \
+    org.opencontainers.image.description="Rust Minecraft Bot" \
+    org.opencontainers.image.version="0.1.0"
+ENTRYPOINT ["/rust-mc-bot"]
+CMD ["hyperion-proxy:25565", "500", "4"]
+

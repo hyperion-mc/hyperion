@@ -1,0 +1,40 @@
+name: Integration Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Build services
+        run: docker compose build
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Wait 60 seconds
+        run: sleep 60
+
+      # 1) Show the logs for debug
+      - name: Docker Compose Logs
+        run: docker compose logs
+
+      # 2) Check if any containers have exited with an error
+      - name: Check containers status
+        run: |
+          # If any container's STATUS shows "Exit" or "exited", fail
+          # because that means the container died or crashed.
+          if docker compose ps | grep -q 'Exit'; then
+            echo "A container has exited with an error."
+            exit 1
+          fi
+
+      - name: Tear down
+        run: docker compose down

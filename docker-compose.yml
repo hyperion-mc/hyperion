@@ -8,7 +8,7 @@ services:
     ports:
       - "25565:25565"
     command: [ "--server", "tag:35565", "0.0.0.0:25565" ]
-    restart: unless-stopped
+    # restart: unless-stopped
     environment:
       - RUST_LOG=info
     networks:
@@ -26,7 +26,21 @@ services:
     expose:
       - "35565"
     command: [ ]
-    restart: unless-stopped
+    # restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+    networks:
+      - proxy-network
+  rust-mc-bot:
+    # image: ghcr.io/hyperion-mc/hyperion/rust-mc-bot:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: rust-mc-bot
+    command: [ "hyperion-proxy:25565", "500", "2" ]
+    # restart: unless-stopped
+    depends_on:
+      - hyperion-proxy
     environment:
       - RUST_LOG=info
     networks:
