@@ -1,7 +1,10 @@
-name: Publish
+name: Build and Validate
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
   build:
     strategy:
@@ -35,6 +38,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Set the Docker tags based on the event type
+      - name: Set Docker tags
+        id: docker-tags
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "HYPERION_PROXY_TAGS=ghcr.io/${{ github.repository }}/hyperion-proxy:pr-${{ github.event.pull_request.number }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+            echo "TAG_TAGS=ghcr.io/${{ github.repository }}/tag:pr-${{ github.event.pull_request.number }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+          else
+            echo "HYPERION_PROXY_TAGS=ghcr.io/${{ github.repository }}/hyperion-proxy:latest-${{ matrix.arch }},ghcr.io/${{ github.repository }}/hyperion-proxy:${{ github.sha }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+            echo "TAG_TAGS=ghcr.io/${{ github.repository }}/tag:latest-${{ matrix.arch }},ghcr.io/${{ github.repository }}/tag:${{ github.sha }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push hyperion-proxy
         uses: docker/build-push-action@v5
         with:
@@ -44,9 +59,7 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/${{ github.repository }}/hyperion-proxy:latest-${{ matrix.arch }}
-            ghcr.io/${{ github.repository }}/hyperion-proxy:${{ github.sha }}-${{ matrix.arch }}
+          tags: ${{ steps.docker-tags.outputs.HYPERION_PROXY_TAGS }}
 
       - name: Build and push tag
         uses: docker/build-push-action@v5
@@ -57,12 +70,12 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/${{ github.repository }}/tag:latest-${{ matrix.arch }}
-            ghcr.io/${{ github.repository }}/tag:${{ github.sha }}-${{ matrix.arch }}
+          tags: ${{ steps.docker-tags.outputs.TAG_TAGS }}
 
   manifest:
     needs: build
+    # Only run manifest job on pushes to main
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
