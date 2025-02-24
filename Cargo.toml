@@ -76,6 +76,7 @@ heapless = '0.8.0'
 heed = "0.21.0"
 hex = '0.4.3'
 humantime = '2.1.0'
+hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.0-pre8'
 libc = '0.2.155'
@@ -112,7 +113,6 @@ tokio = '1.43.0'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.12.0'
-
 
 [workspace.dependencies.bvh]
 git = 'https://github.com/andrewgazelka/bvh-data'
@@ -297,6 +297,12 @@ git = 'https://github.com/andrewgazelka/valence'
 [workspace.dependencies.valence_text]
 branch = 'feat-open'
 git = 'https://github.com/andrewgazelka/valence'
+
+[workspace.dependencies.tag]
+path = "events/tag"
+
+[workspace.dependencies.rust-mc-bot]
+path = "tools/rust-mc-bot"
 
 [workspace.lints]
 [workspace.lints.clippy]

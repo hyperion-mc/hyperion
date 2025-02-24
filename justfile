@@ -83,7 +83,7 @@ watch:
 debug:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 3
     RUST_BACKTRACE=full RUN_MODE=debug-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-debug -s './target/debug/tag'
-    RUST_BACKTRACE=full ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --release
+    RUST_BACKTRACE=full ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --release-full -- --server "127.0.0.1:35565" "0.0.0.0:25565"
     cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/tag' -s 'cargo check -p tag && cargo build -p tag' -s 'touch {{project_root}}/.trigger-debug'
 
 # run in release mode with tracy; auto-restarts on changes
@@ -96,7 +96,7 @@ release:
 release-full:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 2
     RUN_MODE=release-f-{{arch}} cargo run --profile release-full -p tag'
-    ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --profile release-full
+        ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --profile release-full
 
 # run a given number of bots to connect to hyperion
 bots ip='127.0.0.1:25565' count='1000':
