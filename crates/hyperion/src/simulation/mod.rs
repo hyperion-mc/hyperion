@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
-use glam::{I16Vec2, IVec3, Quat, Vec3};
+use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -617,6 +617,9 @@ pub struct MovementTracking {
     pub last_tick_position: Vec3,
     pub last_tick_velocity: Vec3,
     pub received_movement_packets: u8,
+    pub server_velocity: DVec3,
+    pub sprinting: bool,
+    pub was_on_ground: bool,
 }
 
 #[derive(Component, Default, Debug, Copy, Clone)]

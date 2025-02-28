@@ -8,6 +8,7 @@ use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self},
 };
+use valence_text::IntoText;
 
 use crate::{
     Prev,
@@ -206,6 +207,7 @@ impl Module for EntityStateSyncModule {
             ?&mut PendingTeleportation,
             &mut MovementTracking,
             &Flight,
+            &ConnectionId
         )
         .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
@@ -224,6 +226,7 @@ impl Module for EntityStateSyncModule {
                 pending_teleport,
                 tracking,
                 flight,
+                connection,
             )| {
                 let world = it.system().world();
                 let system = it.system();
@@ -269,6 +272,7 @@ impl Module for EntityStateSyncModule {
 
                     world.get::<&mut Blocks>(|blocks| {
                         let grounded = is_grounded(position, blocks);
+                        tracking.was_on_ground = grounded;
                         if grounded
                             && !tracking.last_tick_flying
                             && tracking.fall_start_y - position.y > 3.
@@ -355,6 +359,31 @@ impl Module for EntityStateSyncModule {
                 tracking.received_movement_packets = 0;
                 tracking.last_tick_position = **position;
                 tracking.last_tick_flying = flight.is_flying;
+
+                if tracking.was_on_ground {
+                    tracking.server_velocity.y = 0.;
+                }
+                let friction = if tracking.was_on_ground {
+                    0.6 * 0.91
+                } else {
+                    0.91
+                };
+
+                tracking.server_velocity.x *= friction * 0.98;
+                tracking.server_velocity.y -= 0.08 * 0.980_000_019_073_486_3;
+                tracking.server_velocity.z *= friction * 0.98;
+
+                if tracking.server_velocity.x.abs() < 0.003 {
+                    tracking.server_velocity.x = 0.;
+                }
+
+                if tracking.server_velocity.y.abs() < 0.003 {
+                    tracking.server_velocity.y = 0.;
+                }
+
+                if tracking.server_velocity.z.abs() < 0.003 {
+                    tracking.server_velocity.z = 0.;
+                }
             },
         );
 

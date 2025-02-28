@@ -7,7 +7,7 @@
 use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
-use glam::{IVec3, Vec3};
+use glam::{DVec3, IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
 use tracing::{info, instrument, warn};
 use valence_generated::{
@@ -46,7 +46,7 @@ fn full(
         position,
         yaw,
         pitch,
-        ..
+        on_ground,
     }: &play::FullC2s,
     _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
@@ -55,7 +55,7 @@ fn full(
     // if they are, ignore the packet
 
     let position = position.as_vec3();
-    change_position_or_correct_client(query, position);
+    change_position_or_correct_client(query, position, on_ground);
 
     query.yaw.yaw = yaw;
     query.pitch.pitch = pitch;
@@ -64,7 +64,11 @@ fn full(
 }
 
 // #[instrument(skip_all)]
-fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed: Vec3) {
+fn change_position_or_correct_client(
+    query: &mut PacketSwitchQuery<'_>,
+    proposed: Vec3,
+    on_ground: bool,
+) {
     let pose = &mut *query.position;
 
     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
@@ -84,9 +88,24 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             .entity_view(query.world)
             .set(PendingTeleportation::new(pose.position));
     }
-    query.view.get::<&mut MovementTracking>(|tracking| {
-        tracking.received_movement_packets += 1;
-    });
+    query
+        .view
+        .get::<(&mut MovementTracking, &Yaw)>(|(tracking, yaw)| {
+            tracking.received_movement_packets += 1;
+            let y_delta = proposed.y - pose.y;
+
+            if y_delta > 0. && tracking.was_on_ground && !on_ground {
+                tracking.server_velocity.y = 0.419_999_986_886_978_15;
+
+                if tracking.sprinting {
+                    let smth = yaw.yaw * 0.017_453_292;
+                    tracking.server_velocity +=
+                        DVec3::new(f64::from(-smth.sin()) * 0.2, 0.0, f64::from(smth.cos()) * 0.2);
+                }
+            }
+        });
+
+    **pose = proposed;
 }
 
 /// Returns true if the position was changed, false if it was not.
@@ -104,7 +123,7 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
 /// This prevents players from glitching into blocks while allowing them to move out.
 fn try_change_position(
     proposed: Vec3,
-    position: &mut Position,
+    position: &Position,
     size: EntitySize,
     blocks: &Blocks,
 ) -> anyhow::Result<()> {
@@ -114,7 +133,6 @@ fn try_change_position(
         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
     }
 
-    **position = proposed;
     Ok(())
 }
 
@@ -169,11 +187,14 @@ fn look_and_on_ground(
 }
 
 fn position_and_on_ground(
-    &play::PositionAndOnGroundC2s { position, .. }: &play::PositionAndOnGroundC2s,
+    &play::PositionAndOnGroundC2s {
+        position,
+        on_ground,
+    }: &play::PositionAndOnGroundC2s,
     _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    change_position_or_correct_client(query, position.as_vec3());
+    change_position_or_correct_client(query, position.as_vec3(), on_ground);
 
     Ok(())
 }
@@ -320,9 +341,17 @@ fn client_command(
             *query.pose = Pose::Standing;
             query.size.height = 1.8;
         }
-        ClientCommand::StartSprinting
-        | ClientCommand::StopSprinting
-        | ClientCommand::StartJumpWithHorse
+        ClientCommand::StartSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = true;
+            });
+        }
+        ClientCommand::StopSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = false;
+            });
+        }
+        ClientCommand::StartJumpWithHorse
         | ClientCommand::StopJumpWithHorse
         | ClientCommand::OpenHorseInventory
         | ClientCommand::StartFlyingWithElytra => {}
