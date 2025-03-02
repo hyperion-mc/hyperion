@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tag
+  namespace: hyperion
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tag
+  template:
+    metadata:
+      labels:
+        app: tag
+    spec:
+      containers:
+      - name: tag
+        image: ghcr.io/hyperion-mc/hyperion/tag:latest
+        ports:
+        - containerPort: 27750
+        - containerPort: 35565
+        env:
+        - name: RUST_LOG
+          value: info
+        resources:
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+          requests:
+            cpu: "0.5"
+            memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tag
+  namespace: hyperion
+spec:
+  selector:
+    app: tag
+  ports:
+  - name: api
+    port: 27750
+    targetPort: 27750
+  - name: minecraft
+    port: 35565
+    targetPort: 35565 
