@@ -1,5 +1,5 @@
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, TermBuilderImpl},
+    core::{EntityViewGet, QueryBuilderImpl, TermBuilderImpl, World},
     macros::{Component, system},
     prelude::{Module, SystemAPI},
 };
@@ -16,7 +16,7 @@ use valence_server::ident;
 pub struct DamageModule {}
 
 impl Module for DamageModule {
-    fn module(world: &flecs_ecs::prelude::World) {
+    fn module(world: &World) {
         system!("apply natural damages", world, &mut EventQueue<HitGroundEvent>($), &Compose($))
             .each_iter(|it, _, (event_queue, compose)| {
                 let world = it.world();
