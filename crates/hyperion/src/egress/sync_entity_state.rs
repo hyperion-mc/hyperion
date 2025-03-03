@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use flecs_ecs::prelude::*;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 use hyperion_utils::EntityExt;
 use itertools::Either;
 use valence_protocol::{
@@ -357,14 +357,23 @@ impl Module for EntityStateSyncModule {
                 tracking.last_tick_position = **position;
                 tracking.last_tick_flying = flight.is_flying;
 
+                let mut friction = 0.91;
+
                 if tracking.was_on_ground {
                     tracking.server_velocity.y = 0.;
+                    #[allow(clippy::cast_possible_truncation)]
+                    world.get::<&mut Blocks>(|blocks| {
+                        let block_x = position.x as i32;
+                        let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
+                        let block_z = position.z as i32;
+
+                        if let Some(state) = blocks.get_block(IVec3::new(block_x, block_y, block_z))
+                        {
+                            let kind = state.to_kind();
+                            friction = f64::from(0.91 * kind.slipperiness() * kind.speed_factor());
+                        }
+                    });
                 }
-                let friction = if tracking.was_on_ground {
-                    0.6 * 0.91
-                } else {
-                    0.91
-                };
 
                 tracking.server_velocity.x *= friction * 0.98;
                 tracking.server_velocity.y -= 0.08 * 0.980_000_019_073_486_3;
