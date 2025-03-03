@@ -8,7 +8,6 @@ use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self},
 };
-use valence_text::IntoText;
 
 use crate::{
     Prev,
@@ -207,7 +206,6 @@ impl Module for EntityStateSyncModule {
             ?&mut PendingTeleportation,
             &mut MovementTracking,
             &Flight,
-            &ConnectionId
         )
         .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
@@ -226,7 +224,6 @@ impl Module for EntityStateSyncModule {
                 pending_teleport,
                 tracking,
                 flight,
-                connection,
             )| {
                 let world = it.system().world();
                 let system = it.system();

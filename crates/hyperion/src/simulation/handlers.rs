@@ -99,8 +99,11 @@ fn change_position_or_correct_client(
 
                 if tracking.sprinting {
                     let smth = yaw.yaw * 0.017_453_292;
-                    tracking.server_velocity +=
-                        DVec3::new(f64::from(-smth.sin()) * 0.2, 0.0, f64::from(smth.cos()) * 0.2);
+                    tracking.server_velocity += DVec3::new(
+                        f64::from(-smth.sin()) * 0.2,
+                        0.0,
+                        f64::from(smth.cos()) * 0.2,
+                    );
                 }
             }
         });
