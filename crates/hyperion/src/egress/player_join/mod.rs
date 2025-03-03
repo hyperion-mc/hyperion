@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
 use anyhow::Context;
 use flecs_ecs::prelude::*;
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -81,7 +81,6 @@ pub fn player_join_world(
         received_movement_packets: 0,
         last_tick_flying: false,
         last_tick_position: **position,
-        last_tick_velocity: Vec3::ZERO,
         fall_start_y: position.y,
         server_velocity: DVec3::ZERO,
         sprinting: false,

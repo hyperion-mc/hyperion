@@ -255,17 +255,14 @@ impl Module for EntityStateSyncModule {
                     }
 
                     // Replace 100 by 300 if fall flying (aka elytra)
-                    if position_delta.length_squared()
-                        - tracking.last_tick_velocity.length_squared()
-                        > 100f32 * f32::from(tracking.received_movement_packets)
+                    if f64::from(position_delta.length_squared())
+                        - tracking.server_velocity.length_squared()
+                        > 100f64 * f64::from(tracking.received_movement_packets)
                     {
                         entity.set(PendingTeleportation::new(tracking.last_tick_position));
-                        tracking.last_tick_velocity = Vec3::ZERO;
                         tracking.received_movement_packets = 0;
                         return;
                     }
-
-                    tracking.last_tick_velocity = position_delta;
 
                     world.get::<&mut Blocks>(|blocks| {
                         let grounded = is_grounded(position, blocks);

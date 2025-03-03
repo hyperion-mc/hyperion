@@ -615,7 +615,6 @@ pub struct MovementTracking {
     pub fall_start_y: f32,
     pub last_tick_flying: bool,
     pub last_tick_position: Vec3,
-    pub last_tick_velocity: Vec3,
     pub received_movement_packets: u8,
     pub server_velocity: DVec3,
     pub sprinting: bool,
