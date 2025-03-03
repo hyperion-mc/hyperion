@@ -48,7 +48,7 @@ members = [
 resolver = '2'
 
 [workspace.dependencies]
-anyhow = '1.0.95'
+anyhow = '1.0.97'
 approx = '0.5.1'
 arrayvec = '0.7.4'
 base64 = '0.22.1'
@@ -80,7 +80,7 @@ hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.0-pre8'
 libc = '0.2.170'
-libdeflater = '1.20.0'
+libdeflater = '1.23.1'
 memmap2 = '0.9.5'
 mio = { version = '1.0.3', features = ['os-poll', 'net'] }
 more-asserts = '0.3.1'
@@ -93,26 +93,26 @@ ouroboros = '0.18.5'
 papaya = "0.2.0"
 parking_lot = '0.12.3'
 plotters-bitmap = '0.3.6'
-proc-macro2 = '1.0.93'
+proc-macro2 = '1.0.94'
 proptest = '1.5.0'
-quote = '1.0.38'
+quote = '1.0.39'
 rand = "0.9.0"
 rayon = '1.10.0'
 rkyv = '0.8.8'
 serde = '1.0.217'
-serde_json = '1.0.137'
+serde_json = '1.0.140'
 slotmap = '1.0.7'
 snafu = '0.8.5'
-syn = '2.0.96'
+syn = '2.0.99'
 tango-bench = "0.6.0"
 tar = '0.4.41'
-thiserror = '2.0.11'
+thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
 time = '0.3.37'
 tokio = '1.43.0'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
-uuid = '1.12.0'
+uuid = '1.15.1'
 
 [workspace.dependencies.bvh]
 git = 'https://github.com/andrewgazelka/bvh-data'
@@ -122,7 +122,7 @@ path = 'crates/bvh-region'
 
 [workspace.dependencies.bytemuck]
 features = ['derive']
-version = '1.19.0'
+version = '1.22.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
