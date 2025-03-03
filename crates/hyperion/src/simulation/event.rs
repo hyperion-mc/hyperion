@@ -1,6 +1,5 @@
 //! Flecs components which are used for events.
 
-use derive_more::Constructor;
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
 use hyperion_utils::{Lifetime, RuntimeLifetime};
@@ -46,12 +45,6 @@ pub struct AttackEntity {
     pub target: Entity,
     /// The damage dealt by the attack. This corresponds to the same unit as [`crate::simulation::metadata::living_entity::Health`].
     pub damage: f32,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Constructor)]
-pub struct HealthUpdate {
-    pub from: f32,
-    pub to: f32,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -180,4 +173,11 @@ pub struct DropItemStackEvent {
 pub struct UpdateSelectedSlotEvent {
     pub client: Entity,
     pub slot: u8,
+}
+
+#[derive(Clone, Debug)]
+pub struct HitGroundEvent {
+    pub client: Entity,
+    /// This is at least 3
+    pub fall_distance: f32,
 }

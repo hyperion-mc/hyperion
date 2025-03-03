@@ -11,14 +11,14 @@ use flecs_ecs::{
 };
 use glam::IVec3;
 use hyperion::{
-    Prev,
+    BlockKind, Prev,
     net::{
         Compose, ConnectionId, agnostic,
         packets::{BossBarAction, BossBarS2c},
     },
     runtime::AsyncRuntime,
     simulation::{
-        PacketState, Pitch, Player, Position, Velocity, Xp, Yaw,
+        PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
         event::{self, ClientStatusCommand, ClientStatusEvent},
         handlers::PacketSwitchQuery,
@@ -43,7 +43,6 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_rank_tree::Team;
 use hyperion_utils::{EntityExt, LifetimeHandle};
 use tracing::info_span;
-use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
 
@@ -168,9 +167,10 @@ impl Module for AttackModule {
                                 &PlayerInventory,
                                 &Team,
                                 &mut Pose,
-                                &mut Xp
+                                &mut Xp,
+                                &mut Velocity
                             )>(
-                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp)| {
+                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp, target_velocity)| {
                                     if let Some(immune_until) = immune_until {
                                         if immune_until.tick > current_tick {
                                             return;
@@ -199,12 +199,6 @@ impl Module for AttackModule {
 
                                     health.damage(damage_after_protection);
 
-                                    let pkt_health = play::HealthUpdateS2c {
-                                        health: **health,
-                                        food: VarInt(20),
-                                        food_saturation: 5.0
-                                    };
-
                                     let delta_x: f64 = f64::from(target_position.x - origin_pos.x);
                                     let delta_z: f64 = f64::from(target_position.z - origin_pos.z);
 
@@ -231,7 +225,6 @@ impl Module for AttackModule {
                                     .build();
 
                                     compose.unicast(&pkt_hurt, *target_connection, system).unwrap();
-                                    compose.unicast(&pkt_health, *target_connection, system).unwrap();
 
                                     if critical_hit {
                                     let particle_pkt = play::ParticleS2c {
@@ -508,19 +501,15 @@ impl Module for AttackModule {
                                     let knockback_xz = 8.0;
                                     let knockback_y = 6.432;
 
-                                    let new_vel = Velocity::new(
+                                    let new_vel = Vec3::new(
                                         dir.x * knockback_xz / 20.0,
                                         knockback_y / 20.0,
                                         dir.z * knockback_xz / 20.0
                                     );
 
-                                    // https://github.com/valence-rs/valence/blob/8f3f84d557dacddd7faddb2ad724185ecee2e482/examples/ctf.rs#L987-L989
-                                    let packet = play::EntityVelocityUpdateS2c {
-                                        entity_id: VarInt(target.minecraft_id()),
-                                        velocity: new_vel.to_packet_units(),
-                                    };
+                                    target_velocity.0 += new_vel;
 
-                                    compose.broadcast_local(&packet, target_position.to_chunk(), system).send().unwrap();
+                                    // https://github.com/valence-rs/valence/blob/8f3f84d557dacddd7faddb2ad724185ecee2e482/examples/ctf.rs#L987-L989
                                 },
                             );
                         });
@@ -539,50 +528,34 @@ impl Module for AttackModule {
 
                     let client = client_status.client.entity_view(query.world);
 
-                    client.get::<(&Team, &mut Position, &Yaw, &Pitch, &ConnectionId)>(
-                        |(team, position, yaw, pitch, connection)| {
-                            let mut pos_vec = vec![];
+                    client.get::<&Team>(|team| {
+                        let mut pos_vec = vec![];
 
-                            query
-                                .world
-                                .query::<(&Position, &Team)>()
-                                .build()
-                                .each_entity(|candidate, (candidate_pos, candidate_team)| {
-                                    if team != candidate_team || candidate == client {
-                                        return;
-                                    }
-                                    pos_vec.push(*candidate_pos);
-                                });
+                        query
+                            .world
+                            .query::<(&Position, &Team)>()
+                            .build()
+                            .each_entity(|candidate, (candidate_pos, candidate_team)| {
+                                if team != candidate_team || candidate == client {
+                                    return;
+                                }
+                                pos_vec.push(*candidate_pos);
+                            });
 
-                            let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
-                                // Spawn the player near a teammate
-                                get_respawn_pos(query.world, &random_mate)
-                            } else {
-                                // There are no other teammates, so spawn the player in a random location
-                                query.world.get::<&AsyncRuntime>(|runtime| {
-                                    query.world.get::<&mut Blocks>(|blocks| {
-                                        find_spawn_position(blocks, runtime, &avoid_blocks())
-                                            .as_dvec3()
-                                    })
+                        let respawn_pos = if let Some(random_mate) = fastrand::choice(pos_vec) {
+                            // Spawn the player near a teammate
+                            get_respawn_pos(query.world, &random_mate).as_vec3()
+                        } else {
+                            // There are no other teammates, so spawn the player in a random location
+                            query.world.get::<&AsyncRuntime>(|runtime| {
+                                query.world.get::<&mut Blocks>(|blocks| {
+                                    find_spawn_position(blocks, runtime, &avoid_blocks())
                                 })
-                            };
+                            })
+                        };
 
-                            *position = Position::from(respawn_pos.as_vec3());
-
-                            let pkt_teleport = play::PlayerPositionLookS2c {
-                                position: respawn_pos,
-                                yaw: **yaw,
-                                pitch: **pitch,
-                                flags: PlayerPositionLookFlags::default(),
-                                teleport_id: VarInt(fastrand::i32(..)),
-                            };
-
-                            query
-                                .compose
-                                .unicast(&pkt_teleport, *connection, query.system)
-                                .unwrap();
-                        },
-                    );
+                        client.set::<PendingTeleportation>(PendingTeleportation::new(respawn_pos));
+                    });
 
                     Ok(())
                 },
@@ -599,8 +572,19 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
                 for z in base_pos.as_i16vec3().z - 15..base_pos.as_i16vec3().z + 15 {
                     let pos = IVec3::new(i32::from(x), i32::from(y), i32::from(z));
                     if let Some(state) = blocks.get_block(pos) {
-                        if is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
-                            position = pos.as_dvec3();
+                        if !is_valid_spawn_block(pos, state, blocks, &avoid_blocks()) {
+                            continue;
+                        }
+
+                        let block_above1 = blocks.get_block(pos.with_y(pos.y + 1));
+                        let block_above2 = blocks.get_block(pos.with_y(pos.y + 2));
+
+                        if let Some(block_above1) = block_above1
+                            && let Some(block_above2) = block_above2
+                            && block_above1.to_kind() == BlockKind::Air
+                            && block_above2.to_kind() == BlockKind::Air
+                        {
+                            position = pos.with_y(pos.y + 1).as_dvec3();
                             return;
                         }
                     }

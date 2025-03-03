@@ -5,9 +5,9 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, World};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
-use glam::{IVec3, Vec3};
+use glam::{DVec3, IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
 use tracing::{info, instrument, warn};
 use valence_generated::{
@@ -19,13 +19,12 @@ use valence_protocol::{
     packets::play::{
         self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
         player_interact_entity_c2s::EntityInteraction,
-        player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
 use valence_text::IntoText;
 
 use super::{
-    ConfirmBlockSequences, EntitySize, Position,
+    ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
     animation::{self, ActiveAnimation},
     block_bounds,
     blocks::Blocks,
@@ -47,7 +46,7 @@ fn full(
         position,
         yaw,
         pitch,
-        ..
+        on_ground,
     }: &play::FullC2s,
     _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
@@ -56,7 +55,7 @@ fn full(
     // if they are, ignore the packet
 
     let position = position.as_vec3();
-    change_position_or_correct_client(query, position);
+    change_position_or_correct_client(query, position, on_ground);
 
     query.yaw.yaw = yaw;
     query.pitch.pitch = pitch;
@@ -65,7 +64,11 @@ fn full(
 }
 
 // #[instrument(skip_all)]
-fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed: Vec3) {
+fn change_position_or_correct_client(
+    query: &mut PacketSwitchQuery<'_>,
+    proposed: Vec3,
+    on_ground: bool,
+) {
     let pose = &mut *query.position;
 
     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
@@ -80,25 +83,33 @@ fn change_position_or_correct_client(query: &mut PacketSwitchQuery<'_>, proposed
             warn!("Failed to send error message to player: {e}");
         }
 
-        // Correct client position
-        let pkt = play::PlayerPositionLookS2c {
-            position: pose.position.as_dvec3(),
-            yaw: query.yaw.yaw,
-            pitch: query.pitch.pitch,
-            flags: PlayerPositionLookFlags::default(),
-            teleport_id: VarInt(fastrand::i32(..)),
-        };
-
-        if let Err(e) = query.compose.unicast(&pkt, query.io_ref, query.system) {
-            warn!("Failed to correct client position: {e}");
-        }
+        query
+            .id
+            .entity_view(query.world)
+            .set(PendingTeleportation::new(pose.position));
     }
-}
+    query
+        .view
+        .get::<(&mut MovementTracking, &Yaw)>(|(tracking, yaw)| {
+            tracking.received_movement_packets += 1;
+            let y_delta = proposed.y - pose.y;
 
-/// Returns true if the position was changed, false if it was not.
-/// The vanilla server has a max speed of 100 blocks per tick.
-/// However, we are much more conservative.
-const MAX_BLOCKS_PER_TICK: f32 = 30.0;
+            if y_delta > 0. && tracking.was_on_ground && !on_ground {
+                tracking.server_velocity.y = 0.419_999_986_886_978_15;
+
+                if tracking.sprinting {
+                    let smth = yaw.yaw * 0.017_453_292;
+                    tracking.server_velocity += DVec3::new(
+                        f64::from(-smth.sin()) * 0.2,
+                        0.0,
+                        f64::from(smth.cos()) * 0.2,
+                    );
+                }
+            }
+        });
+
+    **pose = proposed;
+}
 
 /// Returns true if the position was changed, false if it was not.
 ///
@@ -115,19 +126,16 @@ const MAX_BLOCKS_PER_TICK: f32 = 30.0;
 /// This prevents players from glitching into blocks while allowing them to move out.
 fn try_change_position(
     proposed: Vec3,
-    position: &mut Position,
+    position: &Position,
     size: EntitySize,
     blocks: &Blocks,
 ) -> anyhow::Result<()> {
-    is_within_speed_limits(**position, proposed)?;
-
     // Only check collision if we're starting outside a block
     if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks)
     {
         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
     }
 
-    **position = proposed;
     Ok(())
 }
 
@@ -144,15 +152,6 @@ pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
         .get_block(IVec3::new(block_x, block_y, block_z))
         .unwrap()
         .is_air()
-}
-fn is_within_speed_limits(current: Vec3, proposed: Vec3) -> anyhow::Result<()> {
-    let delta = proposed - current;
-    if delta.length_squared() > MAX_BLOCKS_PER_TICK.powi(2) {
-        return Err(anyhow::anyhow!(
-            "Moving too fast! Maximum speed is {MAX_BLOCKS_PER_TICK} blocks per tick"
-        ));
-    }
-    Ok(())
 }
 
 fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {
@@ -191,11 +190,14 @@ fn look_and_on_ground(
 }
 
 fn position_and_on_ground(
-    &play::PositionAndOnGroundC2s { position, .. }: &play::PositionAndOnGroundC2s,
+    &play::PositionAndOnGroundC2s {
+        position,
+        on_ground,
+    }: &play::PositionAndOnGroundC2s,
     _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    change_position_or_correct_client(query, position.as_vec3());
+    change_position_or_correct_client(query, position.as_vec3(), on_ground);
 
     Ok(())
 }
@@ -342,9 +344,17 @@ fn client_command(
             *query.pose = Pose::Standing;
             query.size.height = 1.8;
         }
-        ClientCommand::StartSprinting
-        | ClientCommand::StopSprinting
-        | ClientCommand::StartJumpWithHorse
+        ClientCommand::StartSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = true;
+            });
+        }
+        ClientCommand::StopSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = false;
+            });
+        }
+        ClientCommand::StartJumpWithHorse
         | ClientCommand::StopJumpWithHorse
         | ClientCommand::OpenHorseInventory
         | ClientCommand::StartFlyingWithElytra => {}
@@ -572,6 +582,41 @@ pub fn client_status(
     Ok(())
 }
 
+pub fn confirm_teleportation(
+    pkt: &play::TeleportConfirmC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<(Option<&PendingTeleportation>, &mut Position)>(|(pending_teleport, position)| {
+        if let Some(pending_teleport) = pending_teleport {
+            if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
+                return;
+            }
+
+            position.position = pending_teleport.destination;
+            entity.remove::<PendingTeleportation>();
+        }
+    });
+
+    Ok(())
+}
+
+pub fn player_abilities(
+    pkt: &play::UpdatePlayerAbilitiesC2s,
+    _: &dyn LifetimeHandle<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<&mut Flight>(|flight| match pkt {
+        play::UpdatePlayerAbilitiesC2s::StopFlying => flight.is_flying = false,
+        play::UpdatePlayerAbilitiesC2s::StartFlying => flight.is_flying = flight.allow,
+    });
+    Ok(())
+}
+
 pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(chat_message));
     registry.add_handler(Box::new(click_slot));
@@ -589,6 +634,8 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(position_and_on_ground));
     registry.add_handler(Box::new(request_command_completions));
     registry.add_handler(Box::new(update_selected_slot));
+    registry.add_handler(Box::new(confirm_teleportation));
+    registry.add_handler(Box::new(player_abilities));
 }
 
 /// # Safety

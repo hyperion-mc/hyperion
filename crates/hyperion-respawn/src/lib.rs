@@ -6,14 +6,18 @@ use hyperion::{
         prelude::Module,
     },
     net::{ConnectionId, DataBundle},
-    protocol::{game_mode::OptGameMode, packets::play, ByteAngle, VarInt},
-    server::{ident, GameMode},
+    protocol::{
+        game_mode::OptGameMode,
+        packets::play::{self, PlayerAbilitiesS2c},
+        BlockPos, ByteAngle, GlobalPos, VarInt,
+    },
+    server::{abilities::PlayerAbilitiesFlags, ident, GameMode},
     simulation::{
         event::{ClientStatusCommand, ClientStatusEvent},
         handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
         packet::HandlerRegistry,
-        Pitch, Position, Uuid, Xp, Yaw,
+        Flight, FlyingSpeed, Pitch, Position, Uuid, Xp, Yaw,
     },
 };
 use hyperion_utils::{EntityExt, LifetimeHandle};
@@ -43,8 +47,21 @@ impl Module for RespawnModule {
                         &Yaw,
                         &Pitch,
                         &Xp,
+                        &Flight,
+                        &FlyingSpeed,
                     )>(
-                        |(connection, health, pose, uuid, position, yaw, pitch, xp)| {
+                        |(
+                            connection,
+                            health,
+                            pose,
+                            uuid,
+                            position,
+                            yaw,
+                            pitch,
+                            xp,
+                            flight,
+                            flying_speed,
+                        )| {
                             health.heal(20.);
 
                             *pose = Pose::Standing;
@@ -65,7 +82,10 @@ impl Module for RespawnModule {
                                 is_debug: false,
                                 is_flat: false,
                                 copy_metadata: false,
-                                last_death_location: None,
+                                last_death_location: Option::from(GlobalPos {
+                                    dimension_name: ident!("minecraft:overworld").into(),
+                                    position: BlockPos::from(position.as_dvec3()),
+                                }),
                                 portal_cooldown: VarInt::default(),
                             };
 
@@ -73,6 +93,14 @@ impl Module for RespawnModule {
                                 bar: xp.get_visual().prop,
                                 level: VarInt(i32::from(xp.get_visual().level)),
                                 total_xp: VarInt::default(),
+                            };
+
+                            let pkt_abilities = PlayerAbilitiesS2c {
+                                flags: PlayerAbilitiesFlags::default()
+                                    .with_flying(flight.is_flying)
+                                    .with_allow_flying(flight.allow),
+                                flying_speed: flying_speed.speed,
+                                fov_modifier: 0.0,
                             };
 
                             let pkt_add_player = play::PlayerSpawnS2c {
@@ -87,11 +115,13 @@ impl Module for RespawnModule {
                             bundle.add_packet(&pkt_health).unwrap();
                             bundle.add_packet(&pkt_respawn).unwrap();
                             bundle.add_packet(&pkt_xp).unwrap();
+                            bundle.add_packet(&pkt_abilities).unwrap();
 
                             bundle.unicast(*connection).unwrap();
                             query
                                 .compose
                                 .broadcast(&pkt_add_player, query.system)
+                                .exclude(*connection)
                                 .send()
                                 .unwrap();
                         },

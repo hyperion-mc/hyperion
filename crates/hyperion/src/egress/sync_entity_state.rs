@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use flecs_ecs::prelude::*;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 use hyperion_utils::EntityExt;
 use itertools::Either;
 use valence_protocol::{
@@ -13,11 +13,11 @@ use crate::{
     Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Owner, Pitch, Position, Velocity, Xp, Yaw,
+        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
-        event,
+        event::{self, HitGroundEvent},
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
@@ -143,8 +143,16 @@ impl Module for EntityStateSyncModule {
                         entity_id,
                         tracked_values: RawBytes(&view),
                     };
-
-                    // todo(perf): do so locally
+                    if entity.has::<Position>() {
+                        entity.get::<&Position>(|position| {
+                            compose
+                                .broadcast_local(&pkt, position.to_chunk(), system)
+                                .send()
+                                .unwrap();
+                        });
+                        return;
+                    }
+                    // Should never be reached but who knows
                     compose.broadcast(&pkt, system).send().unwrap();
                 }
             });
@@ -188,46 +196,92 @@ impl Module for EntityStateSyncModule {
             "sync_player_entity",
             world,
             &Compose($),
-            &mut (Prev, Position),
+            &mut Events($),
             &mut (Prev, Yaw),
             &mut (Prev, Pitch),
             &mut Position,
             &mut Velocity,
             &Yaw,
             &Pitch,
+            ?&mut PendingTeleportation,
+            &mut MovementTracking,
+            &Flight,
         )
-            .multi_threaded()
-            .kind::<flecs::pipeline::PreStore>()
-            .each_iter(
-                |it,
-                 row,
-                 (
-                     compose,
-                     prev_position,
-                     prev_yaw,
-                     prev_pitch,
-                     position,
-                     velocity,
-                     yaw,
-                     pitch,
-                 )| {
-                    let world = it.system().world();
-                    let system = it.system();
-                    let entity = it.entity(row);
-                    let entity_id = VarInt(entity.minecraft_id());
+        .multi_threaded()
+        .kind::<flecs::pipeline::PreStore>()
+        .each_iter(
+            |it,
+             row,
+             (
+                compose,
+                events,
+                prev_yaw,
+                prev_pitch,
+                position,
+                velocity,
+                yaw,
+                pitch,
+                pending_teleport,
+                tracking,
+                flight,
+            )| {
+                let world = it.system().world();
+                let system = it.system();
+                let entity = it.entity(row);
+                let entity_id = VarInt(entity.minecraft_id());
 
+                if let Some(pending_teleport) = pending_teleport {
+                    if pending_teleport.ttl == 0 {
+                        entity.set::<PendingTeleportation>(PendingTeleportation::new(
+                            pending_teleport.destination,
+                        ));
+                    }
+                    pending_teleport.ttl -= 1;
+                } else {
                     let chunk_pos = position.to_chunk();
 
-                    let position_delta = **position - **prev_position;
+                    let position_delta = **position - tracking.last_tick_position;
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
-                    let changed_position = **position != **prev_position;
+                    let changed_position = **position != tracking.last_tick_position;
 
-                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01 || (**pitch - **prev_pitch).abs() >= 0.01;
+                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01
+                        || (**pitch - **prev_pitch).abs() >= 0.01;
 
                     let mut bundle = DataBundle::new(compose, system);
 
+                    // Maximum number of movement packets allowed during 1 tick is 5
+                    if tracking.received_movement_packets > 5 {
+                        tracking.received_movement_packets = 1;
+                    }
+
+                    // Replace 100 by 300 if fall flying (aka elytra)
+                    if f64::from(position_delta.length_squared())
+                        - tracking.server_velocity.length_squared()
+                        > 100f64 * f64::from(tracking.received_movement_packets)
+                    {
+                        entity.set(PendingTeleportation::new(tracking.last_tick_position));
+                        tracking.received_movement_packets = 0;
+                        return;
+                    }
+
                     world.get::<&mut Blocks>(|blocks| {
                         let grounded = is_grounded(position, blocks);
+                        tracking.was_on_ground = grounded;
+                        if grounded
+                            && !tracking.last_tick_flying
+                            && tracking.fall_start_y - position.y > 3.
+                        {
+                            let event = HitGroundEvent {
+                                client: *entity,
+                                fall_distance: tracking.fall_start_y - position.y,
+                            };
+                            events.push(event, &world);
+                            tracking.fall_start_y = position.y;
+                        }
+
+                        if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
+                            tracking.fall_start_y = position.y;
+                        }
 
                         if changed_position && !needs_teleport && look_changed {
                             let packet = play::RotateAndMoveRelativeS2c {
@@ -290,11 +344,51 @@ impl Module for EntityStateSyncModule {
                         };
 
                         bundle.add_packet(&packet).unwrap();
+                        velocity.0 = Vec3::ZERO;
                     }
 
                     bundle.broadcast_local(chunk_pos).unwrap();
-                },
-            );
+                }
+
+                tracking.received_movement_packets = 0;
+                tracking.last_tick_position = **position;
+                tracking.last_tick_flying = flight.is_flying;
+
+                let mut friction = 0.91;
+
+                if tracking.was_on_ground {
+                    tracking.server_velocity.y = 0.;
+                    #[allow(clippy::cast_possible_truncation)]
+                    world.get::<&mut Blocks>(|blocks| {
+                        let block_x = position.x as i32;
+                        let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
+                        let block_z = position.z as i32;
+
+                        if let Some(state) = blocks.get_block(IVec3::new(block_x, block_y, block_z))
+                        {
+                            let kind = state.to_kind();
+                            friction = f64::from(0.91 * kind.slipperiness() * kind.speed_factor());
+                        }
+                    });
+                }
+
+                tracking.server_velocity.x *= friction * 0.98;
+                tracking.server_velocity.y -= 0.08 * 0.980_000_019_073_486_3;
+                tracking.server_velocity.z *= friction * 0.98;
+
+                if tracking.server_velocity.x.abs() < 0.003 {
+                    tracking.server_velocity.x = 0.;
+                }
+
+                if tracking.server_velocity.y.abs() < 0.003 {
+                    tracking.server_velocity.y = 0.;
+                }
+
+                if tracking.server_velocity.z.abs() < 0.003 {
+                    tracking.server_velocity.z = 0.;
+                }
+            },
+        );
 
         system!(
             "update_projectile_positions",
