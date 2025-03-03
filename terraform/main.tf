@@ -1,80 +1,110 @@
+# Hetzner Cloud Terraform Configuration for Minecraft Bot Testing
+# This sets up the infrastructure needed for testing 100,000 Minecraft bots
+
 terraform {
   required_providers {
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-      version = "~> 2.23.0"
+    hcloud = {
+      source  = "hetznercloud/hcloud"
+      version = "~> 1.44.1"
     }
   }
+  required_version = ">= 1.0.0"
 }
 
-# Configure the Kubernetes provider
-provider "kubernetes" {
-  # Use a kubeconfig file or cloud provider specific configuration
-  # config_path = "~/.kube/config" # Uncomment for local development
+# Configure the Hetzner Cloud Provider
+provider "hcloud" {
+  token = var.hcloud_token
 }
 
-# Define resource for hyperion namespace
-resource "kubernetes_namespace" "hyperion" {
-  metadata {
-    name = "hyperion"
-    labels = {
-      name = "hyperion"
-    }
-  }
+# Create a private network for all servers to communicate
+resource "hcloud_network" "minecraft_network" {
+  name     = "minecraft-network"
+  ip_range = "10.0.0.0/16"
 }
 
-# Create labels for node selection
-locals {
-  node_labels = {
-    "hyperion-proxy-tag" = "role=core"
-    "hyperion-bot" = "role=bot"
-  }
+# Create a subnet within the network
+resource "hcloud_network_subnet" "minecraft_subnet" {
+  network_id   = hcloud_network.minecraft_network.id
+  type         = "cloud"
+  network_zone = "eu-central"
+  ip_range     = "10.0.1.0/24"
 }
 
-# Use kubernetes_manifest for node labels (requires kubectl apply)
-resource "null_resource" "label_nodes" {
-  # Define a node selection logic - this would be customized based on your specific environment
-  # This is a placeholder - in real implementation, you would use cloud provider specific node tagging
+# Firewall for common rules
+resource "hcloud_firewall" "common" {
+  name = "common"
   
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Label your core node(s) that run tag & proxy
-      kubectl label nodes YOUR_CORE_NODE_NAME role=core --overwrite
-      
-      # Label your bot node(s)
-      kubectl label nodes YOUR_BOT_NODE_NAME role=bot --overwrite
-    EOT
+  # Allow SSH from anywhere
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "22"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+  
+  # Allow ICMP (ping)
+  rule {
+    direction  = "in"
+    protocol   = "icmp"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+}
+
+# Firewall specifically for Minecraft and related services
+resource "hcloud_firewall" "minecraft" {
+  name = "minecraft"
+  
+  # Allow Minecraft traffic on the standard port
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "25565"
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  depends_on = [kubernetes_namespace.hyperion]
-}
-
-# Apply all Kubernetes manifests
-resource "null_resource" "apply_kubernetes_manifests" {
-  provisioner "local-exec" {
-    command = <<-EOT
-      kubectl apply -f ../kubernetes/hyperion-namespace.yaml
-      kubectl apply -f ../kubernetes/hyperion-configmap.yaml
-      kubectl apply -f ../kubernetes/tag-deployment.yaml
-      kubectl apply -f ../kubernetes/hyperion-proxy-deployment.yaml
-      kubectl apply -f ../kubernetes/rust-mc-bot-deployment.yaml
-    EOT
+  # Allow tag service port
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "27750"
+    source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  depends_on = [null_resource.label_nodes]
+  # Allow internal tag service port
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "35565"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
 }
 
-# Output the service endpoints
-output "hyperion_proxy_endpoint" {
-  value = "Once deployed, the Minecraft server will be accessible at: <EXTERNAL_IP>:25565"
-  description = "The endpoint where players can connect to the Minecraft server"
+# Output the details
+output "minecraft_server_ip" {
+  value = hcloud_server.game_server.ipv4_address
 }
 
-output "tag_service_endpoint" {
-  value = "tag.hyperion.svc.cluster.local:35565"
-  description = "Internal endpoint for the tag service"
+output "proxy_server_ips" {
+  value = {
+    for server in hcloud_server.proxy_servers : server.name => server.ipv4_address
+  }
 }
 
-output "important_note" {
-  value = "Make sure to replace YOUR_CORE_NODE_NAME and YOUR_BOT_NODE_NAME with actual node names in your cluster"
+output "bot_server_ips" {
+  value = {
+    for server in hcloud_server.bot_servers : server.name => server.ipv4_address
+  }
+}
+
+output "private_network_id" {
+  value = hcloud_network.minecraft_network.id
+}
+
+output "container_check_command" {
+  description = "Commands to check Docker container status on each server"
+  value = {
+    tag_server = "ssh root@${hcloud_server.game_server.ipv4_address} 'docker ps -a'"
+    proxy_server = "ssh root@${hcloud_server.proxy_servers[0].ipv4_address} 'docker ps -a'"
+    bot_server = "ssh root@${hcloud_server.bot_servers[0].ipv4_address} 'docker ps -a'"
+  }
 } 

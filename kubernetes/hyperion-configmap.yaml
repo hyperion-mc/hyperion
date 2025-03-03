@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hyperion-config
-  namespace: hyperion
-data:
-  RUST_LOG: "info"
-  # Add other configuration here as needed 
