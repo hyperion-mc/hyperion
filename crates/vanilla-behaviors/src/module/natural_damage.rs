@@ -78,6 +78,7 @@ impl Module for NaturalDamageModule {
             },
         );
 
+        #[allow(clippy::excessive_nesting)]
         system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode)
             .with::<Player>()
             .each_iter(|it, row, (compose, blocks, position, size, gamemode)| {
@@ -89,6 +90,7 @@ impl Module for NaturalDamageModule {
                 let entity = it.entity(row);
 
                 let (min, max) = block_bounds(**position, *size);
+                let min = min.with_y(min.y-1);
                 let bounding_box = aabb(**position, *size);
 
                 blocks.get_blocks(min, max, |pos, block| {
@@ -108,12 +110,10 @@ impl Module for NaturalDamageModule {
                                 BlockKind::Cactus => {
                                     damage_player(&entity, 1., DamageCause::new(DamageType::Cactus), compose, system);
                                 }
-                                BlockKind::Fire => {
-                                    // Todo check for overlap not just collision
-                                    damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
-                                }
-                                BlockKind::SoulFire => {
-                                    damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                                BlockKind::MagmaBlock => {
+                                    if position.y > pos.y {
+                                        damage_player(&entity, 1., DamageCause::new(DamageType::HotFloor), compose, system);
+                                    }
                                 }
                                 _ => {}
                             }
@@ -121,6 +121,19 @@ impl Module for NaturalDamageModule {
                         }
                     }
 
+                    let aabb = Aabb::new(Vec3::ZERO, Vec3::ONE).move_by(pos);
+
+                    if Aabb::overlap(&aabb, &bounding_box).is_some() {
+                        match kind {
+                            BlockKind::Fire => {
+                                damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
+                            }
+                            BlockKind::SoulFire => {
+                                damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                            }
+                            _ => {}
+                        }
+                    }
                     ControlFlow::Continue(())
                 });
             });
