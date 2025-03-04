@@ -8,7 +8,7 @@ use flecs_ecs::{
 use geometry::aabb::Aabb;
 use hyperion::{
     glam::Vec3,
-    net::{agnostic, Compose, ConnectionId},
+    net::{agnostic, Compose},
     simulation::{
         aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, EntitySize, Gamemode, Player,
         Position,
@@ -16,11 +16,9 @@ use hyperion::{
     storage::EventQueue,
     BlockKind,
 };
-use hyperion_utils::EntityExt;
-use valence_protocol::{packets::play, VarInt};
-use valence_server::{ident, GameMode};
+use valence_server::ident;
 
-use crate::damage_player;
+use crate::{damage_player, is_invincible, DamageCause, DamageType};
 
 #[derive(Component)]
 pub struct NaturalDamageModule {}
@@ -45,59 +43,52 @@ impl Module for NaturalDamageModule {
                         continue;
                     }
 
-                    entity.get::<(&ConnectionId, &Position, &Gamemode)>(
-                        |(connection, position, gamemode)| {
-                            if gamemode.current != GameMode::Survival
-                                && gamemode.current != GameMode::Adventure
-                            {
-                                return;
-                            }
+                    entity.get::<(&Position, &Gamemode)>(|(position, gamemode)| {
+                        if is_invincible(&gamemode.current) {
+                            return;
+                        }
 
-                            damage_player(&entity, damage, compose);
+                        damage_player(
+                            &entity,
+                            damage,
+                            DamageCause::new(DamageType::Fall),
+                            compose,
+                            system,
+                        );
 
-                            let pkt_damage_event = play::EntityDamageS2c {
-                                entity_id: VarInt(entity.minecraft_id()),
-                                source_cause_id: VarInt(0),
-                                source_direct_id: VarInt(0),
-                                source_type_id: VarInt(10), // 10 = fall damage
-                                source_pos: Option::None,
-                            };
+                        let sound = agnostic::sound(
+                            if event.fall_distance > 7. {
+                                ident!("minecraft:entity.player.big_fall")
+                            } else {
+                                ident!("minecraft:entity.player.small_fall")
+                            },
+                            **position,
+                        )
+                        .volume(1.)
+                        .pitch(1.)
+                        .seed(fastrand::i64(..))
+                        .build();
 
-                            let sound = agnostic::sound(
-                                if event.fall_distance > 7. {
-                                    ident!("minecraft:entity.player.big_fall")
-                                } else {
-                                    ident!("minecraft:entity.player.small_fall")
-                                },
-                                **position,
-                            )
-                            .volume(1.)
-                            .pitch(1.)
-                            .seed(fastrand::i64(..))
-                            .build();
-
-                            compose
-                                .unicast(&pkt_damage_event, *connection, system)
-                                .unwrap();
-                            compose
-                                .broadcast_local(&sound, position.to_chunk(), system)
-                                .send()
-                                .unwrap();
-                        },
-                    );
+                        compose
+                            .broadcast_local(&sound, position.to_chunk(), system)
+                            .send()
+                            .unwrap();
+                    });
                 }
             },
         );
 
-        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize)
+        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode)
             .with::<Player>()
-            .each_iter(|it, row, (compose, blocks, position, size)| {
-                let world = it.world();
+            .each_iter(|it, row, (compose, blocks, position, size, gamemode)| {
+                if is_invincible(&gamemode.current) {
+                    return;
+                }
+
                 let system = it.system();
                 let entity = it.entity(row);
 
                 let (min, max) = block_bounds(**position, *size);
-
                 let bounding_box = aabb(**position, *size);
 
                 blocks.get_blocks(min, max, |pos, block| {
@@ -115,11 +106,18 @@ impl Module for NaturalDamageModule {
                         if bounding_box.collides(&aabb) {
                             match kind {
                                 BlockKind::Cactus => {
-                                    damage_player(&entity, 1., compose);
+                                    damage_player(&entity, 1., DamageCause::new(DamageType::Cactus), compose, system);
+                                }
+                                BlockKind::Fire => {
+                                    // Todo check for overlap not just collision
+                                    damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
+                                }
+                                BlockKind::SoulFire => {
+                                    damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
                                 }
                                 _ => {}
                             }
-                            return ControlFlow::Break(false);
+                            return ControlFlow::Break(());
                         }
                     }
 
@@ -129,9 +127,15 @@ impl Module for NaturalDamageModule {
     }
 }
 
-pub fn is_harmful_block(kind: BlockKind) -> bool {
+#[must_use]
+pub const fn is_harmful_block(kind: BlockKind) -> bool {
     matches!(
         kind,
-        BlockKind::Lava | BlockKind::Cactus | BlockKind::MagmaBlock | BlockKind::SweetBerryBush
+        BlockKind::Lava
+            | BlockKind::Cactus
+            | BlockKind::MagmaBlock
+            | BlockKind::SweetBerryBush
+            | BlockKind::SoulFire
+            | BlockKind::Fire
     )
 }

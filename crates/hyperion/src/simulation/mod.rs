@@ -899,7 +899,7 @@ impl Module for SimModule {
 
             let pkt = play::GameStateChangeS2c {
                 kind: GameEventKind::ChangeGameMode,
-                value: (gamemode.current as i8) as f32,
+                value: f32::from(gamemode.current as i8),
             };
 
             compose.unicast(&pkt, *connection, system).unwrap();
