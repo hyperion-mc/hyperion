@@ -1,5 +1,6 @@
 use flecs_ecs::core::World;
 use hyperion_clap::{MinecraftCommand, hyperion_command::CommandRegistry};
+use vanilla_behaviors::command::gamemode::GamemodeCommand;
 
 use crate::command::{
     bow::BowCommand, chest::ChestCommand, class::ClassCommand, fly::FlyCommand, gui::GuiCommand,
@@ -33,4 +34,5 @@ pub fn register(registry: &mut CommandRegistry, world: &World) {
     VanishCommand::register(registry, world);
     XpCommand::register(registry, world);
     ChestCommand::register(registry, world);
+    GamemodeCommand::register(registry, world);
 }

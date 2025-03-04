@@ -7,17 +7,16 @@ use hyperion::{
     },
     net::{ConnectionId, DataBundle},
     protocol::{
-        game_mode::OptGameMode,
         packets::play::{self, PlayerAbilitiesS2c},
         BlockPos, ByteAngle, GlobalPos, VarInt,
     },
-    server::{abilities::PlayerAbilitiesFlags, ident, GameMode},
+    server::{abilities::PlayerAbilitiesFlags, ident},
     simulation::{
         event::{ClientStatusCommand, ClientStatusEvent},
         handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
         packet::HandlerRegistry,
-        Flight, FlyingSpeed, Pitch, Position, Uuid, Xp, Yaw,
+        Flight, FlyingSpeed, Gamemode, Pitch, Position, Uuid, Xp, Yaw,
     },
 };
 use hyperion_utils::{EntityExt, LifetimeHandle};
@@ -49,6 +48,7 @@ impl Module for RespawnModule {
                         &Xp,
                         &Flight,
                         &FlyingSpeed,
+                        &Gamemode,
                     )>(
                         |(
                             connection,
@@ -61,6 +61,7 @@ impl Module for RespawnModule {
                             xp,
                             flight,
                             flying_speed,
+                            gamemode,
                         )| {
                             health.heal(20.);
 
@@ -77,8 +78,8 @@ impl Module for RespawnModule {
                                 dimension_type_name: ident!("minecraft:overworld").into(),
                                 dimension_name: ident!("minecraft:overworld").into(),
                                 hashed_seed: 0,
-                                game_mode: GameMode::Survival,
-                                previous_game_mode: OptGameMode::default(),
+                                game_mode: gamemode.current,
+                                previous_game_mode: gamemode.previous,
                                 is_debug: false,
                                 is_flat: false,
                                 copy_metadata: false,

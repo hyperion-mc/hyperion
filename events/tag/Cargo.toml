@@ -29,6 +29,7 @@ uuid = { workspace = true }
 hyperion-respawn = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
+vanilla-behaviors = { workspace = true }
 
 [dev-dependencies]
 tracing = { workspace = true, features = ["release_max_level_info"] }

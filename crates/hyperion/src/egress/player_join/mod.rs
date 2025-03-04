@@ -8,9 +8,7 @@ use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::{info, instrument};
 use valence_protocol::{
-    ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
-    game_mode::OptGameMode,
-    ident,
+    ByteAngle, Ident, PacketEncoder, RawBytes, VarInt, Velocity, ident,
     packets::play::{
         self, GameJoinS2c,
         player_position_look_s2c::PlayerPositionLookFlags,
@@ -21,7 +19,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, PacketState, Pitch};
+use crate::simulation::{Gamemode, MovementTracking, PacketState, Pitch};
 
 mod list;
 pub use list::*;
@@ -67,9 +65,11 @@ pub fn player_join_world(
         &Pitch,
         &PlayerSkin,
         &EntityFlags,
+        &Gamemode,
     )>,
     crafting_registry: &CraftingRegistry,
     config: &Config,
+    gamemode: &Gamemode,
 ) -> anyhow::Result<()> {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
@@ -111,11 +111,11 @@ pub fn player_join_world(
         enable_respawn_screen: false,
         dimension_name: dimension_name.into(),
         hashed_seed: 0,
-        game_mode: GameMode::Survival,
+        game_mode: gamemode.current,
         is_flat: false,
         last_death_location: None,
         portal_cooldown: 60.into(),
-        previous_game_mode: OptGameMode(Some(GameMode::Survival)),
+        previous_game_mode: gamemode.previous,
         dimension_type_name: ident!("minecraft:overworld").into(),
         is_debug: false,
     };
@@ -194,7 +194,7 @@ pub fn player_join_world(
         let _enter = scope.enter();
         query
             .iter_stage(world)
-            .each(|(uuid, name, _, _, _, _skin, _)| {
+            .each(|(uuid, name, _, _, _, _skin, _, gamemode)| {
                 // todo: in future, do not clone
 
                 let entry = PlayerListEntry {
@@ -205,7 +205,7 @@ pub fn player_join_world(
                     chat_data: None,
                     listed: true,
                     ping: 20,
-                    game_mode: GameMode::Creative,
+                    game_mode: gamemode.current,
                     display_name: Some(name.to_string().into_cow_text()),
                 };
 
@@ -240,9 +240,8 @@ pub fn player_join_world(
 
         let mut metadata = MetadataChanges::default();
 
-        query
-            .iter_stage(world)
-            .each_iter(|it, idx, (uuid, _, position, yaw, pitch, _, flags)| {
+        query.iter_stage(world).each_iter(
+            |it, idx, (uuid, _, position, yaw, pitch, _, flags, _)| {
                 let mut result = || {
                     let query_entity = it.entity(idx);
 
@@ -275,7 +274,8 @@ pub fn player_join_world(
                 if let Err(e) = result() {
                     query_errors.push(e);
                 }
-            });
+            },
+        );
 
         if !query_errors.is_empty() {
             return Err(anyhow::anyhow!(
@@ -305,7 +305,7 @@ pub fn player_join_world(
         chat_data: None,
         listed: true,
         ping: 20,
-        game_mode: GameMode::Survival,
+        game_mode: gamemode.current,
         display_name: Some(name.to_string().into_cow_text()),
     }];
 
@@ -504,6 +504,7 @@ impl Module for PlayerJoinModule {
             &Pitch,
             &PlayerSkin,
             &EntityFlags,
+            &Gamemode,
         )>();
 
         let query = SendableQuery(query);
@@ -574,8 +575,16 @@ impl Module for PlayerJoinModule {
 
                     let entity = world.entity_from_id(entity);
 
-                    entity.get::<(&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>(
-                        |(uuid, name, position, yaw, pitch, &stream_id)| {
+                    entity.get::<(
+                        &Uuid,
+                        &Name,
+                        &Position,
+                        &Yaw,
+                        &Pitch,
+                        &ConnectionId,
+                        &Gamemode,
+                    )>(
+                        |(uuid, name, position, yaw, pitch, &stream_id, gamemode)| {
                             let query = &query;
                             let query = &query.0;
                             entity.set_name(name);
@@ -597,6 +606,7 @@ impl Module for PlayerJoinModule {
                                 query,
                                 crafting_registry,
                                 config,
+                                gamemode,
                             ) {
                                 entity.set(PendingRemove::new(e.to_string()));
                             }

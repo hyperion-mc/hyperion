@@ -14,11 +14,14 @@ use uuid;
 use valence_generated::block::BlockState;
 use valence_protocol::{
     ByteAngle, VarInt,
+    game_mode::OptGameMode,
     packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
+        self, PlayerAbilitiesS2c, game_state_change_s2c::GameEventKind,
+        player_abilities_s2c::PlayerAbilitiesFlags,
         player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
+use valence_server::GameMode;
 
 use crate::{
     Global,
@@ -628,6 +631,21 @@ pub struct Flight {
     pub is_flying: bool,
 }
 
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+pub struct LastDamaged {
+    pub tick: i64,
+}
+
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+/// The Game Mode Component not to confuse with [`GameMode`] from valence
+pub struct Gamemode {
+    pub current: GameMode,
+    /// Tells the client wich gamemode to select when using the F3+F4 shortcut
+    pub previous: OptGameMode,
+}
+
 #[derive(Component)]
 pub struct SimModule;
 
@@ -665,6 +683,8 @@ impl Module for SimModule {
         world.component::<FlyingSpeed>();
         world.component::<MovementTracking>();
         world.component::<Flight>().meta();
+        world.component::<LastDamaged>().meta();
+        world.component::<Gamemode>().meta();
 
         world.component::<EntityKind>().meta();
 
@@ -803,6 +823,12 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, FlyingSpeed)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, LastDamaged)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, Gamemode)>();
 
         observer!(
             world,
@@ -858,6 +884,22 @@ impl Module for SimModule {
                     .with_flying(flight.is_flying),
                 flying_speed: flying_speed.speed,
                 fov_modifier: 0.,
+            };
+
+            compose.unicast(&pkt, *connection, system).unwrap();
+        });
+
+        observer!(
+            world,
+            flecs::OnSet, &Gamemode,
+            &Compose($), &ConnectionId
+        )
+        .each_iter(|it, _, (gamemode, compose, connection)| {
+            let system = it.system();
+
+            let pkt = play::GameStateChangeS2c {
+                kind: GameEventKind::ChangeGameMode,
+                value: (gamemode.current as i8) as f32,
             };
 
             compose.unicast(&pkt, *connection, system).unwrap();
