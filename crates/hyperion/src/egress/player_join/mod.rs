@@ -44,6 +44,7 @@ use crate::{
     reason = "todo: we should refactor at some point"
 )]
 #[instrument(skip_all, fields(name = name))]
+#[allow(clippy::type_complexity)]
 pub fn player_join_world(
     entity: &EntityView<'_>,
     compose: &Compose,

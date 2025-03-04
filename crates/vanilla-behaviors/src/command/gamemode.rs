@@ -32,7 +32,7 @@ impl MinecraftCommand for GamemodeCommand {
                     let chat_packet = if new_mode == gamemode.current {
                         agnostic::chat("§4Nothing changed")
                     } else {
-                        agnostic::chat(format!("Changed gamemode to {:?}", new_mode))
+                        agnostic::chat(format!("Changed gamemode to {new_mode:?}"))
                     };
 
                     gamemode.current = new_mode;
