@@ -41,6 +41,7 @@ members = [
     'crates/hyperion-utils',
     'crates/simd-utils',
     'crates/system-order',
+    'crates/vanilla-behaviors',
     'events/tag',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
@@ -202,6 +203,9 @@ path = 'crates/hyperion-text'
 
 [workspace.dependencies.hyperion-utils]
 path = 'crates/hyperion-utils'
+
+[workspace.dependencies.vanilla-behaviors]
+path = 'crates/vanilla-behaviors'
 
 [workspace.dependencies.indexmap]
 features = ['rayon']

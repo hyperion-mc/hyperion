@@ -9,7 +9,7 @@ use flecs_ecs::prelude::*;
 use hyperion::{GameServerEndpoint, HyperionCore, simulation::Player};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
-use module::{block::BlockModule, damage::DamageModule, vanish::VanishModule};
+use module::{block::BlockModule, vanish::VanishModule};
 
 mod module;
 
@@ -18,6 +18,7 @@ use hyperion::{glam::IVec3, simulation::Position, spatial};
 use hyperion_rank_tree::Team;
 use module::{attack::AttackModule, level::LevelModule, regeneration::RegenerationModule};
 use spatial::SpatialIndex;
+use vanilla_behaviors::module::natural_damage::NaturalDamageModule;
 
 use crate::{
     module::{bow::BowModule, chat::ChatModule, spawn::SpawnModule, stats::StatsModule},
@@ -83,7 +84,7 @@ impl Module for TagModule {
         world.import::<SkinModule>();
         world.import::<VanishModule>();
         world.import::<hyperion_genmap::GenMapModule>();
-        world.import::<DamageModule>();
+        world.import::<NaturalDamageModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
             command::register(registry, world);
