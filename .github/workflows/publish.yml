@@ -16,7 +16,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: abc
+            runner: ubuntu-latest-arm64
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
