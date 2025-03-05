@@ -646,6 +646,19 @@ pub struct Gamemode {
     pub previous: OptGameMode,
 }
 
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+pub struct BurningState {
+    pub immune: bool,
+    pub fire_ticks_left: u16,
+}
+
+impl BurningState {
+    pub const fn burn_for_seconds(&mut self, seconds: u16) {
+        self.fire_ticks_left = 20 * seconds;
+    }
+}
+
 #[derive(Component)]
 pub struct SimModule;
 
@@ -684,7 +697,8 @@ impl Module for SimModule {
         world.component::<MovementTracking>();
         world.component::<Flight>().meta();
         world.component::<LastDamaged>().meta();
-        world.component::<Gamemode>().meta();
+        world.component::<Gamemode>();
+        world.component::<BurningState>().meta();
 
         world.component::<EntityKind>().meta();
 
@@ -829,6 +843,9 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, Gamemode)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, BurningState)>();
 
         observer!(
             world,

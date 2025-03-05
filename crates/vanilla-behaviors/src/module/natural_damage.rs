@@ -10,8 +10,8 @@ use hyperion::{
     glam::Vec3,
     net::{agnostic, Compose},
     simulation::{
-        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, EntitySize, Gamemode,
-        MovementTracking, Player, Position,
+        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, BurningState, EntitySize,
+        Gamemode, MovementTracking, Player, Position,
     },
     storage::EventQueue,
     BlockKind,
@@ -82,9 +82,9 @@ impl Module for NaturalDamageModule {
         );
 
         #[allow(clippy::excessive_nesting)]
-        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode, &MovementTracking)
+        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode, &MovementTracking, &mut BurningState)
             .with::<Player>()
-            .each_iter(|it, row, (compose, blocks, position, size, gamemode, movement)| {
+            .each_iter(|it, row, (compose, blocks, position, size, gamemode, movement, burning)| {
                 if is_invincible(&gamemode.current) {
                     return;
                 }
@@ -114,7 +114,7 @@ impl Module for NaturalDamageModule {
                                     damage_player(&entity, 1., DamageCause::new(DamageType::Cactus), compose, system);
                                 }
                                 BlockKind::MagmaBlock => {
-                                    if position.y > pos.y {
+                                    if position.y > pos.y && !burning.immune{
                                         damage_player(&entity, 1., DamageCause::new(DamageType::HotFloor), compose, system);
                                     }
                                 }
@@ -129,10 +129,22 @@ impl Module for NaturalDamageModule {
                     if Aabb::overlap(&aabb, &bounding_box).is_some() {
                         match kind {
                             BlockKind::Fire => {
-                                damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
+                                if !burning.immune {
+                                    damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
+
+                                }
                             }
                             BlockKind::SoulFire => {
-                                damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                                if !burning.immune {
+                                    damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                                }
+                            }
+                            BlockKind::Lava => {
+                                if !burning.immune {
+                                    damage_player(&entity, 4., DamageCause::new(DamageType::InFire), compose, system);
+                                    burning.burn_for_seconds(15);
+                                    // this.playSound(SoundEvents.GENERIC_BURN, 0.4F, 2.0F + this.random.nextFloat() * 0.4F);
+                                }
                             }
                             BlockKind::SweetBerryBush => {
                                 let grown = block.get(PropName::Age)
