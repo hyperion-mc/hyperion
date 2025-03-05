@@ -26,7 +26,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # tracing-tracy = { workspace = true }
 uuid = { workspace = true }
-hyperion-respawn = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }

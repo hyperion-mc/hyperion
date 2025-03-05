@@ -18,7 +18,7 @@ use hyperion::{glam::IVec3, simulation::Position, spatial};
 use hyperion_rank_tree::Team;
 use module::{attack::AttackModule, level::LevelModule, regeneration::RegenerationModule};
 use spatial::SpatialIndex;
-use vanilla_behaviors::module::natural_damage::NaturalDamageModule;
+use vanilla_behaviors::module::{natural_damage::NaturalDamageModule, respawn::RespawnModule};
 
 use crate::{
     module::{bow::BowModule, chat::ChatModule, spawn::SpawnModule, stats::StatsModule},
@@ -73,7 +73,7 @@ impl Module for TagModule {
         world.import::<ChatModule>();
         world.import::<StatsModule>();
         world.import::<BlockModule>();
-        world.import::<hyperion_respawn::RespawnModule>();
+        world.import::<RespawnModule>();
         world.import::<AttackModule>();
         world.import::<LevelModule>();
         world.import::<BowModule>();

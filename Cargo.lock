@@ -3036,14 +3036,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperion-respawn"
-version = "0.1.0"
-dependencies = [
- "hyperion",
- "hyperion-utils",
-]
-
-[[package]]
 name = "hyperion-scheduled"
 version = "0.1.0"
 
@@ -5732,7 +5724,6 @@ dependencies = [
  "hyperion-item",
  "hyperion-permission",
  "hyperion-rank-tree",
- "hyperion-respawn",
  "hyperion-scheduled",
  "hyperion-text",
  "hyperion-utils",
