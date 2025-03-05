@@ -14,7 +14,7 @@ jobs:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
-          - arch: arm64
+          - arch: arm-hooray
             platform: linux/arm64
             runner: i-love-arm
     runs-on: ${{ matrix.runner }}
