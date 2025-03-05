@@ -1871,6 +1871,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "envy"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f47e0157f2cb54f5ae1bd371b30a2ae4311e1c028f575cd4e81de7353215965"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "epaint"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2994,6 +3003,8 @@ dependencies = [
  "bytes",
  "clap",
  "colored",
+ "dotenvy",
+ "envy",
  "glam",
  "heapless",
  "hyperion-proto",
@@ -3002,6 +3013,7 @@ dependencies = [
  "papaya",
  "rkyv",
  "rustc-hash 2.1.1",
+ "serde",
  "slotmap",
  "tikv-jemallocator",
  "tokio",
@@ -5086,10 +5098,13 @@ name = "rust-mc-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dotenvy",
+ "envy",
  "libdeflater",
  "mio",
  "num_cpus",
  "rand 0.9.0",
+ "serde",
  "tracing",
  "tracing-subscriber",
 ]
@@ -5508,7 +5523,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03c3c6b7927ffe7ecaa769ee0e3994da3b8cafc8f444578982c83ecb161af917"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "proc-macro2",
  "quote",
  "syn",
@@ -5704,6 +5719,7 @@ dependencies = [
  "compact_str 0.8.1",
  "derive_more 2.0.1",
  "dotenvy",
+ "envy",
  "fastrand 2.3.0",
  "flecs_ecs",
  "geometry",
@@ -5723,6 +5739,7 @@ dependencies = [
  "rayon",
  "roaring",
  "rustc-hash 2.1.1",
+ "serde",
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",

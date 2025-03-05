@@ -7,10 +7,12 @@ services:
       target: hyperion-proxy
     ports:
       - "25565:25565"
-    command: [ "--server", "tag:35565", "0.0.0.0:25565" ]
+    command: []
     restart: "no"
     environment:
       - RUST_LOG=info
+      - HYPERION_PROXY_PROXY_ADDR=0.0.0.0:25565
+      - HYPERION_PROXY_SERVER=tag:35565
     networks:
       - proxy-network
     depends_on:
@@ -25,10 +27,12 @@ services:
       - "27750:27750"
     expose:
       - "35565"
-    command: [ ]
+    command: []
     restart: "no"
     environment:
       - RUST_LOG=info
+      - TAG_IP=0.0.0.0
+      - TAG_PORT=35565
     networks:
       - proxy-network
   rust-mc-bot:
@@ -37,12 +41,15 @@ services:
       context: .
       dockerfile: Dockerfile
       target: rust-mc-bot
-    command: [ "hyperion-proxy:25565", "500", "2" ]
+    command: []
     restart: "no"
     depends_on:
       - hyperion-proxy
     environment:
       - RUST_LOG=info
+      - BOT_SERVER=hyperion-proxy:25565
+      - BOT_BOT_COUNT=500
+      - BOT_THREADS=2
     networks:
       - proxy-network
     profiles:
