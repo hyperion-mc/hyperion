@@ -45,6 +45,8 @@ services:
       - RUST_LOG=info
     networks:
       - proxy-network
+    profiles:
+      - bot
 
 networks:
   proxy-network:
