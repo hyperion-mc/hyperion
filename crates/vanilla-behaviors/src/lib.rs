@@ -106,7 +106,7 @@ pub fn damage_player(
     if entity.has::<Player>() {
         entity.get::<(&mut Health, &mut LastDamaged, &ConnectionId)>(
             |(health, last_damaged, connection)| {
-                if !health.is_dead() && compose.global().tick - last_damaged.tick > 20 {
+                if !health.is_dead() && compose.global().tick - last_damaged.tick >= 20 {
                     health.damage(amount);
                     last_damaged.tick = compose.global().tick;
 

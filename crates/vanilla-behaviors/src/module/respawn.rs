@@ -16,7 +16,7 @@ use hyperion::{
         handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
         packet::HandlerRegistry,
-        Flight, FlyingSpeed, Gamemode, Pitch, Position, Uuid, Xp, Yaw,
+        BurningState, Flight, FlyingSpeed, Gamemode, Pitch, Position, Uuid, Xp, Yaw,
     },
 };
 use hyperion_utils::{EntityExt, LifetimeHandle};
@@ -49,6 +49,7 @@ impl Module for RespawnModule {
                         &Flight,
                         &FlyingSpeed,
                         &Gamemode,
+                        &mut BurningState,
                     )>(
                         |(
                             connection,
@@ -62,8 +63,10 @@ impl Module for RespawnModule {
                             flight,
                             flying_speed,
                             gamemode,
+                            burning,
                         )| {
                             health.heal(20.);
+                            burning.fire_ticks_left = 0;
 
                             *pose = Pose::Standing;
                             client.modified::<Pose>(); // this is so observers detect the change

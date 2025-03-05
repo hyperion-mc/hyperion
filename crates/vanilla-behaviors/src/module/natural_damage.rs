@@ -10,8 +10,8 @@ use hyperion::{
     glam::Vec3,
     net::{agnostic, Compose},
     simulation::{
-        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, BurningState, EntitySize,
-        Gamemode, MovementTracking, Player, Position,
+        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, metadata::entity::EntityFlags,
+        BurningState, EntitySize, Gamemode, MovementTracking, Player, Position,
     },
     storage::EventQueue,
     BlockKind,
@@ -82,9 +82,9 @@ impl Module for NaturalDamageModule {
         );
 
         #[allow(clippy::excessive_nesting)]
-        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode, &MovementTracking, &mut BurningState)
+        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode, &MovementTracking, &mut BurningState, &EntityFlags)
             .with::<Player>()
-            .each_iter(|it, row, (compose, blocks, position, size, gamemode, movement, burning)| {
+            .each_iter(|it, row, (compose, blocks, position, size, gamemode, movement, burning, flags)| {
                 if is_invincible(&gamemode.current) {
                     return;
                 }
@@ -131,12 +131,13 @@ impl Module for NaturalDamageModule {
                             BlockKind::Fire => {
                                 if !burning.immune {
                                     damage_player(&entity, 1., DamageCause::new(DamageType::InFire), compose, system);
-
+                                    burning.burn_for_seconds(8);
                                 }
                             }
                             BlockKind::SoulFire => {
                                 if !burning.immune {
                                     damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                                    burning.burn_for_seconds(8);
                                 }
                             }
                             BlockKind::Lava => {
@@ -161,6 +162,20 @@ impl Module for NaturalDamageModule {
                     }
                     ControlFlow::Continue(())
                 });
+
+                // TODO vanilla doesnt put the player on fire if they dont stay in fire longer than a certain threshold
+                if burning.fire_ticks_left > 0 {
+                    if !burning.immune && burning.fire_ticks_left % 20 == 0 {
+                        damage_player(&entity, 1., DamageCause::new(DamageType::OnFire), compose, system);
+                    }
+                    burning.fire_ticks_left -= 1;
+                }
+
+                if burning.fire_ticks_left > 0 {
+                    entity.set(*flags | EntityFlags::ON_FIRE);
+                } else {
+                    entity.set(*flags & !EntityFlags::ON_FIRE);
+                }
             });
     }
 }
