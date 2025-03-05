@@ -2920,6 +2920,7 @@ dependencies = [
  "roaring",
  "snafu",
  "tracing",
+ "valence_generated",
  "valence_protocol",
 ]
 
