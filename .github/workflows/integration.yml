@@ -26,13 +26,43 @@ jobs:
       - name: Docker Compose Logs
         run: docker compose logs
 
-      # 2) Check if any containers have exited with an error
+      # 2) Check if any containers have exited with an error or are unhealthy
       - name: Check containers status
         run: |
+          # Create a flag to track if we found any issues
+          FOUND_ISSUES=0
+
           # If any container's STATUS shows "Exit" or "exited", fail
-          # because that means the container died or crashed.
           if docker compose ps | grep -q 'Exit'; then
             echo "A container has exited with an error."
+            FOUND_ISSUES=1
+          fi
+
+          # Check exit codes for any stopped containers
+          for container in $(docker compose ps -q); do
+            if [[ $(docker inspect --format='{{.State.Status}}' $container) == "exited" ]]; then
+              EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' $container)
+              if [[ $EXIT_CODE -ne 0 ]]; then
+                echo "Container $container exited with non-zero exit code: $EXIT_CODE"
+                FOUND_ISSUES=1
+              fi
+            fi
+          done
+
+          # Check logs for panic messages
+          if docker compose logs | grep -i "panic" | grep -v "panic = 'abort'"; then
+            echo "Found panic messages in logs."
+            FOUND_ISSUES=1
+          fi
+
+          # Check logs for ERROR messages
+          if docker compose logs | grep -i "ERROR"; then
+            echo "Found ERROR messages in logs."
+            FOUND_ISSUES=1
+          fi
+
+          # Fail the build if any issues were found
+          if [[ $FOUND_ISSUES -eq 1 ]]; then
             exit 1
           fi
 

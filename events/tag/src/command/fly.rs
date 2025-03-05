@@ -1,24 +1,10 @@
 use clap::Parser;
-use flecs_ecs::{
-    core::{
-        ComponentOrPairId, Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider, flecs,
-    },
-    macros::Component,
-};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
     net::{Compose, ConnectionId, DataBundle, agnostic},
-    simulation::Player,
-    valence_protocol::packets::play::{
-        PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-    },
+    simulation::Flight,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
-
-#[derive(Component)]
-#[meta]
-pub struct Flight {
-    pub allow: bool,
-}
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "fly")]
@@ -33,6 +19,8 @@ impl MinecraftCommand for FlyCommand {
                 .entity_view(world)
                 .get::<(&mut Flight, &ConnectionId)>(|(flight, stream)| {
                     flight.allow = !flight.allow;
+                    flight.is_flying = flight.allow && flight.is_flying;
+                    caller.entity_view(world).modified::<Flight>();
 
                     let allow_flight = flight.allow;
 
@@ -42,40 +30,11 @@ impl MinecraftCommand for FlyCommand {
                         agnostic::chat("§cFlying disabled")
                     };
 
-                    let packet = fly_packet(allow_flight);
-
                     let mut bundle = DataBundle::new(compose, system);
-                    bundle.add_packet(&packet).unwrap();
                     bundle.add_packet(&chat_packet).unwrap();
 
                     bundle.unicast(*stream).unwrap();
                 });
         });
-    }
-
-    fn pre_register(world: &World) {
-        // register the component with meta meaning we can view the value in the flecs
-        // explorer UI
-        world.component::<Flight>().meta();
-
-        // whenever a Player component is added, we add the Flight component to them.
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, Flight)>();
-    }
-}
-
-fn fly_packet(allow_flight: bool) -> PlayerAbilitiesS2c {
-    const SPEED_METER_PER_SECOND: f32 = 10.92;
-
-    // guessing.. idk what the actual conversion is
-    const SOME_CONVERSION: f32 = SPEED_METER_PER_SECOND / 70.0;
-
-    PlayerAbilitiesS2c {
-        flags: PlayerAbilitiesFlags::default()
-            .with_flying(allow_flight)
-            .with_allow_flying(allow_flight),
-        flying_speed: SOME_CONVERSION,
-        fov_modifier: 0.0,
     }
 }

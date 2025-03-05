@@ -4,6 +4,7 @@ use std::{cell::Cell, cmp::min, num::Wrapping};
 use derive_more::{Deref, DerefMut};
 use flecs_ecs::{core::Entity, macros::Component};
 use tracing::debug;
+use valence_generated::item::EquipmentSlot;
 use valence_protocol::{
     ItemKind, ItemStack,
     nbt::Compound,
@@ -544,56 +545,22 @@ pub trait ItemKindExt {
 
 impl ItemKindExt for ItemKind {
     fn is_helmet(&self) -> bool {
-        matches!(
-            self,
-            Self::LeatherHelmet
-                | Self::ChainmailHelmet
-                | Self::IronHelmet
-                | Self::GoldenHelmet
-                | Self::DiamondHelmet
-                | Self::NetheriteHelmet
-                | Self::TurtleHelmet
-                | Self::PlayerHead
-        )
+        matches!(self.equippable(), Some(EquipmentSlot::Helmet))
     }
 
     fn is_chestplate(&self) -> bool {
-        matches!(
-            self,
-            Self::LeatherChestplate
-                | Self::ChainmailChestplate
-                | Self::IronChestplate
-                | Self::GoldenChestplate
-                | Self::DiamondChestplate
-                | Self::NetheriteChestplate
-        )
+        matches!(self.equippable(), Some(EquipmentSlot::Chestplate))
     }
 
     fn is_leggings(&self) -> bool {
-        matches!(
-            self,
-            Self::LeatherLeggings
-                | Self::ChainmailLeggings
-                | Self::IronLeggings
-                | Self::GoldenLeggings
-                | Self::DiamondLeggings
-                | Self::NetheriteLeggings
-        )
+        matches!(self.equippable(), Some(EquipmentSlot::Leggings))
     }
 
     fn is_boots(&self) -> bool {
-        matches!(
-            self,
-            Self::LeatherBoots
-                | Self::ChainmailBoots
-                | Self::IronBoots
-                | Self::GoldenBoots
-                | Self::DiamondBoots
-                | Self::NetheriteBoots
-        )
+        matches!(self.equippable(), Some(EquipmentSlot::Boots))
     }
 
     fn is_armor(&self) -> bool {
-        self.is_helmet() || self.is_chestplate() || self.is_leggings() || self.is_boots()
+        self.equippable().is_some()
     }
 }
