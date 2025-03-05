@@ -655,7 +655,10 @@ pub struct BurningState {
 
 impl BurningState {
     pub const fn burn_for_seconds(&mut self, seconds: u16) {
-        self.fire_ticks_left = 20 * seconds;
+        let duration = 20 * seconds;
+        if duration > self.fire_ticks_left {
+            self.fire_ticks_left = duration;
+        }
     }
 }
 
