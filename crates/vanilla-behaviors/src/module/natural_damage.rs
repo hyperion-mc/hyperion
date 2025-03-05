@@ -10,13 +10,16 @@ use hyperion::{
     glam::Vec3,
     net::{agnostic, Compose},
     simulation::{
-        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, EntitySize, Gamemode, Player,
-        Position,
+        aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, EntitySize, Gamemode,
+        MovementTracking, Player, Position,
     },
     storage::EventQueue,
     BlockKind,
 };
-use valence_server::ident;
+use valence_server::{
+    block::{PropName, PropValue},
+    ident,
+};
 
 use crate::{damage_player, is_invincible, DamageCause, DamageType};
 
@@ -79,9 +82,9 @@ impl Module for NaturalDamageModule {
         );
 
         #[allow(clippy::excessive_nesting)]
-        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode)
+        system!("natural block damage", world, &Compose($), &Blocks($), &Position, &EntitySize, &Gamemode, &MovementTracking)
             .with::<Player>()
-            .each_iter(|it, row, (compose, blocks, position, size, gamemode)| {
+            .each_iter(|it, row, (compose, blocks, position, size, gamemode, movement)| {
                 if is_invincible(&gamemode.current) {
                     return;
                 }
@@ -130,6 +133,16 @@ impl Module for NaturalDamageModule {
                             }
                             BlockKind::SoulFire => {
                                 damage_player(&entity, 2., DamageCause::new(DamageType::InFire), compose, system);
+                            }
+                            BlockKind::SweetBerryBush => {
+                                let grown = block.get(PropName::Age)
+                                    .is_some_and(|x| x != PropValue::_0);
+                                let delta_x = (f64::from(position.x) - f64::from(movement.last_tick_position.x)).abs();
+                                let delta_y = (f64::from(position.y) - f64::from(movement.last_tick_position.y)).abs();
+
+                                if grown && delta_x >= 0.003_000_000_026_077_032 && delta_y >= 0.003_000_000_026_077_032 && movement.last_tick_position != **position {
+                                    damage_player(&entity, 1., DamageCause::new(DamageType::SweetBerryBush), compose, system);
+                                }
                             }
                             _ => {}
                         }
