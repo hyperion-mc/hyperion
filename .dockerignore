@@ -1,6 +1,44 @@
+# Rust build artifacts
 **/target/
-Dockerfile
+
+# Git and development files
 .git/
+.github/
 .gitignore
+.DS_Store
+.idea/
+.vscode/
+.envrc
+.pre-commit-config.yaml
+.trigger*
+
+# Docker files
+Dockerfile
+docker-compose.yml
+
+# Configuration and environment
 .env
-.cargo/config.toml
+deny.toml
+clippy.toml
+rustfmt.toml
+
+# Documentation and non-essential files
+docs/
+CONTRIBUTING.md
+LICENSE
+README.md
+CNAME
+
+# Node.js
+node_modules/
+pnpm-lock.yaml
+
+# Nix
+flake.nix
+flake.lock
+result/
+
+# Project-specific
+run/
+.devcontainer.json
+libvoidstar.so
