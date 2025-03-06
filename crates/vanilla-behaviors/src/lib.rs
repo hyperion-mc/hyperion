@@ -1,95 +1,16 @@
 use flecs_ecs::core::EntityView;
 use hyperion::{
     flecs_ecs::{self, core::EntityViewGet},
-    glam::DVec3,
-    net::{Compose, ConnectionId},
-    simulation::{metadata::living_entity::Health, LastDamaged, Player},
+    net::Compose,
+    simulation::{metadata::living_entity::Health, LastDamaged, Player, Position},
 };
-use hyperion_utils::EntityExt;
+use hyperion_utils::{structures::DamageCause, EntityExt};
 use tracing::warn;
 use valence_protocol::{packets::play, VarInt};
 use valence_server::GameMode;
 
 pub mod command;
 pub mod module;
-
-// /!\ Minecraft version dependent
-pub enum DamageType {
-    InFire,
-    LightningBolt,
-    OnFire,
-    Lava,
-    HotFloor,
-    InWall,
-    Cramming,
-    Drown,
-    Starve,
-    Cactus,
-    Fall,
-    FlyIntoWall,
-    FellOutOfWorld,
-    Generic,
-    Magic,
-    Wither,
-    DragonBreath,
-    DryOut,
-    SweetBerryBush,
-    Freeze,
-    Stalagmite,
-    FallingBlock,
-    FallingAnvil,
-    FallingStalactite,
-    Sting,
-    MobAttack,
-    MobAttackNoAggro,
-    PlayerAttack,
-    Arrow,
-    Trident,
-    MobProjectile,
-    Fireworks,
-    UnattributedFireball,
-    Fireball,
-    WitherSkull,
-    Thrown,
-    IndirectMagic,
-    Thorns,
-    Explosion,
-    PlayerExplosion,
-    SonicBoom,
-    BadRespawnPoint,
-    OutsideBorder,
-    GenericKill,
-}
-
-pub struct DamageCause {
-    pub damage_type: DamageType,
-    pub position: Option<DVec3>,
-    pub source_entity: i32,
-    pub direct_source: i32,
-}
-
-impl DamageCause {
-    #[must_use]
-    pub const fn new(damage_type: DamageType) -> Self {
-        Self {
-            damage_type,
-            position: Option::None,
-            source_entity: 0,
-            direct_source: 0,
-        }
-    }
-
-    pub const fn with_position(&mut self, position: DVec3) -> &mut Self {
-        self.position = Option::Some(position);
-        self
-    }
-
-    pub const fn with_entities(&mut self, source: i32, direct_source: i32) -> &mut Self {
-        self.source_entity = source;
-        self.direct_source = direct_source;
-        self
-    }
-}
 
 #[must_use]
 pub const fn is_invincible(gamemode: &GameMode) -> bool {
@@ -104,11 +25,22 @@ pub fn damage_player(
     system: EntityView<'_>,
 ) -> bool {
     if entity.has::<Player>() {
-        entity.get::<(&mut Health, &mut LastDamaged, &ConnectionId)>(
-            |(health, last_damaged, connection)| {
-                if !health.is_dead() && compose.global().tick - last_damaged.tick >= 20 {
-                    health.damage(amount);
+        entity.get::<(&mut Health, &mut LastDamaged, &Position)>(|(health, last_damaged, pos)| {
+            if !health.is_dead() {
+                let mut applied_damages = 0.;
+
+                if compose.global().tick - last_damaged.tick >= 10 {
+                    applied_damages = amount;
                     last_damaged.tick = compose.global().tick;
+                } else if compose.global().tick - last_damaged.tick < 10
+                    && last_damaged.amount < amount
+                {
+                    applied_damages = amount - last_damaged.amount;
+                }
+
+                if applied_damages > 0. {
+                    last_damaged.amount = amount;
+                    health.damage(applied_damages);
 
                     let pkt_damage_event = play::EntityDamageS2c {
                         entity_id: VarInt(entity.minecraft_id()),
@@ -118,14 +50,18 @@ pub fn damage_player(
                         source_pos: damage_cause.position,
                     };
 
-                    compose
-                        .unicast(&pkt_damage_event, *connection, system)
-                        .unwrap(); // Should brodcast locally?
+                    if compose
+                        .broadcast_local(&pkt_damage_event, pos.to_chunk(), system)
+                        .send()
+                        .is_err()
+                    {
+                        warn!("Failed to brodacst EntityDamageS2c locally!");
+                    }
                     return true;
                 }
-                false
-            },
-        )
+            }
+            false
+        })
     } else {
         warn!("Trying to call a Player only function on an non player entity");
         false

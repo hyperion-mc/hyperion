@@ -635,6 +635,8 @@ pub struct Flight {
 #[meta]
 pub struct LastDamaged {
     pub tick: i64,
+    /// The amount of inflicted damages
+    pub amount: f32,
 }
 
 #[derive(Component, Default, Copy, Clone, Debug)]
@@ -650,11 +652,13 @@ pub struct Gamemode {
 #[meta]
 pub struct BurningState {
     pub immune: bool,
-    pub fire_ticks_left: u16,
+    pub fire_ticks_left: i32,
+    /// TODO move to `MovementTracker` as it is also useful to calculate fall damage and velocity
+    pub in_lava: bool,
 }
 
 impl BurningState {
-    pub const fn burn_for_seconds(&mut self, seconds: u16) {
+    pub const fn burn_for_seconds(&mut self, seconds: i32) {
         let duration = 20 * seconds;
         if duration > self.fire_ticks_left {
             self.fire_ticks_left = duration;

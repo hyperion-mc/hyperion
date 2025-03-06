@@ -6,6 +6,7 @@ use flecs_ecs::{
 
 mod cached_save;
 mod lifetime;
+pub mod structures;
 pub use cached_save::cached_save;
 pub use lifetime::*;
 
