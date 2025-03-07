@@ -66,7 +66,7 @@ impl Module for RespawnModule {
                             burning,
                         )| {
                             health.heal(20.);
-                            burning.fire_ticks_left = 0;
+                            burning.fire_ticks_left = -20;
 
                             *pose = Pose::Standing;
                             client.modified::<Pose>(); // this is so observers detect the change

@@ -44,9 +44,9 @@ pub fn damage_player(
 
                     let pkt_damage_event = play::EntityDamageS2c {
                         entity_id: VarInt(entity.minecraft_id()),
-                        source_cause_id: VarInt(damage_cause.source_entity),
-                        source_direct_id: VarInt(damage_cause.direct_source),
                         source_type_id: VarInt(damage_cause.damage_type as i32),
+                        source_cause_id: VarInt(damage_cause.source_entity + 1),
+                        source_direct_id: VarInt(damage_cause.direct_source + 1),
                         source_pos: damage_cause.position,
                     };
 
@@ -55,7 +55,7 @@ pub fn damage_player(
                         .send()
                         .is_err()
                     {
-                        warn!("Failed to brodacst EntityDamageS2c locally!");
+                        warn!("Failed to brodcast EntityDamageS2c locally!");
                     }
                     return true;
                 }

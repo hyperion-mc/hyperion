@@ -8,7 +8,7 @@ use flecs_ecs::{
 use geometry::aabb::Aabb;
 use hyperion::{
     glam::Vec3,
-    net::{agnostic, Compose, ConnectionId},
+    net::{agnostic, Compose},
     simulation::{
         aabb, block_bounds, blocks::Blocks, event::HitGroundEvent, metadata::entity::EntityFlags,
         BurningState, EntitySize, Gamemode, MovementTracking, Player, Position,
@@ -18,11 +18,8 @@ use hyperion::{
 };
 use hyperion_utils::structures::{DamageCause, DamageType};
 use tracing::warn;
-use valence_protocol::{packets::play, Sound};
-use valence_server::{
-    block::{PropName, PropValue},
-    text::IntoText,
-};
+use valence_protocol::Sound;
+use valence_server::block::{PropName, PropValue};
 
 use crate::{damage_player, is_invincible};
 
@@ -171,7 +168,7 @@ impl Module for NaturalDamageModule {
                                 in_fire_source = true;
                                 burning.in_lava = true;
                                 if !burning.immune {
-                                    if damage_player(&entity, 4., DamageCause::new(DamageType::InFire), compose, system) {
+                                    if damage_player(&entity, 4., DamageCause::new(DamageType::Lava), compose, system) {
                                         let sound = agnostic::sound(
                                             Sound::EntityGenericBurn.to_ident(),
                                             **position,
