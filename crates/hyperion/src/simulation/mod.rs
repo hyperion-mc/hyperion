@@ -895,47 +895,60 @@ impl Module for SimModule {
         observer!(
             world,
             flecs::OnSet, &FlyingSpeed,
-            &Compose($), &ConnectionId, &Flight
+            &Compose($), &ConnectionId, &Flight, &PacketState
         )
-        .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
-            let system = it.system();
+        .each_iter(
+            |it, _, (flying_speed, compose, connection, flight, state)| {
+                if !matches!(state, PacketState::Play) {
+                    return;
+                }
+                let system = it.system();
 
-            let pkt = PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.0,
-            };
+                let pkt = PlayerAbilitiesS2c {
+                    flags: PlayerAbilitiesFlags::default()
+                        .with_allow_flying(flight.allow)
+                        .with_flying(flight.is_flying),
+                    flying_speed: flying_speed.speed,
+                    fov_modifier: 0.0,
+                };
 
-            compose.unicast(&pkt, *connection, system).unwrap();
-        });
+                compose.unicast(&pkt, *connection, system).unwrap();
+            },
+        );
 
         observer!(
             world,
             flecs::OnSet, &Flight,
-            &Compose($), &ConnectionId, &FlyingSpeed
+            &Compose($), &ConnectionId, &FlyingSpeed, &PacketState
         )
-        .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
-            let system = it.system();
+        .each_iter(
+            |it, _, (flight, compose, connection, flying_speed, state)| {
+                if !matches!(state, PacketState::Play) {
+                    return;
+                }
+                let system = it.system();
 
-            let pkt = play::PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.,
-            };
+                let pkt = play::PlayerAbilitiesS2c {
+                    flags: PlayerAbilitiesFlags::default()
+                        .with_allow_flying(flight.allow)
+                        .with_flying(flight.is_flying),
+                    flying_speed: flying_speed.speed,
+                    fov_modifier: 0.,
+                };
 
-            compose.unicast(&pkt, *connection, system).unwrap();
-        });
+                compose.unicast(&pkt, *connection, system).unwrap();
+            },
+        );
 
         observer!(
             world,
             flecs::OnSet, &Gamemode,
-            &Compose($), &ConnectionId
+            &Compose($), &ConnectionId, &PacketState
         )
-        .each_iter(|it, _, (gamemode, compose, connection)| {
+        .each_iter(|it, _, (gamemode, compose, connection, state)| {
+            if !matches!(state, PacketState::Play) {
+                return;
+            }
             let system = it.system();
 
             let pkt = play::GameStateChangeS2c {
