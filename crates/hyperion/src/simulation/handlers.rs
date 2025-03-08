@@ -89,7 +89,8 @@ fn change_position_or_correct_client(
             .set(PendingTeleportation::new(pose.position));
     }
     query
-        .view
+        .id
+        .entity_view(query.world)
         .get::<(&mut MovementTracking, &Yaw)>(|(tracking, yaw)| {
             tracking.received_movement_packets += 1;
             let y_delta = proposed.y - pose.y;
@@ -345,14 +346,20 @@ fn client_command(
             query.size.height = 1.8;
         }
         ClientCommand::StartSprinting => {
-            query.view.get::<&mut MovementTracking>(|tracking| {
-                tracking.sprinting = true;
-            });
+            query
+                .id
+                .entity_view(query.world)
+                .get::<&mut MovementTracking>(|tracking| {
+                    tracking.sprinting = true;
+                });
         }
         ClientCommand::StopSprinting => {
-            query.view.get::<&mut MovementTracking>(|tracking| {
-                tracking.sprinting = false;
-            });
+            query
+                .id
+                .entity_view(query.world)
+                .get::<&mut MovementTracking>(|tracking| {
+                    tracking.sprinting = false;
+                });
         }
         ClientCommand::StartJumpWithHorse
         | ClientCommand::StopJumpWithHorse

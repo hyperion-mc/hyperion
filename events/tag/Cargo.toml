@@ -26,11 +26,11 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # tracing-tracy = { workspace = true }
 uuid = { workspace = true }
-hyperion-respawn = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
 envy = "0.4"
+vanilla-behaviors = { workspace = true }
 
 [dev-dependencies]
 tracing = { workspace = true, features = ["release_max_level_info"] }
