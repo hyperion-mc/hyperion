@@ -613,7 +613,7 @@ impl Default for FlyingSpeed {
     }
 }
 
-#[derive(Component, Default, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct MovementTracking {
     pub fall_start_y: f32,
     pub last_tick_flying: bool,
@@ -622,6 +622,20 @@ pub struct MovementTracking {
     pub server_velocity: DVec3,
     pub sprinting: bool,
     pub was_on_ground: bool,
+}
+
+impl Default for MovementTracking {
+    fn default() -> Self {
+        Self {
+            fall_start_y: -300.,
+            last_tick_flying: false,
+            last_tick_position: Vec3::ZERO,
+            received_movement_packets: 0,
+            server_velocity: DVec3::ZERO,
+            sprinting: false,
+            was_on_ground: true,
+        }
+    }
 }
 
 #[derive(Component, Default, Debug, Copy, Clone)]
@@ -750,6 +764,9 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, MovementTracking)>();
 
         observer!(
             world,

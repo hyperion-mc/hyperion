@@ -2,7 +2,6 @@ use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
 use anyhow::Context;
 use flecs_ecs::prelude::*;
-use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -19,7 +18,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{Gamemode, MovementTracking, PacketState, Pitch};
+use crate::simulation::{Gamemode, PacketState, Pitch};
 
 mod list;
 pub use list::*;
@@ -77,16 +76,6 @@ pub fn player_join_world(
     let mut bundle = DataBundle::new(compose, system);
 
     let id = entity.minecraft_id();
-
-    entity.set(MovementTracking {
-        received_movement_packets: 0,
-        last_tick_flying: false,
-        last_tick_position: **position,
-        fall_start_y: position.y,
-        server_velocity: DVec3::ZERO,
-        sprinting: false,
-        was_on_ground: false,
-    });
 
     let registry_codec = registry_codec_raw();
     let codec = RegistryCodec::default();
