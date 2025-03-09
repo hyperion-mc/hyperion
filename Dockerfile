@@ -100,23 +100,27 @@ COPY --from=build-release /app/build/hyperion-proxy /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
     org.opencontainers.image.description="Hyperion Proxy Server" \
     org.opencontainers.image.version="0.1.0"
-EXPOSE 8080
+EXPOSE 25565
+ENV HYPERION_PROXY_PROXY_ADDR="0.0.0.0:25565" \
+    HYPERION_PROXY_SERVER="127.0.0.1:35565"
 ENTRYPOINT ["/hyperion-proxy"]
-CMD ["0.0.0.0:8080"]
 
 FROM runtime-base AS tag
 COPY --from=build-release /app/build/tag /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
     org.opencontainers.image.description="Hyperion Tag Event" \
     org.opencontainers.image.version="0.1.0"
+ENV TAG_IP="0.0.0.0" \
+    TAG_PORT="35565"
 ENTRYPOINT ["/tag"]
-CMD ["--ip", "0.0.0.0", "--port", "35565"]
 
 FROM runtime-base AS rust-mc-bot
 COPY --from=build-release /app/build/rust-mc-bot /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/rust-mc-bot" \
     org.opencontainers.image.description="Rust Minecraft Bot" \
     org.opencontainers.image.version="0.1.0"
+ENV BOT_SERVER="hyperion-proxy:25565" \
+    BOT_BOT_COUNT="500" \
+    BOT_THREADS="4"
 ENTRYPOINT ["/rust-mc-bot"]
-CMD ["hyperion-proxy:25565", "500", "4"]
 

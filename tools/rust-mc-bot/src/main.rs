@@ -1,44 +1,78 @@
 #![allow(clippy::similar_names, reason = "todo: fix")]
 
 use std::{
-    env,
     net::ToSocketAddrs,
     path::PathBuf,
     sync::{Arc, atomic::AtomicU32},
 };
 
 use rust_mc_bot::{Address, BotManager};
+use serde::Deserialize;
 
 const UDS_PREFIX: &str = "unix://";
 
+#[derive(Deserialize, Debug)]
+#[allow(clippy::doc_markdown)]
+struct Config {
+    /// Server address (hostname:port or unix://path)
+    #[serde(default = "default_server")]
+    server: String,
+
+    /// Number of bots to spawn
+    #[serde(default = "default_bot_count")]
+    bot_count: u32,
+
+    /// Number of threads to use
+    #[serde(default = "default_threads")]
+    threads: usize,
+}
+
+fn default_server() -> String {
+    "hyperion-proxy:25565".to_string()
+}
+
+const fn default_bot_count() -> u32 {
+    500
+}
+
+fn default_threads() -> usize {
+    1_usize.max(num_cpus::get())
+}
+
 fn main() {
+    dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let args: Vec<String> = env::args().collect();
+    // Load config from environment variables
+    let config = match envy::prefixed("BOT_").from_env::<Config>() {
+        Ok(config) => {
+            tracing::info!("Loaded configuration from environment variables");
+            config
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to load configuration from environment variables: {}",
+                e
+            );
+            tracing::info!(
+                "Configure using BOT_SERVER, BOT_BOT_COUNT, and BOT_THREADS environment variables"
+            );
+            tracing::info!(
+                "Default values: BOT_SERVER={}, BOT_BOT_COUNT={}, BOT_THREADS={}",
+                default_server(),
+                default_bot_count(),
+                default_threads()
+            );
+            return;
+        }
+    };
 
-    if args.len() < 3 {
-        let name = args.first().unwrap();
+    let addrs: Address = if config.server.starts_with(UDS_PREFIX) {
         #[cfg(unix)]
         {
-            tracing::error!("usage: {name} <ip:port or path> <count> [threads]");
-            tracing::error!("example: {name} unix:///path/to/socket 500");
-        }
-        #[cfg(not(unix))]
-        {
-            tracing::error!("usage: {} <ip:port> <count> [threads]", name);
-            tracing::error!("example: {name} localhost:25565 500");
-        }
-        return;
-    }
-
-    let arg1 = args.get(1).unwrap();
-    let arg2 = args.get(2).unwrap();
-    let arg3 = args.get(3);
-
-    let addrs: Address = if arg1.starts_with(UDS_PREFIX) {
-        #[cfg(unix)]
-        {
-            Address::UNIX(PathBuf::from(arg1.strip_prefix(UDS_PREFIX).unwrap()))
+            Address::UNIX(PathBuf::from(
+                config.server.strip_prefix(UDS_PREFIX).unwrap(),
+            ))
         }
         #[cfg(not(unix))]
         {
@@ -46,7 +80,7 @@ fn main() {
             return;
         }
     } else {
-        let mut parts = arg1.split(':');
+        let mut parts = config.server.split(':');
         let ip = parts.next().expect("no ip provided");
         let port = parts.next().map_or(25565u16, |port_string| {
             port_string.parse().expect("invalid port")
@@ -61,29 +95,17 @@ fn main() {
         Address::TCP(server)
     };
 
-    let count: u32 = arg2
-        .parse()
-        .unwrap_or_else(|_| panic!("{arg2} is not a number"));
-
-    let mut cpus = 1.max(num_cpus::get());
-
-    if let Some(str) = arg3 {
-        cpus = str
-            .parse()
-            .unwrap_or_else(|_| panic!("{arg2} is not a number"));
-    }
-
-    tracing::info!("cpus: {cpus}");
+    tracing::info!("cpus: {}", config.threads);
 
     let bot_on = Arc::new(AtomicU32::new(0));
 
-    if count > 0 {
+    if config.bot_count > 0 {
         let mut threads = Vec::new();
-        for _ in 0..cpus {
+        for _ in 0..config.threads {
             let addrs = addrs.clone();
             let bot_on = bot_on.clone();
             threads.push(std::thread::spawn(move || {
-                let mut manager = BotManager::create(count, addrs, bot_on).unwrap();
+                let mut manager = BotManager::create(config.bot_count, addrs, bot_on).unwrap();
                 manager.game_loop();
             }));
         }

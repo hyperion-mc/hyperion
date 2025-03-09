@@ -2,6 +2,7 @@ use std::{fmt::Debug, net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
 use hyperion_proxy::run_proxy;
+use serde::Deserialize;
 use tokio::net::TcpListener;
 #[cfg(unix)]
 use tokio::net::UnixListener;
@@ -12,17 +13,27 @@ use tracing_subscriber::EnvFilter;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[derive(Parser)]
+#[derive(Deserialize, Debug, Parser)]
 #[clap(version)]
 struct Params {
     /// The address for the proxy to listen on. Can be either:
     /// - A TCP address like "127.0.0.1:25565"
     /// - A Unix domain socket path like "/tmp/minecraft.sock" (Unix only)
+    #[serde(default = "default_proxy_addr")]
     proxy_addr: String,
 
     /// The address of the target Minecraft game server to proxy from/to
     #[clap(short, long, default_value = "127.0.0.1:35565")]
+    #[serde(default = "default_server")]
     server: String,
+}
+
+fn default_proxy_addr() -> String {
+    "0.0.0.0:25565".to_string()
+}
+
+fn default_server() -> String {
+    "127.0.0.1:35565".to_string()
 }
 
 #[derive(Debug)]
@@ -78,8 +89,25 @@ fn setup_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load .env file if available
+    dotenvy::dotenv().ok();
+
     setup_logging();
-    let params = Params::parse();
+
+    // Try to load params from environment variables
+    let params = match envy::prefixed("HYPERION_PROXY_").from_env::<Params>() {
+        Ok(params) => {
+            info!("Loaded configuration from environment variables");
+            params
+        }
+        Err(e) => {
+            info!(
+                "Failed to load from environment: {}, falling back to command line arguments",
+                e
+            );
+            Params::parse()
+        }
+    };
 
     let proxy_addr = ProxyAddress::parse(&params.proxy_addr)?;
 

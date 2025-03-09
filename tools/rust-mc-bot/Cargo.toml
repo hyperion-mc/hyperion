@@ -1,7 +1,10 @@
 [package]
 name = "rust-mc-bot"
 version.workspace = true
-authors = ["Eoghanmc22 <eoghanmc@icloud.com>", "Andrew Gazelka <andrew.gazelka@gmail.com>"]
+authors = [
+    "Eoghanmc22 <eoghanmc@icloud.com>",
+    "Andrew Gazelka <andrew.gazelka@gmail.com>",
+]
 edition.workspace = true
 
 [dependencies]
@@ -12,7 +15,9 @@ num_cpus.workspace = true
 rand.workspace = true
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+envy = "0.4"
+dotenvy = "0.15"
 
 [lints]
 workspace = true
-
