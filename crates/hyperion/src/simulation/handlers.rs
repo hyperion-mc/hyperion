@@ -151,8 +151,7 @@ pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
     // Check if the block at the calculated position is not air
     !blocks
         .get_block(IVec3::new(block_x, block_y, block_z))
-        .unwrap()
-        .is_air()
+        .is_some_and(|block| block.is_air())
 }
 
 fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {

@@ -565,7 +565,7 @@ impl Module for PlayerJoinModule {
 
                     let entity = world.entity_from_id(entity);
 
-                    entity.get::<(
+                    entity.try_get::<(
                         &Uuid,
                         &Name,
                         &Position,
