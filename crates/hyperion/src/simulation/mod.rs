@@ -14,11 +14,14 @@ use uuid;
 use valence_generated::block::BlockState;
 use valence_protocol::{
     ByteAngle, VarInt,
+    game_mode::OptGameMode,
     packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
+        self, PlayerAbilitiesS2c, game_state_change_s2c::GameEventKind,
+        player_abilities_s2c::PlayerAbilitiesFlags,
         player_position_look_s2c::PlayerPositionLookFlags,
     },
 };
+use valence_server::GameMode;
 
 use crate::{
     Global,
@@ -610,7 +613,7 @@ impl Default for FlyingSpeed {
     }
 }
 
-#[derive(Component, Default, Debug, Copy, Clone)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct MovementTracking {
     pub fall_start_y: f32,
     pub last_tick_flying: bool,
@@ -621,11 +624,60 @@ pub struct MovementTracking {
     pub was_on_ground: bool,
 }
 
+impl Default for MovementTracking {
+    fn default() -> Self {
+        Self {
+            fall_start_y: -300.,
+            last_tick_flying: false,
+            last_tick_position: Vec3::ZERO,
+            received_movement_packets: 0,
+            server_velocity: DVec3::ZERO,
+            sprinting: false,
+            was_on_ground: true,
+        }
+    }
+}
+
 #[derive(Component, Default, Debug, Copy, Clone)]
 #[meta]
 pub struct Flight {
     pub allow: bool,
     pub is_flying: bool,
+}
+
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+pub struct LastDamaged {
+    pub tick: i64,
+    /// The amount of inflicted damages
+    pub amount: f32,
+}
+
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+/// The Game Mode Component not to confuse with [`GameMode`] from valence
+pub struct Gamemode {
+    pub current: GameMode,
+    /// Tells the client wich gamemode to select when using the F3+F4 shortcut
+    pub previous: OptGameMode,
+}
+
+#[derive(Component, Default, Copy, Clone, Debug)]
+#[meta]
+pub struct BurningState {
+    pub immune: bool,
+    pub fire_ticks_left: i32,
+    /// TODO move to `MovementTracker` as it is also useful to calculate fall damage and velocity
+    pub in_lava: bool,
+}
+
+impl BurningState {
+    pub const fn burn_for_seconds(&mut self, seconds: i32) {
+        let duration = 20 * seconds;
+        if duration > self.fire_ticks_left {
+            self.fire_ticks_left = duration;
+        }
+    }
 }
 
 #[derive(Component)]
@@ -665,6 +717,9 @@ impl Module for SimModule {
         world.component::<FlyingSpeed>();
         world.component::<MovementTracking>();
         world.component::<Flight>().meta();
+        world.component::<LastDamaged>().meta();
+        world.component::<Gamemode>();
+        world.component::<BurningState>().meta();
 
         world.component::<EntityKind>().meta();
 
@@ -709,6 +764,9 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, MovementTracking)>();
 
         observer!(
             world,
@@ -803,6 +861,15 @@ impl Module for SimModule {
         world
             .component::<Player>()
             .add_trait::<(flecs::With, FlyingSpeed)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, LastDamaged)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, Gamemode)>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, BurningState)>();
 
         observer!(
             world,
@@ -828,36 +895,65 @@ impl Module for SimModule {
         observer!(
             world,
             flecs::OnSet, &FlyingSpeed,
-            &Compose($), &ConnectionId, &Flight
+            &Compose($), &ConnectionId, &Flight, &PacketState
         )
-        .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
-            let system = it.system();
+        .each_iter(
+            |it, _, (flying_speed, compose, connection, flight, state)| {
+                if !matches!(state, PacketState::Play) {
+                    return;
+                }
+                let system = it.system();
 
-            let pkt = PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.0,
-            };
+                let pkt = PlayerAbilitiesS2c {
+                    flags: PlayerAbilitiesFlags::default()
+                        .with_allow_flying(flight.allow)
+                        .with_flying(flight.is_flying),
+                    flying_speed: flying_speed.speed,
+                    fov_modifier: 0.0,
+                };
 
-            compose.unicast(&pkt, *connection, system).unwrap();
-        });
+                compose.unicast(&pkt, *connection, system).unwrap();
+            },
+        );
 
         observer!(
             world,
             flecs::OnSet, &Flight,
-            &Compose($), &ConnectionId, &FlyingSpeed
+            &Compose($), &ConnectionId, &FlyingSpeed, &PacketState
         )
-        .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
+        .each_iter(
+            |it, _, (flight, compose, connection, flying_speed, state)| {
+                if !matches!(state, PacketState::Play) {
+                    return;
+                }
+                let system = it.system();
+
+                let pkt = play::PlayerAbilitiesS2c {
+                    flags: PlayerAbilitiesFlags::default()
+                        .with_allow_flying(flight.allow)
+                        .with_flying(flight.is_flying),
+                    flying_speed: flying_speed.speed,
+                    fov_modifier: 0.,
+                };
+
+                compose.unicast(&pkt, *connection, system).unwrap();
+            },
+        );
+
+        observer!(
+            world,
+            flecs::OnSet, &Gamemode,
+            &Compose($), &ConnectionId, &PacketState
+        )
+        .each_iter(|it, _, (gamemode, compose, connection, state)| {
+            if !matches!(state, PacketState::Play) {
+                return;
+            }
             let system = it.system();
 
-            let pkt = play::PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.,
+            let pkt = play::GameStateChangeS2c {
+                kind: GameEventKind::ChangeGameMode,
+                value: f32::from(gamemode.current as i8),
             };
 
             compose.unicast(&pkt, *connection, system).unwrap();

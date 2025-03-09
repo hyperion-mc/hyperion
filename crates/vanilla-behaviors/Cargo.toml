@@ -1,0 +1,23 @@
+[package]
+name = "vanilla-behaviors"
+version = "0.1.0"
+edition = "2021"
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+readme = "README.md"
+publish = false
+
+[dependencies]
+hyperion = {workspace = true}
+hyperion-clap = { workspace = true }
+hyperion-permission = { workspace = true }
+hyperion-utils = {workspace = true}
+valence_protocol = { workspace = true }
+valence_server = { workspace = true }
+flecs_ecs = { workspace = true }
+fastrand = { workspace = true }
+tracing = { workspace = true }
+geometry = { workspace = true }
+clap = { workspace = true }
+
+[lints]
+workspace = true
