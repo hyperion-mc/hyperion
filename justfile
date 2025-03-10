@@ -49,7 +49,7 @@ fmt:
     cargo fmt
 
 proxy:
-    ulimit -Sn {{fds}} && cargo run --profile release-full --bin hyperion-proxy
+    ulimit -Sn {{fds}} && cargo run --profile release-full --bin hyperion-proxy -- --server "127.0.0.1:35565" "0.0.0.0:25565"
 
 tag-full:
     cargo run --bin tag --profile release-full
@@ -83,7 +83,7 @@ watch:
 debug:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 3
     RUST_BACKTRACE=full RUN_MODE=debug-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-debug -s './target/debug/tag'
-    RUST_BACKTRACE=full ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --release-full -- --server "127.0.0.1:35565" "0.0.0.0:25565"
+    RUST_BACKTRACE=full ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy -- --server "127.0.0.1:35565" "0.0.0.0:25565"
     cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/tag' -s 'cargo check -p tag && cargo build -p tag' -s 'touch {{project_root}}/.trigger-debug'
 
 # run in release mode with tracy; auto-restarts on changes
