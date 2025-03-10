@@ -2,14 +2,14 @@ use std::fmt::Debug;
 
 use flecs_ecs::{
     addons::Meta,
-    core::{ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs},
+    core::{flecs, ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider},
     macros::Component,
 };
 use valence_protocol::{Encode, VarInt};
 
 use crate::{
-    Prev,
     simulation::metadata::entity::{EntityFlags, Pose},
+    Prev,
 };
 
 pub mod block_display;
@@ -47,34 +47,11 @@ where
         )>(system_name)
         .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
-        .run(move |mut table| {
-            while table.next() {
-                unsafe {
-                    let mut prev = table.field_unchecked::<T>(0);
-                    let prev = prev.get_mut(..).unwrap();
-
-                    let current = table.field_unchecked::<T>(1);
-                    let current = current.get(..).unwrap();
-
-                    let mut metadata_changes = table.field_unchecked::<MetadataChanges>(2);
-                    let metadata_changes = metadata_changes.get_mut(..).unwrap();
-
-                    // todo(perf): big optimization treating as raw bytes and SIMD
-                    // or code that can easily be compiled to SIMD
-                    // also can do copy_from_slice in one pass but want SIMD-optimized
-                    // first
-                    // todo(learn): reborrowing in-depth
-                    for (idx, (prev, current)) in itertools::zip_eq(&mut *prev, current).enumerate()
-                    {
-                        if prev != current {
-                            let metadata_changes = metadata_changes.get_unchecked_mut(idx);
-                            metadata_changes.encode(*current);
-                        }
-                    }
-
-                    prev.copy_from_slice(current);
-                }
+        .each(|(prev, current, metadata_changes)| {
+            if prev != current {
+                metadata_changes.encode(*current);
             }
+            *prev = *current;
         });
 
     let register = |view: &mut EntityView<'_>| {

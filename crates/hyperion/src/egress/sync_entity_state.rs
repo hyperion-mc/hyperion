@@ -5,24 +5,24 @@ use glam::{IVec3, Vec3};
 use hyperion_utils::EntityExt;
 use itertools::Either;
 use valence_protocol::{
-    ByteAngle, RawBytes, VarInt,
-    packets::play::{self},
+    packets::play::{self}, ByteAngle, RawBytes,
+    VarInt,
 };
 
 use crate::{
-    Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
-        animation::ActiveAnimation,
-        blocks::Blocks,
-        entity_kind::EntityKind,
-        event::{self, HitGroundEvent},
-        handlers::is_grounded,
-        metadata::{MetadataChanges, get_and_clear_metadata},
+        animation::ActiveAnimation, blocks::Blocks, entity_kind::EntityKind, event::{self, HitGroundEvent}, handlers::is_grounded, metadata::{get_and_clear_metadata, MetadataChanges}, Flight, MovementTracking, Owner,
+        PendingTeleportation,
+        Pitch,
+        Position,
+        Velocity,
+        Xp,
+        Yaw,
     },
     spatial::get_first_collision,
     storage::Events,
+    Prev,
 };
 
 #[derive(Component)]
@@ -73,59 +73,29 @@ impl Module for EntityStateSyncModule {
             .singleton()
             .multi_threaded()
             .kind::<flecs::pipeline::OnStore>()
-            .run(|mut table| {
-                let system = table.system();
-                while table.next() {
-                    let count = table.count();
-
-                    unsafe {
-                        const _: () = assert!(size_of::<Xp>() == size_of::<u16>());
-                        const _: () = assert!(align_of::<Xp>() == align_of::<u16>());
-
-                        /// Number of lanes in the SIMD vector
-                        const LANES: usize = 32; // up to AVX512
-
-                        let compose = table.field_unchecked::<Compose>(0);
-                        let compose = compose.first().unwrap();
-
-                        let net = table.field_unchecked::<ConnectionId>(1);
-                        let net = net.get(..).unwrap();
-
-                        let mut prev_xp = table.field_unchecked::<Xp>(2);
-                        let prev_xp = prev_xp.get_mut(..).unwrap();
-                        let prev_xp: &mut [u16] =
-                            core::slice::from_raw_parts_mut(prev_xp.as_mut_ptr().cast(), count);
-
-                        let mut xp = table.field_unchecked::<Xp>(3);
-                        let xp = xp.get_mut(..).unwrap();
-                        let xp: &mut [u16] =
-                            core::slice::from_raw_parts_mut(xp.as_mut_ptr().cast(), count);
-
-                        simd_utils::copy_and_get_diff::<_, LANES>(
-                            prev_xp,
-                            xp,
-                            |idx, prev, current| {
-                                debug_assert!(prev != current);
-
-                                let net = net.get(idx).unwrap();
-
-                                let current = Xp::from(*current);
-                                let visual = current.get_visual();
-
-                                let packet = play::ExperienceBarUpdateS2c {
-                                    bar: visual.prop,
-                                    level: VarInt(i32::from(visual.level)),
-                                    total_xp: VarInt::default(),
-                                };
-
-                                let entity = table.entity(idx);
-                                entity.modified::<Xp>();
-
-                                compose.unicast(&packet, *net, system).unwrap();
-                            },
-                        );
-                    }
+            .each_iter(|table, idx, (compose, net, prev_xp, current)| {
+                const {
+                    assert!(size_of::<Xp>() == size_of::<u16>());
+                    assert!(align_of::<Xp>() == align_of::<u16>());
                 }
+                let system = table.system();
+
+                if prev_xp != current {
+                    let visual = current.get_visual();
+
+                    let packet = play::ExperienceBarUpdateS2c {
+                        bar: visual.prop,
+                        level: VarInt(i32::from(visual.level)),
+                        total_xp: VarInt::default(),
+                    };
+
+                    let entity = table.entity(idx);
+                    entity.modified::<Xp>();
+
+                    compose.unicast(&packet, *net, system).unwrap();
+                }
+
+                *prev_xp = *current;
             });
 
         system!("entity_metadata_sync", world, &Compose($), &mut MetadataChanges)

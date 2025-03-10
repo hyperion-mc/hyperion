@@ -371,7 +371,9 @@ impl Module for IngressModule {
             let _enter = span.enter();
 
             let mut recv = receive.0.lock();
-
+            
+            // Process packets from the HashMap where each key is a unique entity_id
+            // and the value is the packet data as BytesMut
             recv.packets.par_drain().for_each(|(entity_id, bytes)| {
                 #[expect(
                     clippy::indexing_slicing,
