@@ -2804,6 +2804,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "colored",
+ "dashmap",
  "derive_more 2.0.1",
  "divan",
  "enumset",

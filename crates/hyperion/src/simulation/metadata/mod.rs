@@ -2,14 +2,14 @@ use std::fmt::Debug;
 
 use flecs_ecs::{
     addons::Meta,
-    core::{flecs, ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider},
+    core::{ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs},
     macros::Component,
 };
 use valence_protocol::{Encode, VarInt};
 
 use crate::{
-    simulation::metadata::entity::{EntityFlags, Pose},
     Prev,
+    simulation::metadata::entity::{EntityFlags, Pose},
 };
 
 pub mod block_display;

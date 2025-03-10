@@ -5,24 +5,24 @@ use glam::{IVec3, Vec3};
 use hyperion_utils::EntityExt;
 use itertools::Either;
 use valence_protocol::{
-    packets::play::{self}, ByteAngle, RawBytes,
-    VarInt,
+    ByteAngle, RawBytes, VarInt,
+    packets::play::{self},
 };
 
 use crate::{
+    Prev,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        animation::ActiveAnimation, blocks::Blocks, entity_kind::EntityKind, event::{self, HitGroundEvent}, handlers::is_grounded, metadata::{get_and_clear_metadata, MetadataChanges}, Flight, MovementTracking, Owner,
-        PendingTeleportation,
-        Pitch,
-        Position,
-        Velocity,
-        Xp,
-        Yaw,
+        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
+        animation::ActiveAnimation,
+        blocks::Blocks,
+        entity_kind::EntityKind,
+        event::{self, HitGroundEvent},
+        handlers::is_grounded,
+        metadata::{MetadataChanges, get_and_clear_metadata},
     },
     spatial::get_first_collision,
     storage::Events,
-    Prev,
 };
 
 #[derive(Component)]

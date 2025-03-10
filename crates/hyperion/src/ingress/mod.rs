@@ -311,9 +311,9 @@ impl Module for IngressModule {
 
             let world = it.world();
 
-            let mut recv = receive.0.lock();
+            let mut recv = &receive.0;
 
-            for connect in recv.player_connect.drain(..) {
+            for connect in recv.player_connect.lock().drain(..) {
                 info!("player_connect");
                 let view = world
                     .entity()
@@ -328,7 +328,7 @@ impl Module for IngressModule {
                 lookup.insert(connect, view.id());
             }
 
-            for disconnect in recv.player_disconnect.drain(..) {
+            for disconnect in recv.player_disconnect.lock().drain(..) {
                 // will initiate the removal of entity
                 info!("queue pending remove");
                 let Some(id) = lookup.get(&disconnect).copied() else {
@@ -341,70 +341,28 @@ impl Module for IngressModule {
             }
         });
 
-        #[expect(
-            clippy::unwrap_used,
-            reason = "this is only called once on startup; it should be fine. we mostly care \
-                      about crashing during server execution"
-        )]
-        let num_threads = i32::try_from(rayon::current_num_threads()).unwrap();
+        world
+            .system_named::<(&ReceiveState, &ConnectionId, &mut PacketDecoder)>("ingress_to_ecs")
+            .term_at(0u32)
+            .singleton() // StreamLookup
+            // .multi_threaded()
+            .immediate(true)
+            .kind::<flecs::pipeline::PostLoad>()
+            .each(move |(receive, connection_id, decoder)| {
+                // 134µs with par_iter
+                // 150-208µs with regular drain
+                let span = info_span!("ingress_to_ecs");
+                let _enter = span.enter();
 
-        let worlds = (0..num_threads)
-            // SAFETY: promoting world to static lifetime, system won't outlive world
-            .map(|i| unsafe { std::mem::transmute(world.stage(i)) })
-            .map(SendableRef)
-            .collect::<Vec<_>>();
-
-        system!(
-            "ingress_to_ecs",
-            world,
-            &StreamLookup($),
-            &ReceiveState($),
-        )
-        .immediate(true)
-        .kind::<flecs::pipeline::PostLoad>()
-        .each(move |(lookup, receive)| {
-            use rayon::prelude::*;
-
-            // 134µs with par_iter
-            // 150-208µs with regular drain
-            let span = info_span!("ingress_to_ecs");
-            let _enter = span.enter();
-
-            let mut recv = receive.0.lock();
-
-            // Process packets in parallel using Rayon. Each packet is uniquely identified by entity_id.
-            // Safety: The parallelization is safe because:
-            // 1. Each entry in HashMap has a unique entity_id as key
-            // 2. Each parallel iteration processes a different entity_id and its corresponding data
-            // 3. Each thread accesses its own thread-local world instance based on thread index
-            // This ensures we're effectively operating on different rows, avoiding undefined behavior
-            recv.packets.par_drain().for_each(|(entity_id, bytes)| {
-                #[expect(
-                    clippy::indexing_slicing,
-                    reason = "it should be impossible to get a thread index that is out of bounds \
-                              unless the rayon thread pool changes size which does not occur"
-                )]
-                let world = &worlds[rayon::current_thread_index().unwrap_or_default()];
-                let world = &world.0;
-
-                let Some(entity_id) = lookup.get(&entity_id) else {
-                    // this is not necessarily a bug; race conditions occur
-                    warn!("player_packets: entity for {entity_id:?}");
-                    return;
-                };
-
-                if !world.is_alive(*entity_id) {
+                let mut bytes = receive.0.packets.get_mut(&connection_id.inner()).unwrap();
+                if bytes.is_empty() {
                     return;
                 }
 
-                let entity = world.entity_from_id(*entity_id);
-
-                entity.get::<&mut PacketDecoder>(|decoder| {
-                    decoder.shift_excess();
-                    decoder.queue_slice(bytes.as_ref());
-                });
+                decoder.shift_excess();
+                decoder.queue_slice(bytes.as_ref());
+                bytes.clear();
             });
-        });
 
         system!(
             "remove_player_from_visibility",
