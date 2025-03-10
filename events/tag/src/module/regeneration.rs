@@ -1,12 +1,12 @@
 use flecs_ecs::{
-    core::{ComponentOrPairId, QueryBuilderImpl, TermBuilderImpl, World, flecs},
+    core::{QueryBuilderImpl, TermBuilderImpl, World},
     macros::{Component, system},
     prelude::Module,
 };
 use hyperion::{
     Prev,
     net::Compose,
-    simulation::{Player, metadata::living_entity::Health},
+    simulation::{LastDamaged, metadata::living_entity::Health},
     util::TracingExt,
 };
 use tracing::info_span;
@@ -14,23 +14,11 @@ use tracing::info_span;
 #[derive(Component)]
 pub struct RegenerationModule;
 
-#[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
-pub struct LastDamaged {
-    pub tick: i64,
-}
-
 const MAX_HEALTH: f32 = 20.0;
 
 impl Module for RegenerationModule {
     #[allow(clippy::excessive_nesting)]
     fn module(world: &World) {
-        world.component::<LastDamaged>().meta();
-
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, LastDamaged)>(); // todo: how does this even call Default? (IndraDb)
-
         system!(
             "regenerate",
             world,

@@ -3042,14 +3042,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperion-respawn"
-version = "0.1.0"
-dependencies = [
- "hyperion",
- "hyperion-utils",
-]
-
-[[package]]
 name = "hyperion-scheduled"
 version = "0.1.0"
 
@@ -5765,7 +5757,6 @@ dependencies = [
  "hyperion-item",
  "hyperion-permission",
  "hyperion-rank-tree",
- "hyperion-respawn",
  "hyperion-scheduled",
  "hyperion-text",
  "hyperion-utils",
@@ -5779,6 +5770,7 @@ dependencies = [
  "uuid",
  "valence_protocol",
  "valence_server",
+ "vanilla-behaviors",
 ]
 
 [[package]]
@@ -6612,6 +6604,23 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vanilla-behaviors"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "fastrand 2.3.0",
+ "flecs_ecs",
+ "geometry",
+ "hyperion",
+ "hyperion-clap",
+ "hyperion-permission",
+ "hyperion-utils",
+ "tracing",
+ "valence_protocol",
+ "valence_server",
+]
 
 [[package]]
 name = "vcpkg"

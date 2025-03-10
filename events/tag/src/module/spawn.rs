@@ -19,7 +19,7 @@ use rustc_hash::FxHashMap;
 pub struct SpawnModule;
 
 const RADIUS: i32 = 0;
-const SPAWN_MIN_Y: i16 = 3;
+const SPAWN_MIN_Y: i16 = 4;
 const SPAWN_MAX_Y: i16 = 100;
 
 fn position_in_radius() -> IVec2 {
