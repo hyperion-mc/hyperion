@@ -371,9 +371,13 @@ impl Module for IngressModule {
             let _enter = span.enter();
 
             let mut recv = receive.0.lock();
-            
-            // Process packets from the HashMap where each key is a unique entity_id
-            // and the value is the packet data as BytesMut
+
+            // Process packets in parallel using Rayon. Each packet is uniquely identified by entity_id.
+            // Safety: The parallelization is safe because:
+            // 1. Each entry in HashMap has a unique entity_id as key
+            // 2. Each parallel iteration processes a different entity_id and its corresponding data
+            // 3. Each thread accesses its own thread-local world instance based on thread index
+            // This ensures we're effectively operating on different rows, avoiding undefined behavior
             recv.packets.par_drain().for_each(|(entity_id, bytes)| {
                 #[expect(
                     clippy::indexing_slicing,
