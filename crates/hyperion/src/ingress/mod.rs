@@ -35,7 +35,7 @@ use crate::{
         skin::PlayerSkin,
     },
     storage::{Events, PlayerJoinServer, SkinHandler},
-    util::{SendableRef, TracingExt, mojang::MojangClient},
+    util::{TracingExt, mojang::MojangClient},
 };
 
 #[derive(Component, Debug)]
@@ -311,7 +311,7 @@ impl Module for IngressModule {
 
             let world = it.world();
 
-            let mut recv = &receive.0;
+            let recv = &receive.0;
 
             for connect in recv.player_connect.lock().drain(..) {
                 info!("player_connect");
@@ -555,9 +555,10 @@ impl Module for IngressModule {
                             // todo: better way?
                             if let Some((position, pose)) = position.as_mut().zip(pose.as_mut()) {
                                 let world = &world;
+                                let id = entity.id();
 
                                 let mut query = PacketSwitchQuery {
-                                    id: entity.id(),
+                                    id,
                                     view: entity,
                                     compose,
                                     io_ref,
