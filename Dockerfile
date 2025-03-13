@@ -112,6 +112,7 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion
     org.opencontainers.image.version="0.1.0"
 ENV TAG_IP="0.0.0.0" \
     TAG_PORT="35565"
+EXPOSE 35565
 ENTRYPOINT ["/tag"]
 
 FROM runtime-base AS rust-mc-bot
@@ -122,5 +123,6 @@ LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/rust-mc-
 ENV BOT_SERVER="hyperion-proxy:25565" \
     BOT_BOT_COUNT="500" \
     BOT_THREADS="4"
+EXPOSE 25565
 ENTRYPOINT ["/rust-mc-bot"]
 
