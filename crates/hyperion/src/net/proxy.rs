@@ -1,8 +1,9 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{collections::HashMap, io::Cursor, net::SocketAddr, process::Command, sync::Arc};
+use std::{io::Cursor, net::SocketAddr, process::Command, sync::Arc};
 
 use bytes::{Buf, BytesMut};
+use dashmap::DashMap;
 use flecs_ecs::macros::Component;
 use hyperion_proto::ArchivedProxyToServerMessage;
 use parking_lot::Mutex;
@@ -15,11 +16,11 @@ use crate::{runtime::AsyncRuntime, simulation::EgressComm};
 #[derive(Default)]
 pub struct ReceiveStateInner {
     /// All players who have recently connected to the server.
-    pub player_connect: Vec<u64>,
+    pub player_connect: Mutex<Vec<u64>>,
     /// All players who have recently disconnected from the server.
-    pub player_disconnect: Vec<u64>,
+    pub player_disconnect: Mutex<Vec<u64>>,
     /// A map of stream ids to the corresponding [`BytesMut`] buffers. This represents data from the client to the server.
-    pub packets: HashMap<u64, BytesMut>,
+    pub packets: DashMap<u64, BytesMut>,
 }
 
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
@@ -44,7 +45,7 @@ fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
 async fn inner(
     socket: SocketAddr,
     mut server_to_proxy: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
-    shared: Arc<Mutex<ReceiveStateInner>>,
+    shared: Arc<ReceiveStateInner>,
 ) {
     let listener = match tokio::net::TcpListener::bind(socket).await {
         Ok(listener) => listener,
@@ -120,17 +121,16 @@ async fn inner(
                             ArchivedProxyToServerMessage::PlayerConnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
-                                shared.lock().player_connect.push(stream);
+                                shared.player_connect.lock().push(stream);
                             }
                             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
-                                shared.lock().player_disconnect.push(stream);
+                                shared.player_disconnect.lock().push(stream);
                             }
                             ArchivedProxyToServerMessage::PlayerPackets(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
                                 shared
-                                    .lock()
                                     .packets
                                     .entry(stream)
                                     .or_default()
@@ -152,13 +152,13 @@ async fn inner(
 
 /// A wrapper around [`ReceiveStateInner`]
 #[derive(Component)]
-pub struct ReceiveState(pub Arc<Mutex<ReceiveStateInner>>);
+pub struct ReceiveState(pub Arc<ReceiveStateInner>);
 
 /// Initializes proxy communications.
 #[must_use]
 pub fn init_proxy_comms(tasks: &AsyncRuntime, socket: SocketAddr) -> (ReceiveState, EgressComm) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let shared = Arc::new(Mutex::new(ReceiveStateInner::default()));
+    let shared = Arc::new(ReceiveStateInner::default());
 
     tasks.block_on(async {
         inner(socket, rx, shared.clone()).await;

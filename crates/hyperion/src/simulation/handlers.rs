@@ -88,25 +88,23 @@ fn change_position_or_correct_client(
             .entity_view(query.world)
             .set(PendingTeleportation::new(pose.position));
     }
-    query
-        .view
-        .get::<(&mut MovementTracking, &Yaw)>(|(tracking, yaw)| {
-            tracking.received_movement_packets += 1;
-            let y_delta = proposed.y - pose.y;
+    query.view.get::<&mut MovementTracking>(|tracking| {
+        tracking.received_movement_packets += 1;
+        let y_delta = proposed.y - pose.y;
 
-            if y_delta > 0. && tracking.was_on_ground && !on_ground {
-                tracking.server_velocity.y = 0.419_999_986_886_978_15;
+        if y_delta > 0. && tracking.was_on_ground && !on_ground {
+            tracking.server_velocity.y = 0.419_999_986_886_978_15;
 
-                if tracking.sprinting {
-                    let smth = yaw.yaw * 0.017_453_292;
-                    tracking.server_velocity += DVec3::new(
-                        f64::from(-smth.sin()) * 0.2,
-                        0.0,
-                        f64::from(smth.cos()) * 0.2,
-                    );
-                }
+            if tracking.sprinting {
+                let smth = query.yaw.yaw * 0.017_453_292;
+                tracking.server_velocity += DVec3::new(
+                    f64::from(-smth.sin()) * 0.2,
+                    0.0,
+                    f64::from(smth.cos()) * 0.2,
+                );
             }
-        });
+        }
+    });
 
     **pose = proposed;
 }
@@ -589,13 +587,13 @@ pub fn confirm_teleportation(
 ) -> anyhow::Result<()> {
     let entity = query.id.entity_view(query.world);
 
-    entity.get::<(Option<&PendingTeleportation>, &mut Position)>(|(pending_teleport, position)| {
+    entity.get::<Option<&PendingTeleportation>>(|pending_teleport| {
         if let Some(pending_teleport) = pending_teleport {
             if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
                 return;
             }
 
-            position.position = pending_teleport.destination;
+            **query.position = pending_teleport.destination;
             entity.remove::<PendingTeleportation>();
         }
     });
