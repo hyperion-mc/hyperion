@@ -10,7 +10,7 @@ use flecs_ecs::core::World;
 use crate::NUM_THREADS;
 
 /// Thread-local in flecs environment
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct ThreadLocal<T> {
     locals: [T; NUM_THREADS],
 }

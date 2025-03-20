@@ -121,7 +121,7 @@ impl PlayerHandle {
 
     pub fn shutdown(&self) {
         let _ = self.writer.try_send(OrderedBytes::SHUTDOWN);
-        self.writer.close();
+        self.writer.close().unwrap();
     }
 
     pub fn enable_receive_broadcasts(&self) {
@@ -143,7 +143,7 @@ impl PlayerHandle {
                 bail!("failed to send packet to player, channel is full: {is_full}");
             }
             Err(e) => {
-                self.writer.close();
+                self.writer.close().unwrap();
                 bail!("failed to send packet to player: {e}");
             }
         }
