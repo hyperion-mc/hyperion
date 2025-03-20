@@ -7,7 +7,7 @@ use flecs_ecs::{core::World, macros::Component};
 use kanal::{Receiver, Sender};
 
 /// Type alias for world callback functions
-pub type WorldCallback = Box<dyn FnOnce(&World)>;
+pub type WorldCallback = Box<dyn FnOnce(&World) + Send>;
 
 /// Wrapper around [`tokio::runtime::Runtime`]
 #[derive(Component, Deref, DerefMut, Clone)]
@@ -24,11 +24,13 @@ pub struct Tasks {
 }
 
 impl AsyncRuntime {
-    pub fn schedule<T: 'static>(
+    pub fn schedule<T>(
         &self,
         future: impl Future<Output = T> + Send + 'static,
         handler: fn(T, &World),
-    ) {
+    ) where
+        T: Send + 'static,
+    {
         let sender = self.callback_sender.clone();
 
         self.spawn(async move {
