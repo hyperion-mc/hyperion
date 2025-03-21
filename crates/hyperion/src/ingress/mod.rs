@@ -357,7 +357,7 @@ impl Module for IngressModule {
                 let Some(mut bytes) = receive.0.packets.get_mut(&connection_id.inner()) else {
                     return;
                 };
-                
+
                 if bytes.is_empty() {
                     return;
                 }
