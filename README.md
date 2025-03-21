@@ -6,10 +6,8 @@
 [![Issues](https://img.shields.io/github/issues/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/commits)
 
-Thank you for your hard work[^1] [@CuzImClicks](https://github.com/CuzImClicks), [@Indra-db](https://github.com/Indra-db), [@james-j-obrien](https://github.com/james-j-obrien), [@Ruben2424](https://github.com/Ruben2424), [@SanderMertens](https://github.com/SanderMertens), [@Tebarem](https://github.com/Tebarem), and [@TestingPlant](https://github.com/TestingPlant).
-
-Hyperion is a **Minecraft game engine** that aims to enable a 10k player PvP battle to break the Guinness World
-Record ([8825 by
+Hyperion is a **Minecraft game engine** that can have 170,000+ players in one world. Our pilot event hopes to break the PvP Guinness World
+Record of ([8825 by
 EVE Online](https://www.guinnessworldrecords.com/world-records/105603-largest-videogame-pvp-battle)). The
 architecture is ECS-driven using [Flecs Rust](https://github.com/Indra-db/Flecs-Rust).
 
@@ -18,12 +16,32 @@ architecture is ECS-driven using [Flecs Rust](https://github.com/Indra-db/Flecs-
 
 https://github.com/user-attachments/assets/64a4a8c7-f375-4821-a1c7-0efc69c1ae0b
 
-## Event
 
-The upcoming 10k-player PvP event draws inspiration from the class progression systems and [tag mode](https://diepio.fandom.com/wiki/Tag) from [diep.io](https://diep.io/). The gameplay mechanics also draw influence from Hypixel Pit's combat systems. Players will gain levels (XP) from mining ore and killing other players.
+## Feature Status
 
-We're partnering with [TheMisterEpic](https://www.youtube.com/channel/UCJiFgnnYpwlnadzTzhMnX_Q) to run an initial proof-of-concept event with around 2k players. Following its success, we'll host the full-scale 10,000-player PvP battle alongside numerous YouTubers and streamers.
-
+| Feature                      | Status                                                                                                                                                                                        | Notes                                                                                                        |
+|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
+| **Technical Infrastructure** |                                                                                                                                                                                               |                                                                                                              |
+| 🧵 Multi-threading           | ✅ Implemented                                                                                                                                                                                 | Vertical scaling                                                                                             |
+| 🔄 Proxy Layer               | ✅ Implemented                                                                                                                                                                                 | Horizontal scaling                                                                                           |
+| 📊 Performance Tracing       | ✅ Implemented                                                                                                                                                                                 | Using Tracy profiler                                                                                         |
+| 🛡️ Basic Anti-Cheat         | ✅ Implemented                                                                                                                                                                                 | Core anti-cheat functionality                                                                                |
+| 🔧 Moderator Tools           | 🚧 WIP [#425](https://github.com/andrewgazelka/hyperion/issues/425), [@Kumpelinus](https://github.com/Kumpelinus)                                                                             | Admin controls and monitoring                                                                                |
+| 🔌 Plugin API                | ✅ Implemented                                                                                                                                                                                 | Extensible plugin system; see [`events/tag`](https://github.com/andrewgazelka/hyperion/tree/main/events/tag) |
+| **Core Game Mechanics**      |                                                                                                                                                                                               |                                                                                                              |
+| 🧱 Block Breaking/Placing    | ✅ Implemented                                                                                                                                                                                 | Including physics simulation                                                                                 |
+| 💫 Entity Collisions         | ✅ Implemented                                                                                                                                                                                 | Both entity-entity and block-entity                                                                          |
+| 💡 Lighting Engine           | ✅ Implemented                                                                                                                                                                                 | Dynamic lighting updates                                                                                     |
+| 🌐 World Borders             | ✅ Implemented                                                                                                                                                                                 | Configurable boundaries                                                                                      |
+| 🛠️ Block Edit API           | ✅ Implemented                                                                                                                                                                                 | WorldEdit-like functionality                                                                                 |
+| ⚔️ PvP Combat                | ✅ Implemented                                                                                                                                                                                 | Custom combat mechanics                                                                                      |
+| 🎒 Inventory System          | ✅ Implemented                                                                                                                                                                                 | Full item management                                                                                         |
+| 🎯 Raycasting                | ✅ Implemented | Required for ranged combat/arrows                                                                            |
+| **Player Experience**        |                                                                                                                                                                                               |                                                                                                              |
+| ✨ Particle Effects           | ✅ Implemented                                                                                                                                                                                 | Full particle support                                                                                        |
+| 💬 Chat System               | ✅ Implemented                                                                                                                                                                                 | Global and proximity chat                                                                                    |
+| ⌨️ Commands                  | ✅ Implemented                                                                                                                                                                                 | Custom command framework                                                                                     |
+| 🎤 Proximity Voice           | ✅ Implemented                                                                                                                                                                                 | Using Simple Voice Chat                                                                                      |
 
 ## Benchmarks
 
@@ -38,8 +56,6 @@ We're partnering with [TheMisterEpic](https://www.youtube.com/channel/UCJiFgnnYp
 
 ![performance](https://github.com/user-attachments/assets/d15f2e72-eeef-4cfd-af39-e90d72732968)
 
-
-*= with UNIX sockets, not TCP sockets. Once I get better tests, I will fill in core usage and CPU utilization.
 
 **Test Environment:**
 
@@ -196,37 +212,6 @@ docker compose up --build
 - Proximity Voice: Simple Voice Chat
 - Max estimated player count: ~176,056
 
-## Feature Status
-
-| Feature                      | Status                                                                                                                                                                                        | Notes                                                                                                        |
-|------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
-| **Technical Infrastructure** |                                                                                                                                                                                               |                                                                                                              |
-| 🧵 Multi-threading           | ✅ Implemented                                                                                                                                                                                 | Vertical scaling                                                                                             |
-| 🔄 Proxy Layer               | ✅ Implemented                                                                                                                                                                                 | Horizontal scaling                                                                                           |
-| 📊 Performance Tracing       | ✅ Implemented                                                                                                                                                                                 | Using Tracy profiler                                                                                         |
-| 🛡️ Basic Anti-Cheat         | ✅ Implemented                                                                                                                                                                                 | Core anti-cheat functionality                                                                                |
-| 🔧 Moderator Tools           | 🚧 WIP [#425](https://github.com/andrewgazelka/hyperion/issues/425), [@Kumpelinus](https://github.com/Kumpelinus)                                                                             | Admin controls and monitoring                                                                                |
-| 🔌 Plugin API                | ✅ Implemented                                                                                                                                                                                 | Extensible plugin system; see [`events/tag`](https://github.com/andrewgazelka/hyperion/tree/main/events/tag) |
-| **Core Game Mechanics**      |                                                                                                                                                                                               |                                                                                                              |
-| 🧱 Block Breaking/Placing    | ✅ Implemented                                                                                                                                                                                 | Including physics simulation                                                                                 |
-| 💫 Entity Collisions         | ✅ Implemented                                                                                                                                                                                 | Both entity-entity and block-entity                                                                          |
-| 💡 Lighting Engine           | ✅ Implemented                                                                                                                                                                                 | Dynamic lighting updates                                                                                     |
-| 🌐 World Borders             | ✅ Implemented                                                                                                                                                                                 | Configurable boundaries                                                                                      |
-| 🛠️ Block Edit API           | ✅ Implemented                                                                                                                                                                                 | WorldEdit-like functionality                                                                                 |
-| ⚔️ PvP Combat                | ✅ Implemented                                                                                                                                                                                 | Custom combat mechanics                                                                                      |
-| 🎒 Inventory System          | ✅ Implemented                                                                                                                                                                                 | Full item management                                                                                         |
-| 🎯 Raycasting                | 🚧 WIP [#580](https://github.com/andrewgazelka/hyperion/issues/580) [#584](https://github.com/andrewgazelka/hyperion/issues/584) [#598](https://github.com/andrewgazelka/hyperion/issues/598) | Required for ranged combat/arrows                                                                            |
-| **Player Experience**        |                                                                                                                                                                                               |                                                                                                              |
-| ✨ Particle Effects           | ✅ Implemented                                                                                                                                                                                 | Full particle support                                                                                        |
-| 💬 Chat System               | ✅ Implemented                                                                                                                                                                                 | Global and proximity chat                                                                                    |
-| ⌨️ Commands                  | ✅ Implemented                                                                                                                                                                                 | Custom command framework                                                                                     |
-| 🎤 Proximity Voice           | ✅ Implemented                                                                                                                                                                                 | Using Simple Voice Chat                                                                                      |
-
-Legend:
-- ✅ Implemented
-- 🚧 WIP/Planned
-- ❌ Not Planned
-
 **Note:** This feature list represents core functionality. Hyperion is designed to be modular meaning you can implement
 your own mechanics and replace the core mechanics with your own.
 
@@ -235,4 +220,8 @@ your own mechanics and replace the core mechanics with your own.
 [![Star History Chart](https://api.star-history.com/svg?repos=andrewgazelka/hyperion&type=Date)](https://star-history.com/#andrewgazelka/hyperion&Date)
 
 
+Thank you for your hard work[^1] [@CuzImClicks](https://github.com/CuzImClicks), [@Indra-db](https://github.com/Indra-db), [@james-j-obrien](https://github.com/james-j-obrien), [@Ruben2424](https://github.com/Ruben2424), [@SanderMertens](https://github.com/SanderMertens), [@Tebarem](https://github.com/Tebarem), and [@TestingPlant](https://github.com/TestingPlant).
+
+
 [^1]: alphabetically ordered
+
