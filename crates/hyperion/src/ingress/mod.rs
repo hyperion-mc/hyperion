@@ -354,7 +354,10 @@ impl Module for IngressModule {
                 let span = info_span!("ingress_to_ecs");
                 let _enter = span.enter();
 
-                let mut bytes = receive.0.packets.get_mut(&connection_id.inner()).unwrap();
+                let Some(mut bytes) = receive.0.packets.get_mut(&connection_id.inner()) else {
+                    return;
+                };
+
                 if bytes.is_empty() {
                     return;
                 }
