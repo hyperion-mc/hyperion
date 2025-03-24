@@ -78,7 +78,7 @@ hex = '0.4.3'
 humantime = '2.1.0'
 hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
-kanal = '0.1.0'
+kanal = '0.1.1'
 libc = '0.2.170'
 libdeflater = '1.23.1'
 memmap2 = '0.9.5'
@@ -108,7 +108,7 @@ tango-bench = "0.6.0"
 tar = '0.4.41'
 thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
-time = '0.3.37'
+time = '0.3.41'
 tokio = '1.43.0'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
