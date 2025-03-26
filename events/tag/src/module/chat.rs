@@ -36,7 +36,6 @@ impl Module for ChatModule {
             .add_trait::<(flecs::With, ChatCooldown)>();
 
         system!("handle_chat_messages", world, &mut EventQueue<event::ChatMessage>($), &hyperion::net::Compose($))
-            .multi_threaded()
             .each_iter(move |it: TableIter<'_, false>, _: usize, (event_queue, compose): (&mut EventQueue<event::ChatMessage>, &hyperion::net::Compose)| {
                 let world = it.world();
                 let span = info_span!("handle_chat_messages");
