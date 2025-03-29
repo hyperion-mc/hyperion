@@ -2,7 +2,7 @@
 
 [![Discord invite link](https://dcbadge.vercel.app/api/server/PBfnDtj5Wb)](https://discord.gg/PBfnDtj5Wb)
 [![Discord invite link](https://dcbadge.vercel.app/api/server/GxtzEJfSQe)](https://discord.gg/GxtzEJfSQe)
-[![Documentation](https://img.shields.io/badge/docs-online-green)](https://andrewgazelka.github.io/hyperion/)
+[![Documentation](https://img.shields.io/badge/docs-online-green)](https://hyperion.rs/)
 [![Issues](https://img.shields.io/github/issues/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/commits)
 
