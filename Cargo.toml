@@ -87,7 +87,7 @@ more-asserts = '0.3.1'
 num-derive = '0.4.2'
 num-traits = '0.2.19'
 num_cpus = "1.16.0"
-once_cell = '1.21.1'
+once_cell = '1.21.3'
 ordered-float = "5.0.0"
 ouroboros = '0.18.5'
 papaya = "0.2.1"
@@ -126,7 +126,7 @@ version = '1.22.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.31'
+version = '4.5.34'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
