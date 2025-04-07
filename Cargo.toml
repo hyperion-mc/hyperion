@@ -109,7 +109,7 @@ tar = '0.4.41'
 thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
-tokio = '1.43.0'
+tokio = '1.44.2'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.16.0'
@@ -126,7 +126,7 @@ version = '1.22.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.34'
+version = '4.5.35'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
@@ -137,7 +137,7 @@ git = 'https://github.com/nvzqz/divan'
 
 [workspace.dependencies.flate2]
 default-features = false
-version = '1.1.0'
+version = '1.1.1'
 
 [workspace.dependencies.flecs_ecs]
 features = ['flecs_manual_registration']
@@ -205,7 +205,7 @@ path = 'crates/hyperion-utils'
 
 [workspace.dependencies.indexmap]
 features = ['rayon']
-version = '2.7.1'
+version = '2.9.0'
 
 [workspace.dependencies.ndarray]
 features = ['blas']
@@ -224,7 +224,7 @@ path = 'crates/hyperion-respawn'
 
 [workspace.dependencies.roaring]
 features = ['simd']
-version = '0.10.10'
+version = '0.10.12'
 
 [workspace.dependencies.rustc-hash]
 features = ['nightly']
