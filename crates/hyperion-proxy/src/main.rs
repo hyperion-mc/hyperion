@@ -18,6 +18,7 @@ struct Params {
     /// The address for the proxy to listen on. Can be either:
     /// - A TCP address like "127.0.0.1:25565"
     /// - A Unix domain socket path like "/tmp/minecraft.sock" (Unix only)
+    #[clap(short, long, default_value = "127.0.0.1:25565")]
     proxy_addr: String,
 
     /// The address of the target Minecraft game server to proxy from/to

@@ -35,7 +35,6 @@ impl Module for BowModule {
         )
         .term_at(0u32)
         .singleton()
-        .multi_threaded()
         .kind::<flecs::pipeline::PostUpdate>()
         .each_iter(move |it, _, event_queue| {
             let _system = it.system();
@@ -113,7 +112,7 @@ impl Module for BowModule {
                             .set(Velocity::new(velocity.x, velocity.y, velocity.z))
                             .set(Pitch::new(**pitch))
                             .set(Yaw::new(**yaw))
-                            //.set(Owner::new(*player))
+                            .set(Owner::new(*player))
                             .enqueue(Spawn);
                     },
                 );

@@ -410,7 +410,7 @@ impl Module for EntityStateSyncModule {
             ?&ConnectionId
         )
         .multi_threaded()
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind::<flecs::pipeline::OnStore>()
         .with_enum_wildcard::<EntityKind>()
         .each_iter(|it, row, (position, velocity, connection_id)| {
             if let Some(_connection_id) = connection_id {
@@ -464,6 +464,7 @@ impl Module for EntityStateSyncModule {
                             },
                             &world
                         ));
+                        velocity.0 = Vec3::ZERO;
                     }
                     Either::Right(collision) => {
                         debug!("block: {collision:?}");
@@ -475,6 +476,7 @@ impl Module for EntityStateSyncModule {
                             },
                             &world
                         ));
+                        velocity.0 = Vec3::ZERO;
                     }
                 }
 
