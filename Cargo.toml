@@ -48,7 +48,7 @@ members = [
 resolver = '2'
 
 [workspace.dependencies]
-anyhow = '1.0.97'
+anyhow = '1.0.98'
 approx = '0.5.1'
 arrayvec = '0.7.4'
 base64 = '0.22.1'
@@ -71,7 +71,7 @@ enumset = '1.1.5'
 fastrand = '2.1.0'
 flume = '0.11.1'
 futures-util = '0.3.31'
-glam = "0.30.0"
+glam = "0.30.2"
 heapless = '0.8.0'
 heed = "0.21.0"
 hex = '0.4.3'
@@ -126,7 +126,7 @@ version = '1.22.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.35'
+version = '4.5.36'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
