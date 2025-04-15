@@ -17,8 +17,8 @@ pub struct DamageModule {}
 
 impl Module for DamageModule {
     fn module(world: &World) {
-        system!("fall_damage", world, &mut EventQueue<HitGroundEvent>($), &Compose($))
-            .each_iter(|it, _, (event_queue, compose)| {
+        system!("fall_damage", world, &mut EventQueue<HitGroundEvent>($), &Compose($)).each_iter(
+            |it, _, (event_queue, compose)| {
                 let world = it.world();
                 let system = it.system();
 
@@ -70,6 +70,7 @@ impl Module for DamageModule {
                         },
                     );
                 }
-            });
+            },
+        );
     }
 }
