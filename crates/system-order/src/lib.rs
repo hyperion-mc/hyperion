@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use derive_more::Constructor;
 use flecs_ecs::{
     core::{
-        Builder, ComponentOrPairId, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI,
+        Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI,
         QueryBuilderImpl, SystemAPI, flecs, flecs::DependsOn,
     },
     macros::Component,
