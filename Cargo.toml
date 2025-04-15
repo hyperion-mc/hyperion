@@ -142,8 +142,6 @@ version = '1.1.1'
 [workspace.dependencies.flecs_ecs]
 features = ['flecs_manual_registration']
 git = 'https://github.com/Indra-db/Flecs-Rust'
-rev = "cb296d0" # main
-version = "0.1.3"
 
 [workspace.dependencies.geometry]
 path = 'crates/geometry'
