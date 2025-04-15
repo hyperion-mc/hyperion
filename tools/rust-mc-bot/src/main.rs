@@ -2,6 +2,7 @@
 
 use std::{
     net::ToSocketAddrs,
+    path::PathBuf,
     sync::{Arc, atomic::AtomicU32},
 };
 

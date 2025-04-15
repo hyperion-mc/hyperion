@@ -1,4 +1,4 @@
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
 use hyperion_proxy::run_proxy;

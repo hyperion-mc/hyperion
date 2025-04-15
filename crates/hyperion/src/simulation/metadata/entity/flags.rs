@@ -1,5 +1,5 @@
 use derive_more::Deref;
-use flecs_ecs::macros::Component;
+use flecs_ecs::{core::ComponentOrPairId, macros::Component};
 
 use crate::simulation::metadata::Metadata;
 

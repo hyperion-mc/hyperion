@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use compact_str::format_compact;
 use flecs_ecs::{
     core::{
-        Builder, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
+        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
         SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs,
     },
     macros::{Component, system},
