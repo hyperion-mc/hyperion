@@ -17,7 +17,7 @@ pub struct DamageModule {}
 
 impl Module for DamageModule {
     fn module(world: &World) {
-        system!("apply natural damages", world, &mut EventQueue<HitGroundEvent>($), &Compose($))
+        system!("fall_damage", world, &mut EventQueue<HitGroundEvent>($), &Compose($))
             .each_iter(|it, _, (event_queue, compose)| {
                 let world = it.world();
                 let system = it.system();

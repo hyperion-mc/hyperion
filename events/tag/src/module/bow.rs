@@ -84,8 +84,7 @@ impl Module for BowModule {
             world,
             &mut EventQueue<event::ItemInteract>,
         )
-        .singleton()
-        .multi_threaded()
+        //.singleton()
         .kind::<flecs::pipeline::PostUpdate>()
         .each_iter(move |it, _, event_queue| {
             let _system = it.system();
@@ -203,7 +202,7 @@ impl Module for BowModule {
             &Compose($),
             &mut EventQueue<event::ProjectileEntityEvent>,
         )
-        .multi_threaded()
+        //.multi_threaded()
         .singleton()
         .kind::<flecs::pipeline::PostUpdate>()
         .each_iter(move |it, _, (compose, event_queue)| {
@@ -263,7 +262,6 @@ impl Module for BowModule {
             world,
             &mut EventQueue<event::ProjectileBlockEvent>,
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
         .each_iter(move |it, _, event_queue| {
             let _system = it.system();
