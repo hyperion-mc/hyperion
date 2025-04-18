@@ -9,12 +9,14 @@ use flecs_ecs::prelude::*;
 use hyperion::{GameServerEndpoint, HyperionCore, simulation::Player};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
+use hyperion_proxy_module::ProxyAddress;
 use module::{block::BlockModule, damage::DamageModule, vanish::VanishModule};
 
 mod module;
 
 use derive_more::{Deref, DerefMut};
 use hyperion::{glam::IVec3, simulation::Position, spatial};
+use hyperion_proxy_module::HyperionProxyModule;
 use hyperion_rank_tree::Team;
 use module::{attack::AttackModule, level::LevelModule, regeneration::RegenerationModule};
 use spatial::SpatialIndex;
@@ -135,7 +137,13 @@ pub fn init_game(address: SocketAddr) -> anyhow::Result<()> {
     let world = World::new();
 
     world.import::<HyperionCore>();
+    world.import::<HyperionProxyModule>();
     world.import::<TagModule>();
+
+    world.set(ProxyAddress {
+        server: address.to_string(),
+        ..ProxyAddress::default()
+    });
 
     world.set(GameServerEndpoint::from(address));
 

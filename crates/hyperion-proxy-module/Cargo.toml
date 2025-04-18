@@ -1,0 +1,17 @@
+[dependencies]
+hyperion-proxy = { workspace = true }
+hyperion = { workspace = true }
+flecs_ecs = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true , features = ["full"]}
+
+[lints]
+workspace = true
+
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "hyperion-proxy-module"
+publish = false
+readme = "README.md"
+version.workspace = true

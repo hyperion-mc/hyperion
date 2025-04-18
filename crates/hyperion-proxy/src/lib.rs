@@ -50,7 +50,7 @@ pub mod server_sender;
 pub mod util;
 
 #[tracing::instrument(level = "trace", skip_all)]
-pub async fn connect(addr: impl ToSocketAddrs + Debug + Clone) -> TcpStream {
+async fn connect(addr: impl ToSocketAddrs + Debug + Clone) -> TcpStream {
     loop {
         if let Ok(stream) = TcpStream::connect(addr.clone()).await {
             return stream;
