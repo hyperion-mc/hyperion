@@ -33,6 +33,7 @@ members = [
     'crates/hyperion-permission',
     'crates/hyperion-proto',
     'crates/hyperion-proxy',
+    'crates/hyperion-proxy-module',
     'crates/hyperion-rank-tree',
     'crates/hyperion-respawn',
     'crates/hyperion-scheduled',
@@ -113,6 +114,9 @@ tokio = '1.44.2'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.16.0'
+
+[workspace.dependencies.hyperion-proxy-module]
+path = "crates/hyperion-proxy-module"
 
 [workspace.dependencies.bvh]
 git = 'https://github.com/andrewgazelka/bvh-data'
