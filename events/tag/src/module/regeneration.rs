@@ -1,5 +1,5 @@
 use flecs_ecs::{
-    core::{ComponentOrPairId, QueryBuilderImpl, TermBuilderImpl, World, flecs},
+    core::{QueryBuilderImpl, TermBuilderImpl, World, flecs},
     macros::{Component, system},
     prelude::Module,
 };
