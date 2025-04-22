@@ -1,7 +1,7 @@
 //! See [`AsyncRuntime`].
 
 use std::sync::Arc;
-
+use bevy::log::Resource;
 use derive_more::{Deref, DerefMut};
 use flecs_ecs::{core::World, macros::Component};
 use kanal::{Receiver, Sender};
@@ -10,7 +10,7 @@ use kanal::{Receiver, Sender};
 pub type WorldCallback = Box<dyn FnOnce(&World) + Send>;
 
 /// Wrapper around [`tokio::runtime::Runtime`]
-#[derive(Component, Deref, DerefMut, Clone)]
+#[derive(Resource, Deref, DerefMut, Clone)]
 pub struct AsyncRuntime {
     #[deref]
     #[deref_mut]
@@ -18,7 +18,7 @@ pub struct AsyncRuntime {
     callback_sender: Sender<WorldCallback>,
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Tasks {
     pub(crate) tasks: Receiver<WorldCallback>,
 }

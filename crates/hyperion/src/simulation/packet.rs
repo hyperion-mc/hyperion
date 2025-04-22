@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use bevy::log::Resource;
 use flecs_ecs::macros::Component;
 use hyperion_utils::{Lifetime, LifetimeHandle};
 use rustc_hash::FxBuildHasher;
@@ -57,7 +58,7 @@ where
     Ok(())
 }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct HandlerRegistry {
     // Store deserializer and multiple handlers separately
     deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,

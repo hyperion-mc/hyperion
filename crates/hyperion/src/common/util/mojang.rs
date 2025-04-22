@@ -60,7 +60,7 @@ impl ApiProvider {
 ///
 /// Can use either the official Mojang API or [matdoes/mowojang](https://matdoes.dev/minecraft-uuids) as a data source.
 /// This does not include caching, this should be done separately probably using [`crate::storage::LocalDb`].
-#[derive(Component, Clone)]
+#[derive(Resource, Clone)]
 pub struct MojangClient {
     req: reqwest::Client,
     rate_limit: Arc<Semaphore>,

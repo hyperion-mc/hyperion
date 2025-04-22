@@ -25,7 +25,7 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(thread_local)]
 
-pub const NUM_THREADS: usize = 8;
+pub const NUM_THREADS: usize = 1;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
 use std::{
@@ -34,11 +34,12 @@ use std::{
     fmt::Debug,
     io::Write,
     net::SocketAddr,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use anyhow::Context;
-use derive_more::{Deref, DerefMut};
+use bevy::prelude::*;
+use derive_more::{Constructor, Deref, DerefMut};
 use egress::EgressModule;
 pub use flecs_ecs;
 use flecs_ecs::prelude::*;
@@ -46,9 +47,9 @@ pub use glam;
 use glam::{I16Vec2, IVec2};
 use ingress::IngressModule;
 #[cfg(unix)]
-use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
+use libc::{getrlimit, setrlimit, RLIMIT_NOFILE};
 use libdeflater::CompressionLvl;
-use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+use simulation::{blocks::Blocks, Comms, SimModule, StreamLookup};
 use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
@@ -57,15 +58,15 @@ pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
 // and then eventually do not re-export valence_protocol
 pub use valence_protocol;
-use valence_protocol::{CompressionThreshold, Encode, Packet};
 pub use valence_protocol::{
-    ItemKind, ItemStack, Particle,
-    block::{BlockKind, BlockState},
+    block::{BlockKind, BlockState}, ItemKind, ItemStack,
+    Particle,
 };
+use valence_protocol::{CompressionThreshold, Encode, Packet};
 pub use valence_server as server;
 
 use crate::{
-    net::{Compose, Compressors, IoBuf, MAX_PACKET_SIZE, proxy::init_proxy_comms},
+    net::{proxy::init_proxy_comms, Compose, Compressors, IoBuf, MAX_PACKET_SIZE},
     runtime::AsyncRuntime,
     simulation::{Pitch, Yaw},
 };
@@ -78,9 +79,9 @@ pub use valence_ident;
 
 use crate::{
     ingress::PendingRemove,
-    net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
+    net::{proxy::ReceiveState, ConnectionId, PacketDecoder},
     runtime::Tasks,
-    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
+    simulation::{packet::HandlerRegistry, EgressComm, EntitySize, IgnMap, PacketState, Player},
     util::mojang::ApiProvider,
 };
 
@@ -173,7 +174,7 @@ impl From<SocketAddr> for GameServerEndpoint {
 #[derive(Component)]
 pub struct HyperionCore;
 
-#[derive(Component)]
+#[derive(Resource, Constructor)]
 struct Shutdown {
     value: Arc<AtomicBool>,
 }
@@ -184,17 +185,19 @@ impl Module for HyperionCore {
     }
 }
 
-impl HyperionCore {
-    /// Initializes the server with a custom handler.
-    fn init_with(world: &World) -> anyhow::Result<()> {
-        // Denormals (numbers very close to 0) are flushed to zero because doing computations on them
-        // is slow.
-
-        Self::init_with_helper(world)
+fn run_tasks(tasks: &mut Tasks) {
+    while let Ok(Some(task)) = tasks.tasks.try_recv() {
+        task(&world);
     }
+}
+
+impl Plugin for HyperionCore {
 
     /// Initialize the server.
-    fn init_with_helper(world: &World) -> anyhow::Result<()> {
+    fn build(&self, app: &mut App) {
+        // Minecraft is 20 TPS
+        app.insert_resource(Time::<Fixed>::from_hz(20.0));
+
         // 10k players * 2 file handles / player  = 20,000. We can probably get away with 16,384 file handles
         #[cfg(unix)]
         adjust_file_descriptor_limits(32_768).context("failed to set file limits")?;
@@ -219,79 +222,14 @@ impl HyperionCore {
                 .map_err(|_| anyhow::anyhow!("failed to create compression level"))?,
         });
 
-        world.component::<GameServerEndpoint>();
-
-        world.component::<Shutdown>();
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        world.set(Shutdown {
-            value: shutdown.clone(),
-        });
-
-        world.component::<Prev>();
-
-        // Minecraft tick rate is 20 ticks per second
-        world.set_target_fps(20.0);
-
-        // todo: sadly this requires u32
-        // .bit("on_fire", *EntityFlags::ON_FIRE)
-        // .bit("crouching", *EntityFlags::CROUCHING)
-        // .bit("sprinting", *EntityFlags::SPRINTING)
-        // .bit("swimming", *EntityFlags::SWIMMING)
-        // .bit("invisible", *EntityFlags::INVISIBLE)
-        // .bit("glowing", *EntityFlags::GLOWING)
-        // .bit("flying_with_elytra", *EntityFlags::FLYING_WITH_ELYTRA);
-
-        component!(world, I16Vec2 { x: i16, y: i16 });
-
-        component!(world, IVec2 { x: i32, y: i32 });
-        world.component::<PendingRemove>();
-
-        world.component::<Yaw>().meta();
-
-        world.component::<Pitch>().meta();
-
-        world.component::<PacketDecoder>();
-
-        world.component::<PacketState>();
-
-        world.component::<ConnectionId>();
-        world.component::<ReceiveState>();
-        world.component::<Compose>();
-        world.component::<CraftingRegistry>();
-
-        world.component::<LocalDb>();
-        world.component::<SkinHandler>();
-        world.component::<MojangClient>();
-        world.component::<Events>();
-        world.component::<Comms>();
-        world.component::<EgressComm>();
-
-        world.component::<AsyncRuntime>();
-        world.component::<Blocks>();
-
-        world.component::<Tasks>();
-
-        system!("run_tasks", world, &mut Tasks($))
-            .with::<flecs::pipeline::OnUpdate>()
-            .each_iter(|it, _, tasks| {
-                let world = it.world();
-                let span = info_span!("run_tasks");
-                let _enter = span.enter();
-                while let Ok(Some(task)) = tasks.tasks.try_recv() {
-                    task(&world);
-                }
-            });
-
-        world.component::<StreamLookup>();
-        world.component::<EntitySize>();
-        world.component::<IgnMap>();
-
-        world.component::<config::Config>();
-
+        app.insert_resource(Shutdown::new(shutdown.clone());
+        app.add_systems(Update, run_tasks);
+        
         info!("starting hyperion");
         let config = config::Config::load("run/config.toml")?;
-        world.set(config);
+        world.insert_resource(config);
 
         let (task_tx, task_rx) = kanal::bounded(32);
         let runtime = AsyncRuntime::new(task_tx);
@@ -321,85 +259,62 @@ impl HyperionCore {
         });
 
         let tasks = Tasks { tasks: task_rx };
-        world.set(tasks);
+        app.insert_resource(tasks);
 
-        world.component::<HandlerRegistry>();
-        world.set(HandlerRegistry::default());
+        app.insert_resource(HandlerRegistry::default());
 
-        info!("initializing database");
         let db = LocalDb::new()?;
         let skins = SkinHandler::new(&db)?;
-        info!("database initialized");
 
-        world.set(db);
-        world.set(skins);
+        app.insert_resource(db);
+        app.insert_resource(skins);
 
-        world.set(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
+        app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
 
         #[rustfmt::skip]
-        world
-            .observer::<flecs::OnSet, (&GameServerEndpoint, &AsyncRuntime)>()
-            .term_at(0).singleton()
-            .term_at(1).filter().singleton()
-            .each_iter(|it, _, (address, runtime)| {
-                let world = it.world();
-                let address = address.0;
-                let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
-                world.set(receive_state);
-                world.set(egress_comm);
-            });
+        app.add_observer(set_server_endpoint);
 
         let global = Global::new(shared.clone());
 
-        world.set(Compose::new(
+        app.insert_resource(Compose::new(
             Compressors::new(shared.compression_level),
             Scratches::default(),
             global,
             IoBuf::default(),
         ));
 
-        world.set(CraftingRegistry::default());
+        app.insert_resource(CraftingRegistry::default());
 
-        world.set(Comms::default());
+        app.insert_resource(Comms::default());
 
-        let events = Events::initialize(world);
-        world.set(events);
+        let events = Events::initialize(app);
+        app.insert_resource(events);
 
-        world.set(runtime);
-        world.set(StreamLookup::default());
+        app.insert_resource(runtime);
+        app.insert_resource(StreamLookup::default());
 
-        world.set_threads(i32::try_from(rayon::current_num_threads())?);
-        world.import::<SimModule>();
-        world.import::<EgressModule>();
-        world.import::<IngressModule>();
-        world.import::<SystemOrderModule>();
+        app.add_plugins(
+            (SimModule, EgressModule, IngressModule, SystemOrderModule)
+        );
 
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, EntitySize)>();
+        // app
+        //     .component::<Player>()
+        //     .add_trait::<(flecs::With, EntitySize)>();
 
-        // add yaw and pitch
-        world
-            .observer::<flecs::OnAdd, ()>()
-            .with::<Player>()
-            .without::<Yaw>()
-            .each_entity(|entity, ()| {
-                entity.set(Yaw::default());
-            });
-
-        world
-            .observer::<flecs::OnAdd, ()>()
-            .with::<Player>()
-            .without::<Pitch>()
-            .each_entity(|entity, ()| {
-                entity.set(Pitch::default());
-            });
-
-        world.set(IgnMap::default());
-        world.set(Blocks::empty(world));
+        app.insert_resource(IgnMap::default());
+        app.insert_resource(Blocks::empty(app));
 
         Ok(())
     }
+}
+
+
+fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands) {
+    let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
+    commands
+        .insert_resource(receive_state);
+    
+    commands.insert_resource(egress_comm);
 }
 
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].

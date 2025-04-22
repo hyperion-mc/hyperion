@@ -4,7 +4,7 @@ use std::{
     cell::{Cell, RefCell},
     fmt::Debug,
 };
-
+use bevy::prelude::*;
 use bumpalo::Bump;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
@@ -102,7 +102,7 @@ impl ConnectionId {
 }
 
 /// A singleton that can be used to compose and encode packets.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Compose {
     compressor: Compressors,
     scratch: Scratches,

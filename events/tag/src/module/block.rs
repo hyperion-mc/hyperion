@@ -73,7 +73,7 @@ impl Module for BlockModule {
 
         system!("handle_pending_air", world, &mut PendingDestruction($), &mut Blocks($), &Compose($))
             .write::<PlayerInventory>()
-            .multi_threaded()
+
             .each_iter(
                 move |it: TableIter<'_, false>,
                       _,
@@ -155,7 +155,7 @@ impl Module for BlockModule {
             );
 
         system!("handle_destroyed_blocks", world, &mut Blocks($), &mut EventQueue<event::DestroyBlock>($), &Compose($), &OreVeins($))
-            .multi_threaded()
+
             .each_iter(move |it: TableIter<'_, false>, _, (blocks, event_queue, compose, ore_veins): (&mut Blocks, &mut EventQueue<event::DestroyBlock>, &Compose, &OreVeins)| {
                 let span = info_span!("handle_blocks");
                 let _enter = span.enter();
@@ -303,7 +303,7 @@ impl Module for BlockModule {
             });
 
         system!("handle_toggled_doors", world, &mut Blocks($), &mut EventQueue<event::ToggleDoor>($))
-            .multi_threaded()
+
             .each_iter(move |_it: TableIter<'_, false>, _, (mc, event_queue): (&mut Blocks, &mut EventQueue<event::ToggleDoor>)| {
                 let span = info_span!("handle_toggled_doors");
                 let _enter = span.enter();

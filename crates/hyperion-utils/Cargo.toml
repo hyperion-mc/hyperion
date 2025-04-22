@@ -1,5 +1,4 @@
 [dependencies]
-flecs_ecs = {workspace = true}
 anyhow = {workspace = true}
 directories = {workspace = true}
 sha2 = {workspace = true}

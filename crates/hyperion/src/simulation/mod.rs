@@ -43,7 +43,7 @@ pub mod packet;
 pub mod skin;
 pub mod util;
 
-#[derive(Component, Default, Debug, Deref, DerefMut)]
+#[derive(Resource, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {
     /// The UUID of all players
     inner: FxHashMap<u64, Entity>,
@@ -56,7 +56,7 @@ pub struct PlayerUuidLookup {
 }
 
 /// Communicates with the proxy server.
-#[derive(Component, Deref, DerefMut, From)]
+#[derive(Resource, Deref, DerefMut, From)]
 pub struct EgressComm {
     tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }
@@ -114,7 +114,7 @@ impl<K: Eq + Hash, V> DeferredMap<K, V> {
 #[meta]
 pub struct Name(Arc<str>);
 
-#[derive(Component, Deref, DerefMut, From, Debug, Default)]
+#[derive(Resource, Deref, DerefMut, From, Debug, Default)]
 pub struct IgnMap(DeferredMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
@@ -318,7 +318,7 @@ impl ImmuneStatus {
 
 /// Communication struct. Maybe should be refactored to some extent.
 /// This to communicate back from an [`crate::runtime::AsyncRuntime`] to the main thread.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Comms {
     /// Skin rx channel.
     pub skins_rx: kanal::Receiver<(Entity, PlayerSkin)>,

@@ -67,7 +67,7 @@ pub struct RayCollision {
 }
 
 /// Accessor of blocks.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Blocks {
     /// Map to a Chunk by Entity ID
     chunk_cache: IndexMap<I16Vec2, Column, FxBuildHasher>,

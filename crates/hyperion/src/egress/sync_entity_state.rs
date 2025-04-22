@@ -53,7 +53,6 @@ fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
 
     world
         .system_named::<(&mut (Prev, T), &T)>(system_name.as_str())
-        .multi_threaded()
         .kind_id(post_store)
         .each(|(prev, value)| {
             *prev = *value;
@@ -71,7 +70,6 @@ impl Module for EntityStateSyncModule {
             )>("entity_xp_sync")
             .term_at(0u32)
             .singleton()
-            .multi_threaded()
             .kind::<flecs::pipeline::OnStore>()
             .each_iter(|table, idx, (compose, net, prev_xp, current)| {
                 const {
@@ -99,7 +97,6 @@ impl Module for EntityStateSyncModule {
             });
 
         system!("entity_metadata_sync", world, &Compose($), &mut MetadataChanges)
-            .multi_threaded()
             .kind::<flecs::pipeline::OnStore>()
             .each_iter(move |it, row, (compose, metadata_changes)| {
                 let system = it.system();
@@ -135,7 +132,6 @@ impl Module for EntityStateSyncModule {
         ?&ConnectionId,
         &mut ActiveAnimation,
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::OnStore>()
         .each_iter(
             move |it, row, (position, compose, connection_id, animation)| {
@@ -177,7 +173,6 @@ impl Module for EntityStateSyncModule {
             &mut MovementTracking,
             &Flight,
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
         .each_iter(
             |it,
@@ -368,7 +363,6 @@ impl Module for EntityStateSyncModule {
             &Owner,
             ?&ConnectionId
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
         .with_enum_wildcard::<EntityKind>()
         .each_iter(|it, row, (position, velocity, owner, connection_id)| {

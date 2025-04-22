@@ -5,6 +5,7 @@ compact_str = { workspace = true }
 derive_more = { workspace = true }
 dotenvy = { workspace = true }
 envy = "0.4"
+eyre = "0.6.12"
 fastrand = { workspace = true }
 flecs_ecs = { workspace = true }
 geometry = { workspace = true }
@@ -26,6 +27,7 @@ rayon = { workspace = true }
 roaring = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { version = "1.0", features = ["derive"] }
+tap = "1.0.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
