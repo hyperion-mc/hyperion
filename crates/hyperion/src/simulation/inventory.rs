@@ -123,7 +123,7 @@ impl Module for InventoryModule {
             ?&OpenInventory,
             &ConnectionId,
         )
-            .multi_threaded()
+
             .kind::<flecs_ecs::prelude::flecs::pipeline::OnStore>()
             .each_iter(
                 |

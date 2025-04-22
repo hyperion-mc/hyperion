@@ -39,7 +39,6 @@ impl Module for RegenerationModule {
             &mut Health,
             &Compose($)
         )
-        .multi_threaded()
         .tracing_each(
             info_span!("regenerate"),
             |(last_damaged, prev_health, health, compose)| {
