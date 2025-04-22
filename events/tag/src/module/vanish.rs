@@ -36,7 +36,6 @@ impl Module for VanishModule {
             &Vanished,
             &Uuid,
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::PreStore>()
         .each_iter(move |it, row, (compose, _connection_id, vanished, uuid)| {
             let entity = it.entity(row);

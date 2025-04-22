@@ -45,7 +45,6 @@ impl Module for SyncChunksModule {
         )
         .with_enum(PacketState::Play)
         .kind::<flecs::pipeline::OnUpdate>()
-        .multi_threaded()
         .each_iter(
             move |it, _, (compose, last_sent, pose, &stream_id, chunk_changes)| {
                 let system = it.system();
@@ -161,7 +160,7 @@ impl Module for SyncChunksModule {
         system!("send_full_loaded_chunks", world, &Blocks($), &Compose($), &ConnectionId, &mut ChunkSendQueue)
             .with_enum(PacketState::Play)
             .kind::<flecs::pipeline::OnUpdate>()
-            .multi_threaded()
+
             .each_iter(
                 move |it, _, (chunks, compose, &stream_id, queue)| {
                     const MAX_CHUNKS_PER_TICK: usize = 16;

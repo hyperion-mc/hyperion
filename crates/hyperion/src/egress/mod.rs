@@ -60,7 +60,6 @@ impl Module for EgressModule {
             &Compose($),
             &mut Blocks($),
         )
-        .multi_threaded()
         .kind::<flecs::pipeline::OnUpdate>()
         .each_iter(move |it: TableIter<'_, false>, _, (compose, mc)| {
             let span = info_span!("broadcast_chunk_deltas");
