@@ -1,4 +1,4 @@
-use std::{borrow::Cow, mem::transmute};
+use std::borrow::Cow;
 
 use flecs_ecs::{
     core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs},
@@ -117,7 +117,7 @@ impl Module for InventoryModule {
             world,
             &Compose($),
             &mut PlayerInventory,
-            &mut InventoryState,
+            &InventoryState,
             &Position,
             &CursorItem,
             ?&OpenInventory,
@@ -185,61 +185,70 @@ impl Module for InventoryModule {
                             .unwrap();
                     }
 
-                    let mut inventories_mut: Vec<&mut ItemSlot> = Vec::new();
                     if let Some(open_inventory) = open_inventory {
                         open_inventory.entity.entity_view(world).get::<&mut Inventory>(|open_inv| {
-                            (unsafe { transmute::<&mut Inventory, &mut Inventory>(open_inv) })
-                                .slots_mut()
-                                .iter_mut()
-                                .for_each(|slot| inventories_mut.push(slot));
+                            update_player_inventory_inner(
+                                compose,
+                                stream_id,
+                                system,
+                                inv_state,
+                                cursor_item,
+                                open_inv.slots_mut().iter_mut().chain(inventory.slots_inventory_mut().iter_mut()),
+                            );
                         });
-                    }
-
-                    if inventories_mut.is_empty() {
-                        inventory
-                            .slots_mut()
-                            .iter_mut()
-                            .for_each(|slot| inventories_mut.push(slot));
                     } else {
-                        inventory
-                            .slots_inventory_mut()
-                            .iter_mut()
-                            .for_each(|slot| inventories_mut.push(slot));
-                    }
-
-                    let mut bundle = DataBundle::new(compose, system);
-                    let mut changed_slots = false;
-                    let window_id = i8::try_from(inv_state.window_id()).unwrap();
-                    for (idx, slot) in inventories_mut.iter_mut().enumerate() {
-                        if slot.changed {
-                            let idx = i16::try_from(idx).unwrap();
-                            let packet = &(play::ScreenHandlerSlotUpdateS2c {
-                                window_id,
-                                state_id: VarInt(inv_state.state_id()),
-                                slot_idx: idx,
-                                slot_data: Cow::Borrowed(&slot.stack),
-                            });
-
-                            bundle.add_packet(packet).unwrap();
-                            slot.changed = false;
-                            changed_slots = true;
-                        }
-                    }
-
-                    if changed_slots {
-                        bundle.unicast(stream_id).unwrap();
-
-                        let packet = &(play::ScreenHandlerSlotUpdateS2c {
-                            window_id: -1,
-                            state_id: VarInt(inv_state.state_id()),
-                            slot_idx: -1,
-                            slot_data: Cow::Borrowed(&cursor_item.0),
-                        });
-
-                        compose.unicast(packet, stream_id, system).unwrap();
+                        update_player_inventory_inner(
+                            compose,
+                            stream_id,
+                            system,
+                            inv_state,
+                            cursor_item,
+                            inventory.slots_mut().iter_mut(),
+                        );
                     }
                 }
             );
+    }
+}
+
+fn update_player_inventory_inner<'a>(
+    compose: &Compose,
+    stream_id: ConnectionId,
+    system: EntityView<'_>,
+    inv_state: &InventoryState,
+    cursor_item: &CursorItem,
+    inventories_mut: impl Iterator<Item = &'a mut ItemSlot>,
+) {
+    let mut bundle = DataBundle::new(compose, system);
+    let mut changed_slots = false;
+    let window_id = i8::try_from(inv_state.window_id()).unwrap();
+    for (idx, slot) in inventories_mut.enumerate() {
+        if slot.changed {
+            let idx = i16::try_from(idx).unwrap();
+            let packet = &(play::ScreenHandlerSlotUpdateS2c {
+                window_id,
+                state_id: VarInt(inv_state.state_id()),
+                slot_idx: idx,
+                slot_data: Cow::Borrowed(&slot.stack),
+            });
+
+            bundle.add_packet(packet).unwrap();
+            slot.changed = false;
+            changed_slots = true;
+        }
+    }
+
+    if changed_slots {
+        bundle.unicast(stream_id).unwrap();
+
+        let packet = &(play::ScreenHandlerSlotUpdateS2c {
+            window_id: -1,
+            state_id: VarInt(inv_state.state_id()),
+            slot_idx: -1,
+            slot_data: Cow::Borrowed(&cursor_item.0),
+        });
+
+        compose.unicast(packet, stream_id, system).unwrap();
     }
 }
 
