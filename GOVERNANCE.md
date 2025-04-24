@@ -1,131 +1,73 @@
-# Hyperion Governance Model
+# Hyperion Governance
 
-## Vision
+This document outlines the simple governance structure for Hyperion, a high-performance Minecraft game engine.
 
-Hyperion embraces a governance model that balances technical excellence with community wisdom. We believe the best decisions emerge when diverse perspectives meet rigorous engineering principles.
+## Project Roles
 
-## Core Governance Structures
+### 1. Project Lead
+- Project founder (@andrewgazelka) and other designated leads
+- Has final authority on project direction
+- Controls access to critical resources (repositories, hosting, domains)
+- Resolves disputes when consensus cannot be reached
 
-Hyperion's governance consists of three complementary bodies:
+### 2. Core Contributors
+- Demonstrated consistent high-quality contributions
+- Push access to all repositories
+- Can approve significant changes
+- Help shape project direction
 
-### 1. Technical Leadership Council (TLC)
-- Expert-driven body responsible for day-to-day technical decisions
-- Consists of 3-7 maintainers with demonstrated technical excellence
-- Manages code reviews, architecture, and technical standards
-- Members selected based on merit and contribution history
+### 3. Contributors
+- Anyone who has contributed to the project
+- No special permissions, but acknowledged for their work
+- May be nominated for Core Contributor status
 
-### 2. Hyperion Assembly
-- Randomly selected contributors who serve as the community's voice
-- Provides diverse perspectives on major decisions
-- Reviews and approves non-technical policies and strategic direction
-- Serves as a check and balance to the Technical Leadership Council
+## Decision Making
 
-### 3. Project Stewards
-- 2-3 individuals who maintain the long-term vision of Hyperion
-- Includes the project founder @andrewgazelka
-- Final arbiters in case of governance deadlocks
-- Responsible for sustainability and mission alignment
+### Code Changes
+- Minor changes (bug fixes, small improvements) need one Core Contributor approval
+- Major changes (API, architecture) need discussion and two Core approvals
+- Core Contributors can merge their own minor changes for areas they maintain
+- Always prioritize performance, scalability, and stability
 
-## The Hyperion Assembly in Detail
+### Project Direction
+- Major decisions are discussed openly in GitHub issues or Discord
+- Core Contributors aim for consensus on important matters
+- If consensus cannot be reached, Project Lead makes the final decision
+- Technical merit and alignment with project goals are primary criteria
 
-### Purpose
-The Hyperion Assembly brings deliberative democracy principles to open source governance, ensuring decisions reflect the broader community wisdom while respecting technical requirements.
+## Becoming a Core Contributor
 
-### Composition
-- 9-15 members randomly selected from qualified contributors
-- Qualification requires at least one accepted contribution
-- Weighted selection giving higher chance to more active contributors
-- Term limits of 6 months with staggered rotation (1/3 rotated every 2 months)
-- Diversity of technical backgrounds specifically sought
+1. Make consistent contributions to the project
+2. Demonstrate understanding of performance-critical game engine architecture
+3. Get nominated by an existing Core Contributor
+4. Receive approval from at least two Core Contributors including one Lead
 
-### Powers and Responsibilities
-- Reviews and approves:
-    - Major features and roadmap priorities
-    - Community policies and processes
-    - Resource allocation for sponsored work
-    - Changes to the governance model
-- Provides input on technical direction without overriding technical necessities
-- Creates working groups to address specific community needs
-- Conducts regular community surveys and feedback sessions
+## Code Review
 
-### Decision Process
-- Assembly meets monthly in public sessions
-- Consensus-seeking on most matters
-- Structured deliberation process:
-    1. Information gathering phase
-    2. Structured debate with equal speaking time
-    3. Proposal crafting
-    4. Consensus building or voting (80% supermajority for approval)
-- Technical Leadership Council holds limited veto rights on decisions that compromise technical stability or performance
+We value quick iteration while maintaining technical excellence:
 
-## Contribution and Decision Flow
+- Focus reviews on correctness, performance, and maintainability
+- Include performance benchmarks for changes to critical paths
+- Ensure adequate test coverage for new features
+- Use GitHub Pull Requests for all changes
+- Prefer small, focused changes over large changes
+- Document design decisions that affect scalability
 
-### For Code Changes
+## Communication
 
-1. **Minor Changes** (bug fixes, small features):
-    - Standard pull request process
-    - Requires one TLC member approval
-    - 48-hour waiting period for objections
-
-2. **Significant Technical Changes**:
-    - Requires RFC (Request for Comments)
-    - 7-day comment period
-    - TLC review and approval (majority vote)
-    - Implementation via pull requests
-
-3. **Major Strategic Changes**:
-    - Joint decision between TLC and Assembly
-    - TLC creates technical assessment
-    - Assembly deliberates and votes (80% threshold)
-    - Project Stewards can request reconsideration if deemed necessary
-
-### For Community and Policy Changes
-
-1. **Proposal Creation**:
-    - Any contributor can submit proposals
-    - Standard template in GitHub Discussions
-
-2. **Initial Screening**:
-    - Assembly moderators check for completeness
-    - Categorize and prioritize proposals
-
-3. **Deliberation**:
-    - Public comment period (14 days)
-    - Assembly discussion and structured debate
-    - Revision based on community feedback
-
-4. **Decision**:
-    - Assembly voting (80% approval required)
-    - Results and rationale documented publicly
-
-## Performance and Technical Excellence
-
-Technical excellence remains paramount:
-
-1. All governance processes must respect the performance-critical nature of Hyperion
-2. Assembly members receive technical briefings to understand performance implications
-3. TLC holds final authority on purely technical matters
-4. Benchmark-driven decision making for performance-critical systems
-
-## Evolution and Amendment
-
-This governance model evolves through:
-
-1. Annual review of governance effectiveness
-2. Amendment proposals can come from Assembly or TLC
-3. Amendments require 80% Assembly approval AND majority TLC approval
-4. Project Stewards confirm amendments align with project vision
+- GitHub Issues: Technical discussions and bug reports
+- Discord: Community support and development coordination
+- Technical discussions should be direct and solution-oriented
+- Focus on the work, not the person
 
 ## Conflict Resolution
 
-1. Technical disagreements follow a technical dispute resolution process via TLC
-2. Governance disagreements are resolved through structured mediation in the Assembly
-3. Deadlocks between TLC and Assembly referred to Project Stewards
+1. Technical disagreements should first be discussed on relevant issues/PRs
+2. If unresolved, Core Contributors discuss and seek consensus
+3. Project Lead makes final decision when consensus cannot be reached
 
-## Practical Implementation
+## Moderation
 
-The Hyperion Assembly will be established in phases:
-
-1. **Foundation Phase**: Initial Assembly selected from active contributors
-2. **Establishment Phase**: First random selection after 6 months
-3. **Maturity Phase**: Full implementation of staggered terms
+- Follow the Hyperion Code of Conduct
+- Violations can be reported to project leads via Discord DM or email
+- Project Lead will review reports and determine appropriate action
