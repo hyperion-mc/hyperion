@@ -1,56 +1,78 @@
 # Hyperion Code of Conduct
 
-## Our Focus
+## Our Pledge
 
-Hyperion is a high-performance Minecraft game engine. Our community prioritizes technical excellence, candid communication, and solution-oriented collaboration. This Code of Conduct emphasizes what actually matters for our project's success.
+We, the Hyperion community, pledge to make participation in our project a harassment-free and productive experience for everyone. We value technical excellence, direct communication, and solution-oriented collaboration while ensuring respect for all community members regardless of age, ethnicity, gender identity and expression, race, or sexual identity and orientation.
 
-## Core Principles
+## Our Standards
 
-### 1. Focus on Technical Merit
-- Judge contributions based on technical merit, not who wrote them
-- Prioritize performance, correctness, and maintainability
-- Back up opinions with benchmarks, code, or technical reasoning
+### Technical Conduct
+Examples of behavior that contributes to a productive technical environment:
 
-### 2. Direct Communication
-- Be candid and straightforward in technical discussions
-- Critical feedback on code and ideas is encouraged and valuable
-- Focus criticism on the work, not the person
-- Don't sugarcoat technical problems; identify issues clearly
+* Focusing on technical merit rather than who wrote the code
+* Providing clear, evidence-based feedback on contributions
+* Backing up opinions with benchmarks, code examples, or technical reasoning
+* Proposing solutions alongside criticisms
+* Being direct and candid in technical discussions while remaining respectful
+* Valuing performance, correctness, and maintainability
 
-### 3. Solutions Over Complaints
-- Identify problems, but prioritize proposing solutions
-- "Here's how we could fix this..." is more valuable than "This is broken"
-- When disagreeing, offer alternatives rather than just objections
+### Community Conduct
+Examples of behavior that contributes to a positive community environment:
 
-### 4. Respect Time and Effort
-- Come prepared to discussions and code reviews
-- Research before asking questions that are documented
-- Value others' time as much as your own
-- Follow through on commitments
+* Demonstrating empathy and kindness toward other people
+* Being respectful of differing opinions, viewpoints, and experiences
+* Giving and gracefully accepting constructive feedback
+* Accepting responsibility for mistakes and learning from experience
+* Focusing on what's best for the overall community and project
 
-### 5. Technical Debates Welcome
-- Vigorous technical debates are encouraged
-- Defend your position with evidence and reasoning
-- Be willing to change your position when presented with better evidence
-- Remember that the goal is the best solution, not winning arguments
+### Unacceptable Behavior
+Examples of unacceptable behavior include:
 
-### 6. Basic Professional Respect
-- Don't be deliberately antagonistic or hostile
-- No personal attacks, harassment, or targeted disruption
-- Assume competence and good intentions in technical disagreements
+* Personal attacks, public or private harassment
+* The use of sexualized language or imagery and unwelcome sexual attention or advances
+* Trolling, insulting/derogatory comments, and personal or political attacks
+* Publishing others' private information without explicit permission
+* Persistent unconstructive criticism that offers no solutions
+* Other conduct which could reasonably be considered inappropriate in a professional setting
 
-## Practical Enforcement
+## Balance of Values
 
-1. **First occurrence**: Private message explaining the specific behavior that crossed the line
-2. **Continued behavior**: Temporary cool-down period from specific communication channels
-3. **Persistent issues**: Removal from the project
+Hyperion values both:
+* Candid, direct technical communication that doesn't sugarcoat problems
+* A respectful, inclusive environment where everyone can participate
 
-Enforcement focuses on behavior patterns, not isolated incidents of heated technical discussion or candid feedback.
+These values can coexist. Direct feedback should focus on the work, not the person. Technical debates are encouraged, but should remain professional and evidence-based.
+
+## Enforcement Responsibilities
+
+Project maintainers are responsible for clarifying and enforcing our standards of acceptable behavior. They will take appropriate and fair corrective action in response to any behavior deemed inappropriate, threatening, offensive, or harmful.
+
+## Enforcement Guidelines
+
+### 1. Correction
+**Impact**: Use of inappropriate language or behavior deemed unprofessional.  
+**Response**: A private message explaining the issue and why the behavior was inappropriate. A public apology may be requested.
+
+### 2. Warning
+**Impact**: A pattern of inappropriate behavior or a single serious incident.  
+**Response**: A warning with consequences for continued behavior, potentially including a specified period of no interaction.
+
+### 3. Temporary Ban
+**Impact**: Serious or sustained violations of community standards.  
+**Response**: Temporary ban from community interaction for a specified period.
+
+### 4. Permanent Ban
+**Impact**: Pattern of serious violations or harassment.  
+**Response**: Permanent ban from community participation.
+
+## Reporting and Contact
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainers at `andrew.gazelka@gmail.com`. All complaints will be reviewed and investigated promptly and fairly.
 
 ## Scope
 
-This Code applies to all Hyperion project spaces, including GitHub, Discord, and official events.
+This Code of Conduct applies to all community spaces and when representing the community in public spaces.
 
-## Implementation
+## Attribution
 
-Project maintainers are responsible for clarifying and enforcing standards. Violations can be reported to the maintainers via Discord DM or email.
+This Code of Conduct combines elements from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1, with project-specific standards focused on technical excellence and productive collaboration.
