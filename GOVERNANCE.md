@@ -39,7 +39,7 @@ This document outlines the simple governance structure for Hyperion, a high-perf
 
 1. Make consistent contributions to the project
 2. Get nominated by an existing Core Contributor
-3. A plurality of Core Contributors votes to approve (must all be @'d in Discord and have sufficient time to respond)
+3. A plurality of Core Contributors votes to approve (must all be @'d in Discord and have four days to respond)
 
 ## Code Review
 
