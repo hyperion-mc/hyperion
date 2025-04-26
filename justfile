@@ -99,7 +99,7 @@ release-full:
         ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --profile release-full
 
 # run a given number of bots to connect to hyperion
-bots ip='127.0.0.1:25565' count='1000':
+bots ip='127.0.0.1:25565' count='10':
     cargo install -q --git https://github.com/andrewgazelka/rust-mc-bot --branch optimize
     ulimit -Sn {{fds}} && rust-mc-bot {{ip}} {{count}} 4
 
