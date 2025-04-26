@@ -38,9 +38,8 @@ This document outlines the simple governance structure for Hyperion, a high-perf
 ## Becoming a Core Contributor
 
 1. Make consistent contributions to the project
-2. Demonstrate understanding of performance-critical game engine architecture
-3. Get nominated by an existing Core Contributor
-4. Receive approval from at least two Core Contributors including one Lead
+2. Get nominated by an existing Core Contributor
+3. A plurality of Core Contributors votes to approve (must all be @'d in Discord and have sufficient time to respond)
 
 ## Code Review
 
