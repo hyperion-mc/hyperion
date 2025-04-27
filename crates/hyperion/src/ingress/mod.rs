@@ -373,10 +373,10 @@ impl Module for IngressModule {
             world,
             &Uuid,
             &Compose($),
-            &PendingRemove,
         )
         .kind(id::<flecs::pipeline::PostLoad>())
-        .each_iter(move |it, row, (uuid, compose, _pending_remove)| {
+        .with(id::<PendingRemove>())
+        .each_iter(move |it, row, (uuid, compose)| {
             let system = it.system();
             let entity = it.entity(row).expect("row must be in bounds");
             let uuids = &[uuid.0];
