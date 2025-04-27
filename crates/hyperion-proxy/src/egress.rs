@@ -19,8 +19,6 @@ use crate::{
 pub struct Egress {
     // todo: can we do some type of EntityId and SlotMap
     player_registry: &'static papaya::HashMap<u64, PlayerHandle, FxBuildHasher>,
-
-    // todo: remove positions when player leaves
     positions: &'static papaya::HashMap<u64, ChunkPosition, FxBuildHasher>,
 }
 
@@ -81,7 +79,7 @@ impl Egress {
 
                 // imo it makes sense to read once... it is a fast loop
                 #[allow(clippy::significant_drop_in_scrutinee)]
-                for (player_id, player) in &players {
+                for (_, player) in &players {
                     if !player.can_receive_broadcasts() {
                         continue;
                     }
@@ -91,9 +89,7 @@ impl Egress {
 
                     if let Err(e) = player.send(to_send) {
                         warn!("Failed to send data to player: {:?}", e);
-                        if let Some(result) = players.remove(player_id) {
-                            result.shutdown();
-                        }
+                        player.shutdown();
                     }
                 }
             }
@@ -107,12 +103,10 @@ impl Egress {
 
         tokio::spawn(
             async move {
-                for (id, player) in &players {
+                for (_, player) in &players {
                     if let Err(e) = player.send(OrderedBytes::FLUSH) {
                         warn!("Failed to send data to player: {:?}", e);
-                        if let Some(result) = players.remove(id) {
-                            result.shutdown();
-                        }
+                        player.shutdown();
                     }
                 }
             }
@@ -171,9 +165,7 @@ impl Egress {
 
                         if let Err(e) = player.send(to_send) {
                             warn!("Failed to send data to player: {:?}", e);
-                            if let Some(result) = players.remove(id) {
-                                result.shutdown();
-                            }
+                            player.shutdown();
                         }
                     }
                 }
@@ -209,9 +201,7 @@ impl Egress {
         // todo: handle error; kick player if cannot send (buffer full)
         if let Err(e) = player.send(ordered) {
             warn!("Failed to send data to player: {:?}", e);
-            if let Some(result) = players.remove(&id) {
-                result.shutdown();
-            }
+            player.shutdown();
         }
 
         drop(players);

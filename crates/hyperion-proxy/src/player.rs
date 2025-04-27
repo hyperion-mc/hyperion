@@ -175,15 +175,14 @@ pub fn initiate_player_connection(
                 if let Err(e) = server_sender.send(disconnect).await {
                     warn!("failed to send player disconnect to server: {e}");
                 }
-
-                let map_ref = player_registry.pin();
-                map_ref.remove(&player_id);
-
-                let map_ref = player_positions.pin();
-                map_ref.remove(&player_id);
-
             }
         }
+
+        let map_ref = player_registry.pin();
+        map_ref.remove(&player_id);
+
+        let map_ref = player_positions.pin();
+        map_ref.remove(&player_id);
     })
 }
 
