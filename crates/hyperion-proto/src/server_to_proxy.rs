@@ -48,8 +48,8 @@ pub struct Unicast<'a> {
 pub struct Flush;
 
 /// The server must be prepared to handle other additional packets with this stream from the proxy after the server
-/// sends [`Shutdown`] until the server receives [`PlayerDisconnect`] because proxy to server packets may already be
-/// in transit.
+/// sends [`Shutdown`] until the server receives [`crate::PlayerDisconnect`] because proxy to server packets may
+/// already be in transit.
 #[derive(Archive, Deserialize, Serialize, Clone, Copy, PartialEq, Debug)]
 pub struct Shutdown {
     pub stream: u64,
