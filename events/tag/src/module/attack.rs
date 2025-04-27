@@ -130,14 +130,17 @@ impl Module for AttackModule {
                 compose.unicast(&pkt, *stream, system).unwrap();
             });
 
-        world
-            .system_named::<(&mut EventQueue<AttackEntity>, &Compose)>("handle_attacks")
-            .term_at(0u32)
-            .singleton()
-            .term_at(1u32)
-            .singleton()
-            .each_iter(move |it, _, (event_queue, compose)| {
-                const IMMUNE_TICK_DURATION: i64 = 10;
+        // TODO: This code should be split between melee attacks and bow attacks
+        system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
+
+            .each_iter(
+            move |it: TableIter<'_, false>,
+                _,
+                (event_queue, compose): (
+                    &mut EventQueue<event::AttackEntity>,
+                    &Compose,
+                )| {
+                    const IMMUNE_TICK_DURATION: i64 = 10;
 
                 let span = info_span!("handle_attacks");
                 let _enter = span.enter();
@@ -625,12 +628,12 @@ fn is_falling(entity: EntityView<'_>) -> bool {
 fn can_critical_hit(entity: EntityView<'_>) -> bool {
     is_falling(entity)
 }
-// 
+//
 // // pipe
-// 
+//
 // fn damage_from(entity: EntityView<'_>) -> eyre::Result<f32> {
 //     let can_critical_hit = can_critical_hit(entity);
-// 
+//
 //     entity.get::<&CombatStats>(|stats| {
 //         stats.damage
 //     })
