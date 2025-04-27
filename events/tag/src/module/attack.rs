@@ -212,6 +212,7 @@ impl Module for AttackModule {
                             };
 
                             compose.unicast(&pkt_msg, origin_connection, system).unwrap();
+                            continue;
                         }
 
                         let is_critical_hit = is_critical_hit(origin);
