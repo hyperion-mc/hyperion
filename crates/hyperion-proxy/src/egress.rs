@@ -194,7 +194,7 @@ impl Egress {
 
         let Some(player) = players.get(&id) else {
             // expected to still happen infrequently
-            debug!("Player not found for id {id:?}");
+            warn!("Player not found for id {id:?}");
             return;
         };
 
