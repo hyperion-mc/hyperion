@@ -4,8 +4,8 @@ use bvh::{Aabb, Bvh};
 use bytes::Bytes;
 use glam::I16Vec2;
 use hyperion_proto::{
-    ArchivedSetReceiveBroadcasts, ArchivedUnicast, ArchivedUpdatePlayerChunkPositions,
-    ChunkPosition,
+    ArchivedSetReceiveBroadcasts, ArchivedShutdown, ArchivedUnicast,
+    ArchivedUpdatePlayerChunkPositions, ChunkPosition,
 };
 use rustc_hash::FxBuildHasher;
 use tracing::{Instrument, debug, error, info_span, instrument, warn};
@@ -219,5 +219,18 @@ impl Egress {
         };
 
         player.enable_receive_broadcasts();
+    }
+
+    #[instrument(skip_all)]
+    pub fn handle_shutdown(&self, pkt: &ArchivedShutdown) {
+        let player_registry = self.player_registry;
+        let players = player_registry.pin();
+        let Ok(stream) = rkyv::deserialize::<u64, !>(&pkt.stream);
+
+        if let Some(result) = players.get(&stream) {
+            result.shutdown();
+        } else {
+            error!("Player not found for stream {stream:?}");
+        }
     }
 }

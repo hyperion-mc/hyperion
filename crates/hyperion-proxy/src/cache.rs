@@ -323,6 +323,9 @@ impl BufferedEgress {
                     egress.handle_broadcast_local(instruction);
                 });
             }
+            ArchivedServerToProxyMessage::Shutdown(pkt) => {
+                self.egress.handle_shutdown(pkt);
+            }
         }
     }
 
