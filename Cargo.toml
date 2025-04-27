@@ -103,7 +103,9 @@ rkyv = '0.8.8'
 serde = '1.0.217'
 serde_json = '1.0.140'
 slotmap = '1.0.7'
-bevy = { git = "https://github.com/bevyengine/bevy"}
+#bevy = { git = "https://github.com/bevyengine/bevy"}
+bevy = "0.16.0"
+eyre = { version = "0.6.12" }
 snafu = '0.8.5'
 syn = '2.0.99'
 tango-bench = "0.6.0"

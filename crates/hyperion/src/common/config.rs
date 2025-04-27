@@ -2,8 +2,7 @@
 
 use std::{fmt::Debug, fs::File, io::Read, path::Path};
 
-use bevy::log::Resource;
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 

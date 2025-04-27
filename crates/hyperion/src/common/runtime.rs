@@ -1,9 +1,8 @@
 //! See [`AsyncRuntime`].
 
 use std::sync::Arc;
-use bevy::log::Resource;
+use bevy::prelude::*;
 use derive_more::{Deref, DerefMut};
-use flecs_ecs::{core::World, macros::Component};
 use kanal::{Receiver, Sender};
 
 /// Type alias for world callback functions

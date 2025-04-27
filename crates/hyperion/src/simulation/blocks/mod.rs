@@ -3,17 +3,14 @@
 use std::{future::Future, ops::Try, path::Path, pin::Pin, sync::Arc};
 
 use anyhow::Context;
+use bevy::prelude::*;
 use bytes::Bytes;
 use chunk::Column;
 use derive_more::Constructor;
-use flecs_ecs::{
-    core::{Entity, World, WorldGet},
-    macros::Component,
-};
 use geometry::ray::Ray;
 use glam::{I16Vec2, IVec2, IVec3, Vec3};
 use indexmap::IndexMap;
-use loader::{ChunkLoaderHandle, launch_loader};
+use loader::{launch_loader, ChunkLoaderHandle};
 use rayon::iter::ParallelIterator;
 use roaring::RoaringBitmap;
 use rustc_hash::FxBuildHasher;
@@ -23,12 +20,12 @@ use valence_generated::block::BlockState;
 use valence_server::layer::chunk::Chunk;
 
 use crate::{
-    CHUNK_HEIGHT_SPAN,
     runtime::AsyncRuntime,
     simulation::{
         blocks::loader::{launch_empty_loader, parse::section::Section},
         util::generate_biome_registry,
     },
+    CHUNK_HEIGHT_SPAN,
 };
 
 pub mod chunk;

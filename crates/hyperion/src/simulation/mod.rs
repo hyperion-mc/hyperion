@@ -2,7 +2,7 @@ use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
-use flecs_ecs::prelude::*;
+use bevy::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
 use hyperion_utils::EntityExt;
@@ -111,7 +111,6 @@ impl<K: Eq + Hash, V> DeferredMap<K, V> {
 /// The in-game name of a player.
 /// todo: fix the meta
 #[derive(Component, Deref, From, Display, Debug)]
-#[meta]
 pub struct Name(Arc<str>);
 
 #[derive(Resource, Deref, DerefMut, From, Debug, Default)]
@@ -137,11 +136,13 @@ pub enum PacketState {
     Terminate,
 }
 
+#[derive(Component)]
+pub struct PacketStatePlay;
+
 #[derive(
     Component, Debug, Deref, DerefMut, PartialEq, Eq, PartialOrd, Copy, Clone, Default, Pod,
     Zeroable, From
 )]
-#[meta]
 #[repr(C)]
 pub struct Xp {
     pub amount: u16,
@@ -302,7 +303,6 @@ pub struct ConfirmBlockSequences(pub Vec<i32>);
 
 #[derive(Component, Debug, Eq, PartialEq, Default)]
 #[expect(missing_docs)]
-#[meta]
 pub struct ImmuneStatus {
     /// The tick until the player is immune to player attacks.
     pub until: i64,
@@ -392,7 +392,6 @@ pub struct AiTargetable;
     From,
     PartialEq
 )]
-#[meta]
 pub struct Position {
     /// The (x, y, z) position of the entity.
     /// Note we are using [`Vec3`] instead of [`glam::DVec3`] because *cache locality* is important.
@@ -420,7 +419,6 @@ impl Position {
     Constructor,
     PartialEq
 )]
-#[meta]
 pub struct Yaw {
     yaw: f32,
 }
@@ -450,7 +448,6 @@ impl std::fmt::Display for Pitch {
     Constructor,
     PartialEq
 )]
-#[meta]
 pub struct Pitch {
     pitch: f32,
 }
@@ -459,7 +456,6 @@ const PLAYER_WIDTH: f32 = 0.6;
 const PLAYER_HEIGHT: f32 = 1.8;
 
 #[derive(Component, Copy, Clone, Debug, Constructor, PartialEq)]
-#[meta]
 pub struct EntitySize {
     pub half_width: f32,
     pub height: f32,
@@ -491,7 +487,6 @@ impl Position {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-#[meta]
 pub struct ChunkPosition {
     pub position: I16Vec2,
 }
@@ -559,7 +554,6 @@ impl Position {
 /// - Therefore, we have an [`Velocity`] component which is used to store the reaction of an entity to collisions.
 /// - Later we can apply the reaction to the entity's [`Position`] to move the entity.
 #[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
-#[meta]
 pub struct Velocity(pub Vec3);
 
 impl Velocity {
@@ -622,7 +616,6 @@ pub struct MovementTracking {
 }
 
 #[derive(Component, Default, Debug, Copy, Clone)]
-#[meta]
 pub struct Flight {
     pub allow: bool,
     pub is_flying: bool,

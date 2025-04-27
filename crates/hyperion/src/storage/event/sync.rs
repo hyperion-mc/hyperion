@@ -1,4 +1,4 @@
-use flecs_ecs::core::Entity;
+use bevy::prelude::*;
 use hyperion_utils::Lifetime;
 use valence_protocol::Hand;
 

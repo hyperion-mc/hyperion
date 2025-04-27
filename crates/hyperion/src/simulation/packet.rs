@@ -5,8 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use bevy::log::Resource;
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use hyperion_utils::{Lifetime, LifetimeHandle};
 use rustc_hash::FxBuildHasher;
 use valence_protocol::{Decode, Packet};

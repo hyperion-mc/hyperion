@@ -10,10 +10,6 @@ use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
 use derive_more::Deref;
-use flecs_ecs::{
-    core::{EntityView, World, WorldProvider},
-    macros::Component,
-};
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
 use hyperion_utils::LifetimeTracker;

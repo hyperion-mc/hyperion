@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use libdeflater::CompressionLvl;
 use valence_protocol::CompressionThreshold;
 

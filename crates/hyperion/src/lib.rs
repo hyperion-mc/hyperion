@@ -40,9 +40,8 @@ use std::{
 use anyhow::Context;
 use bevy::prelude::*;
 use derive_more::{Constructor, Deref, DerefMut};
-use egress::EgressModule;
-pub use flecs_ecs;
-use flecs_ecs::prelude::*;
+use egress::EgressPlugin;
+use bevy::prelude::*;
 pub use glam;
 use glam::{I16Vec2, IVec2};
 use ingress::IngressModule;
@@ -224,7 +223,7 @@ impl Plugin for HyperionCore {
 
         let shutdown = Arc::new(AtomicBool::new(false));
 
-        app.insert_resource(Shutdown::new(shutdown.clone());
+        app.insert_resource(Shutdown::new(shutdown.clone()));
         app.add_systems(Update, run_tasks);
         
         info!("starting hyperion");
@@ -294,7 +293,7 @@ impl Plugin for HyperionCore {
         app.insert_resource(StreamLookup::default());
 
         app.add_plugins(
-            (SimModule, EgressModule, IngressModule, SystemOrderModule)
+            (SimModule, EgressPlugin, IngressModule, SystemOrderModule)
         );
 
         // app
@@ -309,7 +308,7 @@ impl Plugin for HyperionCore {
 }
 
 
-fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands) {
+fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands<'_, '_>) {
     let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
     commands
         .insert_resource(receive_state);
