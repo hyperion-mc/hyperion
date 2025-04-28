@@ -80,7 +80,7 @@ humantime = '2.1.0'
 hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.1'
-libc = '0.2.170'
+libc = '0.2.172'
 libdeflater = '1.23.1'
 memmap2 = '0.9.5'
 mio = { version = '1.0.3', features = ['os-poll', 'net'] }
@@ -94,17 +94,17 @@ ouroboros = '0.18.5'
 papaya = "0.2.1"
 parking_lot = '0.12.3'
 plotters-bitmap = '0.3.6'
-proc-macro2 = '1.0.94'
+proc-macro2 = '1.0.95'
 proptest = '1.5.0'
 quote = '1.0.39'
-rand = "0.9.0"
+rand = "0.9.1"
 rayon = '1.10.0'
 rkyv = '0.8.8'
 serde = '1.0.217'
 serde_json = '1.0.140'
 slotmap = '1.0.7'
 snafu = '0.8.5'
-syn = '2.0.99'
+syn = '2.0.101'
 tango-bench = "0.6.0"
 tar = '0.4.41'
 thiserror = '2.0.12'
@@ -130,7 +130,7 @@ version = '1.22.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.36'
+version = '4.5.37'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
@@ -249,7 +249,7 @@ path = 'crates/system-order'
 
 [workspace.dependencies.tokio-util]
 features = ['full']
-version = '0.7.12'
+version = '0.7.15'
 
 [workspace.dependencies.tracing]
 features = ['release_max_level_info']
