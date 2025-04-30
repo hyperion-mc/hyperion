@@ -35,6 +35,22 @@ This document outlines the simple governance structure for Hyperion, a high-perf
 - If consensus cannot be reached, Project Lead makes the final decision
 - Technical merit and alignment with project goals are primary criteria
 
+### Governance Changes
+Changes to this document require discussion and consensus among Core Contributors and Leads.
+Proposed changes must be submitted in the form of a PR. The discussion should occur in the PR reviews and comments.
+
+Minor changes like typos (1-2 characters changed, fixing URLs) or formatting (reordering sections of text verbatim,
+changing whitespace, etc.) do not require this process, but should still follow the usual PR review process.
+Minor changes require 1 Lead approval.
+
+A governance change requires all Core Contributors and Leads (voting members) to approve the change by submitting
+an approving PR review, or to abstain. Upon receiving all approvals, the change will be merged.
+
+All voting members must be notified both in discord and via github. Requesting a review from a voting members
+is sufficient to notify them on github. Voting members will have 2 weeks to respond to the governance change,
+after which they will automatically be considered to have abstained. If a voting member has responded to the
+governance change raising concerns, they *cannot* be automatically considered to have abstained.
+
 ## Becoming a Core Contributor
 
 1. Make consistent contributions to the project
