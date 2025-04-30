@@ -1,21 +1,21 @@
 use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
-use anyhow::Context;
-use flecs_ecs::prelude::*;
+use bevy::prelude::*;
+use eyre::Context;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::{info, instrument};
 use valence_protocol::{
-    ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
-    game_mode::OptGameMode,
-    ident,
-    packets::play::{
-        self, GameJoinS2c,
-        player_position_look_s2c::PlayerPositionLookFlags,
+    game_mode::OptGameMode, ident, packets::play::{
+        self, player_position_look_s2c::PlayerPositionLookFlags,
         team_s2c::{CollisionRule, Mode, NameTagVisibility, TeamColor, TeamFlags},
-    },
+        GameJoinS2c,
+    }, ByteAngle, GameMode, Ident, PacketEncoder,
+    RawBytes,
+    VarInt,
+    Velocity,
 };
 use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
@@ -32,11 +32,11 @@ use crate::{
     ingress::PendingRemove,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Comms, Name, Position, Uuid, Yaw,
-        command::{Command, ROOT_COMMAND, get_command_packet},
-        metadata::{MetadataChanges, entity::EntityFlags},
-        skin::PlayerSkin,
-        util::registry_codec_raw,
+        command::{get_command_packet, Command, ROOT_COMMAND}, metadata::{entity::EntityFlags, MetadataChanges}, skin::PlayerSkin, util::registry_codec_raw, Comms,
+        Name,
+        Position,
+        Uuid,
+        Yaw,
     },
     util::{SendableQuery, SendableRef},
 };
@@ -47,7 +47,8 @@ use crate::{
 )]
 #[instrument(skip_all, fields(name = name))]
 pub fn player_join_world(
-    entity: &EntityView<'_>,
+    commands: &mut Commands,
+    entity: Entity,
     compose: &Compose,
     uuid: uuid::Uuid,
     name: &str,
@@ -55,7 +56,6 @@ pub fn player_join_world(
     position: &Position,
     yaw: &Yaw,
     pitch: &Pitch,
-    world: &WorldRef<'_>,
     skin: &PlayerSkin,
     system: EntityView<'_>,
     root_command: Entity,
@@ -70,14 +70,14 @@ pub fn player_join_world(
     )>,
     crafting_registry: &CraftingRegistry,
     config: &Config,
-) -> anyhow::Result<()> {
+) -> eyre::Result<()> {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
     let mut bundle = DataBundle::new(compose, system);
 
-    let id = entity.minecraft_id();
+    let id = entity.minecraft_id()?;
 
-    entity.set(MovementTracking {
+    commands.entity(entity).insert(MovementTracking {
         received_movement_packets: 0,
         last_tick_flying: false,
         last_tick_position: **position,
@@ -247,7 +247,7 @@ pub fn player_join_world(
                     let query_entity = it.entity(idx);
 
                     if entity.id() == query_entity.id() {
-                        return anyhow::Ok(());
+                        return eyre::Ok(());
                     }
 
                     let pkt = play::PlayerSpawnS2c {
@@ -278,7 +278,7 @@ pub fn player_join_world(
             });
 
         if !query_errors.is_empty() {
-            return Err(anyhow::anyhow!(
+            return Err(eyre::eyre!(
                 "failed to send player spawn packets: {query_errors:?}"
             ));
         }
@@ -380,14 +380,14 @@ pub fn player_join_world(
     Ok(())
 }
 
-fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
+fn send_sync_tags(encoder: &mut PacketEncoder) -> eyre::Result<()> {
     let bytes = include_bytes!("data/tags.json");
 
     let groups = serde_json::from_slice(bytes)?;
 
     let pkt = play::SynchronizeTagsS2c { groups };
 
-    encoder.append_packet(&pkt)?;
+    encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
 
     Ok(())
 }
@@ -400,7 +400,7 @@ fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
 fn generate_cached_packet_bytes(
     encoder: &mut PacketEncoder,
     crafting_registry: &CraftingRegistry,
-) -> anyhow::Result<()> {
+) -> eyre::Result<()> {
     send_sync_tags(encoder)?;
 
     let mut buf: heapless::Vec<u8, 32> = heapless::Vec::new();
@@ -416,24 +416,26 @@ fn generate_cached_packet_bytes(
         data: bytes.into(),
     };
 
-    encoder.append_packet(&brand)?;
+    encoder.append_packet(&brand).map_err(|e| eyre::eyre!(e))?;
 
-    encoder.append_packet(&play::TeamS2c {
-        team_name: "no_tag",
-        mode: Mode::CreateTeam {
-            team_display_name: Cow::default(),
-            friendly_flags: TeamFlags::default(),
-            name_tag_visibility: NameTagVisibility::Never,
-            collision_rule: CollisionRule::Always,
-            team_color: TeamColor::Black,
-            team_prefix: Cow::default(),
-            team_suffix: Cow::default(),
-            entities: vec![],
-        },
-    })?;
+    encoder
+        .append_packet(&play::TeamS2c {
+            team_name: "no_tag",
+            mode: Mode::CreateTeam {
+                team_display_name: Cow::default(),
+                friendly_flags: TeamFlags::default(),
+                name_tag_visibility: NameTagVisibility::Never,
+                collision_rule: CollisionRule::Always,
+                team_color: TeamColor::Black,
+                team_prefix: Cow::default(),
+                team_suffix: Cow::default(),
+                entities: vec![],
+            },
+        })
+        .map_err(|e| eyre::eyre!(e))?;
 
     if let Some(pkt) = crafting_registry.packet() {
-        encoder.append_packet(&pkt)?;
+        encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
     }
 
     // unlock
@@ -447,7 +449,7 @@ fn generate_cached_packet_bytes(
         recipe_ids_2: vec!["hyperion:what".to_string()],
     };
 
-    encoder.append_packet(&pkt)?;
+    encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
 
     Ok(())
 }
@@ -460,12 +462,12 @@ pub fn spawn_entity_packet(
     yaw: &Yaw,
     pitch: &Pitch,
     position: &Position,
-) -> play::EntitySpawnS2c {
+) -> eyre::Result<play::EntitySpawnS2c> {
     info!("spawning entity");
 
-    let entity_id = VarInt(id.minecraft_id());
+    let entity_id = VarInt(id.minecraft_id()?);
 
-    play::EntitySpawnS2c {
+    Ok(play::EntitySpawnS2c {
         entity_id,
         object_uuid: *uuid,
         kind: VarInt(kind.get()),
@@ -475,11 +477,11 @@ pub fn spawn_entity_packet(
         head_yaw: ByteAngle::from_degrees(**yaw), // todo: unsure if this is correct
         data: VarInt::default(),
         velocity: Velocity([0; 3]),
-    }
+    })
 }
 
 #[derive(Component)]
-pub struct PlayerJoinModule;
+pub struct PlayerJoinPlugin;
 
 #[derive(Component)]
 pub struct RayonWorldStages {
@@ -494,121 +496,62 @@ impl Index<usize> for RayonWorldStages {
     }
 }
 
-impl Module for PlayerJoinModule {
-    fn module(world: &World) {
-        let query = world.new_query::<(
-            &Uuid,
-            &Name,
-            &Position,
-            &Yaw,
-            &Pitch,
-            &PlayerSkin,
-            &EntityFlags,
-        )>();
+impl Plugin for PlayerJoinPlugin {
+    fn build(&self, app: &mut App) {
+        let world = app.world_mut();
 
-        let query = SendableQuery(query);
+        // world.spawn()
+        let root_command = world.spawn(Command::ROOT);
+    }
+}
 
-        let rayon_threads = rayon::current_num_threads();
+// todo: should we disable hidden lifetime lint
+fn x(
+    comms: Res<'_, Comms>,
+    compose: Res<'_, Compose>,
+    crafting_registry: Res<'_, CraftingRegistry>,
+    config: Res<'_, Config>,
+    query: Query<'_, '_, (&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>,
+    mut commands: Commands<'_, '_>,
+) {
+    let mut skins = Vec::new();
 
-        #[expect(
-            clippy::unwrap_used,
-            reason = "realistically, this should never fail; 2^31 is very large"
-        )]
-        let rayon_threads = i32::try_from(rayon_threads).unwrap();
+    while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
+        skins.push((entity, skin.clone()));
+    }
 
-        let stages = (0..rayon_threads)
-            // SAFETY: promoting world to static lifetime, system won't outlive world
-            .map(|i| unsafe { std::mem::transmute(world.stage(i)) })
-            .map(SendableRef)
-            .collect::<Vec<_>>();
+    // todo: par_iter
+    // for (entity, skin) in skins {
+    for (entity, skin) in skins {
+        // if we are not in rayon context that means we are in a single-threaded context and 0 will work
+        let (uuid, name, position, yaw, pitch, connection_id) = match query.get(entity) {
+            Ok(entity) => entity,
+            Err(e) => {
+                warn!("{e}");
+                continue;
+            }
+        };
 
-        world.component::<RayonWorldStages>();
-        world.set(RayonWorldStages { stages });
+        if let Err(e) = player_join_world(
+            &mut commands,
+            entity,
+            &compose,
+            uuid.0,
+            name,
+            stream_id,
+            position,
+            yaw,
+            pitch,
+            &skin,
+            system,
+            root_command,
+            &query,
+            &crafting_registry,
+            &config,
+        ) {
+            error!("failed to join player: {e}");
+        }
 
-        let root_command = world.entity().set(Command::ROOT);
-
-        #[expect(
-            clippy::unwrap_used,
-            reason = "this is only called once on startup. We mostly care about crashing during \
-                      server execution"
-        )]
-        ROOT_COMMAND.set(root_command.id()).unwrap();
-
-        let root_command = root_command.id();
-
-        system!(
-            "player_joins",
-            world,
-            &Comms($),
-            &Compose($),
-            &CraftingRegistry($),
-            &Config($),
-            &RayonWorldStages($),
-        )
-        .kind::<flecs::pipeline::PreUpdate>()
-        .each_iter(
-            move |it, _, (comms, compose, crafting_registry, config, stages)| {
-                let span = tracing::info_span!("joins");
-                let _enter = span.enter();
-
-                let system = it.system().id();
-
-                let mut skins = Vec::new();
-
-                while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
-                    skins.push((entity, skin.clone()));
-                }
-
-                // todo: par_iter but bugs...
-                // for (entity, skin) in skins {
-                skins.into_par_iter().for_each(|(entity, skin)| {
-                    // if we are not in rayon context that means we are in a single-threaded context and 0 will work
-                    let idx = rayon::current_thread_index().unwrap_or(0);
-                    let world = &stages[idx];
-
-                    let system = system.entity_view(world);
-
-                    if !world.is_alive(entity) {
-                        return;
-                    }
-
-                    let entity = world.entity_from_id(entity);
-
-                    entity.get::<(&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>(
-                        |(uuid, name, position, yaw, pitch, &stream_id)| {
-                            let query = &query;
-                            let query = &query.0;
-                            entity.set_name(name);
-
-                            // if we get an error joining, we should kick the player
-                            if let Err(e) = player_join_world(
-                                &entity,
-                                compose,
-                                uuid.0,
-                                name,
-                                stream_id,
-                                position,
-                                yaw,
-                                pitch,
-                                world,
-                                &skin,
-                                system,
-                                root_command,
-                                query,
-                                crafting_registry,
-                                config,
-                            ) {
-                                entity.set(PendingRemove::new(e.to_string()));
-                            }
-                        },
-                    );
-
-                    let entity = world.entity_from_id(entity);
-                    entity.set(skin);
-
-                    entity.add_enum(PacketState::Play);
-                });
-            },
-        );
+        commands.entity(entity).insert((PacketState::Play, skin));
     }
 }

@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use flecs_ecs::core::World;
+use bevy::prelude::*;
 
 use crate::NUM_THREADS;
 

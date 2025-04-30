@@ -2,12 +2,12 @@
 
 use std::{fmt::Debug, fs::File, io::Read, path::Path};
 
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument, warn};
 
 /// The configuration for the server representing a `toml` file.
-#[derive(Serialize, Deserialize, Debug, Component)]
+#[derive(Serialize, Deserialize, Debug, Resource)]
 pub struct Config {
     pub border_diameter: Option<f64>,
     pub max_players: i32,

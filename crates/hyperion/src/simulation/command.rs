@@ -1,7 +1,4 @@
-use flecs_ecs::{
-    core::{Entity, EntityViewGet, IdOperations, World},
-    macros::Component,
-};
+use bevy::prelude::*;
 use tracing::warn;
 pub use valence_protocol::packets::play::command_tree_s2c::Parser;
 use valence_protocol::{

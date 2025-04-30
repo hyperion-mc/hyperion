@@ -5,8 +5,8 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
 use geometry::aabb::Aabb;
+use bevy::prelude::*;
 use glam::{DVec3, IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
 use tracing::{info, instrument, warn};

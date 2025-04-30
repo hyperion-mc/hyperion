@@ -1,9 +1,9 @@
 [dependencies]
 anyhow = { workspace = true }
 derive-build = { workspace = true }
-flecs_ecs = { workspace = true }
 slotmap = { workspace = true }
 valence_protocol = { workspace = true }
+bevy = {workspace = true}
 
 [lints]
 workspace = true

@@ -19,9 +19,10 @@ bytes = { workspace = true }
 colored = { workspace = true }
 derive_more = { workspace = true }
 enumset = { workspace = true }
+bevy.workspace = true
 fastrand = { workspace = true }
 flate2 = { workspace = true, features = ["zlib-ng"] }
-flecs_ecs = { workspace = true }
+#flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true, features = ["serde"] }
 heapless = { workspace = true }
@@ -73,6 +74,7 @@ valence_server = { workspace = true }
 valence_text = { workspace = true }
 ordered-float = { workspace = true }
 dashmap = "6.1.0"
+eyre = "0.6.12"
 
 [dev-dependencies]
 approx = { workspace = true }

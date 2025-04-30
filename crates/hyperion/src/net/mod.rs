@@ -4,16 +4,12 @@ use std::{
     cell::{Cell, RefCell},
     fmt::Debug,
 };
-
+use bevy::prelude::*;
 use bumpalo::Bump;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
 use derive_more::Deref;
-use flecs_ecs::{
-    core::{EntityView, World, WorldProvider},
-    macros::Component,
-};
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
 use hyperion_utils::LifetimeTracker;
@@ -102,7 +98,7 @@ impl ConnectionId {
 }
 
 /// A singleton that can be used to compose and encode packets.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Compose {
     compressor: Compressors,
     scratch: Scratches,

@@ -1,72 +1,53 @@
-use flecs_ecs::{
-    core::World,
-    macros::Component,
-    prelude::{Entity, Module},
-};
-
 mod cached_save;
 mod lifetime;
+use std::path::PathBuf;
+
+use bevy::prelude::*;
 pub use cached_save::cached_save;
+use eyre::WrapErr;
 pub use lifetime::*;
 
-pub trait EntityExt {
-    fn minecraft_id(&self) -> i32;
-
-    fn from_minecraft_id(id: i32) -> Self;
+pub trait EntityExt: Sized {
+    fn minecraft_id(&self) -> eyre::Result<i32>;
+    fn from_minecraft_id(id: i32) -> eyre::Result<Self>;
 }
 
+// todo(bevy): this is probably different with bevy
+
+// we need a mapping from Bevy entity id to Minecraft entity id
+// some
 impl EntityExt for Entity {
-    fn minecraft_id(&self) -> i32 {
-        let raw = self.0;
-        // Convert entity id into two u32s
-        let most_significant = (raw >> 32) as u32;
+    fn minecraft_id(&self) -> eyre::Result<i32> {
+        let index = self.index();
+        let generation = self.generation();
 
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "we are getting the least significant bits, we expect truncation"
-        )]
-        let least_significant = raw as u32;
+        let index_u16 = u16::try_from(index)
+            .wrap_err("entity index is too large to create a Minecraft entity id.")?;
 
-        // Ensure most_significant >> 4 does not overlap with least_significant
-        // and that least_significant AND most_significant is 0
-        // this is the "thread" space which allows for 2^6 = 64 threads
-        debug_assert_eq!(
-            most_significant >> 6,
-            0,
-            "Entity ID is too large for Minecraft"
-        );
+        let generation_u16 = u16::try_from(generation)
+            .wrap_err("entity generation is too large to create a Minecraft entity id.")?;
 
-        debug_assert!(
-            least_significant < (1 << 26),
-            "Entity ID is too large for Minecraft (must fit in 2^26)"
-        );
+        let index_u32 = u32::from(index_u16);
+        let generation_u32 = u32::from(generation_u16);
 
-        // Combine them into a single i32
-        let result = (most_significant << 26) | least_significant;
+        let raw_u32 = index_u32 << 16 | generation_u32;
 
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "we do not care about sign changes, we expect wrap"
-        )]
-        let result = result as i32;
-
-        result
+        Ok(bytemuck::cast(raw_u32))
     }
 
-    fn from_minecraft_id(id: i32) -> Self {
-        #[expect(clippy::cast_sign_loss, reason = "we do not care about sign changes.")]
-        let id = id as u32;
+    fn from_minecraft_id(id: i32) -> eyre::Result<Self> {
+        let id: u32 = bytemuck::cast(id);
 
-        let least_significant = id & ((1 << 26) - 1);
-        let most_significant = (id >> 26) & 0x3F;
+        let index = id >> 16;
+        let generation = id & 0xFFFF;
 
-        let raw = (u64::from(most_significant) << 32) | u64::from(least_significant);
-        Self(raw)
+        let raw_u64 = u64::from(index) | (u64::from(generation) << 32);
+        Ok(Self::from_bits(raw_u64))
     }
 }
 
 /// Represents application identification information used for caching and other system-level operations
-#[derive(Component)]
+#[derive(Resource)]
 pub struct AppId {
     /// The qualifier/category of the application (e.g. "com", "org", "hyperion")
     pub qualifier: String,
@@ -76,17 +57,44 @@ pub struct AppId {
     pub application: String,
 }
 
+impl AppId {
+    #[must_use]
+    pub fn cache_dir(&self) -> PathBuf {
+        let project_dirs = directories::ProjectDirs::from(
+            self.qualifier.as_str(),
+            self.organization.as_str(),
+            self.application.as_str(),
+        )
+        .unwrap();
+        project_dirs.cache_dir().to_path_buf()
+    }
+}
+
 #[derive(Component)]
 pub struct HyperionUtilsModule;
 
-impl Module for HyperionUtilsModule {
-    fn module(world: &World) {
-        world.component::<AppId>();
-
-        world.set(AppId {
+impl Plugin for HyperionUtilsModule {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(AppId {
             qualifier: "github".to_string(),
             organization: "hyperion-mc".to_string(),
             application: "generic".to_string(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entity_id() {
+        let entity = Entity::from_raw(0xDEAD_BEEF);
+        let id = entity.minecraft_id().unwrap();
+        assert_eq!(id, 0xDEAD_BEEF);
+
+        let entity = Entity::from_raw(0xDEAD_BEEF);
+        let id = entity.minecraft_id().unwrap();
+        assert_eq!(id, 0xDEAD_BEEF);
     }
 }

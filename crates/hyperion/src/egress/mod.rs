@@ -1,9 +1,9 @@
+use bevy::prelude::*;
 use byteorder::WriteBytesExt;
-use flecs_ecs::prelude::*;
 use hyperion_proto::{Flush, ServerToProxyMessage, UpdatePlayerChunkPositions};
 use rkyv::util::AlignedVec;
 use tracing::{error, info_span};
-use valence_protocol::{VarInt, packets::play};
+use valence_protocol::{packets::play, VarInt};
 
 use crate::{net::Compose, simulation::EgressComm};
 
@@ -13,21 +13,22 @@ mod stats;
 pub mod sync_chunks;
 mod sync_entity_state;
 
-use player_join::PlayerJoinModule;
-use stats::StatsModule;
+use player_join::PlayerJoinPlugin;
+use stats::StatsPlugin;
 use sync_chunks::SyncChunksModule;
 use sync_entity_state::EntityStateSyncModule;
 
 use crate::{
     net::ConnectionId,
-    simulation::{ChunkPosition, blocks::Blocks},
+    simulation::{blocks::Blocks, ChunkPosition},
 };
 
 #[derive(Component)]
-pub struct EgressModule;
+pub struct EgressPlugin;
 
-impl Module for EgressModule {
-    fn module(world: &World) {
+impl Plugin for EgressPlugin {
+    fn build(&self, app: &mut App) {
+        let world = app.world_mut();
         let flush = {
             let flush = ServerToProxyMessage::Flush(Flush);
 
@@ -44,54 +45,17 @@ impl Module for EgressModule {
             bytes::Bytes::from_static(s)
         };
 
-        let pipeline = world
-            .entity()
-            .add::<flecs::pipeline::Phase>()
-            .depends_on::<flecs::pipeline::OnStore>();
+        // let pipeline = world
+        //     .entity()
+        //     .add::<flecs::pipeline::Phase>()
+        //     .depends_on::<flecs::pipeline::OnStore>();
 
-        world.import::<StatsModule>();
-        world.import::<PlayerJoinModule>();
-        world.import::<SyncChunksModule>();
-        world.import::<EntityStateSyncModule>();
-
-        system!(
-            "broadcast_chunk_deltas",
-            world,
-            &Compose($),
-            &mut Blocks($),
-        )
-        .kind::<flecs::pipeline::OnUpdate>()
-        .each_iter(move |it: TableIter<'_, false>, _, (compose, mc)| {
-            let span = info_span!("broadcast_chunk_deltas");
-            let _enter = span.enter();
-            let system = it.system();
-
-            let world = it.world();
-
-            mc.for_each_to_update_mut(|chunk| {
-                for packet in chunk.delta_drain_packets() {
-                    if let Err(e) = compose.broadcast(packet, system).send() {
-                        error!("failed to send chunk delta packet: {e}");
-                        return;
-                    }
-                }
-            });
-            mc.clear_should_update();
-
-            for to_confirm in mc.to_confirm.drain(..) {
-                let entity = world.entity_from_id(to_confirm.entity);
-
-                let pkt = play::PlayerActionResponseS2c {
-                    sequence: VarInt(to_confirm.sequence),
-                };
-
-                entity.get::<&ConnectionId>(|stream| {
-                    if let Err(e) = compose.unicast(&pkt, *stream, system) {
-                        error!("failed to send player action response: {e}");
-                    }
-                });
-            }
-        });
+        app.add_plugins((
+            StatsPlugin,
+            PlayerJoinPlugin,
+            SyncChunksPlugin,
+            EntityStateSyncPlugin,
+        ));
 
         let player_location_query = world.new_query::<(&ConnectionId, &ChunkPosition)>();
 
@@ -171,6 +135,33 @@ impl Module for EgressModule {
             let span = info_span!("clear_bump");
             let _enter = span.enter();
             compose.clear_bump();
+        });
+    }
+}
+
+// chunk deltas
+fn x(compose: Res<'_, Compose>, mut mc: ResMut<'_, Blocks>) {
+    mc.for_each_to_update_mut(|chunk| {
+        for packet in chunk.delta_drain_packets() {
+            if let Err(e) = compose.broadcast(packet, system).send() {
+                error!("failed to send chunk delta packet: {e}");
+                return;
+            }
+        }
+    });
+    mc.clear_should_update();
+
+    for to_confirm in mc.to_confirm.drain(..) {
+        let entity = world.entity_from_id(to_confirm.entity);
+
+        let pkt = play::PlayerActionResponseS2c {
+            sequence: VarInt(to_confirm.sequence),
+        };
+
+        entity.get::<&ConnectionId>(|stream| {
+            if let Err(e) = compose.unicast(&pkt, *stream, system) {
+                error!("failed to send player action response: {e}");
+            }
         });
     }
 }

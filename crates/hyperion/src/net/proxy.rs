@@ -151,7 +151,7 @@ async fn inner(
 }
 
 /// A wrapper around [`ReceiveStateInner`]
-#[derive(Component)]
+#[derive(Resource)]
 pub struct ReceiveState(pub Arc<ReceiveStateInner>);
 
 /// Initializes proxy communications.
