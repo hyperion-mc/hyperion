@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
-use derive_more::{Constructor, Deref, DerefMut, Display, From};
+use derive_more::{Add, Constructor, Deref, DerefMut, Display, From, Sub};
 use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
@@ -390,7 +390,9 @@ pub struct AiTargetable;
     Deref,
     DerefMut,
     From,
-    PartialEq
+    PartialEq,
+    Add,
+    Sub
 )]
 #[meta]
 pub struct Position {

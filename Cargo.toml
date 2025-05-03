@@ -133,7 +133,7 @@ features = ['derive']
 version = '4.5.36'
 
 [workspace.dependencies.derive_more]
-features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
+features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor', 'add', 'add_assign']
 version = "2.0.1"
 
 [workspace.dependencies.divan]
