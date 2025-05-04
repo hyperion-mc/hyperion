@@ -130,9 +130,7 @@ fn process_login(
     let skins = comms.skins_tx.clone();
     let id = entity.id();
 
-    if profile_id.is_none() {
-        skins.send((id, PlayerSkin::EMPTY)).unwrap();
-    } else {
+    if profile_id.is_some() {
         tasks.spawn(async move {
             let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
                 Ok(Some(skin)) => skin,
@@ -148,6 +146,8 @@ fn process_login(
 
             skins.send((id, skin)).unwrap();
         });
+    } else {
+        skins.send((id, PlayerSkin::EMPTY)).unwrap();
     }
 
     let pkt = login::LoginSuccessS2c {
