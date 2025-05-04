@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
+use dashmap::DashMap;
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
@@ -115,7 +116,7 @@ impl<K: Eq + Hash, V> DeferredMap<K, V> {
 pub struct Name(Arc<str>);
 
 #[derive(Component, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(DeferredMap<Arc<str>, Entity>);
+pub struct IgnMap(DashMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;

@@ -24,9 +24,8 @@ use crate::{
     },
     runtime::AsyncRuntime,
     simulation::{
-        AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, EntitySize, IgnMap,
-        ImmuneStatus, Name, PacketState, Pitch, Player, Position, StreamLookup, Uuid, Velocity, Xp,
-        Yaw,
+        AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, EntitySize, ImmuneStatus, Name,
+        PacketState, Pitch, Player, Position, StreamLookup, Uuid, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         handlers::PacketSwitchQuery,
@@ -81,7 +80,6 @@ fn process_login(
     compose: &Compose,
     entity: &EntityView<'_>,
     system: EntityView<'_>,
-    ign_map: &IgnMap,
 ) -> anyhow::Result<()> {
     debug_assert!(
         *login_state == PacketState::Login,
@@ -151,14 +149,12 @@ fn process_login(
         .unicast(&pkt, stream_id, system)
         .context("failed to send login success packet")?;
 
-    ign_map.insert(username.clone(), entity_id, world);
-
     *login_state = PacketState::PendingPlay;
 
     world.get::<&MetadataPrefabs>(|prefabs| {
         entity
             .is_a(prefabs.player_base)
-            .set(Name::from(username))
+            .set(Name::from(username.clone()))
             .add(id::<AiTargetable>())
             .set(ImmuneStatus::default())
             .set(Uuid::from(uuid))
@@ -273,18 +269,6 @@ impl Module for IngressModule {
                 info!("shutting down");
                 world.quit();
             }
-        });
-
-        system!(
-            "update_ign_map",
-            world,
-            &mut IgnMap($),
-        )
-        .kind(id::<flecs::pipeline::OnLoad>())
-        .each_iter(|_, _, ign_map| {
-            let span = info_span!("update_ign_map");
-            let _enter = span.enter();
-            ign_map.update();
         });
 
         system!(
@@ -422,7 +406,6 @@ impl Module for IngressModule {
             &mut hyperion_inventory::PlayerInventory,
             &mut ActiveAnimation,
             &hyperion_crafting::CraftingRegistry($),
-            &IgnMap($),
         )
         .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(
@@ -448,7 +431,6 @@ impl Module for IngressModule {
                 inventory,
                 animation,
                 crafting_registry,
-                ign_map,
             )| {
                 let system = it.system();
                 let world = it.world();
@@ -514,7 +496,6 @@ impl Module for IngressModule {
                                 compose,
                                 &entity,
                                 system,
-                                ign_map,
                             ) {
                                 error!("failed to process login packet: {e}");
                                 let msg = format!(

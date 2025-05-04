@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use flecs_ecs::prelude::*;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
@@ -20,7 +20,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, PacketState, Pitch};
+use crate::simulation::{IgnMap, MovementTracking, PacketState, Pitch};
 
 mod list;
 pub use list::*;
@@ -43,12 +43,12 @@ use crate::{
     clippy::too_many_arguments,
     reason = "todo: we should refactor at some point"
 )]
-#[instrument(skip_all, fields(name = name))]
+#[instrument(skip_all, fields(name = &***name))]
 pub fn player_join_world(
     entity: &EntityView<'_>,
     compose: &Compose,
     uuid: uuid::Uuid,
-    name: &str,
+    name: &Name,
     io: ConnectionId,
     position: &Position,
     yaw: &Yaw,
@@ -68,6 +68,7 @@ pub fn player_join_world(
     )>,
     crafting_registry: &CraftingRegistry,
     config: &Config,
+    ign_map: &IgnMap,
 ) -> anyhow::Result<()> {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
@@ -321,7 +322,7 @@ pub fn player_join_world(
         .add_packet(&pkt)
         .context("failed to send player list packet")?;
 
-    let player_name = vec![name];
+    let player_name = vec![&***name];
 
     compose
         .broadcast(
@@ -372,6 +373,64 @@ pub fn player_join_world(
     bundle.add_packet(&command_packet)?;
 
     bundle.unicast(io)?;
+
+    // The player must be added to the ign map after all of its components have been set and ready
+    // to receive play packets because other threads may attempt to process the player once it is
+    // added to the ign map.
+    if let Some(previous_player) = ign_map.insert((**name).clone(), entity.id()) {
+        // Disconnect either this player or the previous player with the same username.
+        // There are some Minecraft accounts with the same username, but this is an extremely
+        // rare edge case which is not worth handling.
+        let previous_player = previous_player.entity_view(world);
+
+        let pkt = play::DisconnectS2c {
+            reason: "A different player with the same username as your account has joined on a \
+                     different device"
+                .into_cow_text(),
+        };
+
+        match previous_player.get_name() {
+            None => {
+                // previous_player must be getting processed in another thread in player_join_world
+                // because it is in ign_map but does not have a name yet. To avoid having two
+                // entities with the same name, which would cause flecs to abort, this code
+                // disconnects the current player. In the worst-case scenario, both players may get
+                // disconnected, which is okay because the players can reconnect.
+
+                warn!(
+                    "two players are simultanenously connecting with the same username '{name}'. \
+                     one player will be disconnected."
+                );
+
+                compose.unicast(&pkt, io, system)?;
+                compose.io_buf().shutdown(io, world);
+                bail!("another player with the same username is joining");
+            }
+            Some(previous_player_name) => {
+                // Kick the previous player with the same name. One player should only be able to connect
+                // to the server one time simultaneously, so if the same player connects to this server
+                // multiple times, the other connection should be disconnected. In general, this wants to
+                // disconnect the older player connection because the alternative solution of repeatedly kicking
+                // new player join attempts if an old player connection is somehow still alive would lead to bad
+                // user experience.
+                assert_eq!(previous_player_name, &***name);
+
+                warn!(
+                    "player {name} has joined with the same username of an already-connected \
+                     player. the previous player with the username will be disconnected."
+                );
+
+                previous_player.remove_name();
+
+                let previous_stream_id = previous_player.get::<&ConnectionId>(|id| *id);
+
+                compose.unicast(&pkt, previous_stream_id, system)?;
+                compose.io_buf().shutdown(previous_stream_id, world);
+            }
+        }
+    }
+
+    entity.set_name(name);
 
     info!("{name} joined the world");
 
@@ -552,6 +611,7 @@ impl Module for PlayerJoinModule {
             &Compose($),
             &CraftingRegistry($),
             &Config($),
+            &IgnMap($),
             &Uuid,
             &Name,
             &Position,
@@ -570,6 +630,7 @@ impl Module for PlayerJoinModule {
                 compose,
                 crafting_registry,
                 config,
+                ign_map,
                 uuid,
                 name,
                 position,
@@ -602,6 +663,7 @@ impl Module for PlayerJoinModule {
                     &query,
                     crafting_registry,
                     config,
+                    ign_map,
                 ) {
                     warn!("player_join_world error: {e:?}");
                     compose.io_buf().shutdown(*stream_id, &world);
