@@ -89,7 +89,7 @@ fn change_position_or_correct_client(
             .set(PendingTeleportation::new(pose.position));
     }
     query.view.get::<&mut MovementTracking>(|tracking| {
-        tracking.received_movement_packets += 1;
+        tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
         let y_delta = proposed.y - pose.y;
 
         if y_delta > 0. && tracking.was_on_ground && !on_ground {
