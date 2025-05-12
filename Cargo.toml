@@ -81,7 +81,7 @@ hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.1'
 libc = '0.2.172'
-libdeflater = '1.23.1'
+libdeflater = '1.24.0'
 memmap2 = '0.9.5'
 mio = { version = '1.0.3', features = ['os-poll', 'net'] }
 more-asserts = '0.3.1'
@@ -110,7 +110,7 @@ tar = '0.4.41'
 thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
-tokio = '1.44.2'
+tokio = '1.45.0'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.16.0'
@@ -130,7 +130,7 @@ version = '1.23.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.37'
+version = '4.5.38'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor']
