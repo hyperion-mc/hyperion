@@ -5,7 +5,7 @@
 )]
 
 use flecs_ecs::{
-    core::{EntityViewGet, World},
+    core::{EntityViewGet, World, id},
     macros::Component,
     prelude::Module,
 };

@@ -5,7 +5,7 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs};
+use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs, id};
 use glam::Vec3;
 use hyperion::{
     HyperionCore,
