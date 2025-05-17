@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use flecs_ecs::{
-    core::{QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs},
+    core::{QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs, id},
     macros::{Component, observer},
     prelude::Module,
 };
@@ -60,7 +60,7 @@ impl Module for SpawnModule {
             &mut Blocks($),
             &AsyncRuntime($) ,
         )
-        .without::<Position>()
+        .without(id::<Position>())
         .each_entity({
             let positions = Rc::clone(&positions);
             move |entity, (uuid, blocks, runtime)| {

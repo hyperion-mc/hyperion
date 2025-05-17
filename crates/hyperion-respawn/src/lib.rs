@@ -1,7 +1,7 @@
 use hyperion::{
     flecs_ecs::{
         self,
-        core::{EntityViewGet, World, WorldGet},
+        core::{id, EntityViewGet, World, WorldGet},
         macros::Component,
         prelude::Module,
     },
@@ -65,7 +65,7 @@ impl Module for RespawnModule {
                             health.heal(20.);
 
                             *pose = Pose::Standing;
-                            client.modified::<Pose>(); // this is so observers detect the change
+                            client.modified(id::<Pose>()); // this is so observers detect the change
 
                             let pkt_health = play::HealthUpdateS2c {
                                 health: health.abs(),

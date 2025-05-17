@@ -29,7 +29,7 @@ fn spatial() {
         .observer::<flecs::OnAdd, ()>()
         .with_enum_wildcard::<EntityKind>()
         .each_entity(|entity, ()| {
-            entity.add::<Spatial>();
+            entity.add(id::<Spatial>());
         });
 
     let zombie = world

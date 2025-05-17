@@ -34,7 +34,7 @@ fn arrow() {
     let owner = world.entity();
 
     assert!(
-        arrow.has::<Uuid>(),
+        arrow.has(id::<Uuid>()),
         "All entities should automatically be given a UUID."
     );
 

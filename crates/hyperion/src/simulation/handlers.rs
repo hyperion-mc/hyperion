@@ -5,7 +5,7 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -594,7 +594,7 @@ pub fn confirm_teleportation(
             }
 
             **query.position = pending_teleport.destination;
-            entity.remove::<PendingTeleportation>();
+            entity.remove(id::<PendingTeleportation>());
         }
     });
 

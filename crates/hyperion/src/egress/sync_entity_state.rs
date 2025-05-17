@@ -31,8 +31,8 @@ pub struct EntityStateSyncModule;
 fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
     let post_store = world
         .entity_named("post_store")
-        .add::<flecs::pipeline::Phase>()
-        .depends_on::<flecs::pipeline::OnStore>();
+        .add(id::<flecs::pipeline::Phase>())
+        .depends_on(id::<flecs::pipeline::OnStore>());
 
     // we include names so that if we call this multiple times, we don't get multiple observers/systems
     let component_name = std::any::type_name::<T>();
@@ -46,14 +46,14 @@ fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
 
     world
         .observer_named::<flecs::OnSet, &T>(&observer_name)
-        .without::<(Prev, T)>() // we have not set Prev yet
+        .without((id::<Prev>(), id::<T>())) // we have not set Prev yet
         .each_entity(|entity, value| {
             entity.set_pair::<Prev, T>(*value);
         });
 
     world
         .system_named::<(&mut (Prev, T), &T)>(system_name.as_str())
-        .kind_id(post_store)
+        .kind(post_store)
         .each(|(prev, value)| {
             *prev = *value;
         });
@@ -70,7 +70,7 @@ impl Module for EntityStateSyncModule {
             )>("entity_xp_sync")
             .term_at(0u32)
             .singleton()
-            .kind::<flecs::pipeline::OnStore>()
+            .kind(id::<flecs::pipeline::OnStore>())
             .each_iter(|table, idx, (compose, net, prev_xp, current)| {
                 const {
                     assert!(size_of::<Xp>() == size_of::<u16>());
@@ -87,8 +87,8 @@ impl Module for EntityStateSyncModule {
                         total_xp: VarInt::default(),
                     };
 
-                    let entity = table.entity(idx);
-                    entity.modified::<Xp>();
+                    let entity = table.entity(idx).expect("idx must be in bounds");
+                    entity.modified(id::<Xp>());
 
                     compose.unicast(&packet, *net, system).unwrap();
                 }
@@ -97,10 +97,10 @@ impl Module for EntityStateSyncModule {
             });
 
         system!("entity_metadata_sync", world, &Compose($), &mut MetadataChanges)
-            .kind::<flecs::pipeline::OnStore>()
+            .kind(id::<flecs::pipeline::OnStore>())
             .each_iter(move |it, row, (compose, metadata_changes)| {
                 let system = it.system();
-                let entity = it.entity(row);
+                let entity = it.entity(row).expect("row must be in bounds");
                 let entity_id = VarInt(entity.minecraft_id());
 
                 let metadata = get_and_clear_metadata(metadata_changes);
@@ -110,7 +110,7 @@ impl Module for EntityStateSyncModule {
                         entity_id,
                         tracked_values: RawBytes(&view),
                     };
-                    if entity.has::<Position>() {
+                    if entity.has(id::<Position>()) {
                         entity.get::<&Position>(|position| {
                             compose
                                 .broadcast_local(&pkt, position.to_chunk(), system)
@@ -132,12 +132,12 @@ impl Module for EntityStateSyncModule {
         ?&ConnectionId,
         &mut ActiveAnimation,
         )
-        .kind::<flecs::pipeline::OnStore>()
+        .kind(id::<flecs::pipeline::OnStore>())
         .each_iter(
             move |it, row, (position, compose, connection_id, animation)| {
                 let io = connection_id.copied();
 
-                let entity = it.entity(row);
+                let entity = it.entity(row).expect("row must be in bounds");
                 let system = it.system();
 
                 let entity_id = VarInt(entity.minecraft_id());
@@ -173,7 +173,7 @@ impl Module for EntityStateSyncModule {
             &mut MovementTracking,
             &Flight,
         )
-        .kind::<flecs::pipeline::PreStore>()
+        .kind(id::<flecs::pipeline::PreStore>())
         .each_iter(
             |it,
              row,
@@ -192,7 +192,7 @@ impl Module for EntityStateSyncModule {
             )| {
                 let world = it.system().world();
                 let system = it.system();
-                let entity = it.entity(row);
+                let entity = it.entity(row).expect("row must be in bounds");
                 let entity_id = VarInt(entity.minecraft_id());
 
                 if let Some(pending_teleport) = pending_teleport {
@@ -363,7 +363,7 @@ impl Module for EntityStateSyncModule {
             &Owner,
             ?&ConnectionId
         )
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .with_enum_wildcard::<EntityKind>()
         .each_iter(|it, row, (position, velocity, owner, connection_id)| {
             if let Some(_connection_id) = connection_id {
@@ -372,7 +372,7 @@ impl Module for EntityStateSyncModule {
 
             let system = it.system();
             let world = system.world();
-            let arrow_entity = it.entity(row);
+            let arrow_entity = it.entity(row).expect("row must be in bounds");
 
             if velocity.0 != Vec3::ZERO {
                 let center = **position;

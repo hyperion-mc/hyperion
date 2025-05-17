@@ -37,7 +37,7 @@ fn test_get_first_collision() {
         .observer::<flecs::OnAdd, ()>()
         .with_enum_wildcard::<EntityKind>()
         .each_entity(|entity, ()| {
-            entity.add::<Spatial>();
+            entity.add(id::<Spatial>());
         });
 
     // Create a player entity

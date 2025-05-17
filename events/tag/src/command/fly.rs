@@ -1,5 +1,5 @@
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider, id};
 use hyperion::{
     net::{Compose, ConnectionId, DataBundle, agnostic},
     simulation::Flight,
@@ -20,7 +20,7 @@ impl MinecraftCommand for FlyCommand {
                 .get::<(&mut Flight, &ConnectionId)>(|(flight, stream)| {
                     flight.allow = !flight.allow;
                     flight.is_flying = flight.allow && flight.is_flying;
-                    caller.entity_view(world).modified::<Flight>();
+                    caller.entity_view(world).modified(id::<Flight>());
 
                     let allow_flight = flight.allow;
 

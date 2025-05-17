@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use flecs_ecs::{
-    core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs},
+    core::{
+        EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs, id,
+    },
     macros::{Component, observer, system},
     prelude::Module,
 };
@@ -51,7 +53,7 @@ impl Module for InventoryModule {
             |it, row, (open_inventory, compose, inv_state, cursor_item, io)| {
                 let system = it.system();
                 let world = it.world();
-                let entity = it.entity(row);
+                let entity = it.entity(row).expect("row must be in bounds");
                 let _entity_id = VarInt(entity.minecraft_id());
                 let stream_id = *io;
 
@@ -99,7 +101,7 @@ impl Module for InventoryModule {
         .each_iter(|it, row, (_open_inventory, compose, inv_state, io)| {
             let system = it.system();
             let _world = it.world();
-            let entity = it.entity(row);
+            let entity = it.entity(row).expect("row must be in bounds");
             let _entity_id = VarInt(entity.minecraft_id());
             let stream_id = *io;
 
@@ -123,8 +125,7 @@ impl Module for InventoryModule {
             ?&OpenInventory,
             &ConnectionId,
         )
-
-            .kind::<flecs_ecs::prelude::flecs::pipeline::OnStore>()
+            .kind(id::<flecs_ecs::prelude::flecs::pipeline::OnStore>())
             .each_iter(
                 |
                     it,
@@ -133,7 +134,7 @@ impl Module for InventoryModule {
                 | {
                     let system = it.system();
                     let world = it.world();
-                    let entity = it.entity(row);
+                    let entity = it.entity(row).expect("row must be in bounds");
                     let entity_id = VarInt(entity.minecraft_id());
                     let stream_id = *io;
 
@@ -1172,7 +1173,10 @@ pub fn close_handled_screen(
 
     // try to remove OpenInventory from the player if pkt.window_id isnt 0
     if pkt.window_id != 0 {
-        query.id.entity_view(query.world).remove::<OpenInventory>();
+        query
+            .id
+            .entity_view(query.world)
+            .remove(id::<OpenInventory>());
     }
 
     Ok(())
