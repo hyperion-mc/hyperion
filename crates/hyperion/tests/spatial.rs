@@ -8,7 +8,7 @@
 use std::{assert_matches::assert_matches, collections::HashSet};
 
 use approx::assert_relative_eq;
-use flecs_ecs::core::{QueryBuilderImpl, SystemAPI, World, WorldGet, flecs};
+use flecs_ecs::core::{QueryBuilderImpl, SystemAPI, World, WorldGet, flecs, id};
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::Vec3;
 use hyperion::{
@@ -29,7 +29,7 @@ fn spatial() {
         .observer::<flecs::OnAdd, ()>()
         .with_enum_wildcard::<EntityKind>()
         .each_entity(|entity, ()| {
-            entity.add::<Spatial>();
+            entity.add(id::<Spatial>());
         });
 
     let zombie = world

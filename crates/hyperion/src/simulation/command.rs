@@ -163,7 +163,7 @@ mod tests {
                 },
                 has_permission: |_: _, _: _| true,
             })
-            .child_of_id(root);
+            .child_of(root);
 
         let packet = get_command_packet(&world, root.id(), None);
 
@@ -191,7 +191,7 @@ mod tests {
                 },
                 has_permission: |_: _, _: _| true,
             })
-            .child_of_id(root);
+            .child_of(root);
 
         let _child = world
             .entity()
@@ -201,7 +201,7 @@ mod tests {
                 },
                 has_permission: |_: _, _: _| true,
             })
-            .child_of_id(parent);
+            .child_of(parent);
 
         let packet = get_command_packet(&world, root.id(), None);
 
@@ -234,7 +234,7 @@ mod tests {
                     },
                     has_permission: |_: _, _: _| true,
                 })
-                .child_of_id(parent);
+                .child_of(parent);
             parent = child;
         }
 

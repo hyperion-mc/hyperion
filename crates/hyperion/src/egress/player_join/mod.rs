@@ -244,7 +244,7 @@ pub fn player_join_world(
             .iter_stage(world)
             .each_iter(|it, idx, (uuid, _, position, yaw, pitch, _, flags)| {
                 let mut result = || {
-                    let query_entity = it.entity(idx);
+                    let query_entity = it.entity(idx).expect("idx must be in bounds");
 
                     if entity.id() == query_entity.id() {
                         return anyhow::Ok(());
@@ -545,7 +545,7 @@ impl Module for PlayerJoinModule {
             &Config($),
             &RayonWorldStages($),
         )
-        .kind::<flecs::pipeline::PreUpdate>()
+        .kind(id::<flecs::pipeline::PreUpdate>())
         .each_iter(
             move |it, _, (comms, compose, crafting_registry, config, stages)| {
                 let span = tracing::info_span!("joins");

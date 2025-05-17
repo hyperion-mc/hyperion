@@ -18,7 +18,7 @@ impl Module for StatsModule {
         // let system_id = GLOBAL_STATS;
 
         system!("global_update", world, &mut Compose($))
-            .kind::<flecs::pipeline::OnUpdate>() // ? OnUpdate
+            .kind(id::<flecs::pipeline::OnUpdate>()) // ? OnUpdate
             .each_iter(move |_, _, compose| {
                 let global = compose.global_mut();
 
@@ -41,7 +41,7 @@ impl Module for StatsModule {
             world,
             &mut Blocks($),
         )
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(|_iter, _, blocks| {
             let span = info_span!("load_pending");
             let _enter = span.enter();

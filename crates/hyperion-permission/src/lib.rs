@@ -1,6 +1,6 @@
 use clap::ValueEnum;
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, WorldGet},
+    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, WorldGet, id},
     macros::{Component, observer},
     prelude::{Module, flecs},
 };
@@ -50,14 +50,14 @@ impl Module for PermissionModule {
         });
 
         observer!(world, flecs::OnSet, &Uuid, &storage::PermissionStorage($))
-            .with::<Player>()
+            .with(id::<Player>())
             .each_entity(|entity, (uuid, permissions)| {
                 let group = permissions.get(**uuid);
                 entity.set(group);
             });
 
         observer!(world, flecs::OnRemove, &Uuid, &Group, &storage::PermissionStorage($))
-            .with::<Player>()
+            .with(id::<Player>())
             .each(|(uuid, group, permissions)| {
                 permissions.set(**uuid, *group).unwrap();
             });
@@ -65,7 +65,7 @@ impl Module for PermissionModule {
         observer!(world, flecs::OnSet, &Group).each_iter(|it, row, _group| {
             let system = it.system();
             let world = it.world();
-            let entity = it.entity(row);
+            let entity = it.entity(row).expect("row must be in bounds");
 
             let root_command = hyperion::simulation::command::get_root_command_entity();
 

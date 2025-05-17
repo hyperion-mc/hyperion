@@ -1,5 +1,5 @@
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider, id};
 use hyperion::simulation::Xp;
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 
@@ -19,7 +19,7 @@ impl MinecraftCommand for XpCommand {
 
         caller.get::<&mut Xp>(|xp| {
             xp.amount = amount;
-            caller.modified::<Xp>();
+            caller.modified(id::<Xp>());
         });
     }
 }

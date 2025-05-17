@@ -109,7 +109,7 @@ impl Module for TagModule {
             &SpatialIndex($),
             &mut Position,
         )
-        .with::<FollowClosestPlayer>()
+        .with(id::<FollowClosestPlayer>())
         .each_entity(|entity, (index, position)| {
             let world = entity.world();
 

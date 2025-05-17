@@ -46,8 +46,8 @@ impl Module for EgressModule {
 
         let pipeline = world
             .entity()
-            .add::<flecs::pipeline::Phase>()
-            .depends_on::<flecs::pipeline::OnStore>();
+            .add(id::<flecs::pipeline::Phase>())
+            .depends_on(id::<flecs::pipeline::OnStore>());
 
         world.import::<StatsModule>();
         world.import::<PlayerJoinModule>();
@@ -60,7 +60,7 @@ impl Module for EgressModule {
             &Compose($),
             &mut Blocks($),
         )
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(move |it: TableIter<'_, false>, _, (compose, mc)| {
             let span = info_span!("broadcast_chunk_deltas");
             let _enter = span.enter();
@@ -101,7 +101,7 @@ impl Module for EgressModule {
             &mut Compose($),
             &mut EgressComm($),
         )
-        .kind_id(pipeline)
+        .kind(pipeline)
         .each(move |(compose, egress)| {
             let span = info_span!("egress");
             let _enter = span.enter();
@@ -166,7 +166,7 @@ impl Module for EgressModule {
             world,
             &mut Compose($),
         )
-        .kind_id(pipeline)
+        .kind(pipeline)
         .each(move |compose| {
             let span = info_span!("clear_bump");
             let _enter = span.enter();

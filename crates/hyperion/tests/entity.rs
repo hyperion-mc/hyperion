@@ -5,7 +5,7 @@
 )]
 
 use flecs_ecs::{
-    core::{EntityViewGet, World},
+    core::{EntityViewGet, World, id},
     macros::Component,
     prelude::Module,
 };
@@ -34,7 +34,7 @@ fn arrow() {
     let owner = world.entity();
 
     assert!(
-        arrow.has::<Uuid>(),
+        arrow.has(id::<Uuid>()),
         "All entities should automatically be given a UUID."
     );
 

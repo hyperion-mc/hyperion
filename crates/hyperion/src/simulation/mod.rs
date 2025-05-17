@@ -633,7 +633,7 @@ pub struct SimModule;
 
 impl Module for SimModule {
     fn module(world: &World) {
-        component!(world, VarInt).member::<i32>("x");
+        component!(world, VarInt).member(id::<i32>(), "x");
 
         component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
 
@@ -649,12 +649,12 @@ impl Module for SimModule {
         });
 
         component!(world, Quat)
-            .member::<f32>("x")
-            .member::<f32>("y")
-            .member::<f32>("z")
-            .member::<f32>("w");
+            .member(id::<f32>(), "x")
+            .member(id::<f32>(), "y")
+            .member(id::<f32>(), "z")
+            .member(id::<f32>(), "w");
 
-        component!(world, BlockState).member::<u16>("id");
+        component!(world, BlockState).member(id::<u16>(), "id");
 
         world.component::<Velocity>().meta();
         world.component::<Player>();
@@ -720,12 +720,12 @@ impl Module for SimModule {
             [filter] & Yaw,
             [filter] & Velocity,
         )
-        .with::<flecs::Any>()
+        .with(id::<flecs::Any>())
         .with_enum_wildcard::<EntityKind>()
         .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
             let system = it.system();
 
-            let entity = it.entity(row);
+            let entity = it.entity(row).expect("row must be in bounds");
             let minecraft_id = entity.minecraft_id();
 
             let mut bundle = DataBundle::new(compose, system);
@@ -774,7 +774,7 @@ impl Module for SimModule {
         world
             .observer::<flecs::OnAdd, ()>()
             .with_enum_wildcard::<EntityKind>()
-            .without::<Uuid>()
+            .without(id::<Uuid>())
             .each_entity(|entity, ()| {
                 debug!("adding uuid to entity");
                 let uuid = uuid::Uuid::new_v4();
@@ -787,10 +787,10 @@ impl Module for SimModule {
             .each_entity(move |entity, ()| {
                 entity.get::<&EntityKind>(|kind| match kind {
                     EntityKind::BlockDisplay => {
-                        entity.is_a_id(prefabs.block_display_base);
+                        entity.is_a(prefabs.block_display_base);
                     }
                     EntityKind::Player => {
-                        entity.is_a_id(prefabs.player_base);
+                        entity.is_a(prefabs.player_base);
                     }
                     _ => {}
                 });

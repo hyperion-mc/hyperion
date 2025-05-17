@@ -2,7 +2,9 @@ use std::fmt::Debug;
 
 use flecs_ecs::{
     addons::Meta,
-    core::{ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs},
+    core::{
+        ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs, id,
+    },
     macros::Component,
 };
 use valence_protocol::{Encode, VarInt};
@@ -45,7 +47,7 @@ where
             &mut T,               //                  (1)
             &mut MetadataChanges, //     (2)
         )>(system_name)
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .each(|(prev, current, metadata_changes)| {
             if prev != current {
                 metadata_changes.encode(*current);
@@ -97,7 +99,7 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
     world.component::<MetadataChanges>();
 
     let entity_base = entity::register_prefab(world, None)
-        .add::<MetadataChanges>()
+        .add(id::<MetadataChanges>())
         .component_and_track::<EntityFlags>()
         .component_and_track::<Pose>()
         .id();
@@ -107,7 +109,7 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
 
     let living_entity_base = living_entity::register_prefab(world, Some(entity_base)).id();
     let player_base = player::register_prefab(world, Some(living_entity_base))
-        // .add::<Player>()
+        // .add(id::<Player>())
         .add_enum(EntityKind::Player)
         .id();
 
@@ -219,7 +221,7 @@ macro_rules! define_and_register_components {
             let mut entity = world.prefab();
 
             if let Some(entity_base) = entity_base {
-                entity = entity.is_a_id(entity_base);
+                entity = entity.is_a(entity_base);
             }
 
             $crate::register_component_ids!(

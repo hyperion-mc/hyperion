@@ -1,5 +1,5 @@
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider, id};
 use hyperion::net::{Compose, ConnectionId, agnostic};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use hyperion_rank_tree::{Class, Team};
@@ -30,12 +30,12 @@ impl MinecraftCommand for ClassCommand {
 
                 if *team != team_param {
                     *team = team_param;
-                    caller.modified::<Team>();
+                    caller.modified(id::<Team>());
                 }
 
                 if *class != class_param {
                     *class = class_param;
-                    caller.modified::<Class>();
+                    caller.modified(id::<Class>());
                 }
 
                 let msg = format!("Setting rank to {class:?}");
