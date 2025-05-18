@@ -38,19 +38,10 @@ use crate::{
     util::{TracingExt, mojang::MojangClient},
 };
 
-/// This marks players who have already been disconnected and about to be destructed. This should not be sent to
-/// disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
+/// This marks players who have already been disconnected and about to be destructed. This component should not be
+/// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
 #[derive(Component, Debug)]
-pub struct PendingRemove {
-    _private: u8,
-}
-
-impl PendingRemove {
-    #[must_use]
-    const fn new() -> Self {
-        Self { _private: 0 }
-    }
-}
+pub struct PendingRemove;
 
 fn process_handshake(
     login_state: &mut PacketState,
@@ -335,11 +326,11 @@ impl Module for IngressModule {
             for disconnect in recv.player_disconnect.lock().drain(..) {
                 // will initiate the removal of entity
                 info!("queue pending remove");
-                let Some(id) = lookup.get(&disconnect).copied() else {
+                let Some(entity_id) = lookup.get(&disconnect).copied() else {
                     error!("failed to get id for disconnect stream {disconnect:?}");
                     continue;
                 };
-                world.entity_from_id(*id).set(PendingRemove::new());
+                world.entity_from_id(*entity_id).add(id::<PendingRemove>());
             }
         });
 
