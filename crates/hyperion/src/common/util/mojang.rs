@@ -183,6 +183,7 @@ mod tests {
     };
 
     #[test]
+    #[ignore = "requires network access"]
     fn test_get_uuid() {
         let (tx, _rx) = kanal::bounded(1);
         let tasks = AsyncRuntime::new(tx);
@@ -194,6 +195,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires network access"]
     fn test_get_username() {
         let (tx, _rx) = kanal::bounded(1);
         let tasks = AsyncRuntime::new(tx);
@@ -208,6 +210,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires network access"]
     fn test_retrieve_username() {
         let (tx, _rx) = kanal::bounded(1);
         let tasks = AsyncRuntime::new(tx);
