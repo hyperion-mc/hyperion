@@ -4,7 +4,9 @@ use std::{
 };
 
 use flecs_ecs::{
-    core::{Entity, EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World},
+    core::{
+        Entity, EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl, World, id,
+    },
     macros::{Component, system},
     prelude::Module,
 };
@@ -72,8 +74,7 @@ impl Module for BlockModule {
         world.set(PendingDestruction::default());
 
         system!("handle_pending_air", world, &mut PendingDestruction($), &mut Blocks($), &Compose($))
-            .write::<PlayerInventory>()
-
+            .write(id::<PlayerInventory>())
             .each_iter(
                 move |it: TableIter<'_, false>,
                       _,

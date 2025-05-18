@@ -4,7 +4,7 @@ use compact_str::format_compact;
 use flecs_ecs::{
     core::{
         Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
-        SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs,
+        SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs, id,
     },
     macros::{Component, system},
     prelude::Module,
@@ -104,7 +104,7 @@ impl Module for AttackModule {
             &ConnectionId,
         )
         .with_enum(PacketState::Play)
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(move |it, _, (compose, kill_count, stream)| {
             const MAX_KILLS: usize = 10;
 
@@ -297,7 +297,7 @@ impl Module for AttackModule {
                                         };
 
                                         *target_pose = Pose::Dying;
-                                        target.modified::<Pose>();
+                                        target.modified(id::<Pose>());
                                         compose.broadcast(&pkt, system).send().unwrap();
                                         compose.broadcast(&particle_pkt, system).send().unwrap();
                                         compose.broadcast(&particle_pkt2, system).send().unwrap();
