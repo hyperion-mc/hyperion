@@ -133,6 +133,7 @@ pub enum PacketState {
     Handshake,
     Status,
     Login,
+    PendingPlay,
     Play,
     Terminate,
 }

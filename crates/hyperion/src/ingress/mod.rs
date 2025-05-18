@@ -151,8 +151,6 @@ fn process_login(
         .unicast(&pkt, stream_id, system)
         .context("failed to send login success packet")?;
 
-    *login_state = PacketState::Play;
-
     ign_map.insert(username.clone(), entity_id, world);
 
     world.get::<&MetadataPrefabs>(|prefabs| {
@@ -167,6 +165,7 @@ fn process_login(
             .add(id::<ChunkSendQueue>())
             .add(id::<Velocity>())
             .set(ChunkPosition::null())
+            .add_enum(PacketState::PendingPlay)
     });
 
     compose.io_buf().set_receive_broadcasts(stream_id, world);
@@ -459,6 +458,12 @@ impl Module for IngressModule {
                 let bump = compose.bump.get(&world);
 
                 loop {
+                    if *login_state == PacketState::PendingPlay {
+                        // It is not possible to handle packets at the moment because the player
+                        // does not have all components yet
+                        return;
+                    }
+
                     let frame = match decoder.try_next_packet(bump) {
                         Ok(frame) => frame,
                         Err(e) => {
@@ -529,6 +534,7 @@ impl Module for IngressModule {
                                 break;
                             }
                         }
+                        PacketState::PendingPlay => unreachable!(),
                         PacketState::Play => {
                             // We call this code when you're in play.
                             // Transitioning to play is just a way to make sure that the player is officially in play before we start sending them play packets.

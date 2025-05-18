@@ -5,7 +5,6 @@ use flecs_ecs::prelude::*;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::{info, instrument, warn};
 use valence_protocol::{
     ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
@@ -37,7 +36,7 @@ use crate::{
         skin::PlayerSkin,
         util::registry_codec_raw,
     },
-    util::{SendableQuery, SendableRef},
+    util::SendableRef,
 };
 
 #[expect(
@@ -505,8 +504,6 @@ impl Module for PlayerJoinModule {
             &EntityFlags,
         )>();
 
-        let query = SendableQuery(query);
-
         let rayon_threads = rayon::current_num_threads();
 
         #[expect(
@@ -536,78 +533,84 @@ impl Module for PlayerJoinModule {
         let root_command = root_command.id();
 
         system!(
-            "player_joins",
+            "update_skins",
             world,
             &Comms($),
+        )
+        .kind(id::<flecs::pipeline::PreUpdate>())
+        .each_iter(move |it, _, comms| {
+            let world = it.world();
+            while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
+                let entity = world.entity_from_id(entity);
+                entity.set(skin);
+            }
+        });
+
+        system!(
+            "player_join_world",
+            world,
             &Compose($),
             &CraftingRegistry($),
             &Config($),
-            &RayonWorldStages($),
+            &Uuid,
+            &Name,
+            &Position,
+            &Yaw,
+            &Pitch,
+            &ConnectionId,
+            &PlayerSkin,
+            &mut PacketState
         )
-        .kind(id::<flecs::pipeline::PreUpdate>())
+        .with_enum(PacketState::PendingPlay)
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .multi_threaded()
         .each_iter(
-            move |it, _, (comms, compose, crafting_registry, config, stages)| {
-                let span = tracing::info_span!("joins");
+            move |it,
+                  row,
+                  (
+                compose,
+                crafting_registry,
+                config,
+                uuid,
+                name,
+                position,
+                yaw,
+                pitch,
+                stream_id,
+                skin,
+                packet_state,
+            )| {
+                let span = tracing::info_span!("player_join_world");
                 let _enter = span.enter();
 
-                let system = it.system().id();
+                let system = it.system();
+                let world = it.world();
+                let entity = it.entity(row).expect("row must be in bounds");
 
-                let mut skins = Vec::new();
-
-                while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
-                    skins.push((entity, skin.clone()));
+                // if we get an error joining, we should kick the player
+                if let Err(e) = player_join_world(
+                    &entity,
+                    compose,
+                    uuid.0,
+                    name,
+                    *stream_id,
+                    position,
+                    yaw,
+                    pitch,
+                    &world,
+                    skin,
+                    system,
+                    root_command,
+                    &query,
+                    crafting_registry,
+                    config,
+                ) {
+                    warn!("player_join_world error: {e:?}");
+                    compose.io_buf().shutdown(*stream_id, &world);
+                    *packet_state = PacketState::Terminate;
+                } else {
+                    *packet_state = PacketState::Play;
                 }
-
-                // todo: par_iter but bugs...
-                // for (entity, skin) in skins {
-                skins.into_par_iter().for_each(|(entity, skin)| {
-                    // if we are not in rayon context that means we are in a single-threaded context and 0 will work
-                    let idx = rayon::current_thread_index().unwrap_or(0);
-                    let world = &stages[idx];
-
-                    let system = system.entity_view(world);
-
-                    if !world.is_alive(entity) {
-                        return;
-                    }
-
-                    let entity = world.entity_from_id(entity);
-
-                    entity.get::<(&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>(
-                        |(uuid, name, position, yaw, pitch, &stream_id)| {
-                            let query = &query;
-                            let query = &query.0;
-                            entity.set_name(name);
-
-                            // if we get an error joining, we should kick the player
-                            if let Err(e) = player_join_world(
-                                &entity,
-                                compose,
-                                uuid.0,
-                                name,
-                                stream_id,
-                                position,
-                                yaw,
-                                pitch,
-                                world,
-                                &skin,
-                                system,
-                                root_command,
-                                query,
-                                crafting_registry,
-                                config,
-                            ) {
-                                warn!("player_join_world error: {e:?}");
-                                compose.io_buf().shutdown(stream_id, world);
-                            }
-                        },
-                    );
-
-                    let entity = world.entity_from_id(entity);
-                    entity.set(skin);
-
-                    entity.add_enum(PacketState::Play);
-                });
             },
         );
     }
