@@ -5,7 +5,7 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
 use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
@@ -89,7 +89,7 @@ fn change_position_or_correct_client(
             .set(PendingTeleportation::new(pose.position));
     }
     query.view.get::<&mut MovementTracking>(|tracking| {
-        tracking.received_movement_packets += 1;
+        tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
         let y_delta = proposed.y - pose.y;
 
         if y_delta > 0. && tracking.was_on_ground && !on_ground {
@@ -594,7 +594,7 @@ pub fn confirm_teleportation(
             }
 
             **query.position = pending_teleport.destination;
-            entity.remove::<PendingTeleportation>();
+            entity.remove(id::<PendingTeleportation>());
         }
     });
 

@@ -68,11 +68,11 @@ dotenvy = '0.15.7'
 eframe = "0.31.0"
 egui = "0.31.0"
 egui_dock = "0.16.0"
-enumset = '1.1.5'
+enumset = '1.1.6'
 fastrand = '2.1.0'
 flume = '0.11.1'
 futures-util = '0.3.31'
-glam = "0.30.2"
+glam = "0.30.3"
 heapless = '0.8.0'
 heed = "0.21.0"
 hex = '0.4.3'
@@ -80,8 +80,8 @@ humantime = '2.1.0'
 hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.14.0"
 kanal = '0.1.1'
-libc = '0.2.170'
-libdeflater = '1.23.1'
+libc = '0.2.172'
+libdeflater = '1.24.0'
 memmap2 = '0.9.5'
 mio = { version = '1.0.3', features = ['os-poll', 'net'] }
 more-asserts = '0.3.1'
@@ -94,23 +94,23 @@ ouroboros = '0.18.5'
 papaya = "0.2.1"
 parking_lot = '0.12.3'
 plotters-bitmap = '0.3.6'
-proc-macro2 = '1.0.94'
+proc-macro2 = '1.0.95'
 proptest = '1.5.0'
 quote = '1.0.39'
-rand = "0.9.0"
+rand = "0.9.1"
 rayon = '1.10.0'
 rkyv = '0.8.8'
 serde = '1.0.217'
 serde_json = '1.0.140'
 slotmap = '1.0.7'
 snafu = '0.8.5'
-syn = '2.0.99'
+syn = '2.0.101'
 tango-bench = "0.6.0"
 tar = '0.4.41'
 thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
-tokio = '1.44.2'
+tokio = '1.45.0'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.16.0'
@@ -126,11 +126,11 @@ path = 'crates/bvh-region'
 
 [workspace.dependencies.bytemuck]
 features = ['derive']
-version = '1.22.0'
+version = '1.23.0'
 
 [workspace.dependencies.clap]
 features = ['derive']
-version = '4.5.36'
+version = '4.5.38'
 
 [workspace.dependencies.derive_more]
 features = ['display', 'from', 'deref', 'deref_mut', 'debug', 'constructor', 'add', 'add_assign']
@@ -235,7 +235,7 @@ features = ['nightly']
 version = '2.0.0'
 
 [workspace.dependencies.sha2]
-version = '0.10.8'
+version = '0.10.9'
 
 [workspace.dependencies.simd-utils]
 path = 'crates/simd-utils'
@@ -249,7 +249,7 @@ path = 'crates/system-order'
 
 [workspace.dependencies.tokio-util]
 features = ['full']
-version = '0.7.12'
+version = '0.7.15'
 
 [workspace.dependencies.tracing]
 features = ['release_max_level_info']

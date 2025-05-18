@@ -5,7 +5,7 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs};
+use flecs_ecs::core::{EntityView, EntityViewGet, QueryBuilderImpl, SystemAPI, World, flecs, id};
 use glam::Vec3;
 use hyperion::{
     HyperionCore,
@@ -37,7 +37,7 @@ fn test_get_first_collision() {
         .observer::<flecs::OnAdd, ()>()
         .with_enum_wildcard::<EntityKind>()
         .each_entity(|entity, ()| {
-            entity.add::<Spatial>();
+            entity.add(id::<Spatial>());
         });
 
     // Create a player entity

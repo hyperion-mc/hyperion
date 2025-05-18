@@ -2,7 +2,7 @@ use std::iter::zip;
 
 use clap::{Arg as ClapArg, Parser, ValueEnum, ValueHint, error::ErrorKind};
 use flecs_ecs::{
-    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider},
+    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider, id},
     prelude::{Component, Module},
 };
 use hyperion::{
@@ -45,7 +45,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         let mut on = world
             .entity()
             .set(node_to_register)
-            .child_of_id(get_root_command_entity());
+            .child_of(get_root_command_entity());
 
         for arg in cmd.get_arguments() {
             use valence_protocol::packets::play::command_tree_s2c::Parser as ValenceParser;
@@ -56,7 +56,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                 ValenceParser::String(StringArg::SingleWord),
             );
 
-            on = world.entity().set(node_to_register).child_of_id(on);
+            on = world.entity().set(node_to_register).child_of(on);
         }
 
         let on_execute = |input: &str, system: EntityView<'_>, caller: Entity| {
@@ -315,7 +315,7 @@ impl MinecraftCommand for PermissionCommand {
                     entity.entity_view(world).get::<&mut Group>(|group| {
                         if *group != cmd.group {
                             *group = cmd.group;
-                            entity.entity_view(world).modified::<Group>();
+                            entity.entity_view(world).modified(id::<Group>());
                         }
 
                         caller.entity_view(world).get::<&ConnectionId>(|stream| {

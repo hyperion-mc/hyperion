@@ -273,7 +273,7 @@ impl HyperionCore {
         world.component::<Tasks>();
 
         system!("run_tasks", world, &mut Tasks($))
-            .with::<flecs::pipeline::OnUpdate>()
+            .with(id::<flecs::pipeline::OnUpdate>())
             .each_iter(|it, _, tasks| {
                 let world = it.world();
                 let span = info_span!("run_tasks");
@@ -381,16 +381,16 @@ impl HyperionCore {
         // add yaw and pitch
         world
             .observer::<flecs::OnAdd, ()>()
-            .with::<Player>()
-            .without::<Yaw>()
+            .with(id::<Player>())
+            .without(id::<Yaw>())
             .each_entity(|entity, ()| {
                 entity.set(Yaw::default());
             });
 
         world
             .observer::<flecs::OnAdd, ()>()
-            .with::<Player>()
-            .without::<Pitch>()
+            .with(id::<Player>())
+            .without(id::<Pitch>())
             .each_entity(|entity, ()| {
                 entity.set(Pitch::default());
             });

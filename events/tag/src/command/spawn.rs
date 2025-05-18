@@ -1,6 +1,6 @@
 use clap::Parser;
 use flecs_ecs::{
-    core::{Entity, WorldProvider},
+    core::{Entity, WorldProvider, id},
     prelude::EntityView,
 };
 use hyperion::{
@@ -40,9 +40,9 @@ impl MinecraftCommand for SpawnCommand {
             .set(Pitch::new(0.0))
             .set(Yaw::new(0.0))
             .set(Velocity::new(0.0, 0.0, 0.0))
-            .add::<FollowClosestPlayer>()
+            .add(id::<FollowClosestPlayer>())
             .set(DisplayedBlockState::new(BlockState::DIRT))
-            // .is_a_id(prefabs.block_display_base)
+            // .is_a(prefabs.block_display_base)
             .enqueue(Spawn);
     }
 }

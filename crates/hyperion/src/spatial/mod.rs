@@ -1,7 +1,7 @@
 use flecs_ecs::{
     core::{
         Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI, QueryBuilderImpl,
-        SystemAPI, TermBuilderImpl, World, WorldGet, flecs,
+        SystemAPI, TermBuilderImpl, World, WorldGet, flecs, id,
     },
     macros::{Component, system},
     prelude::Module,
@@ -126,9 +126,9 @@ fn all_indexed_entities(world: &World) -> Vec<Entity> {
     // todo(perf): can we cache this?
     let query = world
         .query::<()>()
-        .with::<Position>()
-        .with::<EntitySize>()
-        .with::<Spatial>()
+        .with(id::<Position>())
+        .with(id::<EntitySize>())
+        .with(id::<Spatial>())
         .build();
 
     let count = query.count();
@@ -146,14 +146,14 @@ impl Module for SpatialModule {
     fn module(world: &World) {
         world.component::<Spatial>();
         world.component::<SpatialIndex>();
-        world.add::<SpatialIndex>();
+        world.add(id::<SpatialIndex>());
 
         system!(
             "recalculate_spatial_index",
             world,
             &mut SpatialIndex($),
         )
-        .with::<flecs::pipeline::OnStore>()
+        .with(id::<flecs::pipeline::OnStore>())
         .each_iter(|it, _, index| {
             let world = it.world();
             index.recalculate(&world);

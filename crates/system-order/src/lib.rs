@@ -4,7 +4,7 @@ use derive_more::Constructor;
 use flecs_ecs::{
     core::{
         Builder, ComponentOrPairId, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI,
-        QueryBuilderImpl, SystemAPI, flecs, flecs::DependsOn,
+        QueryBuilderImpl, SystemAPI, flecs, flecs::DependsOn, id,
     },
     macros::Component,
     prelude::{Module, World},
@@ -31,7 +31,7 @@ impl DepthCalculator {
         // todo: add stackoverflow check
         let mut entity_depth = 0;
 
-        view.each_target::<DependsOn>(|depends_on| {
+        view.each_target(id::<DependsOn>(), |depends_on| {
             let tentative_depth = self.calculate_depth(depends_on) + 1;
             entity_depth = entity_depth.max(tentative_depth);
         });
@@ -86,7 +86,7 @@ fn calculate(world: &World) {
     // get all depths for systems
     world
         .query::<()>()
-        .with::<flecs::system::System>()
+        .with(id::<flecs::system::System>())
         .build()
         .each_entity(|entity, ()| {
             let depth = depth_calculator.calculate_depth(entity);
@@ -100,7 +100,7 @@ fn calculate(world: &World) {
     // handle all observers
     world
         .query::<()>()
-        .with::<flecs::Observer>()
+        .with(id::<flecs::Observer>())
         .build()
         .each_entity(|entity, ()| {
             let depth = depth_calculator.on_update_depth(world);
@@ -135,12 +135,12 @@ impl Module for SystemOrderModule {
 
         world
             .observer::<flecs::OnAdd, ()>()
-            .with::<flecs::system::System>()
+            .with(id::<flecs::system::System>())
             .run(|it| calculate(&it.world()));
 
         world
             .observer::<flecs::OnAdd, ()>()
-            .with::<flecs::Observer>()
+            .with(id::<flecs::Observer>())
             .run(|it| calculate(&it.world()));
     }
 }
