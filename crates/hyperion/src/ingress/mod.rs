@@ -485,8 +485,8 @@ impl Module for IngressModule {
 
                     match login_state {
                         PacketState::Handshake => {
-                            if process_handshake(&mut login_state, &frame).is_err() {
-                                error!("failed to process handshake");
+                            if let Err(e) = process_handshake(&mut login_state, &frame) {
+                                error!("failed to process handshake packet: {e}");
                                 compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
@@ -516,7 +516,7 @@ impl Module for IngressModule {
                                 system,
                                 ign_map,
                             ) {
-                                error!("failed to process login packet");
+                                error!("failed to process login packet: {e}");
                                 let msg = format!(
                                     "§c§lFailed to process login packet:§r\n\n§4{e}§r\n\n§eAre \
                                      you on the right version of Minecraft?§r\n§b(Required: \
