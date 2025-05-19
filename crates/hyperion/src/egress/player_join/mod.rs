@@ -6,7 +6,7 @@ use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 use valence_protocol::{
     ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
     game_mode::OptGameMode,
@@ -29,7 +29,6 @@ pub use list::*;
 use crate::{
     config::Config,
     egress::metadata::show_all,
-    ingress::PendingRemove,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         Comms, Name, Position, Uuid, Yaw,
@@ -598,7 +597,8 @@ impl Module for PlayerJoinModule {
                                 crafting_registry,
                                 config,
                             ) {
-                                entity.set(PendingRemove::new(e.to_string()));
+                                warn!("player_join_world error: {e:?}");
+                                compose.io_buf().shutdown(stream_id, world);
                             }
                         },
                     );

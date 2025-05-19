@@ -115,10 +115,6 @@ pub fn initiate_player_connection(
         let mut packet_writer = PlayerPacketWriter::new(socket_writer, player_id);
 
         while let Ok(outgoing_packet) = incoming_packet_receiver.recv().await {
-            if outgoing_packet.is_shutdown() {
-                return;
-            }
-
             if outgoing_packet.is_flush() {
                 let time_start = std::time::Instant::now();
                 if let Err(e) = packet_writer.flush_pending_packets().await {
@@ -175,15 +171,14 @@ pub fn initiate_player_connection(
                 if let Err(e) = server_sender.send(disconnect).await {
                     warn!("failed to send player disconnect to server: {e}");
                 }
-
-                let map_ref = player_registry.pin();
-                map_ref.remove(&player_id);
-
-                let map_ref = player_positions.pin();
-                map_ref.remove(&player_id);
-
             }
         }
+
+        let map_ref = player_registry.pin();
+        map_ref.remove(&player_id);
+
+        let map_ref = player_positions.pin();
+        map_ref.remove(&player_id);
     })
 }
 

@@ -38,19 +38,10 @@ use crate::{
     util::{TracingExt, mojang::MojangClient},
 };
 
+/// This marks players who have already been disconnected and about to be destructed. This component should not be
+/// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
 #[derive(Component, Debug)]
-pub struct PendingRemove {
-    pub reason: String,
-}
-
-impl PendingRemove {
-    #[must_use]
-    pub fn new(reason: impl Into<String>) -> Self {
-        Self {
-            reason: reason.into(),
-        }
-    }
-}
+pub struct PendingRemove;
 
 fn process_handshake(
     login_state: &mut PacketState,
@@ -335,13 +326,11 @@ impl Module for IngressModule {
             for disconnect in recv.player_disconnect.lock().drain(..) {
                 // will initiate the removal of entity
                 info!("queue pending remove");
-                let Some(id) = lookup.get(&disconnect).copied() else {
+                let Some(entity_id) = lookup.get(&disconnect).copied() else {
                     error!("failed to get id for disconnect stream {disconnect:?}");
                     continue;
                 };
-                world
-                    .entity_from_id(*id)
-                    .set(PendingRemove::new("disconnected"));
+                world.entity_from_id(*entity_id).add(id::<PendingRemove>());
             }
         });
 
@@ -375,11 +364,10 @@ impl Module for IngressModule {
             world,
             &Uuid,
             &Compose($),
-            &ConnectionId,
-            &PendingRemove,
         )
         .kind(id::<flecs::pipeline::PostLoad>())
-        .each_iter(move |it, row, (uuid, compose, io, pending_remove)| {
+        .with(id::<PendingRemove>())
+        .each_iter(move |it, row, (uuid, compose)| {
             let system = it.system();
             let entity = it.entity(row).expect("row must be in bounds");
             let uuids = &[uuid.0];
@@ -401,16 +389,6 @@ impl Module for IngressModule {
 
             if let Err(e) = compose.broadcast(&pkt, system).send() {
                 error!("failed to send player remove packet: {e}");
-            }
-
-            if !pending_remove.reason.is_empty() {
-                let pkt = play::DisconnectS2c {
-                    reason: pending_remove.reason.clone().into_cow_text(),
-                };
-
-                if let Err(e) = compose.unicast_no_compression(&pkt, *io, system) {
-                    error!("failed to send disconnect packet: {e}");
-                }
             }
         });
 
@@ -485,7 +463,7 @@ impl Module for IngressModule {
                         Ok(frame) => frame,
                         Err(e) => {
                             error!("failed to decode packet: {e}");
-                            entity.destruct();
+                            compose.io_buf().shutdown(io_ref, &world);
                             break;
                         }
                     };
@@ -498,9 +476,7 @@ impl Module for IngressModule {
                         PacketState::Handshake => {
                             if process_handshake(login_state, &frame).is_err() {
                                 error!("failed to process handshake");
-
-                                entity.destruct();
-
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }
@@ -509,7 +485,7 @@ impl Module for IngressModule {
                                 process_status(login_state, system, &frame, io_ref, compose)
                             {
                                 error!("failed to process status packet: {e}");
-                                entity.destruct();
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }
@@ -549,7 +525,7 @@ impl Module for IngressModule {
                                     error!("failed to send login disconnect packet: {e}");
                                 }
 
-                                entity.destruct();
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }
