@@ -636,4 +636,24 @@ impl IoBuf {
         let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
+
+    pub fn shutdown(&self, stream: ConnectionId, world: &World) {
+        let buffer = self.buffer.get(world);
+        let buffer = &mut *buffer.borrow_mut();
+
+        let to_send = hyperion_proto::Shutdown {
+            stream: stream.stream_id,
+        };
+
+        let to_send = ServerToProxyMessage::Shutdown(to_send);
+
+        let len = buffer.len();
+        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
+
+        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
+
+        let new_len = buffer.len();
+        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
+        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+    }
 }
