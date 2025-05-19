@@ -559,7 +559,6 @@ impl Module for PlayerJoinModule {
             &Pitch,
             &ConnectionId,
             &PlayerSkin,
-            &mut PacketState
         )
         .with_enum(PacketState::PendingPlay)
         .kind(id::<flecs::pipeline::OnUpdate>())
@@ -578,7 +577,6 @@ impl Module for PlayerJoinModule {
                 pitch,
                 stream_id,
                 skin,
-                packet_state,
             )| {
                 let span = tracing::info_span!("player_join_world");
                 let _enter = span.enter();
@@ -607,9 +605,9 @@ impl Module for PlayerJoinModule {
                 ) {
                     warn!("player_join_world error: {e:?}");
                     compose.io_buf().shutdown(*stream_id, &world);
-                    *packet_state = PacketState::Terminate;
+                    entity.add_enum(PacketState::Terminate);
                 } else {
-                    *packet_state = PacketState::Play;
+                    entity.add_enum(PacketState::Play);
                 }
             },
         );

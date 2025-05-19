@@ -127,7 +127,7 @@ pub struct RaycastTravel;
 pub struct Player;
 
 /// The state of the login process.
-#[derive(Component, Debug, Eq, PartialEq)]
+#[derive(Component, Debug, Eq, PartialEq, Copy, Clone)]
 #[repr(C)]
 pub enum PacketState {
     Handshake,

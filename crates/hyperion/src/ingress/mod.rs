@@ -153,6 +153,8 @@ fn process_login(
 
     ign_map.insert(username.clone(), entity_id, world);
 
+    *login_state = PacketState::PendingPlay;
+
     world.get::<&MetadataPrefabs>(|prefabs| {
         entity
             .is_a(prefabs.player_base)
@@ -165,7 +167,6 @@ fn process_login(
             .add(id::<ChunkSendQueue>())
             .add(id::<Velocity>())
             .set(ChunkPosition::null())
-            .add_enum(PacketState::PendingPlay)
     });
 
     compose.io_buf().set_receive_broadcasts(stream_id, world);
@@ -314,7 +315,7 @@ impl Module for IngressModule {
                     .set(ConnectionId::new(connect))
                     .set(hyperion_inventory::PlayerInventory::default())
                     .set(ConfirmBlockSequences::default())
-                    .set(PacketState::Handshake)
+                    .add_enum(PacketState::Handshake)
                     .set(ActiveAnimation::NONE)
                     .set(PacketDecoder::default())
                     .add(id::<Player>());
@@ -410,7 +411,6 @@ impl Module for IngressModule {
             &MojangClient($),
             &HandlerRegistry($),
             &mut PacketDecoder,
-            &mut PacketState,
             &ConnectionId,
             ?&mut Pose,
             &Events($),
@@ -437,7 +437,6 @@ impl Module for IngressModule {
                 mojang,
                 handler_registry,
                 decoder,
-                login_state,
                 &io_ref,
                 mut pose,
                 event_queue,
@@ -455,10 +454,17 @@ impl Module for IngressModule {
                 let world = it.world();
                 let entity = it.entity(row).expect("row must be in bounds");
 
+                // Component changes are deferred, so this must track its own login state because
+                // the packet loop may change the state and then process packets in the new state.
+                // If the packet handlers used add_enum directly, the enum would not be updated
+                // while this system is running.
+                let mut login_state = entity.get::<&PacketState>(|x| *x);
                 let bump = compose.bump.get(&world);
 
                 loop {
-                    if *login_state == PacketState::PendingPlay {
+                    let previous_login_state = login_state;
+
+                    if login_state == PacketState::PendingPlay {
                         // It is not possible to handle packets at the moment because the player
                         // does not have all components yet
                         return;
@@ -477,9 +483,9 @@ impl Module for IngressModule {
                         break;
                     };
 
-                    match *login_state {
+                    match login_state {
                         PacketState::Handshake => {
-                            if process_handshake(login_state, &frame).is_err() {
+                            if process_handshake(&mut login_state, &frame).is_err() {
                                 error!("failed to process handshake");
                                 compose.io_buf().shutdown(io_ref, &world);
                                 break;
@@ -487,7 +493,7 @@ impl Module for IngressModule {
                         }
                         PacketState::Status => {
                             if let Err(e) =
-                                process_status(login_state, system, &frame, io_ref, compose)
+                                process_status(&mut login_state, system, &frame, io_ref, compose)
                             {
                                 error!("failed to process status packet: {e}");
                                 compose.io_buf().shutdown(io_ref, &world);
@@ -498,7 +504,7 @@ impl Module for IngressModule {
                             if let Err(e) = process_login(
                                 &world,
                                 tasks,
-                                login_state,
+                                &mut login_state,
                                 decoder,
                                 comms,
                                 skins_collection.clone(),
@@ -578,6 +584,10 @@ impl Module for IngressModule {
                         PacketState::Terminate => {
                             // todo
                         }
+                    }
+
+                    if login_state != previous_login_state {
+                        entity.add_enum(login_state);
                     }
                 }
             },
