@@ -326,10 +326,9 @@ impl Inventory {
         &mut self,
         index: u16,
     ) -> Result<&mut ItemSlot, InventoryAccessError> {
-        match self.slots.get_mut(usize::from(index)) {
-            Some(slot) => Ok(slot),
-            None => Err(InventoryAccessError::InvalidSlot { index }),
-        }
+        self.slots
+            .get_mut(usize::from(index))
+            .ok_or(InventoryAccessError::InvalidSlot { index })
     }
 
     /// Returns remaining [`ItemStack`] if not all of the item was added to the slot
