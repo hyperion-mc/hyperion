@@ -38,19 +38,10 @@ use crate::{
     util::{TracingExt, mojang::MojangClient},
 };
 
+/// This marks players who have already been disconnected and about to be destructed. This component should not be
+/// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
 #[derive(Component, Debug)]
-pub struct PendingRemove {
-    pub reason: String,
-}
-
-impl PendingRemove {
-    #[must_use]
-    pub fn new(reason: impl Into<String>) -> Self {
-        Self {
-            reason: reason.into(),
-        }
-    }
-}
+pub struct PendingRemove;
 
 fn process_handshake(
     login_state: &mut PacketState,
@@ -128,23 +119,27 @@ fn process_login(
     info!("Starting login: {username} {uuid_s}");
 
     let skins = comms.skins_tx.clone();
-    let id = entity.id();
+    let entity_id = entity.id();
 
-    tasks.spawn(async move {
-        let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
-            Ok(Some(skin)) => skin,
-            Err(e) => {
-                error!("failed to get skin {e}. Using empty skin");
-                PlayerSkin::EMPTY
-            }
-            Ok(None) => {
-                error!("failed to get skin. Using empty skin");
-                PlayerSkin::EMPTY
-            }
-        };
+    if profile_id.is_some() {
+        tasks.spawn(async move {
+            let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
+                Ok(Some(skin)) => skin,
+                Err(e) => {
+                    error!("failed to get skin {e}. Using empty skin");
+                    PlayerSkin::EMPTY
+                }
+                Ok(None) => {
+                    error!("failed to get skin. Using empty skin");
+                    PlayerSkin::EMPTY
+                }
+            };
 
-        skins.send((id, skin)).unwrap();
-    });
+            skins.send((entity_id, skin)).unwrap();
+        });
+    } else {
+        skins.send((entity_id, PlayerSkin::EMPTY)).unwrap();
+    }
 
     let pkt = login::LoginSuccessS2c {
         uuid,
@@ -158,19 +153,19 @@ fn process_login(
 
     *login_state = PacketState::Play;
 
-    ign_map.insert(username.clone(), entity.id(), world);
+    ign_map.insert(username.clone(), entity_id, world);
 
     world.get::<&MetadataPrefabs>(|prefabs| {
         entity
-            .is_a_id(prefabs.player_base)
+            .is_a(prefabs.player_base)
             .set(Name::from(username))
-            .add::<AiTargetable>()
+            .add(id::<AiTargetable>())
             .set(ImmuneStatus::default())
             .set(Uuid::from(uuid))
-            .add::<Xp>()
+            .add(id::<Xp>())
             .set_pair::<Prev, _>(Xp::default())
-            .add::<ChunkSendQueue>()
-            .add::<Velocity>()
+            .add(id::<ChunkSendQueue>())
+            .add(id::<Velocity>())
             .set(ChunkPosition::null())
     });
 
@@ -271,7 +266,7 @@ impl Module for IngressModule {
             world,
             &Shutdown($),
         )
-        .kind::<flecs::pipeline::OnLoad>()
+        .kind(id::<flecs::pipeline::OnLoad>())
         .each_iter(|it, _, shutdown| {
             let world = it.world();
             if shutdown.value.load(std::sync::atomic::Ordering::Relaxed) {
@@ -285,7 +280,7 @@ impl Module for IngressModule {
             world,
             &mut IgnMap($),
         )
-        .kind::<flecs::pipeline::OnLoad>()
+        .kind(id::<flecs::pipeline::OnLoad>())
         .each_iter(|_, _, ign_map| {
             let span = info_span!("update_ign_map");
             let _enter = span.enter();
@@ -299,7 +294,7 @@ impl Module for IngressModule {
             &ReceiveState($),
         )
         .immediate(true)
-        .kind::<flecs::pipeline::OnLoad>()
+        .kind(id::<flecs::pipeline::OnLoad>())
         .term_at(0)
         .each_iter(move |it, _, (lookup, receive)| {
             tracing_tracy::client::Client::running()
@@ -323,7 +318,7 @@ impl Module for IngressModule {
                     .set(PacketState::Handshake)
                     .set(ActiveAnimation::NONE)
                     .set(PacketDecoder::default())
-                    .add::<Player>();
+                    .add(id::<Player>());
 
                 lookup.insert(connect, view.id());
             }
@@ -331,13 +326,11 @@ impl Module for IngressModule {
             for disconnect in recv.player_disconnect.lock().drain(..) {
                 // will initiate the removal of entity
                 info!("queue pending remove");
-                let Some(id) = lookup.get(&disconnect).copied() else {
+                let Some(entity_id) = lookup.get(&disconnect).copied() else {
                     error!("failed to get id for disconnect stream {disconnect:?}");
                     continue;
                 };
-                world
-                    .entity_from_id(*id)
-                    .set(PendingRemove::new("disconnected"));
+                world.entity_from_id(*entity_id).add(id::<PendingRemove>());
             }
         });
 
@@ -346,7 +339,7 @@ impl Module for IngressModule {
             .term_at(0u32)
             .singleton() // StreamLookup
             .immediate(true)
-            .kind::<flecs::pipeline::PostLoad>()
+            .kind(id::<flecs::pipeline::PostLoad>())
             .each(move |(receive, connection_id, decoder)| {
                 // 134µs with par_iter
                 // 150-208µs with regular drain
@@ -371,13 +364,12 @@ impl Module for IngressModule {
             world,
             &Uuid,
             &Compose($),
-            &ConnectionId,
-            &PendingRemove,
         )
-        .kind::<flecs::pipeline::PostLoad>()
-        .each_iter(move |it, row, (uuid, compose, io, pending_remove)| {
+        .kind(id::<flecs::pipeline::PostLoad>())
+        .with(id::<PendingRemove>())
+        .each_iter(move |it, row, (uuid, compose)| {
             let system = it.system();
-            let entity = it.entity(row);
+            let entity = it.entity(row).expect("row must be in bounds");
             let uuids = &[uuid.0];
             let entity_ids = [VarInt(entity.minecraft_id())];
 
@@ -398,22 +390,12 @@ impl Module for IngressModule {
             if let Err(e) = compose.broadcast(&pkt, system).send() {
                 error!("failed to send player remove packet: {e}");
             }
-
-            if !pending_remove.reason.is_empty() {
-                let pkt = play::DisconnectS2c {
-                    reason: pending_remove.reason.clone().into_cow_text(),
-                };
-
-                if let Err(e) = compose.unicast_no_compression(&pkt, *io, system) {
-                    error!("failed to send disconnect packet: {e}");
-                }
-            }
         });
 
         world
             .system_named::<()>("remove_player")
-            .kind::<flecs::pipeline::PostLoad>()
-            .with::<&PendingRemove>()
+            .kind(id::<flecs::pipeline::PostLoad>())
+            .with(id::<&PendingRemove>())
             .tracing_each_entity(info_span!("remove_player"), |entity, ()| {
                 entity.destruct();
             });
@@ -443,7 +425,7 @@ impl Module for IngressModule {
             &hyperion_crafting::CraftingRegistry($),
             &IgnMap($),
         )
-        .kind::<flecs::pipeline::OnUpdate>()
+        .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(
             move |it,
                   row,
@@ -472,7 +454,7 @@ impl Module for IngressModule {
             )| {
                 let system = it.system();
                 let world = it.world();
-                let entity = it.entity(row);
+                let entity = it.entity(row).expect("row must be in bounds");
 
                 let bump = compose.bump.get(&world);
 
@@ -481,7 +463,7 @@ impl Module for IngressModule {
                         Ok(frame) => frame,
                         Err(e) => {
                             error!("failed to decode packet: {e}");
-                            entity.destruct();
+                            compose.io_buf().shutdown(io_ref, &world);
                             break;
                         }
                     };
@@ -494,9 +476,7 @@ impl Module for IngressModule {
                         PacketState::Handshake => {
                             if process_handshake(login_state, &frame).is_err() {
                                 error!("failed to process handshake");
-
-                                entity.destruct();
-
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }
@@ -505,7 +485,7 @@ impl Module for IngressModule {
                                 process_status(login_state, system, &frame, io_ref, compose)
                             {
                                 error!("failed to process status packet: {e}");
-                                entity.destruct();
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }
@@ -545,7 +525,7 @@ impl Module for IngressModule {
                                     error!("failed to send login disconnect packet: {e}");
                                 }
 
-                                entity.destruct();
+                                compose.io_buf().shutdown(io_ref, &world);
                                 break;
                             }
                         }

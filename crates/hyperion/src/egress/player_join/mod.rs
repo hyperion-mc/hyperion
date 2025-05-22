@@ -6,7 +6,7 @@ use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 use valence_protocol::{
     game_mode::OptGameMode, ident, packets::play::{
         self, player_position_look_s2c::PlayerPositionLookFlags,
@@ -29,7 +29,6 @@ pub use list::*;
 use crate::{
     config::Config,
     egress::metadata::show_all,
-    ingress::PendingRemove,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         command::{get_command_packet, Command, ROOT_COMMAND}, metadata::{entity::EntityFlags, MetadataChanges}, skin::PlayerSkin, util::registry_codec_raw, Comms,
@@ -244,7 +243,7 @@ pub fn player_join_world(
             .iter_stage(world)
             .each_iter(|it, idx, (uuid, _, position, yaw, pitch, _, flags)| {
                 let mut result = || {
-                    let query_entity = it.entity(idx);
+                    let query_entity = it.entity(idx).expect("idx must be in bounds");
 
                     if entity.id() == query_entity.id() {
                         return eyre::Ok(());

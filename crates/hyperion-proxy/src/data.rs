@@ -40,19 +40,9 @@ impl OrderedBytes {
         data: Bytes::from_static(b""),
         exclusions: None,
     };
-    pub const SHUTDOWN: Self = Self {
-        order: u32::MAX - 1,
-        offset: 0,
-        data: Bytes::from_static(b""),
-        exclusions: None,
-    };
 
     pub const fn is_flush(&self) -> bool {
         self.order == u32::MAX
-    }
-
-    pub const fn is_shutdown(&self) -> bool {
-        self.order == u32::MAX - 1
     }
 
     pub const fn no_order(data: Bytes) -> Self {
@@ -120,8 +110,8 @@ impl PlayerHandle {
     }
 
     pub fn shutdown(&self) {
-        let _ = self.writer.try_send(OrderedBytes::SHUTDOWN);
-        self.writer.close().unwrap();
+        // Ignore error for if the channel is already closed
+        let _ = self.writer.close();
     }
 
     pub fn enable_receive_broadcasts(&self) {
@@ -143,7 +133,7 @@ impl PlayerHandle {
                 bail!("failed to send packet to player, channel is full: {is_full}");
             }
             Err(e) => {
-                self.writer.close().unwrap();
+                self.shutdown();
                 bail!("failed to send packet to player: {e}");
             }
         }

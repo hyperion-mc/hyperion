@@ -65,7 +65,7 @@ impl Plugin for EgressPlugin {
             &mut Compose($),
             &mut EgressComm($),
         )
-        .kind_id(pipeline)
+        .kind(pipeline)
         .each(move |(compose, egress)| {
             let span = info_span!("egress");
             let _enter = span.enter();
@@ -130,7 +130,7 @@ impl Plugin for EgressPlugin {
             world,
             &mut Compose($),
         )
-        .kind_id(pipeline)
+        .kind(pipeline)
         .each(move |compose| {
             let span = info_span!("clear_bump");
             let _enter = span.enter();

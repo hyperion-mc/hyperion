@@ -36,9 +36,9 @@ impl Module for VanishModule {
             &Vanished,
             &Uuid,
         )
-        .kind::<flecs::pipeline::PreStore>()
+        .kind(id::<flecs::pipeline::PreStore>())
         .each_iter(move |it, row, (compose, _connection_id, vanished, uuid)| {
-            let entity = it.entity(row);
+            let entity = it.entity(row).expect("row must be in bounds");
             let system = it.system();
             let world = it.world();
 
