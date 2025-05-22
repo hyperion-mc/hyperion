@@ -4,12 +4,11 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 pub use cached_save::cached_save;
-use eyre::WrapErr;
 pub use lifetime::*;
 
 pub trait EntityExt: Sized {
-    fn minecraft_id(&self) -> eyre::Result<i32>;
-    fn from_minecraft_id(id: i32) -> eyre::Result<Self>;
+    fn minecraft_id(&self) -> anyhow::Result<i32>;
+    fn from_minecraft_id(id: i32) -> anyhow::Result<Self>;
 }
 
 // todo(bevy): this is probably different with bevy
@@ -17,15 +16,13 @@ pub trait EntityExt: Sized {
 // we need a mapping from Bevy entity id to Minecraft entity id
 // some
 impl EntityExt for Entity {
-    fn minecraft_id(&self) -> eyre::Result<i32> {
+    fn minecraft_id(&self) -> anyhow::Result<i32> {
         let index = self.index();
         let generation = self.generation();
 
-        let index_u16 = u16::try_from(index)
-            .wrap_err("entity index is too large to create a Minecraft entity id.")?;
+        let index_u16 = u16::try_from(index).unwrap();
 
-        let generation_u16 = u16::try_from(generation)
-            .wrap_err("entity generation is too large to create a Minecraft entity id.")?;
+        let generation_u16 = u16::try_from(generation).unwrap();
 
         let index_u32 = u32::from(index_u16);
         let generation_u32 = u32::from(generation_u16);
@@ -35,7 +32,7 @@ impl EntityExt for Entity {
         Ok(bytemuck::cast(raw_u32))
     }
 
-    fn from_minecraft_id(id: i32) -> eyre::Result<Self> {
+    fn from_minecraft_id(id: i32) -> anyhow::Result<Self> {
         let id: u32 = bytemuck::cast(id);
 
         let index = id >> 16;

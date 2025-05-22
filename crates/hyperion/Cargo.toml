@@ -74,7 +74,6 @@ valence_server = { workspace = true }
 valence_text = { workspace = true }
 ordered-float = { workspace = true }
 dashmap = "6.1.0"
-eyre = "0.6.12"
 
 [dev-dependencies]
 approx = { workspace = true }

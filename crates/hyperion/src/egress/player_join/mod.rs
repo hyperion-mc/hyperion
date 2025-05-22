@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
 use bevy::prelude::*;
-use eyre::Context;
+use anyhow::Context;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
@@ -69,7 +69,7 @@ pub fn player_join_world(
     )>,
     crafting_registry: &CraftingRegistry,
     config: &Config,
-) -> eyre::Result<()> {
+) -> anyhow::Result<()> {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
     let mut bundle = DataBundle::new(compose, system);
@@ -246,7 +246,7 @@ pub fn player_join_world(
                     let query_entity = it.entity(idx).expect("idx must be in bounds");
 
                     if entity.id() == query_entity.id() {
-                        return eyre::Ok(());
+                        return anyhow::Ok(());
                     }
 
                     let pkt = play::PlayerSpawnS2c {
@@ -277,7 +277,7 @@ pub fn player_join_world(
             });
 
         if !query_errors.is_empty() {
-            return Err(eyre::eyre!(
+            return Err(anyhow::anyhow!(
                 "failed to send player spawn packets: {query_errors:?}"
             ));
         }
@@ -379,14 +379,14 @@ pub fn player_join_world(
     Ok(())
 }
 
-fn send_sync_tags(encoder: &mut PacketEncoder) -> eyre::Result<()> {
+fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
     let bytes = include_bytes!("data/tags.json");
 
     let groups = serde_json::from_slice(bytes)?;
 
     let pkt = play::SynchronizeTagsS2c { groups };
 
-    encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
+    encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }
@@ -399,7 +399,7 @@ fn send_sync_tags(encoder: &mut PacketEncoder) -> eyre::Result<()> {
 fn generate_cached_packet_bytes(
     encoder: &mut PacketEncoder,
     crafting_registry: &CraftingRegistry,
-) -> eyre::Result<()> {
+) -> anyhow::Result<()> {
     send_sync_tags(encoder)?;
 
     let mut buf: heapless::Vec<u8, 32> = heapless::Vec::new();
@@ -415,7 +415,7 @@ fn generate_cached_packet_bytes(
         data: bytes.into(),
     };
 
-    encoder.append_packet(&brand).map_err(|e| eyre::eyre!(e))?;
+    encoder.append_packet(&brand).map_err(|e| anyhow::anyhow!(e))?;
 
     encoder
         .append_packet(&play::TeamS2c {
@@ -431,10 +431,10 @@ fn generate_cached_packet_bytes(
                 entities: vec![],
             },
         })
-        .map_err(|e| eyre::eyre!(e))?;
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     if let Some(pkt) = crafting_registry.packet() {
-        encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
+        encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
     }
 
     // unlock
@@ -448,7 +448,7 @@ fn generate_cached_packet_bytes(
         recipe_ids_2: vec!["hyperion:what".to_string()],
     };
 
-    encoder.append_packet(&pkt).map_err(|e| eyre::eyre!(e))?;
+    encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }
@@ -461,7 +461,7 @@ pub fn spawn_entity_packet(
     yaw: &Yaw,
     pitch: &Pitch,
     position: &Position,
-) -> eyre::Result<play::EntitySpawnS2c> {
+) -> anyhow::Result<play::EntitySpawnS2c> {
     info!("spawning entity");
 
     let entity_id = VarInt(id.minecraft_id()?);

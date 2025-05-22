@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 use directories::ProjectDirs;
-use eyre::WrapErr;
+use anyhow::Context;
 use futures_util::stream::StreamExt;
 use sha2::Digest;
 use tar::Archive;
@@ -14,7 +14,7 @@ use crate::AppId;
 pub fn cached_save<U: reqwest::IntoUrl + 'static>(
     world: &World,
     url: U,
-) -> impl Future<Output = eyre::Result<PathBuf>> + 'static {
+) -> impl Future<Output = anyhow::Result<PathBuf>> + 'static {
     let project_dirs = world.resource::<AppId>();
 
     let cache = project_dirs.cache_dir();
@@ -35,7 +35,7 @@ pub fn cached_save<U: reqwest::IntoUrl + 'static>(
             // download
             let response = reqwest::get(url)
                 .await
-                .wrap_err_with(|| format!("failed to get {url_str}"))?;
+                .with_context(|| format!("failed to get {url_str}"))?;
 
             let byte_stream = response.bytes_stream();
             // Convert the byte stream into an AsyncRead
@@ -57,7 +57,7 @@ pub fn cached_save<U: reqwest::IntoUrl + 'static>(
                     .unpack(&directory)
                     .context("failed to unpack archive")?;
 
-                eyre::Ok(())
+                anyhow::Ok(())
             });
 
             handle.await??;

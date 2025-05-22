@@ -5,7 +5,6 @@ compact_str = { workspace = true }
 derive_more = { workspace = true }
 dotenvy = { workspace = true }
 envy = "0.4"
-eyre = "0.6.12"
 fastrand = { workspace = true }
 flecs_ecs = { workspace = true }
 geometry = { workspace = true }

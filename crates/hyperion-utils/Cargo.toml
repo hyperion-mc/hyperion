@@ -1,8 +1,8 @@
 [dependencies]
+anyhow = { workspace = true }
 bevy = { workspace = true }
 bytemuck = { workspace = true }
 directories = { workspace = true }
-eyre = { workspace = true }
 flate2 = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }

@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bevy::prelude::*;
-use eyre::{Context, bail};
+use anyhow::{Context, bail};
 use serde_json::Value;
 use tokio::{
     sync::Semaphore,
@@ -101,7 +101,7 @@ impl MojangClient {
     }
 
     /// Gets a player's UUID from their username.
-    pub async fn get_uuid(&self, username: &str) -> eyre::Result<Uuid> {
+    pub async fn get_uuid(&self, username: &str) -> anyhow::Result<Uuid> {
         let url = self.provider.username_url(username);
         let json_object = self.response_raw(&url).await?;
 
@@ -115,7 +115,7 @@ impl MojangClient {
     }
 
     /// Gets a player's username from their UUID.
-    pub async fn get_username(&self, uuid: Uuid) -> eyre::Result<String> {
+    pub async fn get_username(&self, uuid: Uuid) -> anyhow::Result<String> {
         let url = self.provider.uuid_url(&uuid);
         let json_object = self.response_raw(&url).await?;
 
@@ -128,18 +128,18 @@ impl MojangClient {
     }
 
     /// Gets player data from their UUID.
-    pub async fn data_from_uuid(&self, uuid: &Uuid) -> eyre::Result<Value> {
+    pub async fn data_from_uuid(&self, uuid: &Uuid) -> anyhow::Result<Value> {
         let url = self.provider.uuid_url(uuid);
         self.response_raw(&url).await
     }
 
     /// Gets player data from their username.
-    pub async fn data_from_username(&self, username: &str) -> eyre::Result<Value> {
+    pub async fn data_from_username(&self, username: &str) -> anyhow::Result<Value> {
         let url = self.provider.username_url(username);
         self.response_raw(&url).await
     }
 
-    async fn response_raw(&self, url: &str) -> eyre::Result<Value> {
+    async fn response_raw(&self, url: &str) -> anyhow::Result<Value> {
         self.rate_limit
             .acquire()
             .await
