@@ -2,8 +2,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use eyre::{Context, bail};
 use bevy::prelude::*;
+use eyre::{Context, bail};
 use serde_json::Value;
 use tokio::{
     sync::Semaphore,

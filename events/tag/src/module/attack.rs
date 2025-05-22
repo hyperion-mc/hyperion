@@ -1,4 +1,3 @@
-use hyperion::simulation::event::AttackEntity;
 use std::borrow::Cow;
 
 use compact_str::format_compact;
@@ -7,42 +6,42 @@ use flecs_ecs::{
         Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
         SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs, id,
     },
-    macros::{system, Component},
+    macros::{Component, system},
     prelude::Module,
 };
 use glam::IVec3;
 use hyperion::{
+    BlockKind, Prev,
     net::{
-        agnostic, packets::{BossBarAction, BossBarS2c}, Compose,
-        ConnectionId,
-    }, runtime::AsyncRuntime,
+        Compose, ConnectionId, agnostic,
+        packets::{BossBarAction, BossBarS2c},
+    },
+    runtime::AsyncRuntime,
     simulation::{
-        blocks::Blocks, event::{ClientStatusCommand, ClientStatusEvent}, handlers::PacketSwitchQuery, metadata::{entity::Pose, living_entity::Health}, packet::HandlerRegistry, PacketState, PendingTeleportation,
-        Player,
-        Position,
-        Velocity,
-        Xp,
-        Yaw,
+        PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
+        blocks::Blocks,
+        event::{AttackEntity, ClientStatusCommand, ClientStatusEvent},
+        handlers::PacketSwitchQuery,
+        metadata::{entity::Pose, living_entity::Health},
+        packet::HandlerRegistry,
     },
     storage::EventQueue,
     uuid::Uuid,
     valence_protocol::{
-        ident, math::{DVec3, Vec3}, nbt, packets::play::{
+        ItemKind, ItemStack, Particle, VarInt, ident,
+        math::{DVec3, Vec3},
+        nbt,
+        packets::play::{
             self,
             boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
             entity_attributes_s2c::AttributeProperty,
-        }, text::IntoText,
-        ItemKind,
-        ItemStack,
-        Particle,
-        VarInt,
+        },
+        text::IntoText,
     },
-    BlockKind,
-    Prev,
 };
 use hyperion_inventory::{Inventory, PlayerInventory};
 use hyperion_rank_tree::Team;
-use hyperion_utils::{LifetimeHandle};
+use hyperion_utils::LifetimeHandle;
 use tracing::{event, info_span};
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
@@ -109,26 +108,26 @@ impl Module for AttackModule {
         .each_iter(move |it, _, (compose, kill_count, stream)| {
             const MAX_KILLS: usize = 10;
 
-                let system = it.system();
+            let system = it.system();
 
-                let kills = kill_count.kill_count;
-                let title = format_compact!("{kills} kills");
-                let title = hyperion_text::Text::new(&title);
-                let health = (kill_count.kill_count as f32 / MAX_KILLS as f32).min(1.0);
+            let kills = kill_count.kill_count;
+            let title = format_compact!("{kills} kills");
+            let title = hyperion_text::Text::new(&title);
+            let health = (kill_count.kill_count as f32 / MAX_KILLS as f32).min(1.0);
 
-                let pkt = BossBarS2c {
-                    id: kill_count_uuid,
-                    action: BossBarAction::Add {
-                        title,
-                        health,
-                        color: BossBarColor::Red,
-                        division: BossBarDivision::NoDivision,
-                        flags: BossBarFlags::default(),
-                    },
-                };
+            let pkt = BossBarS2c {
+                id: kill_count_uuid,
+                action: BossBarAction::Add {
+                    title,
+                    health,
+                    color: BossBarColor::Red,
+                    division: BossBarDivision::NoDivision,
+                    flags: BossBarFlags::default(),
+                },
+            };
 
-                compose.unicast(&pkt, *stream, system).unwrap();
-            });
+            compose.unicast(&pkt, *stream, system).unwrap();
+        });
 
         // TODO: This code should be split between melee attacks and bow attacks
         system!("handle_attacks", world, &mut EventQueue<event::AttackEntity>($), &Compose($))
@@ -156,8 +155,6 @@ impl Module for AttackModule {
                     let target = world.entity_from_id(event.target);
 
                     let damage = damage_from(origin);
-
-                    let taar
                 }
 
                 /*
@@ -568,20 +565,8 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
     position
 }
 
-
-
-
-
-
-
-
-
-
 fn is_falling(entity: EntityView<'_>) -> bool {
-    entity.get::<(
-        &Position,
-        &(Prev, Position)
-    )>(|(position, prev_position)| {
+    entity.get::<(&Position, &(Prev, Position))>(|(position, prev_position)| {
         position.y - prev_position.y < 0.0
     })
 }
@@ -589,7 +574,6 @@ fn is_falling(entity: EntityView<'_>) -> bool {
 fn can_critical_hit(entity: EntityView<'_>) -> bool {
     is_falling(entity)
 }
-//
 // // pipe
 //
 // fn damage_from(entity: EntityView<'_>) -> eyre::Result<f32> {

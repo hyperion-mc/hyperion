@@ -1,8 +1,8 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
+use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
-use bevy::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
 use hyperion_utils::EntityExt;

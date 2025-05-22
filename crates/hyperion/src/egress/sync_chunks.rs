@@ -6,16 +6,16 @@ use glam::I16Vec2;
 use itertools::Itertools;
 use tracing::error;
 use valence_protocol::{
-    packets::play::{self}, ChunkPos,
-    VarInt,
+    ChunkPos, VarInt,
+    packets::play::{self},
 };
 
 use crate::{
     config::Config,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        blocks::{Blocks, GetChunk}, ChunkPosition, PacketState, PacketStatePlay,
-        Position,
+        ChunkPosition, PacketState, PacketStatePlay, Position,
+        blocks::{Blocks, GetChunk},
     },
 };
 

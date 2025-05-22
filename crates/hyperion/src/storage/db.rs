@@ -1,6 +1,7 @@
 //! Constructs for connecting and working with a `Heed` database.
 
 use std::path::Path;
+
 use bevy::prelude::Resource;
 use byteorder::NativeEndian;
 use derive_more::Deref;

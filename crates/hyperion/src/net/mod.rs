@@ -4,6 +4,7 @@ use std::{
     cell::{Cell, RefCell},
     fmt::Debug,
 };
+
 use bevy::prelude::*;
 use bumpalo::Bump;
 use byteorder::WriteBytesExt;

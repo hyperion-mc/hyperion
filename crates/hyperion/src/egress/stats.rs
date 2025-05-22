@@ -3,7 +3,7 @@ use tracing::{error, info_span};
 
 use crate::{
     net::Compose,
-    simulation::{blocks::Blocks, PacketState},
+    simulation::{PacketState, blocks::Blocks},
 };
 
 pub struct StatsPlugin;

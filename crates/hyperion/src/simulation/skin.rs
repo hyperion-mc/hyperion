@@ -1,5 +1,5 @@
 //! Constructs for obtaining a player's skin.
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use bevy::prelude::*;
 use rkyv::Archive;
 use tracing::info;

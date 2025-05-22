@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Write};
 
-use derive_build::Build;
 use bevy::prelude::*;
+use derive_build::Build;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 use valence_protocol::{Encode, ItemKind, ItemStack, Packet};
 

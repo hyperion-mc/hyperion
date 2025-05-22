@@ -1,6 +1,7 @@
 //! See [`AsyncRuntime`].
 
 use std::sync::Arc;
+
 use bevy::prelude::*;
 use derive_more::{Deref, DerefMut};
 use kanal::{Receiver, Sender};
