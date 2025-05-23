@@ -48,7 +48,7 @@ use glam::{I16Vec2, IVec2};
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 // use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
-// use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
+use storage::{LocalDb, SkinHandler};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
 pub use uuid;
@@ -210,10 +210,9 @@ impl Plugin for HyperionCore {
         // app.insert_resource(Shutdown::new(shutdown.clone()));
         // app.add_systems(Update, run_tasks);
         //
-        // info!("starting hyperion");
-        // let config = config::Config::load("run/config.toml")?;
-        // world.insert_resource(config);
-        //
+        info!("starting hyperion");
+        let config = config::Config::load("run/config.toml").expect("failed to load config");
+        app.world_mut().insert_resource(config);
         // let (task_tx, task_rx) = kanal::bounded(32);
         // let runtime = AsyncRuntime::new(task_tx);
         //
@@ -246,26 +245,23 @@ impl Plugin for HyperionCore {
         //
         // app.insert_resource(HandlerRegistry::default());
         //
-        // let db = LocalDb::new()?;
-        // let skins = SkinHandler::new(&db)?;
-        //
-        // app.insert_resource(db);
-        // app.insert_resource(skins);
-        //
+        let db = LocalDb::new().expect("failed to load database");
+        let skins = SkinHandler::new(&db).expect("failed to load skin handler");
+
+        app.insert_resource(db);
+        app.insert_resource(skins);
         // app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
         //
         // #[rustfmt::skip]
         // app.add_observer(set_server_endpoint);
         //
-        // let global = Global::new(shared.clone());
+        let global = Global::new(shared.clone());
         //
-        // app.insert_resource(Compose::new(
-        // Compressors::new(shared.compression_level),
-        // Scratches::default(),
-        // global,
-        // IoBuf::default(),
-        // ));
-        //
+        app.insert_resource(Compose::new(
+            shared.compression_level,
+            global,
+            IoBuf::default(),
+        ));
         // app.insert_resource(CraftingRegistry::default());
         //
         // app.insert_resource(Comms::default());
