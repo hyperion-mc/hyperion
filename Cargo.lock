@@ -3166,7 +3166,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "simd-utils",
- "system-order",
  "thiserror 2.0.12",
  "thread_local",
  "tokio",
@@ -6117,15 +6116,6 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
-]
-
-[[package]]
-name = "system-order"
-version = "0.1.0"
-dependencies = [
- "derive_more 2.0.1",
- "flecs_ecs",
- "rustc-hash 2.1.1",
 ]
 
 [[package]]

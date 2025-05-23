@@ -66,7 +66,6 @@ pub use valence_server as server;
 mod common;
 pub use common::*;
 // use hyperion_crafting::CraftingRegistry;
-use system_order::SystemOrderModule;
 pub use valence_ident;
 
 use crate::{
@@ -278,7 +277,7 @@ impl Plugin for HyperionCore {
         // app.insert_resource(StreamLookup::default());
         //
         app.add_plugins(TaskPoolPlugin::default());
-        // app.add_plugins((SimModule, EgressPlugin, IngressModule, SystemOrderModule));
+        // app.add_plugins((SimModule, EgressPlugin, IngressModule));
         //
         // app
         //     .component::<Player>()

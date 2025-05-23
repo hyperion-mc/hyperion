@@ -41,7 +41,6 @@ members = [
     'crates/hyperion-text',
     'crates/hyperion-utils',
     'crates/simd-utils',
-    'crates/system-order',
     'events/tag',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
@@ -249,9 +248,6 @@ path = 'crates/simd-utils'
 [workspace.dependencies.syntect]
 default-features = false
 version = '5.2.0'
-
-[workspace.dependencies.system-order]
-path = 'crates/system-order'
 
 [workspace.dependencies.tokio-util]
 features = ['full']
