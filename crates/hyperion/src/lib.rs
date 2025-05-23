@@ -69,27 +69,25 @@ pub use common::*;
 use system_order::SystemOrderModule;
 pub use valence_ident;
 
-// TODO: remove
-const MAX_PACKET_SIZE: usize = 1000;
-// use crate::{
-//     ingress::PendingRemove,
-//     net::{
-//         Compose, Compressors, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder,
-//         proxy::{ReceiveState, init_proxy_comms},
-//     },
-//     runtime::Tasks,
-//     simulation::{
-//         EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
-//     },
-//     util::mojang::ApiProvider,
-// };
+use crate::{
+    // ingress::PendingRemove,
+    net::{
+        Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder,
+        proxy::{ReceiveState, init_proxy_comms},
+    },
+    // runtime::Tasks,
+    // simulation::{
+    //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
+    // },
+    // util::mojang::ApiProvider,
+};
 
 // pub mod egress;
 // pub mod ingress;
-// pub mod net;
-// pub mod simulation;
+pub mod net;
+pub mod simulation;
 // pub mod spatial;
-// pub mod storage;
+pub mod storage;
 
 /// Relationship for previous values
 #[derive(Component)]
@@ -279,6 +277,7 @@ impl Plugin for HyperionCore {
         // app.insert_resource(runtime);
         // app.insert_resource(StreamLookup::default());
         //
+        app.add_plugins(TaskPoolPlugin::default());
         // app.add_plugins((SimModule, EgressPlugin, IngressModule, SystemOrderModule));
         //
         // app
@@ -342,9 +341,3 @@ impl<A: Allocator> From<A> for Scratch<A> {
         Self { inner }
     }
 }
-
-// /// Thread local scratches
-// #[derive(Debug, Deref, DerefMut, Default)]
-// pub struct Scratches {
-//     inner: ThreadLocal<RefCell<Scratch>>,
-// }

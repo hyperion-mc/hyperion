@@ -4,8 +4,8 @@ use std::{
 };
 
 use anyhow::{Context, bail, ensure};
+use bevy::prelude::*;
 use bytes::Buf;
-use flecs_ecs::macros::Component;
 use valence_protocol::{
     CompressionThreshold, Decode, MAX_PACKET_SIZE, Packet, VarInt, var_int::VarIntDecodeError,
 };

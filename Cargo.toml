@@ -108,6 +108,7 @@ syn = '2.0.101'
 tango-bench = "0.6.0"
 tar = '0.4.41'
 thiserror = '2.0.12'
+thread_local = '1.1.8'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
 tokio = '1.45.0'

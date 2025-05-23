@@ -2,15 +2,15 @@
 
 use std::{io::Cursor, net::SocketAddr, process::Command, sync::Arc};
 
+use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
 use bytes::{Buf, BytesMut};
 use dashmap::DashMap;
-use flecs_ecs::macros::Component;
 use hyperion_proto::ArchivedProxyToServerMessage;
 use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
 
-use crate::{runtime::AsyncRuntime, simulation::EgressComm};
+use crate::simulation::EgressComm;
 
 /// This is used
 #[derive(Default)]
@@ -156,11 +156,11 @@ pub struct ReceiveState(pub Arc<ReceiveStateInner>);
 
 /// Initializes proxy communications.
 #[must_use]
-pub fn init_proxy_comms(tasks: &AsyncRuntime, socket: SocketAddr) -> (ReceiveState, EgressComm) {
+pub fn init_proxy_comms(socket: SocketAddr) -> (ReceiveState, EgressComm) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let shared = Arc::new(ReceiveStateInner::default());
 
-    tasks.block_on(async {
+    AsyncComputeTaskPool::get().spawn(async move {
         inner(socket, rx, shared.clone()).await;
     });
 

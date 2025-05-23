@@ -35,7 +35,7 @@ humantime = { workspace = true }
 # hyperion-packet-macros = { workspace = true }
 # hyperion-palette = { workspace = true }
 hyperion-proto = { workspace = true }
-# hyperion-text = { workspace = true }
+hyperion-text = { workspace = true }
 hyperion-utils = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
@@ -59,6 +59,7 @@ sha2 = { workspace = true }
 simd-utils = { workspace = true }
 system-order = { workspace = true }
 thiserror = { workspace = true }
+thread_local = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
 toml = { workspace = true }
 tracing = { workspace = true }

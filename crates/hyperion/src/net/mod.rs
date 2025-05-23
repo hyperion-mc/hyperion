@@ -17,11 +17,11 @@ use hyperion_utils::LifetimeTracker;
 use libdeflater::CompressionLvl;
 use rkyv::util::AlignedVec;
 use system_order::SystemOrder;
+use thread_local::ThreadLocal;
 
 use crate::{
-    Global, PacketBundle, Scratch, Scratches,
+    Global, PacketBundle, Scratch,
     net::encoder::{PacketEncoder, append_packet_without_compression},
-    storage::ThreadLocal,
 };
 
 pub mod agnostic;
@@ -39,23 +39,6 @@ pub const MAX_PACKET_SIZE: usize = valence_protocol::MAX_PACKET_SIZE as usize;
 /// The stringified name of the Minecraft version this library currently
 /// targets.
 pub const MINECRAFT_VERSION: &str = "1.20.1";
-
-/// Thread-local [`libdeflater::Compressor`] for encoding packets.
-#[derive(Component, Deref)]
-pub struct Compressors {
-    compressors: ThreadLocal<RefCell<libdeflater::Compressor>>,
-}
-
-impl Compressors {
-    #[must_use]
-    pub(crate) fn new(level: CompressionLvl) -> Self {
-        Self {
-            compressors: ThreadLocal::new_with(|_| {
-                RefCell::new(libdeflater::Compressor::new(level))
-            }),
-        }
-    }
-}
 
 /// A unique identifier for a client connection
 ///
@@ -101,8 +84,9 @@ impl ConnectionId {
 /// A singleton that can be used to compose and encode packets.
 #[derive(Resource)]
 pub struct Compose {
-    compressor: Compressors,
-    scratch: Scratches,
+    level: CompressionLevel,
+    compressor: ThreadLocal<RefCell<libdeflater::Compressor>>,
+    scratch: ThreadLocal<RefCell<Scratch>>,
     global: Global,
     io_buf: IoBuf,
     pub bump: ThreadLocal<Bump>,
@@ -166,10 +150,11 @@ impl<'a, 'b> DataBundle<'a, 'b> {
 
 impl Compose {
     #[must_use]
-    pub fn new(compressor: Compressors, scratch: Scratches, global: Global, io_buf: IoBuf) -> Self {
+    pub fn new(compresssion_lvl: Compressionlvl, global: Global, io_buf: IoBuf) -> Self {
         Self {
-            compressor,
-            scratch,
+            compression_lvl,
+            compressor: ThreadLocal::new(),
+            scratch: ThreadLocal::new(),
             global,
             io_buf,
             bump: ThreadLocal::new_defaults(),
@@ -295,13 +280,14 @@ impl Compose {
     /// Obtain a thread-local scratch buffer.
     #[must_use]
     pub fn scratch(&self, world: &World) -> &RefCell<Scratch> {
-        self.scratch.get(world)
+        self.scratch.get_or(|| RefCell::new(Scratch::default()))
     }
 
     /// Obtain a thread-local [`libdeflater::Compressor`]
     #[must_use]
-    pub fn compressor(&self, world: &World) -> &RefCell<libdeflater::Compressor> {
-        self.compressor.get(world)
+    pub fn with_compressor(&self) -> &mut libdeflater::Compressor {
+        self.compressor
+            .get_or(|| RefCell::new(libdeflater::Compressor::new(self.compression_lvl)))
     }
 
     pub fn clear_bump(&mut self) {
