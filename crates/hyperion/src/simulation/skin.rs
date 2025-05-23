@@ -1,4 +1,5 @@
 //! Constructs for obtaining a player's skin.
+use anyhow::Context;
 use base64::{Engine as _, engine::general_purpose};
 use bevy::prelude::*;
 use rkyv::Archive;

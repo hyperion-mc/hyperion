@@ -160,9 +160,9 @@ pub fn init_proxy_comms(socket: SocketAddr) -> (ReceiveState, EgressComm) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let shared = Arc::new(ReceiveStateInner::default());
 
-    AsyncComputeTaskPool::get().spawn(async move {
-        inner(socket, rx, shared.clone()).await;
-    });
+    AsyncComputeTaskPool::get()
+        .spawn(inner(socket, rx, shared.clone()))
+        .detach();
 
     (ReceiveState(shared), EgressComm::from(tx))
 }

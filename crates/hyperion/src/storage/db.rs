@@ -2,17 +2,16 @@
 
 use std::path::Path;
 
-use bevy::prelude::Resource;
+use bevy::prelude::*;
 use byteorder::NativeEndian;
 use derive_more::Deref;
-use flecs_ecs::macros::Component;
 use heed::{Database, Env, EnvOpenOptions, types};
 use uuid::Uuid;
 
 use crate::simulation::skin::{ArchivedPlayerSkin, PlayerSkin};
 
 /// A wrapper around a `Heed` database
-#[derive(Component, Debug, Clone, Deref, Resource)]
+#[derive(Resource, Debug, Clone, Deref)]
 pub struct LocalDb {
     env: Env,
 }
@@ -36,7 +35,7 @@ impl LocalDb {
 }
 
 /// A handler for player skin operations
-#[derive(Debug, Clone, Resource)]
+#[derive(Resource, Debug, Clone)]
 pub struct SkinHandler {
     env: Env,
     skins: Database<types::U128<NativeEndian>, types::Bytes>,

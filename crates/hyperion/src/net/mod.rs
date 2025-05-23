@@ -84,7 +84,7 @@ impl ConnectionId {
 /// A singleton that can be used to compose and encode packets.
 #[derive(Resource)]
 pub struct Compose {
-    level: CompressionLvl,
+    compression_lvl: CompressionLvl,
     compressor: ThreadLocal<RefCell<libdeflater::Compressor>>,
     scratch: ThreadLocal<RefCell<Scratch>>,
     global: Global,
@@ -142,14 +142,14 @@ impl<'a> DataBundle<'a> {
 
 impl Compose {
     #[must_use]
-    pub fn new(compresssion_lvl: Compressionlvl, global: Global, io_buf: IoBuf) -> Self {
+    pub fn new(compression_lvl: CompressionLvl, global: Global, io_buf: IoBuf) -> Self {
         Self {
             compression_lvl,
             compressor: ThreadLocal::new(),
             scratch: ThreadLocal::new(),
             global,
             io_buf,
-            bump: ThreadLocal::new_defaults(),
+            bump: ThreadLocal::new(),
             bump_tracker: LifetimeTracker::default(),
         }
     }
@@ -255,13 +255,13 @@ impl Compose {
 
     /// Obtain a thread-local scratch buffer.
     #[must_use]
-    pub fn scratch(&self, world: &World) -> &RefCell<Scratch> {
-        self.scratch.get_or(|| RefCell::new(Scratch::default()))
+    pub fn scratch(&self) -> &RefCell<Scratch> {
+        self.scratch.get_or_default()
     }
 
     /// Obtain a thread-local [`libdeflater::Compressor`]
     #[must_use]
-    pub fn with_compressor(&self) -> &mut libdeflater::Compressor {
+    pub fn compressor(&self) -> &RefCell<libdeflater::Compressor> {
         self.compressor
             .get_or(|| RefCell::new(libdeflater::Compressor::new(self.compression_lvl)))
     }
@@ -287,8 +287,8 @@ pub struct IoBuf {
 }
 
 impl IoBuf {
-    pub fn fetch_add_idx(&self, world: &World) -> u16 {
-        let cell = self.idx.get(world);
+    pub fn fetch_add_idx(&self) -> u16 {
+        let cell = self.idx.get_or_default();
         let result = cell.get();
         cell.set(result + 1);
         result
@@ -422,13 +422,13 @@ impl IoBuf {
     where
         P: PacketBundle,
     {
-        let temp_buffer = self.temp_buffer.get();
+        let temp_buffer = self.temp_buffer.get_or_default();
         let temp_buffer = &mut *temp_buffer.borrow_mut();
 
         let compressor = compose.compressor();
         let mut compressor = compressor.borrow_mut();
 
-        let scratch = compose.scratch.get();
+        let scratch = compose.scratch();
         let mut scratch = scratch.borrow_mut();
 
         let result =
@@ -439,11 +439,11 @@ impl IoBuf {
         Ok(result)
     }
 
-    fn encode_packet_no_compression<P>(&self, packet: P, world: &World) -> anyhow::Result<BytesMut>
+    fn encode_packet_no_compression<P>(&self, packet: P) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
     {
-        let temp_buffer = self.temp_buffer.get(world);
+        let temp_buffer = self.temp_buffer.get_or_default();
         let temp_buffer = &mut *temp_buffer.borrow_mut();
 
         let result = append_packet_without_compression(packet, temp_buffer)?;
@@ -474,7 +474,7 @@ impl IoBuf {
     fn broadcast_local_raw(&self, data: &[u8], center: impl Into<ChunkPosition>, exclude: u64) {
         let center = center.into();
 
-        let buffer = self.buffer.get();
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let order = self.next_packet_number();
@@ -499,7 +499,7 @@ impl IoBuf {
     }
 
     pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64) {
-        let buffer = self.buffer.get(&world);
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let order = self.next_packet_number();
@@ -526,7 +526,7 @@ impl IoBuf {
     }
 
     pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId) {
-        let buffer = self.buffer.get();
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let order = self.next_packet_number();
@@ -549,8 +549,8 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId, world: &World) {
-        let buffer = self.buffer.get(world);
+    pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let to_send = hyperion_proto::SetReceiveBroadcasts {
@@ -569,8 +569,8 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub fn shutdown(&self, stream: ConnectionId, world: &World) {
-        let buffer = self.buffer.get(world);
+    pub fn shutdown(&self, stream: ConnectionId) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let to_send = hyperion_proto::Shutdown {
