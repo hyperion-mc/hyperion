@@ -40,15 +40,15 @@ use std::{
 use anyhow::Context;
 use bevy::prelude::*;
 use derive_more::{Constructor, Deref, DerefMut};
-use egress::EgressPlugin;
+// use egress::EgressPlugin;
 pub use glam;
 use glam::{I16Vec2, IVec2};
-use ingress::IngressModule;
+// use ingress::IngressModule;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
-use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
-use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
+// use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+// use storage::{Events, LocalDb, SkinHandler, ThreadLocal};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
 pub use uuid;
@@ -63,25 +63,26 @@ pub use valence_protocol::{
 };
 pub use valence_server as server;
 
-use crate::{
-    net::{Compose, Compressors, IoBuf, MAX_PACKET_SIZE, proxy::init_proxy_comms},
-    runtime::AsyncRuntime,
-    simulation::{Pitch, Yaw},
-};
-
 mod common;
 pub use common::*;
-use hyperion_crafting::CraftingRegistry;
+// use hyperion_crafting::CraftingRegistry;
 use system_order::SystemOrderModule;
 pub use valence_ident;
 
-use crate::{
-    ingress::PendingRemove,
-    net::{ConnectionId, PacketDecoder, proxy::ReceiveState},
-    runtime::Tasks,
-    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
-    util::mojang::ApiProvider,
-};
+// TODO: remove
+const MAX_PACKET_SIZE: usize = 1000;
+// use crate::{
+//     ingress::PendingRemove,
+//     net::{
+//         Compose, Compressors, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder,
+//         proxy::{ReceiveState, init_proxy_comms},
+//     },
+//     runtime::Tasks,
+//     simulation::{
+//         EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
+//     },
+//     util::mojang::ApiProvider,
+// };
 
 // pub mod egress;
 // pub mod ingress;
@@ -146,7 +147,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     Ok(())
 }
 
-#[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Resource, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GameServerEndpoint(SocketAddr);
 
 impl From<SocketAddr> for GameServerEndpoint {
@@ -169,24 +170,11 @@ impl From<SocketAddr> for GameServerEndpoint {
 }
 
 /// The central [`HyperionCore`] struct which owns and manages the entire server.
-#[derive(Component)]
 pub struct HyperionCore;
 
 #[derive(Resource, Constructor)]
 struct Shutdown {
     value: Arc<AtomicBool>,
-}
-
-impl Module for HyperionCore {
-    fn module(world: &World) {
-        Self::init_with(world).unwrap();
-    }
-}
-
-fn run_tasks(tasks: &mut Tasks) {
-    while let Ok(Some(task)) = tasks.tasks.try_recv() {
-        task(&world);
-    }
 }
 
 impl Plugin for HyperionCore {
@@ -197,7 +185,9 @@ impl Plugin for HyperionCore {
 
         // 10k players * 2 file handles / player  = 20,000. We can probably get away with 16,384 file handles
         #[cfg(unix)]
-        adjust_file_descriptor_limits(32_768).context("failed to set file limits")?;
+        if let Err(e) = adjust_file_descriptor_limits(32_768) {
+            warn!("failed to set file limits: {e}");
+        }
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(NUM_THREADS)
@@ -211,104 +201,101 @@ impl Plugin for HyperionCore {
                 Ok(())
             })
             .build_global()
-            .context("failed to build thread pool")?;
+            .expect("failed to build thread pool");
 
         let shared = Arc::new(Shared {
             compression_threshold: CompressionThreshold(256),
-            compression_level: CompressionLvl::new(2)
-                .map_err(|_| anyhow::anyhow!("failed to create compression level"))?,
+            compression_level: CompressionLvl::new(2).expect("failed to create compression level"),
         });
 
-        let shutdown = Arc::new(AtomicBool::new(false));
-
-        app.insert_resource(Shutdown::new(shutdown.clone()));
-        app.add_systems(Update, run_tasks);
-
-        info!("starting hyperion");
-        let config = config::Config::load("run/config.toml")?;
-        world.insert_resource(config);
-
-        let (task_tx, task_rx) = kanal::bounded(32);
-        let runtime = AsyncRuntime::new(task_tx);
-
-        #[cfg(unix)]
-        #[allow(clippy::redundant_pub_crate)]
-        runtime.spawn(async move {
-            let mut sigterm =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-            let mut sigquit =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
-
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
-                    warn!("SIGINT/ctrl-c received, shutting down");
-                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-                }
-                _ = sigterm.recv() => {
-                    warn!("SIGTERM received, shutting down");
-                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-                }
-                _ = sigquit.recv() => {
-                    warn!("SIGQUIT received, shutting down");
-                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-        });
-
-        let tasks = Tasks { tasks: task_rx };
-        app.insert_resource(tasks);
-
-        app.insert_resource(HandlerRegistry::default());
-
-        let db = LocalDb::new()?;
-        let skins = SkinHandler::new(&db)?;
-
-        app.insert_resource(db);
-        app.insert_resource(skins);
-
-        app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
-
-        #[rustfmt::skip]
-        app.add_observer(set_server_endpoint);
-
-        let global = Global::new(shared.clone());
-
-        app.insert_resource(Compose::new(
-            Compressors::new(shared.compression_level),
-            Scratches::default(),
-            global,
-            IoBuf::default(),
-        ));
-
-        app.insert_resource(CraftingRegistry::default());
-
-        app.insert_resource(Comms::default());
-
-        let events = Events::initialize(app);
-        app.insert_resource(events);
-
-        app.insert_resource(runtime);
-        app.insert_resource(StreamLookup::default());
-
-        app.add_plugins((SimModule, EgressPlugin, IngressModule, SystemOrderModule));
-
+        // let shutdown = Arc::new(AtomicBool::new(false));
+        //
+        // app.insert_resource(Shutdown::new(shutdown.clone()));
+        // app.add_systems(Update, run_tasks);
+        //
+        // info!("starting hyperion");
+        // let config = config::Config::load("run/config.toml")?;
+        // world.insert_resource(config);
+        //
+        // let (task_tx, task_rx) = kanal::bounded(32);
+        // let runtime = AsyncRuntime::new(task_tx);
+        //
+        // #[cfg(unix)]
+        // #[allow(clippy::redundant_pub_crate)]
+        // runtime.spawn(async move {
+        // let mut sigterm =
+        // tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+        // let mut sigquit =
+        // tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
+        //
+        // tokio::select! {
+        // _ = tokio::signal::ctrl_c() => {
+        // warn!("SIGINT/ctrl-c received, shutting down");
+        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        // }
+        // _ = sigterm.recv() => {
+        // warn!("SIGTERM received, shutting down");
+        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        // }
+        // _ = sigquit.recv() => {
+        // warn!("SIGQUIT received, shutting down");
+        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        // }
+        // }
+        // });
+        //
+        // let tasks = Tasks { tasks: task_rx };
+        // app.insert_resource(tasks);
+        //
+        // app.insert_resource(HandlerRegistry::default());
+        //
+        // let db = LocalDb::new()?;
+        // let skins = SkinHandler::new(&db)?;
+        //
+        // app.insert_resource(db);
+        // app.insert_resource(skins);
+        //
+        // app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
+        //
+        // #[rustfmt::skip]
+        // app.add_observer(set_server_endpoint);
+        //
+        // let global = Global::new(shared.clone());
+        //
+        // app.insert_resource(Compose::new(
+        // Compressors::new(shared.compression_level),
+        // Scratches::default(),
+        // global,
+        // IoBuf::default(),
+        // ));
+        //
+        // app.insert_resource(CraftingRegistry::default());
+        //
+        // app.insert_resource(Comms::default());
+        //
+        // let events = Events::initialize(app);
+        // app.insert_resource(events);
+        //
+        // app.insert_resource(runtime);
+        // app.insert_resource(StreamLookup::default());
+        //
+        // app.add_plugins((SimModule, EgressPlugin, IngressModule, SystemOrderModule));
+        //
         // app
         //     .component::<Player>()
         //     .add_trait::<(flecs::With, EntitySize)>();
-
-        app.insert_resource(IgnMap::default());
-        app.insert_resource(Blocks::empty(app));
-
-        Ok(())
+        //
+        // app.insert_resource(IgnMap::default());
+        // app.insert_resource(Blocks::empty(app));
     }
 }
 
-fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands<'_, '_>) {
-    let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
-    commands.insert_resource(receive_state);
-
-    commands.insert_resource(egress_comm);
-}
+// fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands<'_, '_>) {
+//     let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
+//     commands.insert_resource(receive_state);
+//
+//     commands.insert_resource(egress_comm);
+// }
 
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
 #[derive(Debug)]
@@ -356,8 +343,8 @@ impl<A: Allocator> From<A> for Scratch<A> {
     }
 }
 
-/// Thread local scratches
-#[derive(Debug, Deref, DerefMut, Default)]
-pub struct Scratches {
-    inner: ThreadLocal<RefCell<Scratch>>,
-}
+// /// Thread local scratches
+// #[derive(Debug, Deref, DerefMut, Default)]
+// pub struct Scratches {
+//     inner: ThreadLocal<RefCell<Scratch>>,
+// }

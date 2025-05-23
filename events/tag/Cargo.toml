@@ -1,5 +1,6 @@
 [dependencies]
 anyhow = { workspace = true }
+bevy = { workspace = true }
 clap = { workspace = true }
 compact_str = { workspace = true }
 derive_more = { workspace = true }
@@ -10,17 +11,17 @@ flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true }
 hyperion = { workspace = true }
-hyperion-clap = { workspace = true }
-hyperion-genmap = { workspace = true }
-hyperion-gui = { workspace = true }
-hyperion-inventory = { workspace = true }
-hyperion-item = { workspace = true }
-hyperion-permission = { workspace = true }
-hyperion-proxy-module = { workspace = true }
-hyperion-rank-tree = { workspace = true }
-hyperion-respawn = { workspace = true }
-hyperion-scheduled = { workspace = true }
-hyperion-text = { workspace = true }
+# hyperion-clap = { workspace = true }
+# hyperion-genmap = { workspace = true }
+# hyperion-gui = { workspace = true }
+# hyperion-inventory = { workspace = true }
+# hyperion-item = { workspace = true }
+# hyperion-permission = { workspace = true }
+# hyperion-proxy-module = { workspace = true }
+# hyperion-rank-tree = { workspace = true }
+# hyperion-respawn = { workspace = true }
+# hyperion-scheduled = { workspace = true }
+# hyperion-text = { workspace = true }
 hyperion-utils = { workspace = true }
 rayon = { workspace = true }
 roaring = { workspace = true }
