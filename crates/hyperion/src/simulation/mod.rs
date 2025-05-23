@@ -2,6 +2,7 @@ use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
+use dashmap::DashMap;
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
@@ -61,60 +62,13 @@ pub struct EgressComm {
     tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }
 
-#[derive(Debug)]
-pub struct DeferredMap<K, V> {
-    to_add: ThreadLocalVec<(K, V)>,
-    to_remove: ThreadLocalVec<K>,
-    map: FxHashMap<K, V>,
-}
-
-impl<K, V> Default for DeferredMap<K, V> {
-    fn default() -> Self {
-        Self {
-            to_add: ThreadLocalVec::default(),
-            to_remove: ThreadLocalVec::default(),
-            map: HashMap::default(),
-        }
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn insert(&self, key: K, value: V, world: &World) {
-        self.to_add.push((key, value), world);
-    }
-
-    pub fn get<Q>(&self, key: &Q) -> Option<&V>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(key)
-    }
-
-    pub fn remove(&self, key: K, world: &World) {
-        self.to_remove.push(key, world);
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn update(&mut self) {
-        for (key, value) in self.to_add.drain() {
-            self.map.insert(key, value);
-        }
-
-        for key in self.to_remove.drain() {
-            self.map.remove(&key);
-        }
-    }
-}
-
 /// The in-game name of a player.
 /// todo: fix the meta
 #[derive(Component, Deref, From, Display, Debug)]
 pub struct Name(Arc<str>);
 
 #[derive(Resource, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(DeferredMap<Arc<str>, Entity>);
+pub struct IgnMap(DashMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;
