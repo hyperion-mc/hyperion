@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use libdeflater::CompressionLvl;
 use valence_protocol::CompressionThreshold;
 
+pub mod command_channel;
 pub mod config;
 pub mod runtime;
 pub mod util;

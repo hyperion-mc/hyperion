@@ -70,6 +70,7 @@ pub use valence_ident;
 
 use crate::{
     // ingress::PendingRemove,
+    command_channel::{CommandChannel, CommandChannelPlugin},
     net::{
         Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder,
         proxy::{ReceiveState, init_proxy_comms},
@@ -213,8 +214,10 @@ impl Plugin for HyperionCore {
         info!("starting hyperion");
         let config = config::Config::load("run/config.toml").expect("failed to load config");
         app.world_mut().insert_resource(config);
+
+        app.world_mut().insert_resource(AsyncRuntime::new());
+
         // let (task_tx, task_rx) = kanal::bounded(32);
-        // let runtime = AsyncRuntime::new(task_tx);
         //
         // #[cfg(unix)]
         // #[allow(clippy::redundant_pub_crate)]
@@ -272,7 +275,7 @@ impl Plugin for HyperionCore {
         // app.insert_resource(runtime);
         // app.insert_resource(StreamLookup::default());
         //
-        app.add_plugins(TaskPoolPlugin::default());
+        app.add_plugins(CommandChannelPlugin);
         // app.add_plugins((SimModule, EgressPlugin, IngressModule));
         //
         // app
