@@ -40,7 +40,7 @@ use std::{
 use anyhow::Context;
 use bevy::prelude::*;
 use derive_more::{Constructor, Deref, DerefMut};
-// use egress::EgressPlugin;
+use egress::EgressPlugin;
 pub use glam;
 use glam::{I16Vec2, IVec2};
 #[cfg(unix)]
@@ -80,7 +80,7 @@ use crate::{
     },
 };
 
-// pub mod egress;
+pub mod egress;
 pub mod ingress;
 pub mod net;
 pub mod simulation;
@@ -273,7 +273,7 @@ impl Plugin for HyperionCore {
         // app.insert_resource(runtime);
         app.insert_resource(StreamLookup::default());
         //
-        app.add_plugins((CommandChannelPlugin, IngressPlugin));
+        app.add_plugins((CommandChannelPlugin, IngressPlugin, EgressPlugin));
         // app.add_plugins((SimModule, EgressPlugin, IngressModule));
         //
         // app
