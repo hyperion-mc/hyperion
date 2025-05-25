@@ -92,28 +92,24 @@ impl From<ChunkLoaderHandle> for Blocks {
 }
 
 impl Blocks {
-    pub fn new(world: &World, path: &Path) -> anyhow::Result<Self> {
-        world.get::<&AsyncRuntime>(|runtime| {
-            let biome_registry =
-                generate_biome_registry().context("failed to generate biome registry")?;
+    pub fn new(runtime: &AsyncRuntime, path: &Path) -> anyhow::Result<Self> {
+        let biome_registry =
+            generate_biome_registry().context("failed to generate biome registry")?;
 
-            let shared = WorldShared::new(&biome_registry, runtime, path)?;
-            let shared = Arc::new(shared);
+        let shared = WorldShared::new(&biome_registry, runtime, path)?;
+        let shared = Arc::new(shared);
 
-            let loader_handle = launch_loader(shared, runtime);
+        let loader_handle = launch_loader(shared, runtime);
 
-            let result = Self::from(loader_handle);
+        let result = Self::from(loader_handle);
 
-            Ok(result)
-        })
+        Ok(result)
     }
 
     #[must_use]
-    pub fn empty(world: &World) -> Self {
-        world.get::<&AsyncRuntime>(|runtime| {
-            let loader_handle = launch_empty_loader(runtime);
-            Self::from(loader_handle)
-        })
+    pub fn empty(runtime: &AsyncRuntime) -> Self {
+        let loader_handle = launch_empty_loader(runtime);
+        Self::from(loader_handle)
     }
 
     #[must_use]

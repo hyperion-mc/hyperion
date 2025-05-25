@@ -18,6 +18,7 @@ use valence_text::IntoText;
 use crate::{
     Prev,
     Shutdown,
+    command_channel::CommandChannel,
     // egress::sync_chunks::ChunkSendQueue,
     net::{
         Compose, ConnectionId, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder,
@@ -25,18 +26,30 @@ use crate::{
     },
     runtime::AsyncRuntime,
     simulation::{
+        AiTargetable,
+        ChunkPosition,
+        ConfirmBlockSequences,
+        EntitySize,
+        IgnMap,
+        ImmuneStatus,
+        Name,
+        Pitch,
+        Player,
+        Position,
+        StreamLookup,
+        Uuid,
+        Velocity,
+        Xp,
+        Yaw,
         packet_state,
-        // AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, EntitySize, IgnMap,
-        // ImmuneStatus, Name, Pitch, Player, Position, StreamLookup, Uuid, Velocity, Xp,
-        // Yaw,
         // animation::ActiveAnimation,
         // blocks::Blocks,
         // handlers::PacketSwitchQuery,
         // metadata::{MetadataPrefabs, entity::Pose},
         // packet::HandlerRegistry,
-        // skin::PlayerSkin,
+        skin::PlayerSkin,
     },
-    // storage::{Events, PlayerJoinServer, SkinHandler},
+    storage::SkinHandler,
     util::mojang::MojangClient,
 };
 
@@ -79,6 +92,16 @@ fn try_decode<'a, P: Packet + Decode<'a>>(
     }
 }
 
+fn try_decode_next_packet<'a, P: Packet + Decode<'a>>(
+    compose: &'a Compose,
+    connection_id: ConnectionId,
+    decoder: &'a mut PacketDecoder,
+) -> Option<P> {
+    try_next_frame(&*compose, connection_id, decoder)
+        .map(|frame| try_decode::<P>(frame, &*compose, connection_id))
+        .flatten()
+}
+
 fn process_handshake(
     mut query: Query<
         '_,
@@ -92,16 +115,11 @@ fn process_handshake(
     query
         .par_iter_mut()
         .for_each(|(entity_id, &connection_id, decoder)| {
-            let Some(handshake) = try_next_frame(&*compose, connection_id, decoder.into_inner())
-                .map(|frame| {
-                    try_decode::<packets::handshaking::HandshakeC2s<'_>>(
-                        frame,
-                        &*compose,
-                        connection_id,
-                    )
-                })
-                .flatten()
-            else {
+            let Some(handshake) = try_decode_next_packet::<packets::handshaking::HandshakeC2s<'_>>(
+                &*compose,
+                connection_id,
+                decoder.into_inner(),
+            ) else {
                 return;
             };
             commands.command_scope(|mut commands| {
@@ -119,124 +137,124 @@ fn process_handshake(
             });
         });
 }
-// #[expect(clippy::too_many_arguments, reason = "todo; refactor")]
-// fn process_login(
-//     world: &WorldRef<'_>,
-//     tasks: &AsyncRuntime,
-//     login_state: &mut PacketState,
-//     decoder: &PacketDecoder,
-//     comms: &Comms,
-//     skins_collection: SkinHandler,
-//     mojang: MojangClient,
-//     packet: &BorrowedPacketFrame<'_>,
-//     stream_id: ConnectionId,
-//     compose: &Compose,
-//     entity: &EntityView<'_>,
-//     system: EntityView<'_>,
-//     ign_map: &IgnMap,
-// ) -> anyhow::Result<()> {
-//     debug_assert!(
-//         *login_state == PacketState::Login,
-//         "process_login called with invalid state: {login_state:?}"
-//     );
-//
-//     let login::LoginHelloC2s {
-//         username,
-//         profile_id,
-//     } = packet.decode()?;
-//
-//     let username = username.0;
-//
-//     let player_join = PlayerJoinServer {
-//         username: username.to_string(),
-//         entity: entity.id(),
-//     };
-//
-//     let username = player_join.username.as_str();
-//
-//     let global = compose.global();
-//
-//     let pkt = LoginCompressionS2c {
-//         threshold: VarInt(global.shared.compression_threshold.0),
-//     };
-//
-//     compose.unicast_no_compression(&pkt, stream_id)?;
-//
-//     decoder.set_compression(global.shared.compression_threshold);
-//
-//     let username = Arc::from(username);
-//
-//     let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
-//     let uuid_s = format!("{uuid:?}").dimmed();
-//     info!("Starting login: {username} {uuid_s}");
-//
-//     let skins = comms.skins_tx.clone();
-//     let entity_id = entity.id();
-//
-//     if profile_id.is_some() {
-//         tasks.spawn(async move {
-//             let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
-//                 Ok(Some(skin)) => skin,
-//                 Err(e) => {
-//                     error!("failed to get skin {e}. Using empty skin");
-//                     PlayerSkin::EMPTY
-//                 }
-//                 Ok(None) => {
-//                     error!("failed to get skin. Using empty skin");
-//                     PlayerSkin::EMPTY
-//                 }
-//             };
-//
-//             skins.send((entity_id, skin)).unwrap();
-//         });
-//     } else {
-//         skins.send((entity_id, PlayerSkin::EMPTY)).unwrap();
-//     }
-//
-//     let pkt = login::LoginSuccessS2c {
-//         uuid,
-//         username: Bounded(&username),
-//         properties: Cow::default(),
-//     };
-//
-//     compose
-//         .unicast(&pkt, stream_id)
-//         .context("failed to send login success packet")?;
-//
-//     *login_state = PacketState::Play;
-//
-//     ign_map.insert(username.clone(), entity_id, world);
-//
-//     world.get::<&MetadataPrefabs>(|prefabs| {
-//         entity
-//             .is_a(prefabs.player_base)
-//             .set(Name::from(username))
-//             .add(id::<AiTargetable>())
-//             .set(ImmuneStatus::default())
-//             .set(Uuid::from(uuid))
-//             .add(id::<Xp>())
-//             .set_pair::<Prev, _>(Xp::default())
-//             // .add(id::<ChunkSendQueue>())
-//             .add(id::<Velocity>())
-//             .set(ChunkPosition::null())
-//     });
-//
-//     compose.io_buf().set_receive_broadcasts(stream_id, world);
-//
-//     Ok(())
-// }
-//
-// /// Get a [`uuid::Uuid`] based on the given user's name.
-// fn offline_uuid(username: &str) -> uuid::Uuid {
-//     let digest = sha2::Sha256::digest(username);
-//     let digest: [u8; 32] = digest.into();
-//     let (&digest, ..) = digest.split_array_ref::<16>();
-//
-//     // todo: I have no idea which way we should go (be or le)
-//     let digest = u128::from_be_bytes(digest);
-//     uuid::Uuid::from_u128(digest)
-// }
-//
+
+fn process_login(
+    mut query: Query<
+        '_,
+        '_,
+        (Entity, &ConnectionId, &mut PacketDecoder),
+        With<packet_state::Login>,
+    >,
+    compose: Res<'_, Compose>,
+    runtime: Res<'_, AsyncRuntime>,
+    skins_collection: Res<'_, SkinHandler>,
+    mojang: Res<'_, MojangClient>,
+    command_channel: Res<'_, CommandChannel>,
+    mut commands: ParallelCommands<'_, '_>,
+) {
+    let mojang = mojang.into_inner().clone();
+    let skins_collection = skins_collection.into_inner().clone();
+    let command_channel = command_channel.into_inner().clone();
+
+    query
+        .par_iter_mut()
+        .for_each(|(entity_id, &connection_id, decoder)| {
+            let decoder = decoder.into_inner();
+            let Some(login) = try_decode_next_packet::<login::LoginHelloC2s<'_>>(
+                &*compose,
+                connection_id,
+                decoder,
+            ) else {
+                return;
+            };
+            let username = Arc::from(login.username.0);
+            let profile_id = login.profile_id;
+
+            // Set compression
+            let global = compose.global();
+            let pkt = LoginCompressionS2c {
+                threshold: VarInt(global.shared.compression_threshold.0),
+            };
+            compose.unicast_no_compression(&pkt, connection_id).unwrap();
+            decoder.set_compression(global.shared.compression_threshold);
+
+            let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
+            let uuid_s = format!("{uuid:?}").dimmed();
+            info!("Starting login: {username} {uuid_s}");
+
+            let pkt = login::LoginSuccessS2c {
+                uuid,
+                username: Bounded(&username),
+                properties: Cow::default(),
+            };
+
+            compose.unicast(&pkt, connection_id).unwrap();
+
+            let skin = if profile_id.is_some() {
+                let mojang = mojang.clone();
+                let skins_collection = skins_collection.clone();
+                let command_channel = command_channel.clone();
+                runtime.spawn(async move {
+                    let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
+                        Ok(Some(skin)) => skin,
+                        Err(e) => {
+                            error!("failed to get skin {e}. Using empty skin");
+                            PlayerSkin::EMPTY
+                        }
+                        Ok(None) => {
+                            error!("failed to get skin. Using empty skin");
+                            PlayerSkin::EMPTY
+                        }
+                    };
+
+                    command_channel.push(move |world: &mut World| {
+                        let Ok(mut entity) = world.get_entity_mut(entity_id) else {
+                            warn!(
+                                "failed to get entity after skin has been fetched (likely because \
+                                 the player has already left the server)"
+                            );
+                            return;
+                        };
+
+                        entity.insert(skin);
+                    });
+                });
+                None
+            } else {
+                Some(PlayerSkin::EMPTY)
+            };
+
+            commands.command_scope(|mut commands| {
+                let mut entity = commands.entity(entity_id);
+                entity
+                    .remove::<packet_state::Login>()
+                    .insert(Name::from(username))
+                    .insert(AiTargetable)
+                    .insert(ImmuneStatus::default())
+                    .insert(Uuid::from(uuid))
+                    .insert(ChunkPosition::null())
+                    .insert(Yaw::default())
+                    .insert(Pitch::default())
+                    .insert(packet_state::Play(()));
+                if let Some(skin) = skin {
+                    entity.insert(skin);
+                }
+            });
+
+            compose.io_buf().set_receive_broadcasts(connection_id);
+        });
+}
+
+/// Get a [`uuid::Uuid`] based on the given user's name.
+fn offline_uuid(username: &str) -> uuid::Uuid {
+    let digest = sha2::Sha256::digest(username);
+    let digest: [u8; 32] = digest.into();
+    let (&digest, ..) = digest.split_array_ref::<16>();
+
+    // todo: I have no idea which way we should go (be or le)
+    let digest = u128::from_be_bytes(digest);
+    uuid::Uuid::from_u128(digest)
+}
 
 fn process_status(
     mut query: Query<'_, '_, (&ConnectionId, &mut PacketDecoder), With<packet_state::Status>>,
@@ -314,7 +332,7 @@ pub struct IngressPlugin;
 impl Plugin for IngressPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<Disconnect>();
-        app.add_systems(Update, (process_handshake, process_status));
+        app.add_systems(Update, (process_handshake, process_status, process_login));
 
         //        world
         //            .system_named::<(&ReceiveState, &ConnectionId, &mut PacketDecoder)>("ingress_to_ecs")

@@ -7,12 +7,13 @@ use valence_protocol::{VarInt, packets::play};
 
 use crate::{net::Compose, simulation::EgressComm};
 // pub mod metadata;
-// pub mod player_join;
+pub mod player_join;
 // mod stats;
 // pub mod sync_chunks;
 // mod sync_entity_state;
 
-// use player_join::PlayerJoinPlugin;
+use player_join::PlayerJoinPlugin;
+
 // use stats::StatsPlugin;
 // use sync_chunks::SyncChunksModule;
 // use sync_entity_state::EntityStateSyncModule;
@@ -65,6 +66,7 @@ impl Plugin for EgressPlugin {
 
         app.insert_resource(EncodedFlush(flush));
         app.add_systems(PostUpdate, send_egress);
+        app.add_plugins(PlayerJoinPlugin);
 
         // let pipeline = world
         //     .entity()

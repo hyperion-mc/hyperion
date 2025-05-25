@@ -6,7 +6,6 @@
 use std::{collections::HashSet, net::SocketAddr};
 
 use bevy::prelude::*;
-// mod module;
 use derive_more::{Deref, DerefMut};
 use hyperion::{
     HyperionCore,
@@ -15,6 +14,7 @@ use hyperion::{
     // simulation::{Player, Position},
     // spatial,
 };
+
 // use hyperion_clap::hyperion_command::CommandRegistry;
 // use hyperion_gui::Gui;
 // use hyperion_proxy_module::{HyperionProxyModule, ProxyAddress};
@@ -24,12 +24,13 @@ use hyperion::{
 //     regeneration::RegenerationModule, vanish::VanishModule,
 // };
 // use spatial::SpatialIndex;
-
+use crate::module::spawn::SpawnPlugin;
 // use crate::{
 //     module::{bow::BowModule, chat::ChatModule, spawn::SpawnModule, stats::StatsModule},
 //     skin::SkinModule,
 // };
 
+mod module;
 // mod command;
 // mod skin;
 
@@ -138,7 +139,9 @@ use hyperion::{
 pub struct TagPlugin;
 
 impl Plugin for TagPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        app.add_plugins(SpawnPlugin);
+    }
 }
 
 fn runner(mut app: App) -> AppExit {

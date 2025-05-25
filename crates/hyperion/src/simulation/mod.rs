@@ -32,7 +32,7 @@ use crate::{
 };
 
 // pub mod animation;
-// pub mod blocks;
+pub mod blocks;
 // pub mod command;
 // pub mod entity_kind;
 // pub mod event;
@@ -42,7 +42,7 @@ use crate::{
 // pub mod packet;
 pub mod packet_state;
 pub mod skin;
-// pub mod util;
+pub mod util;
 
 #[derive(Resource, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {

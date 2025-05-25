@@ -47,9 +47,9 @@ use glam::{I16Vec2, IVec2};
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 // use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+use simulation::blocks::Blocks;
 use storage::{LocalDb, SkinHandler};
 use tracing::{info, info_span, warn};
-use util::mojang::MojangClient;
 pub use uuid;
 pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
@@ -64,20 +64,20 @@ pub use valence_server as server;
 
 mod common;
 pub use common::*;
-// use hyperion_crafting::CraftingRegistry;
+use hyperion_crafting::CraftingRegistry;
 pub use valence_ident;
 
 use crate::{
     command_channel::{CommandChannel, CommandChannelPlugin},
     ingress::IngressPlugin,
     net::{Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder, proxy::init_proxy_comms},
-    // util::mojang::ApiProvider,
     runtime::AsyncRuntime,
     // runtime::Tasks,
     simulation::{
         StreamLookup,
         //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
     },
+    util::mojang::{ApiProvider, MojangClient},
 };
 
 pub mod egress;
@@ -211,9 +211,9 @@ impl Plugin for HyperionCore {
         //
         info!("starting hyperion");
         let config = config::Config::load("run/config.toml").expect("failed to load config");
-        app.world_mut().insert_resource(config);
+        app.insert_resource(config);
 
-        app.world_mut().insert_resource(AsyncRuntime::new());
+        let runtime = AsyncRuntime::new();
 
         // let (task_tx, task_rx) = kanal::bounded(32);
         //
@@ -251,7 +251,9 @@ impl Plugin for HyperionCore {
 
         app.insert_resource(db);
         app.insert_resource(skins);
-        // app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
+        app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
+        app.insert_resource(Blocks::empty(&runtime));
+        app.insert_resource(runtime);
         //
         app.add_event::<SetEndpoint>();
         app.add_observer(set_server_endpoint);
@@ -263,8 +265,7 @@ impl Plugin for HyperionCore {
             global,
             IoBuf::default(),
         ));
-        // app.insert_resource(CraftingRegistry::default());
-        //
+        app.insert_resource(CraftingRegistry::default());
         // app.insert_resource(Comms::default());
         //
         // let events = Events::initialize(app);
@@ -281,7 +282,6 @@ impl Plugin for HyperionCore {
         //     .add_trait::<(flecs::With, EntitySize)>();
         //
         // app.insert_resource(IgnMap::default());
-        // app.insert_resource(Blocks::empty(app));
     }
 }
 

@@ -12,6 +12,8 @@ use tokio::{
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::AsyncRuntime;
+
 /// The API provider to use for Minecraft profile lookups
 #[derive(Clone, Copy)]
 pub struct ApiProvider {
@@ -67,29 +69,29 @@ pub struct MojangClient {
 
 impl MojangClient {
     #[must_use]
-    pub fn new(provider: ApiProvider) -> Self {
+    pub fn new(runtime: &AsyncRuntime, provider: ApiProvider) -> Self {
         let rate_limit = Arc::new(Semaphore::new(provider.max_requests()));
         let interval_duration = provider.interval();
 
-        // todo: tasks.spawn({
-        // let rate_limit = Arc::downgrade(&rate_limit);
-        // let max_requests = provider.max_requests();
-        // async move {
-        // let mut interval = interval(interval_duration);
-        // interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        //
-        // loop {
-        // interval.tick().await;
-        //
-        // let Some(rate_limit) = rate_limit.upgrade() else {
-        // return;
-        // };
-        //
-        // let available = rate_limit.available_permits();
-        // rate_limit.add_permits(max_requests - available);
-        // }
-        // }
-        // });
+        runtime.spawn({
+            let rate_limit = Arc::downgrade(&rate_limit);
+            let max_requests = provider.max_requests();
+            async move {
+                let mut interval = interval(interval_duration);
+                interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+                loop {
+                    interval.tick().await;
+
+                    let Some(rate_limit) = rate_limit.upgrade() else {
+                        return;
+                    };
+
+                    let available = rate_limit.available_permits();
+                    rate_limit.add_permits(max_requests - available);
+                }
+            }
+        });
 
         Self {
             req: reqwest::Client::new(),

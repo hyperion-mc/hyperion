@@ -1,12 +1,12 @@
 use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
-use bevy::prelude::*;
 use anyhow::Context;
+use bevy::{ecs::query::QueryEntityError, prelude::*};
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, trace, warn};
 use valence_protocol::{
     ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
     game_mode::OptGameMode,
@@ -28,55 +28,89 @@ pub use list::*;
 
 use crate::{
     config::Config,
-    egress::metadata::show_all,
+    // egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Comms, Name, Position, Uuid, Yaw,
-        command::{Command, ROOT_COMMAND, get_command_packet},
-        metadata::{MetadataChanges, entity::EntityFlags},
+        Comms,
+        Name,
+        Position,
+        Uuid,
+        Yaw,
+        packet_state,
+        // command::{Command, ROOT_COMMAND, get_command_packet},
+        // metadata::{MetadataChanges, entity::EntityFlags},
         skin::PlayerSkin,
         util::registry_codec_raw,
     },
-    util::{SendableQuery, SendableRef},
 };
 
 #[expect(
     clippy::too_many_arguments,
     reason = "todo: we should refactor at some point"
 )]
-#[instrument(skip_all, fields(name = name))]
+#[instrument(skip_all)]
 pub fn player_join_world(
-    commands: &mut Commands,
-    entity: Entity,
-    compose: &Compose,
-    uuid: uuid::Uuid,
-    name: &str,
-    io: ConnectionId,
-    position: &Position,
-    yaw: &Yaw,
-    pitch: &Pitch,
-    skin: &PlayerSkin,
-    system: EntityView<'_>,
-    root_command: Entity,
-    query: &Query<(
-        &Uuid,
-        &Name,
-        &Position,
-        &Yaw,
-        &Pitch,
-        &PlayerSkin,
-        &EntityFlags,
-    )>,
-    crafting_registry: &CraftingRegistry,
-    config: &Config,
-) -> anyhow::Result<()> {
+    trigger: Trigger<'_, OnAdd, (Position, PlayerSkin)>,
+    compose: Res<'_, Compose>,
+    crafting_registry: Res<'_, CraftingRegistry>,
+    config: Res<'_, Config>,
+    mut commands: Commands<'_, '_>,
+    target_query: Query<
+        '_,
+        '_,
+        (
+            &Uuid,
+            &Name,
+            &ConnectionId,
+            &Position,
+            &Yaw,
+            &Pitch,
+            &PlayerSkin,
+        ),
+    >,
+    others_query: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &Uuid,
+            &Name,
+            &Position,
+            &Yaw,
+            &Pitch,
+            &PlayerSkin,
+            // &EntityFlags,
+        ),
+    >,
+) {
+    // TODO: Assert that player is in play state
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
-    let mut bundle = DataBundle::new(compose, system);
+    let mut bundle = DataBundle::new(&compose);
 
-    let id = entity.minecraft_id()?;
+    let entity_id = trigger.target();
+    let id = entity_id.minecraft_id();
 
-    commands.entity(entity).insert(MovementTracking {
+    // TODO: skin may not exist yet
+    let (uuid, name, &connection_id, position, yaw, pitch, skin) = match target_query.get(entity_id)
+    {
+        Ok(components) => components,
+        Err(QueryEntityError::QueryDoesNotMatch(..)) => {
+            trace!(
+                "player_join_world failed because player is missing components (this is expected \
+                 if either Position or PlayerSkin has not been set yet"
+            );
+            return;
+        }
+        Err(e) => {
+            error!("player_join_world failed: {e}");
+            return;
+        }
+    };
+
+    let mut entity = commands.entity(entity_id);
+
+    entity.insert(MovementTracking {
         received_movement_packets: 0,
         last_tick_flying: false,
         last_tick_position: **position,
@@ -119,9 +153,7 @@ pub fn player_join_world(
         is_debug: false,
     };
 
-    bundle
-        .add_packet(&pkt)
-        .context("failed to send player spawn packet")?;
+    bundle.add_packet(&pkt).unwrap();
 
     let center_chunk = position.to_chunk();
 
@@ -130,14 +162,14 @@ pub fn player_join_world(
         chunk_z: VarInt(i32::from(center_chunk.y)),
     };
 
-    bundle.add_packet(&pkt)?;
+    bundle.add_packet(&pkt).unwrap();
 
     let pkt = play::PlayerSpawnPositionS2c {
         position: position.as_dvec3().into(),
         angle: **yaw,
     };
 
-    bundle.add_packet(&pkt)?;
+    bundle.add_packet(&pkt).unwrap();
 
     let cached_data = CACHED_DATA
         .get_or_init(|| {
@@ -154,7 +186,7 @@ pub fn player_join_world(
                 reason = "this is only called once on startup; it should be fine. we mostly care \
                           about crashing during server execution"
             )]
-            generate_cached_packet_bytes(&mut encoder, crafting_registry).unwrap();
+            generate_cached_packet_bytes(&mut encoder, crafting_registry.into_inner()).unwrap();
 
             let bytes = encoder.take();
             bytes.freeze()
@@ -168,49 +200,57 @@ pub fn player_join_world(
         overlay: false,
     };
 
-    compose
-        .broadcast(&text, system)
-        .send()
-        .context("failed to send player join message")?;
+    compose.broadcast(&text).send().unwrap();
 
-    bundle.add_packet(&play::PlayerPositionLookS2c {
-        position: position.as_dvec3(),
-        yaw: **yaw,
-        pitch: **pitch,
-        flags: PlayerPositionLookFlags::default(),
-        teleport_id: 1.into(),
-    })?;
-
+    bundle
+        .add_packet(&play::PlayerPositionLookS2c {
+            position: position.as_dvec3(),
+            yaw: **yaw,
+            pitch: **pitch,
+            flags: PlayerPositionLookFlags::default(),
+            teleport_id: 1.into(),
+        })
+        .unwrap();
     let mut entries = Vec::new();
     let mut all_player_names = Vec::new();
 
-    let count = query.iter_stage(world).count();
+    for (current_entity, uuid, name, position, yaw, pitch, skin) in others_query {
+        if entity_id == current_entity {
+            continue;
+        }
 
-    info!("sending skins for {count} players");
+        // Update player list entries
+        let entry = PlayerListEntry {
+            player_uuid: uuid.0,
+            username: name.to_string().into(),
+            properties: Cow::Owned(Vec::new()),
+            chat_data: None,
+            listed: true,
+            ping: 20,
+            game_mode: GameMode::Creative,
+            display_name: Some(name.to_string().into_cow_text()),
+        };
 
-    {
-        let scope = tracing::info_span!("generating_skins");
-        let _enter = scope.enter();
-        query
-            .iter_stage(world)
-            .each(|(uuid, name, _, _, _, _skin, _)| {
-                // todo: in future, do not clone
+        entries.push(entry);
+        all_player_names.push(name.to_string());
 
-                let entry = PlayerListEntry {
-                    player_uuid: uuid.0,
-                    username: name.to_string().into(),
-                    // todo: eliminate alloc
-                    properties: Cow::Owned(vec![]),
-                    chat_data: None,
-                    listed: true,
-                    ping: 20,
-                    game_mode: GameMode::Creative,
-                    display_name: Some(name.to_string().into_cow_text()),
-                };
+        // Spawn the current entity for the player that is joining
+        let pkt = play::PlayerSpawnS2c {
+            entity_id: VarInt(current_entity.minecraft_id()),
+            player_uuid: uuid.0,
+            position: position.as_dvec3(),
+            yaw: ByteAngle::from_degrees(**yaw),
+            pitch: ByteAngle::from_degrees(**pitch),
+        };
 
-                entries.push(entry);
-                all_player_names.push(name.to_string());
-            });
+        bundle.add_packet(&pkt).unwrap();
+
+        //         let show_all = show_all(current_entity.minecraft_id());
+        //         bundle
+        //             .add_packet(show_all.borrow_packet())
+        //             .unwrap();
+
+        //         metadata.encode(*flags);
     }
 
     let all_player_names = all_player_names.iter().map(String::as_str).collect();
@@ -223,64 +263,12 @@ pub fn player_join_world(
     {
         let scope = tracing::info_span!("unicasting_player_list");
         let _enter = scope.enter();
-        bundle.add_packet(&PlayerListS2c {
-            actions,
-            entries: Cow::Owned(entries),
-        })?;
-    }
-
-    {
-        let scope = tracing::info_span!("sending_player_spawns");
-        let _enter = scope.enter();
-
-        // todo(Indra): this is a bit awkward.
-        // todo: could also be helped by denoting some packets as infallible for serialization
-        let mut query_errors = Vec::new();
-
-        let mut metadata = MetadataChanges::default();
-
-        query
-            .iter_stage(world)
-            .each_iter(|it, idx, (uuid, _, position, yaw, pitch, _, flags)| {
-                let mut result = || {
-                    let query_entity = it.entity(idx).expect("idx must be in bounds");
-
-                    if entity.id() == query_entity.id() {
-                        return anyhow::Ok(());
-                    }
-
-                    let pkt = play::PlayerSpawnS2c {
-                        entity_id: VarInt(query_entity.minecraft_id()),
-                        player_uuid: uuid.0,
-                        position: position.as_dvec3(),
-                        yaw: ByteAngle::from_degrees(**yaw),
-                        pitch: ByteAngle::from_degrees(**pitch),
-                    };
-
-                    bundle
-                        .add_packet(&pkt)
-                        .context("failed to send player spawn packet")?;
-
-                    let show_all = show_all(query_entity.minecraft_id());
-                    bundle
-                        .add_packet(show_all.borrow_packet())
-                        .context("failed to send player spawn packet")?;
-
-                    metadata.encode(*flags);
-
-                    Ok(())
-                };
-
-                if let Err(e) = result() {
-                    query_errors.push(e);
-                }
-            });
-
-        if !query_errors.is_empty() {
-            return Err(anyhow::anyhow!(
-                "failed to send player spawn packets: {query_errors:?}"
-            ));
-        }
+        bundle
+            .add_packet(&PlayerListS2c {
+                actions,
+                entries: Cow::Owned(entries),
+            })
+            .unwrap();
     }
 
     let PlayerSkin {
@@ -298,7 +286,7 @@ pub fn player_join_world(
     let property = &[property];
 
     let singleton_entry = &[PlayerListEntry {
-        player_uuid: uuid,
+        player_uuid: **uuid,
         username: Cow::Borrowed(name),
         properties: Cow::Borrowed(property),
         chat_data: None,
@@ -314,50 +302,42 @@ pub fn player_join_world(
     };
 
     // todo: fix broadcasting on first tick; and this duplication can be removed!
-    compose
-        .broadcast(&pkt, system)
-        .send()
-        .context("failed to send player list packet")?;
-    bundle
-        .add_packet(&pkt)
-        .context("failed to send player list packet")?;
+    compose.broadcast(&pkt).send().unwrap();
+    bundle.add_packet(&pkt).unwrap();
 
-    let player_name = vec![name];
+    let player_name: Vec<&str> = vec![&**name];
 
     compose
-        .broadcast(
-            &play::TeamS2c {
-                team_name: "no_tag",
-                mode: Mode::AddEntities {
-                    entities: player_name,
-                },
+        .broadcast(&play::TeamS2c {
+            team_name: "no_tag",
+            mode: Mode::AddEntities {
+                entities: player_name,
             },
-            system,
-        )
-        .exclude(io)
+        })
+        .exclude(connection_id)
         .send()
-        .context("failed to send team packet")?;
+        .unwrap();
 
-    let current_entity_id = VarInt(entity.minecraft_id());
+    let current_entity_id = VarInt(entity_id.minecraft_id());
 
     let spawn_player = play::PlayerSpawnS2c {
         entity_id: current_entity_id,
-        player_uuid: uuid,
+        player_uuid: **uuid,
         position: position.as_dvec3(),
         yaw: ByteAngle::from_degrees(**yaw),
         pitch: ByteAngle::from_degrees(**pitch),
     };
     compose
-        .broadcast(&spawn_player, system)
-        .exclude(io)
+        .broadcast(&spawn_player)
+        .exclude(connection_id)
         .send()
-        .context("failed to send player spawn packet")?;
+        .unwrap();
 
-    let show_all = show_all(entity.minecraft_id());
-    compose
-        .broadcast(show_all.borrow_packet(), system)
-        .send()
-        .context("failed to send show all packet")?;
+    //     let show_all = show_all(entity_id.minecraft_id());
+    //     compose
+    //         .broadcast(show_all.borrow_packet())
+    //         .send()
+    //         .unwrap();
 
     bundle
         .add_packet(&play::TeamS2c {
@@ -366,17 +346,15 @@ pub fn player_join_world(
                 entities: all_player_names,
             },
         })
-        .context("failed to send team packet")?;
+        .unwrap();
 
-    let command_packet = get_command_packet(world, root_command, Some(**entity));
+    //     let command_packet = get_command_packet(root_command, Some(**entity));
+    //
+    //     bundle.add_packet(&command_packet).unwrap();
 
-    bundle.add_packet(&command_packet)?;
-
-    bundle.unicast(io)?;
+    bundle.unicast(connection_id).unwrap();
 
     info!("{name} joined the world");
-
-    Ok(())
 }
 
 fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
@@ -386,7 +364,9 @@ fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
 
     let pkt = play::SynchronizeTagsS2c { groups };
 
-    encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
+    encoder
+        .append_packet(&pkt)
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }
@@ -403,7 +383,7 @@ fn generate_cached_packet_bytes(
     send_sync_tags(encoder)?;
 
     let mut buf: heapless::Vec<u8, 32> = heapless::Vec::new();
-    let brand = b"discord: andrewgazelka";
+    let brand = b"hyperion";
     let brand_len = u8::try_from(brand.len()).context("brand length too long to fit in u8")?;
     buf.push(brand_len).unwrap();
     buf.extend_from_slice(brand).unwrap();
@@ -415,7 +395,9 @@ fn generate_cached_packet_bytes(
         data: bytes.into(),
     };
 
-    encoder.append_packet(&brand).map_err(|e| anyhow::anyhow!(e))?;
+    encoder
+        .append_packet(&brand)
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     encoder
         .append_packet(&play::TeamS2c {
@@ -434,7 +416,9 @@ fn generate_cached_packet_bytes(
         .map_err(|e| anyhow::anyhow!(e))?;
 
     if let Some(pkt) = crafting_registry.packet() {
-        encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
+        encoder
+            .append_packet(&pkt)
+            .map_err(|e| anyhow::anyhow!(e))?;
     }
 
     // unlock
@@ -448,7 +432,9 @@ fn generate_cached_packet_bytes(
         recipe_ids_2: vec!["hyperion:what".to_string()],
     };
 
-    encoder.append_packet(&pkt).map_err(|e| anyhow::anyhow!(e))?;
+    encoder
+        .append_packet(&pkt)
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }
@@ -461,12 +447,12 @@ pub fn spawn_entity_packet(
     yaw: &Yaw,
     pitch: &Pitch,
     position: &Position,
-) -> anyhow::Result<play::EntitySpawnS2c> {
+) -> play::EntitySpawnS2c {
     info!("spawning entity");
 
-    let entity_id = VarInt(id.minecraft_id()?);
+    let entity_id = VarInt(id.minecraft_id());
 
-    Ok(play::EntitySpawnS2c {
+    play::EntitySpawnS2c {
         entity_id,
         object_uuid: *uuid,
         kind: VarInt(kind.get()),
@@ -476,81 +462,18 @@ pub fn spawn_entity_packet(
         head_yaw: ByteAngle::from_degrees(**yaw), // todo: unsure if this is correct
         data: VarInt::default(),
         velocity: Velocity([0; 3]),
-    })
+    }
 }
 
 #[derive(Component)]
 pub struct PlayerJoinPlugin;
 
-#[derive(Component)]
-pub struct RayonWorldStages {
-    stages: Vec<SendableRef<'static>>,
-}
-
-impl Index<usize> for RayonWorldStages {
-    type Output = WorldRef<'static>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.stages[index].0
-    }
-}
-
 impl Plugin for PlayerJoinPlugin {
     fn build(&self, app: &mut App) {
-        let world = app.world_mut();
+        app.add_observer(player_join_world);
+        // let world = app.world_mut();
 
         // world.spawn()
-        let root_command = world.spawn(Command::ROOT);
-    }
-}
-
-// todo: should we disable hidden lifetime lint
-fn x(
-    comms: Res<'_, Comms>,
-    compose: Res<'_, Compose>,
-    crafting_registry: Res<'_, CraftingRegistry>,
-    config: Res<'_, Config>,
-    query: Query<'_, '_, (&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>,
-    mut commands: Commands<'_, '_>,
-) {
-    let mut skins = Vec::new();
-
-    while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
-        skins.push((entity, skin.clone()));
-    }
-
-    // todo: par_iter
-    // for (entity, skin) in skins {
-    for (entity, skin) in skins {
-        // if we are not in rayon context that means we are in a single-threaded context and 0 will work
-        let (uuid, name, position, yaw, pitch, connection_id) = match query.get(entity) {
-            Ok(entity) => entity,
-            Err(e) => {
-                warn!("{e}");
-                continue;
-            }
-        };
-
-        if let Err(e) = player_join_world(
-            &mut commands,
-            entity,
-            &compose,
-            uuid.0,
-            name,
-            stream_id,
-            position,
-            yaw,
-            pitch,
-            &skin,
-            system,
-            root_command,
-            &query,
-            &crafting_registry,
-            &config,
-        ) {
-            error!("failed to join player: {e}");
-        }
-
-        commands.entity(entity).insert((PacketState::Play, skin));
+        // let root_command = world.spawn(Command::ROOT);
     }
 }

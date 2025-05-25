@@ -7,14 +7,14 @@ pub use cached_save::cached_save;
 pub use lifetime::*;
 
 pub trait EntityExt: Sized {
-    fn minecraft_id(&self) -> anyhow::Result<i32>;
+    fn minecraft_id(&self) -> i32;
     fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self>;
 }
 
 impl EntityExt for Entity {
-    fn minecraft_id(&self) -> anyhow::Result<i32> {
+    fn minecraft_id(&self) -> i32 {
         let index = self.index();
-        Ok(bytemuck::cast(index))
+        bytemuck::cast(index)
     }
 
     fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self> {
