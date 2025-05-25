@@ -309,47 +309,6 @@ fn process_status(
         });
 }
 
-// fn generate_ingress_events(
-//    lookup: ResMut<StreamLookup>,
-//    receive: Res<ReceiveState>
-//) {
-//    tracing_tracy::client::Client::running()
-//        .expect("Tracy client should be running")
-//        .frame_mark();
-//
-//    let span = info_span!("generate_ingress_events");
-//    let _enter = span.enter();
-//
-//    let world = it.world();
-//
-//    let recv = &receive.0;
-//
-//    for connect in recv.player_connect.lock().drain(..) {
-//        info!("player_connect");
-//        let view = world
-//            .entity()
-//            .set(ConnectionId::new(connect))
-//            .set(hyperion_inventory::PlayerInventory::default())
-//            .set(ConfirmBlockSequences::default())
-//            .set(PacketState::Handshake)
-//            .set(ActiveAnimation::NONE)
-//            .set(PacketDecoder::default())
-//            .add(id::<Player>());
-//
-//        lookup.insert(connect, view.id());
-//    }
-//
-//    for disconnect in recv.player_disconnect.lock().drain(..) {
-//        // will initiate the removal of entity
-//        info!("queue pending remove");
-//        let Some(entity_id) = lookup.get(&disconnect).copied() else {
-//            error!("failed to get id for disconnect stream {disconnect:?}");
-//            continue;
-//        };
-//        world.entity_from_id(*entity_id).add(id::<PendingRemove>());
-//    }
-//}
-
 pub struct IngressPlugin;
 
 impl Plugin for IngressPlugin {
