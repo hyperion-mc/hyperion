@@ -12,20 +12,19 @@ use valence_protocol::{
 
 #[derive(Default)]
 struct RefBytesMut {
-    cursor: Cell<usize>,
+    cursor: usize,
     inner: Vec<u8>,
 }
 
 impl RefBytesMut {
-    pub fn advance(&self, amount: usize) {
-        let on = self.cursor.get();
-        self.cursor.set(on + amount);
+    pub fn advance(&mut self, amount: usize) {
+        self.cursor += amount;
     }
 
-    pub fn split_to(&self, len: usize) -> &[u8] {
-        let before = self.cursor.get();
+    pub fn split_to(&mut self, len: usize) -> &[u8] {
+        let before = self.cursor;
         let after = before + len;
-        self.cursor.set(after);
+        self.cursor = after;
 
         #[expect(
             clippy::indexing_slicing,
@@ -35,14 +34,11 @@ impl RefBytesMut {
     }
 }
 
-unsafe impl Sync for RefBytesMut {}
-unsafe impl Send for RefBytesMut {}
-
 impl Index<RangeFull> for RefBytesMut {
     type Output = [u8];
 
     fn index(&self, _: RangeFull) -> &Self::Output {
-        let on = self.cursor.get();
+        let on = self.cursor;
         #[expect(
             clippy::indexing_slicing,
             reason = "this is probably fine? todo: verify"
@@ -55,11 +51,8 @@ impl Index<RangeFull> for RefBytesMut {
 #[derive(Default, Component)]
 pub struct PacketDecoder {
     buf: RefBytesMut,
-    threshold: Cell<CompressionThreshold>,
+    threshold: CompressionThreshold,
 }
-
-unsafe impl Send for PacketDecoder {}
-unsafe impl Sync for PacketDecoder {}
 
 #[derive(Copy, Clone)]
 pub struct BorrowedPacketFrame<'a> {
@@ -113,7 +106,7 @@ impl PacketDecoder {
     /// Tries to get the next packet from the buffer.
     /// If a new packet is found, the buffer will be truncated by the length of the packet.
     pub fn try_next_packet<'b>(
-        &'b self,
+        &'b mut self,
         bump: &'b bumpalo::Bump,
     ) -> anyhow::Result<Option<BorrowedPacketFrame<'b>>> {
         let mut r = &self.buf[..];
@@ -140,7 +133,7 @@ impl PacketDecoder {
         let mut data;
 
         #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-        if self.threshold.get().0 >= 0 {
+        if self.threshold.0 >= 0 {
             r = &r[..packet_len as usize];
 
             let data_len = VarInt::decode(&mut r)?.0;
@@ -153,10 +146,10 @@ impl PacketDecoder {
             // Is this packet compressed?
             if data_len > 0 {
                 ensure!(
-                    data_len > self.threshold.get().0,
+                    data_len > self.threshold.0,
                     "decompressed packet length of {data_len} is <= the compression threshold of \
                      {}",
-                    self.threshold.get().0
+                    self.threshold.0
                 );
 
                 // todo(perf): make uninit memory ...  MaybeUninit
@@ -183,10 +176,10 @@ impl PacketDecoder {
                 debug_assert_eq!(data_len, 0, "{data_len} != 0");
 
                 ensure!(
-                    r.len() <= self.threshold.get().0 as usize,
+                    r.len() <= self.threshold.0 as usize,
                     "uncompressed packet length of {} exceeds compression threshold of {}",
                     r.len(),
-                    self.threshold.get().0
+                    self.threshold.0
                 );
 
                 let remaining_len = r.len();
@@ -218,7 +211,7 @@ impl PacketDecoder {
     }
 
     pub fn shift_excess(&mut self) {
-        let read_position = self.buf.cursor.get();
+        let read_position = self.buf.cursor;
 
         if read_position == 0 {
             return;
@@ -231,18 +224,18 @@ impl PacketDecoder {
             core::hint::unreachable_unchecked()
         });
 
-        self.buf.cursor.set(0);
+        self.buf.cursor = 0;
     }
 
     /// Get the compression threshold.
     #[must_use]
     pub fn compression(&self) -> CompressionThreshold {
-        self.threshold.get()
+        self.threshold
     }
 
     /// Sets the compression threshold.
-    pub fn set_compression(&self, threshold: CompressionThreshold) {
-        self.threshold.set(threshold);
+    pub fn set_compression(&mut self, threshold: CompressionThreshold) {
+        self.threshold = threshold;
     }
 
     /// Queues a slice of bytes into the buffer.

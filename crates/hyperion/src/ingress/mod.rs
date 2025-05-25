@@ -50,7 +50,7 @@ pub struct Disconnect(pub(crate) ());
 fn try_decode<'a, P: Packet + Decode<'a>>(
     compose: &'a Compose,
     connection_id: ConnectionId,
-    decoder: &'a PacketDecoder,
+    decoder: &'a mut PacketDecoder,
     handler: impl FnOnce(P),
 ) {
     let bump = compose.bump();
@@ -77,23 +77,28 @@ fn try_decode<'a, P: Packet + Decode<'a>>(
 }
 
 fn process_handshake(
-    query: Query<'_, '_, (Entity, &ConnectionId, &PacketDecoder), With<packet_state::Handshake>>,
+    mut query: Query<
+        '_,
+        '_,
+        (Entity, &ConnectionId, &mut PacketDecoder),
+        With<packet_state::Handshake>,
+    >,
     compose: Res<'_, Compose>,
     mut commands: ParallelCommands<'_, '_>,
 ) {
     query
-        .par_iter()
-        .for_each(|(entity_id, connection_id, decoder)| {
+        .par_iter_mut()
+        .for_each(|(entity_id, connection_id, mut decoder)| {
             try_decode(
                 &*compose,
                 *connection_id,
-                decoder,
+                decoder.into_inner(),
                 |handshake: packets::handshaking::HandshakeC2s<'_>| {
                     commands.command_scope(|mut commands| {
                         // todo: check version is correct
                         let mut entity = commands.entity(entity_id);
                         entity.remove::<packet_state::Handshake>();
-                        match handshake.next_state {
+                        match dbg!(handshake.next_state) {
                             HandshakeNextState::Status => {
                                 entity.insert(packet_state::Status(()));
                             }
