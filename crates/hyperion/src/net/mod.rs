@@ -266,6 +266,11 @@ impl Compose {
             .get_or(|| RefCell::new(libdeflater::Compressor::new(self.compression_lvl)))
     }
 
+    #[must_use]
+    pub(crate) fn bump(&self) -> &Bump {
+        self.bump.get_or_default()
+    }
+
     pub fn clear_bump(&mut self) {
         self.bump_tracker.assert_no_references();
         for bump in &mut self.bump {

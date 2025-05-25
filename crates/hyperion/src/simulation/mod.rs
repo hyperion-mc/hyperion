@@ -40,6 +40,7 @@ use crate::{
 // pub mod inventory;
 // pub mod metadata;
 // pub mod packet;
+pub mod packet_state;
 pub mod skin;
 // pub mod util;
 

@@ -2,7 +2,7 @@
 
 use std::{io::Cursor, net::SocketAddr, process::Command, sync::Arc};
 
-use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
+use bevy::prelude::*;
 use bytes::{Buf, BytesMut};
 use dashmap::DashMap;
 use hyperion_proto::ArchivedProxyToServerMessage;
@@ -10,18 +10,13 @@ use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
 
-use crate::simulation::EgressComm;
-
-/// This is used
-#[derive(Default)]
-pub struct ReceiveStateInner {
-    /// All players who have recently connected to the server.
-    pub player_connect: Mutex<Vec<u64>>,
-    /// All players who have recently disconnected from the server.
-    pub player_disconnect: Mutex<Vec<u64>>,
-    /// A map of stream ids to the corresponding [`BytesMut`] buffers. This represents data from the client to the server.
-    pub packets: DashMap<u64, BytesMut>,
-}
+use crate::{
+    ConnectionId, PacketDecoder,
+    command_channel::CommandChannel,
+    ingress::Disconnect,
+    runtime::AsyncRuntime,
+    simulation::{EgressComm, StreamLookup, packet_state},
+};
 
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     let output = if cfg!(target_os = "windows") {
@@ -45,7 +40,7 @@ fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
 async fn inner(
     socket: SocketAddr,
     mut server_to_proxy: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
-    shared: Arc<ReceiveStateInner>,
+    command_channel: CommandChannel,
 ) {
     let listener = match tokio::net::TcpListener::bind(socket).await {
         Ok(listener) => listener,
@@ -84,8 +79,6 @@ async fn inner(
 
                 info!("Proxy connection established on {addr}");
 
-                let shared = shared.clone();
-
                 let (read, mut write) = socket.into_split();
 
                 let proxy_writer_task = tokio::spawn(async move {
@@ -101,6 +94,7 @@ async fn inner(
                     server_to_proxy
                 });
 
+                let command_channel = command_channel.clone();
                 tokio::spawn(async move {
                     let mut reader = ProxyReader::new(read);
 
@@ -121,20 +115,62 @@ async fn inner(
                             ArchivedProxyToServerMessage::PlayerConnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
-                                shared.player_connect.lock().push(stream);
+                                command_channel.push(move |world: &mut World| {
+                                    let player = world
+                                        .spawn((
+                                            ConnectionId::new(stream),
+                                            // hyperion_inventory::PlayerInventory::default(),
+                                            // ConfirmBlockSequences::default(),
+                                            packet_state::Handshake(()),
+                                            // ActiveAnimation::NONE,
+                                            PacketDecoder::default(),
+                                        ))
+                                        .id();
+                                    world
+                                        .get_resource_mut::<StreamLookup>()
+                                        .expect("StreamLookup resource should exist")
+                                        .insert(stream, player);
+                                });
                             }
                             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
-                                shared.player_disconnect.lock().push(stream);
+                                command_channel.push(move |world: &mut World| {
+                                    let player = world
+                                        .get_resource_mut::<StreamLookup>()
+                                        .expect("StreamLookup resource should exist")
+                                        .remove(&stream)
+                                        .expect(
+                                            "player from PlayerDisconnect must exist in the \
+                                             stream lookup map",
+                                        );
+                                    world.trigger_targets(Disconnect(()), player);
+                                });
                             }
                             ArchivedProxyToServerMessage::PlayerPackets(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
-                                shared
-                                    .packets
-                                    .entry(stream)
-                                    .or_default()
-                                    .extend_from_slice(&message.data);
+                                // TODO: avoid this allocation
+                                let data = message.data.to_vec();
+
+                                command_channel.push(move |world: &mut World| {
+                                    let lookup = world
+                                        .get_resource_mut::<StreamLookup>()
+                                        .expect("StreamLookup resource should exist");
+                                    let player = *lookup.get(&stream).expect(
+                                        "player from PlayerPackets must exist in the stream \
+                                         lookup map",
+                                    );
+
+                                    let mut player = world
+                                        .get_entity_mut(player)
+                                        .expect("player from StreamLookup must be alive");
+                                    let mut decoder = player
+                                        .get_mut::<PacketDecoder>()
+                                        .expect("all players must have a PacketDecodewr");
+
+                                    decoder.shift_excess();
+                                    decoder.queue_slice(&data);
+                                });
                             }
                         }
                     }
@@ -150,21 +186,16 @@ async fn inner(
     );
 }
 
-/// A wrapper around [`ReceiveStateInner`]
-#[derive(Resource)]
-pub struct ReceiveState(pub Arc<ReceiveStateInner>);
-
 /// Initializes proxy communications.
 #[must_use]
-pub fn init_proxy_comms(socket: SocketAddr) -> (ReceiveState, EgressComm) {
+pub fn init_proxy_comms(
+    runtime: &AsyncRuntime,
+    command_channel: CommandChannel,
+    socket: SocketAddr,
+) -> EgressComm {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let shared = Arc::new(ReceiveStateInner::default());
-
-    AsyncComputeTaskPool::get()
-        .spawn(inner(socket, rx, shared.clone()))
-        .detach();
-
-    (ReceiveState(shared), EgressComm::from(tx))
+    runtime.spawn(inner(socket, rx, command_channel));
+    EgressComm::from(tx)
 }
 
 #[derive(Debug)]

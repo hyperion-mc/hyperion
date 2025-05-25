@@ -43,7 +43,6 @@ use derive_more::{Constructor, Deref, DerefMut};
 // use egress::EgressPlugin;
 pub use glam;
 use glam::{I16Vec2, IVec2};
-// use ingress::IngressModule;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
@@ -69,21 +68,20 @@ pub use common::*;
 pub use valence_ident;
 
 use crate::{
-    // ingress::PendingRemove,
     command_channel::{CommandChannel, CommandChannelPlugin},
-    net::{
-        Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder,
-        proxy::{ReceiveState, init_proxy_comms},
-    },
-    // runtime::Tasks,
-    // simulation::{
-    //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
-    // },
+    ingress::IngressPlugin,
+    net::{Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder, proxy::init_proxy_comms},
     // util::mojang::ApiProvider,
+    runtime::AsyncRuntime,
+    // runtime::Tasks,
+    simulation::{
+        StreamLookup,
+        //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
+    },
 };
 
 // pub mod egress;
-// pub mod ingress;
+pub mod ingress;
 pub mod net;
 pub mod simulation;
 // pub mod spatial;
@@ -145,10 +143,10 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     Ok(())
 }
 
-#[derive(Resource, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GameServerEndpoint(SocketAddr);
+#[derive(Event, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SetEndpoint(SocketAddr);
 
-impl From<SocketAddr> for GameServerEndpoint {
+impl From<SocketAddr> for SetEndpoint {
     fn from(value: SocketAddr) -> Self {
         const DEFAULT_MINECRAFT_PORT: u16 = 25565;
         let port = value.port();
@@ -255,9 +253,9 @@ impl Plugin for HyperionCore {
         app.insert_resource(skins);
         // app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
         //
-        // #[rustfmt::skip]
-        // app.add_observer(set_server_endpoint);
-        //
+        app.add_event::<SetEndpoint>();
+        app.add_observer(set_server_endpoint);
+
         let global = Global::new(shared.clone());
         //
         app.insert_resource(Compose::new(
@@ -273,9 +271,9 @@ impl Plugin for HyperionCore {
         // app.insert_resource(events);
         //
         // app.insert_resource(runtime);
-        // app.insert_resource(StreamLookup::default());
+        app.insert_resource(StreamLookup::default());
         //
-        app.add_plugins(CommandChannelPlugin);
+        app.add_plugins((CommandChannelPlugin, IngressPlugin));
         // app.add_plugins((SimModule, EgressPlugin, IngressModule));
         //
         // app
@@ -287,12 +285,16 @@ impl Plugin for HyperionCore {
     }
 }
 
-// fn set_server_endpoint(trigger: Trigger<GameServerEndpoint>, mut commands: Commands<'_, '_>) {
-//     let (receive_state, egress_comm) = init_proxy_comms(runtime, address);
-//     commands.insert_resource(receive_state);
-//
-//     commands.insert_resource(egress_comm);
-// }
+fn set_server_endpoint(
+    event: Trigger<'_, SetEndpoint>,
+    runtime: Res<'_, runtime::AsyncRuntime>,
+    command_channel: Res<'_, CommandChannel>,
+    mut commands: Commands<'_, '_>,
+) {
+    let address = event.0;
+    let egress_comm = init_proxy_comms(&*runtime, command_channel.clone(), address);
+    commands.insert_resource(egress_comm);
+}
 
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
 #[derive(Debug)]

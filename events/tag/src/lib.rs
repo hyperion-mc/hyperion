@@ -9,8 +9,8 @@ use bevy::prelude::*;
 // mod module;
 use derive_more::{Deref, DerefMut};
 use hyperion::{
-    GameServerEndpoint,
     HyperionCore,
+    SetEndpoint,
     glam::IVec3,
     // simulation::{Player, Position},
     // spatial,
@@ -141,12 +141,22 @@ impl Plugin for TagPlugin {
     fn build(&self, _app: &mut App) {}
 }
 
+fn runner(mut app: App) -> AppExit {
+    loop {
+        app.update();
+        if let Some(exit) = app.should_exit() {
+            return exit;
+        }
+    }
+}
+
 pub fn init_game(address: SocketAddr) -> anyhow::Result<()> {
     let mut app = App::new();
 
     app.add_plugins((HyperionCore, TagPlugin));
-    app.insert_resource(GameServerEndpoint::from(address));
+    app.world_mut().trigger(SetEndpoint::from(address));
 
+    app.set_runner(runner);
     app.run();
 
     Ok(())
