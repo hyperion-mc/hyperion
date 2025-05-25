@@ -3,13 +3,10 @@
 use std::{future::Future, ops::Try, path::Path, pin::Pin, sync::Arc};
 
 use anyhow::Context;
+use bevy::prelude::*;
 use bytes::Bytes;
 use chunk::Column;
 use derive_more::Constructor;
-use flecs_ecs::{
-    core::{Entity, World, WorldGet},
-    macros::Component,
-};
 use geometry::ray::Ray;
 use glam::{I16Vec2, IVec2, IVec3, Vec3};
 use indexmap::IndexMap;
@@ -67,7 +64,7 @@ pub struct RayCollision {
 }
 
 /// Accessor of blocks.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Blocks {
     /// Map to a Chunk by Entity ID
     chunk_cache: IndexMap<I16Vec2, Column, FxBuildHasher>,

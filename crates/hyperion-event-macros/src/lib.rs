@@ -151,7 +151,7 @@ impl EventsInput {
 
         // Generate the Events struct
         let events_struct = quote! {
-            #[derive(Component)]
+            #[derive(Resource)]
             pub struct Events {
                 #(#fields)*
             }

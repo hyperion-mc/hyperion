@@ -20,7 +20,7 @@ use hyperion::{
     simulation::{
         PacketState, PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
         blocks::Blocks,
-        event::{self, ClientStatusCommand, ClientStatusEvent},
+        event::{AttackEntity, ClientStatusCommand, ClientStatusEvent},
         handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
         packet::HandlerRegistry,
@@ -39,10 +39,10 @@ use hyperion::{
         text::IntoText,
     },
 };
-use hyperion_inventory::PlayerInventory;
+use hyperion_inventory::{Inventory, PlayerInventory};
 use hyperion_rank_tree::Team;
-use hyperion_utils::{EntityExt, LifetimeHandle};
-use tracing::info_span;
+use hyperion_utils::LifetimeHandle;
+use tracing::{event, info_span};
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
 
@@ -141,53 +141,23 @@ impl Module for AttackModule {
                 )| {
                     const IMMUNE_TICK_DURATION: i64 = 10;
 
-                    let span = info_span!("handle_attacks");
-                    let _enter = span.enter();
+                let span = info_span!("handle_attacks");
+                let _enter = span.enter();
 
-                    let system = it.system();
+                let system = it.system();
 
-                    let current_tick = compose.global().tick;
+                let current_tick = compose.global().tick;
 
-                    let world = it.world();
+                let world = it.world();
 
-                    for event in event_queue.drain() {
-                        let target = world.entity_from_id(event.target);
-                        let origin = world.entity_from_id(event.origin);
-                        let critical_hit = can_critical_hit(origin);
-                        origin.get::<(&ConnectionId, &Position, &mut KillCount, &mut PlayerInventory, &mut Armor, &CombatStats, &PlayerInventory, &Team, &mut Xp)>(|(origin_connection, origin_pos, kill_count, inventory, origin_armor, from_stats, from_inventory, origin_team, origin_xp)| {
-                            let damage = from_stats.damage + calculate_stats(from_inventory, critical_hit).damage;
-                            target.try_get::<(
-                                &ConnectionId,
-                                Option<&mut ImmuneUntil>,
-                                &mut Health,
-                                &mut Position,
-                                &Yaw,
-                                &CombatStats,
-                                &PlayerInventory,
-                                &Team,
-                                &mut Pose,
-                                &mut Xp,
-                                &mut Velocity
-                            )>(
-                                |(target_connection, immune_until, health, target_position, target_yaw, stats, target_inventory, target_team, target_pose, target_xp, target_velocity)| {
-                                    if let Some(immune_until) = immune_until {
-                                        if immune_until.tick > current_tick {
-                                            return;
-                                        }
-                                        immune_until.tick = current_tick + IMMUNE_TICK_DURATION;
-                                    }
+                for event in event_queue.drain() {
+                    let origin = world.entity_from_id(event.origin);
+                    let target = world.entity_from_id(event.target);
 
-                                    if target_team == origin_team {
-                                        let msg = "§cCannot attack teammates";
-                                        let pkt_msg = play::GameMessageS2c {
-                                            chat: msg.into_cow_text(),
-                                            overlay: false,
-                                        };
+                    let damage = damage_from(origin);
+                }
 
-                                        compose.unicast(&pkt_msg, *origin_connection, system).unwrap();
-                                        return;
-                                    }
-
+                /*
                                     let calculated_stats = calculate_stats(target_inventory, critical_hit);
                                     let armor = stats.armor + calculated_stats.armor;
                                     let toughness = stats.armor_toughness + calculated_stats.armor_toughness;
@@ -513,6 +483,7 @@ impl Module for AttackModule {
                             );
                         });
                     }
+        */
                 },
             );
 
@@ -593,99 +564,22 @@ fn get_respawn_pos(world: &World, base_pos: &Position) -> DVec3 {
     });
     position
 }
-// From minecraft source
-fn get_damage_left(damage: f32, armor: f32, armor_toughness: f32) -> f32 {
-    let f: f32 = 2.0 + armor_toughness / 4.0;
-    let g: f32 = (armor - damage / f).clamp(armor * 0.2, 20.0);
-    damage * (1.0 - g / 25.0)
-}
 
-fn get_inflicted_damage(damage: f32, protection: f32) -> f32 {
-    let f: f32 = protection.clamp(0.0, 20.0);
-    damage * (1.0 - f / 25.0)
-}
-
-const fn calculate_damage(item: &ItemStack) -> f32 {
-    match item.item {
-        ItemKind::WoodenSword | ItemKind::GoldenSword => 4.0,
-        ItemKind::StoneSword => 5.0,
-        ItemKind::IronSword => 6.0,
-        ItemKind::DiamondSword => 7.0,
-        ItemKind::NetheriteSword => 8.0,
-        ItemKind::WoodenPickaxe => 2.0,
-        _ => 1.0,
-    }
-}
-
-const fn calculate_armor(item: &ItemStack) -> f32 {
-    match item.item {
-        ItemKind::LeatherHelmet
-        | ItemKind::LeatherBoots
-        | ItemKind::GoldenHelmet
-        | ItemKind::GoldenBoots
-        | ItemKind::ChainmailHelmet
-        | ItemKind::ChainmailBoots => 1.0,
-        ItemKind::LeatherLeggings
-        | ItemKind::GoldenLeggings
-        | ItemKind::IronHelmet
-        | ItemKind::IronBoots => 2.0,
-        ItemKind::LeatherChestplate
-        | ItemKind::DiamondHelmet
-        | ItemKind::DiamondBoots
-        | ItemKind::NetheriteHelmet
-        | ItemKind::NetheriteBoots => 3.0,
-        ItemKind::ChainmailLeggings => 4.0,
-        ItemKind::IronLeggings | ItemKind::GoldenChestplate | ItemKind::ChainmailChestplate => 5.0,
-        ItemKind::IronChestplate | ItemKind::DiamondLeggings | ItemKind::NetheriteLeggings => 6.0,
-        ItemKind::DiamondChestplate | ItemKind::NetheriteChestplate => 8.0,
-        _ => 0.0,
-    }
-}
-
-const fn calculate_toughness(item: &ItemStack) -> f32 {
-    match item.item {
-        ItemKind::DiamondHelmet
-        | ItemKind::DiamondChestplate
-        | ItemKind::DiamondLeggings
-        | ItemKind::DiamondBoots => 2.0,
-
-        ItemKind::NetheriteHelmet
-        | ItemKind::NetheriteChestplate
-        | ItemKind::NetheriteLeggings
-        | ItemKind::NetheriteBoots => 3.0,
-        _ => 0.0,
-    }
-}
-
-// TODO: split this up into separate functions
-fn calculate_stats(inventory: &PlayerInventory, critical_hit: bool) -> CombatStats {
-    let hand = inventory.get_cursor();
-    let multiplier = if critical_hit { 1.5 } else { 1.0 };
-    let damage = calculate_damage(&hand.stack) * multiplier;
-    let armor = calculate_armor(&inventory.get_helmet().stack)
-        + calculate_armor(&inventory.get_chestplate().stack)
-        + calculate_armor(&inventory.get_leggings().stack)
-        + calculate_armor(&inventory.get_boots().stack);
-
-    let armor_toughness = calculate_toughness(&inventory.get_helmet().stack)
-        + calculate_toughness(&inventory.get_chestplate().stack)
-        + calculate_toughness(&inventory.get_leggings().stack)
-        + calculate_toughness(&inventory.get_boots().stack);
-
-    CombatStats {
-        armor,
-        armor_toughness,
-        damage,
-        // TODO
-        protection: 0.0,
-    }
-}
-
-fn can_critical_hit(player: EntityView<'_>) -> bool {
-    player.get::<(&(Prev, Position), &Position)>(|(prev_position, position)| {
-        // TODO: Do not allow critical hits if the player is on a ladder, vine, or water. None of
-        // these special blocks are currently on the map.
-        let position_delta_y = position.y - prev_position.y;
-        position_delta_y < 0.0
+fn is_falling(entity: EntityView<'_>) -> bool {
+    entity.get::<(&Position, &(Prev, Position))>(|(position, prev_position)| {
+        position.y - prev_position.y < 0.0
     })
 }
+
+fn can_critical_hit(entity: EntityView<'_>) -> bool {
+    is_falling(entity)
+}
+// // pipe
+//
+// fn damage_from(entity: EntityView<'_>) -> eyre::Result<f32> {
+//     let can_critical_hit = can_critical_hit(entity);
+//
+//     entity.get::<&CombatStats>(|stats| {
+//         stats.damage
+//     })
+// }

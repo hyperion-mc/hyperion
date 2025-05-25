@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Write};
 
+use bevy::prelude::*;
 use derive_build::Build;
-use flecs_ecs::macros::Component;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 use valence_protocol::{Encode, ItemKind, ItemStack, Packet};
 
@@ -219,7 +219,7 @@ impl FromIterator<ItemKind> for SortedItemList {
 // Define a custom key type
 new_key_type! { struct SortedItemId; }
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct CraftingRegistry {
     // changes when the registry is updated
     epoch: u64,

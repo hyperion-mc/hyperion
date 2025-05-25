@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, bail};
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use serde_json::Value;
 use tokio::{
     sync::Semaphore,
@@ -11,8 +11,6 @@ use tokio::{
 };
 use tracing::warn;
 use uuid::Uuid;
-
-use crate::runtime::AsyncRuntime;
 
 /// The API provider to use for Minecraft profile lookups
 #[derive(Clone, Copy)]
@@ -60,7 +58,7 @@ impl ApiProvider {
 ///
 /// Can use either the official Mojang API or [matdoes/mowojang](https://matdoes.dev/minecraft-uuids) as a data source.
 /// This does not include caching, this should be done separately probably using [`crate::storage::LocalDb`].
-#[derive(Component, Clone)]
+#[derive(Resource, Clone)]
 pub struct MojangClient {
     req: reqwest::Client,
     rate_limit: Arc<Semaphore>,
@@ -69,29 +67,29 @@ pub struct MojangClient {
 
 impl MojangClient {
     #[must_use]
-    pub fn new(tasks: &AsyncRuntime, provider: ApiProvider) -> Self {
+    pub fn new(provider: ApiProvider) -> Self {
         let rate_limit = Arc::new(Semaphore::new(provider.max_requests()));
         let interval_duration = provider.interval();
 
-        tasks.spawn({
-            let rate_limit = Arc::downgrade(&rate_limit);
-            let max_requests = provider.max_requests();
-            async move {
-                let mut interval = interval(interval_duration);
-                interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-                loop {
-                    interval.tick().await;
-
-                    let Some(rate_limit) = rate_limit.upgrade() else {
-                        return;
-                    };
-
-                    let available = rate_limit.available_permits();
-                    rate_limit.add_permits(max_requests - available);
-                }
-            }
-        });
+        // todo: tasks.spawn({
+        // let rate_limit = Arc::downgrade(&rate_limit);
+        // let max_requests = provider.max_requests();
+        // async move {
+        // let mut interval = interval(interval_duration);
+        // interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        //
+        // loop {
+        // interval.tick().await;
+        //
+        // let Some(rate_limit) = rate_limit.upgrade() else {
+        // return;
+        // };
+        //
+        // let available = rate_limit.available_permits();
+        // rate_limit.add_permits(max_requests - available);
+        // }
+        // }
+        // });
 
         Self {
             req: reqwest::Client::new(),
