@@ -47,33 +47,36 @@ use crate::{
 #[derive(Event)]
 pub struct Disconnect(pub(crate) ());
 
-fn try_decode<'a, P: Packet + Decode<'a>>(
+fn try_next_frame<'a>(
     compose: &'a Compose,
     connection_id: ConnectionId,
     decoder: &'a mut PacketDecoder,
-    handler: impl FnOnce(P),
-) {
+) -> Option<BorrowedPacketFrame<'a>> {
     let bump = compose.bump();
-    let packet = match decoder.try_next_packet(bump) {
-        Ok(Some(packet)) => packet,
-        Ok(None) => return,
+    match decoder.try_next_packet(bump) {
+        Ok(Some(packet)) => Some(packet),
+        Ok(None) => None,
         Err(e) => {
             error!("failed to decode packet: {e}");
             compose.io_buf().shutdown(connection_id);
-            return;
+            None
         }
-    };
+    }
+}
 
-    let packet = match packet.decode() {
-        Ok(packet) => packet,
+fn try_decode<'a, P: Packet + Decode<'a>>(
+    frame: BorrowedPacketFrame<'a>,
+    compose: &'a Compose,
+    connection_id: ConnectionId,
+) -> Option<P> {
+    match frame.decode() {
+        Ok(packet) => Some(packet),
         Err(e) => {
             error!("failed to decode packet: {e}");
             compose.io_buf().shutdown(connection_id);
-            return;
+            None
         }
-    };
-
-    handler(packet);
+    }
 }
 
 fn process_handshake(
@@ -88,27 +91,32 @@ fn process_handshake(
 ) {
     query
         .par_iter_mut()
-        .for_each(|(entity_id, connection_id, mut decoder)| {
-            try_decode(
-                &*compose,
-                *connection_id,
-                decoder.into_inner(),
-                |handshake: packets::handshaking::HandshakeC2s<'_>| {
-                    commands.command_scope(|mut commands| {
-                        // todo: check version is correct
-                        let mut entity = commands.entity(entity_id);
-                        entity.remove::<packet_state::Handshake>();
-                        match dbg!(handshake.next_state) {
-                            HandshakeNextState::Status => {
-                                entity.insert(packet_state::Status(()));
-                            }
-                            HandshakeNextState::Login => {
-                                entity.insert(packet_state::Login(()));
-                            }
-                        }
-                    });
-                },
-            );
+        .for_each(|(entity_id, &connection_id, mut decoder)| {
+            let Some(handshake) = try_next_frame(&*compose, connection_id, decoder.into_inner())
+                .map(|frame| {
+                    try_decode::<packets::handshaking::HandshakeC2s<'_>>(
+                        frame,
+                        &*compose,
+                        connection_id,
+                    )
+                })
+                .flatten()
+            else {
+                return;
+            };
+            commands.command_scope(|mut commands| {
+                // todo: check version is correct
+                let mut entity = commands.entity(entity_id);
+                entity.remove::<packet_state::Handshake>();
+                match dbg!(handshake.next_state) {
+                    HandshakeNextState::Status => {
+                        entity.insert(packet_state::Status(()));
+                    }
+                    HandshakeNextState::Login => {
+                        entity.insert(packet_state::Login(()));
+                    }
+                }
+            });
         });
 }
 // #[expect(clippy::too_many_arguments, reason = "todo; refactor")]
