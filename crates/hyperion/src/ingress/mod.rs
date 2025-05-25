@@ -91,7 +91,7 @@ fn process_handshake(
 ) {
     query
         .par_iter_mut()
-        .for_each(|(entity_id, &connection_id, mut decoder)| {
+        .for_each(|(entity_id, &connection_id, decoder)| {
             let Some(handshake) = try_next_frame(&*compose, connection_id, decoder.into_inner())
                 .map(|frame| {
                     try_decode::<packets::handshaking::HandshakeC2s<'_>>(
@@ -108,7 +108,7 @@ fn process_handshake(
                 // todo: check version is correct
                 let mut entity = commands.entity(entity_id);
                 entity.remove::<packet_state::Handshake>();
-                match dbg!(handshake.next_state) {
+                match handshake.next_state {
                     HandshakeNextState::Status => {
                         entity.insert(packet_state::Status(()));
                     }
@@ -237,75 +237,77 @@ fn process_handshake(
 //     uuid::Uuid::from_u128(digest)
 // }
 //
-// fn process_status(
-//     login_state: &mut PacketState,
-//     system: EntityView<'_>,
-//     packet: &BorrowedPacketFrame<'_>,
-//     packets: ConnectionId,
-//     compose: &Compose,
-// ) -> anyhow::Result<()> {
-//     debug_assert!(
-//         *login_state == PacketState::Status,
-//         "process_status called with invalid state: {login_state:?}"
-//     );
-//
-//     match packet.id {
-//         packets::status::QueryRequestC2s::ID => {
-//             let query_request: packets::status::QueryRequestC2s = packet.decode()?;
-//
-//             // let img_bytes = include_bytes!("data/hyperion.png");
-//
-//             // let favicon = general_purpose::STANDARD.encode(img_bytes);
-//             // let favicon = format!("data:image/png;base64,{favicon}");
-//
-//             let online = compose
-//                 .global()
-//                 .player_count
-//                 .load(std::sync::atomic::Ordering::Relaxed);
-//
-//             // https://wiki.vg/Server_List_Ping#Response
-//             let json = json!({
-//                 "version": {
-//                     "name": MINECRAFT_VERSION,
-//                     "protocol": PROTOCOL_VERSION,
-//                 },
-//                 "players": {
-//                     "online": online,
-//                     "max": 12_000,
-//                     "sample": [],
-//                 },
-//                 "description": "Getting 10k Players to PvP at Once on a Minecraft Server to Break the Guinness World Record",
-//                 // "favicon": favicon,
-//             });
-//
-//             let json = serde_json::to_string_pretty(&json)?;
-//
-//             let send = packets::status::QueryResponseS2c { json: &json };
-//
-//             trace!("sent query response: {query_request:?}");
-//             compose.unicast_no_compression(&send, packets)?;
-//         }
-//
-//         packets::status::QueryPingC2s::ID => {
-//             let query_ping: packets::status::QueryPingC2s = packet.decode()?;
-//
-//             let payload = query_ping.payload;
-//
-//             let send = packets::status::QueryPongS2c { payload };
-//
-//             compose.unicast_no_compression(&send, packets, system)?;
-//
-//             trace!("sent query pong: {query_ping:?}");
-//             *login_state = PacketState::Terminate;
-//         }
-//
-//         _ => warn!("unexpected packet id during status: {packet:?}"),
-//     }
-//
-//     // todo: check version is correct
-//
-//     Ok(())
-// }
+
+fn process_status(
+    mut query: Query<'_, '_, (&ConnectionId, &mut PacketDecoder), With<packet_state::Status>>,
+    compose: Res<'_, Compose>,
+) {
+    query
+        .par_iter_mut()
+        .for_each(|(&connection_id, decoder)| {
+            let Some(frame) = try_next_frame(&*compose, connection_id, decoder.into_inner()) else { return };
+            match frame.id {
+                packets::status::QueryRequestC2s::ID => {
+                    let Some(query_request) = try_decode::<packets::status::QueryRequestC2s>(
+                        frame,
+                        &*compose,
+                        connection_id,
+                    ) else { return };
+
+                    // let img_bytes = include_bytes!("data/hyperion.png");
+
+                    // let favicon = general_purpose::STANDARD.encode(img_bytes);
+                    // let favicon = format!("data:image/png;base64,{favicon}");
+
+                    let online = compose
+                        .global()
+                        .player_count
+                        .load(std::sync::atomic::Ordering::Relaxed);
+
+                    // https://wiki.vg/Server_List_Ping#Response
+                    let json = json!({
+                        "version": {
+                            "name": MINECRAFT_VERSION,
+                            "protocol": PROTOCOL_VERSION,
+                        },
+                        "players": {
+                            "online": online,
+                            "max": 12_000,
+                            "sample": [],
+                        },
+                        "description": "Getting 10k Players to PvP at Once on a Minecraft Server to Break the Guinness World Record",
+                        // "favicon": favicon,
+                    });
+
+                    let json = serde_json::to_string_pretty(&json).expect("json serialization should succeed");
+
+                    let send = packets::status::QueryResponseS2c { json: &json };
+
+                    trace!("sent query response: {query_request:?}");
+                    compose.unicast_no_compression(&send, connection_id).unwrap();
+                }
+
+                packets::status::QueryPingC2s::ID => {
+                    let Some(query_ping) = try_decode::<packets::status::QueryPingC2s>(
+                        frame,
+                        &*compose,
+                        connection_id,
+                    ) else { return };
+
+                    let payload = query_ping.payload;
+
+                    let send = packets::status::QueryPongS2c { payload };
+
+                    compose.unicast_no_compression(&send, connection_id).unwrap();
+                },
+
+                _ => {
+                    warn!("player sent invalid packet id during status");
+                    compose.io_buf().shutdown(connection_id);
+                }
+            }
+        });
+}
 
 // fn generate_ingress_events(
 //    lookup: ResMut<StreamLookup>,
@@ -353,7 +355,7 @@ pub struct IngressPlugin;
 impl Plugin for IngressPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<Disconnect>();
-        app.add_systems(Update, process_handshake);
+        app.add_systems(Update, (process_handshake, process_status));
 
         //        world
         //            .system_named::<(&ReceiveState, &ConnectionId, &mut PacketDecoder)>("ingress_to_ecs")
