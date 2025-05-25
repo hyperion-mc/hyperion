@@ -21,14 +21,9 @@ struct CommandMeta {
     /// SAFETY: The `value` must point to a value of type `T: Command`,
     /// where `T` is some specific type that was used to produce this metadata.
     ///
-    /// `world` is optional to allow this one function pointer to perform double-duty as a drop.
-    ///
     /// Advances `cursor` by the size of `T` in bytes.
-    consume_command_and_get_size: unsafe fn(
-        value: OwningPtr<'_, Unaligned>,
-        world: Option<NonNull<World>>,
-        cursor: &mut usize,
-    ),
+    consume_command_and_get_size:
+        unsafe fn(value: OwningPtr<'_, Unaligned>, world: NonNull<World>, cursor: &mut usize),
 }
 
 #[derive(Default, Clone)]
@@ -68,25 +63,19 @@ impl CommandChannel {
         }
 
         let meta = CommandMeta {
-            consume_command_and_get_size: |command, world, cursor| {
+            consume_command_and_get_size: |command, mut world, cursor| {
                 *cursor += size_of::<C>();
                 // SAFETY: According to the invariants of `CommandMeta.consume_command_and_get_size`,
                 // `command` must point to a value of type `C`.
                 let command: C = unsafe { command.read_unaligned() };
-                match world {
-                    // Apply command to the provided world...
-                    Some(mut world) => {
-                        // SAFETY: Caller ensures pointer is not null
-                        let world = unsafe { world.as_mut() };
-                        command.apply(world);
-                        // The command may have queued up world commands, which we flush here to ensure they are also picked up.
-                        // If the current command queue already the World Command queue, this will still behave appropriately because the global cursor
-                        // is still at the current `stop`, ensuring only the newly queued Commands will be applied.
-                        world.flush();
-                    }
-                    // ...or discard it.
-                    None => drop(command),
-                }
+                // Apply command to the provided world
+                // SAFETY: Caller ensures pointer is not null
+                let world = unsafe { world.as_mut() };
+                command.apply(world);
+                // The command may have queued up world commands, which we flush here to ensure they are also picked up.
+                // If the current command queue already the World Command queue, this will still behave appropriately because the global cursor
+                // is still at the current `stop`, ensuring only the newly queued Commands will be applied.
+                world.flush();
             },
         };
 
@@ -121,14 +110,13 @@ impl CommandChannel {
     #[inline]
     pub fn apply(&self, world: &mut World) {
         world.flush();
-        self.apply_or_drop_queued(Some(world.into()));
+        self.apply_or_drop_queued(world.into());
     }
 
-    /// If `world` is [`Some`], this will apply the queued [commands](`Command`).
-    /// If `world` is [`None`], this will drop the queued [commands](`Command`) (without applying them).
+    /// This will apply the queued [commands](`Command`).
     /// This clears the channel.
     #[inline]
-    fn apply_or_drop_queued(&self, world: Option<NonNull<World>>) {
+    fn apply_or_drop_queued(&self, world: NonNull<World>) {
         let mut inner = self.inner.lock().unwrap();
 
         // SAFETY: If this is the command queue on world, world will not be dropped as we have a mutable reference
@@ -181,18 +169,6 @@ impl CommandChannel {
             inner.bytes.set_len(start);
             inner.cursor = start;
         };
-    }
-}
-
-impl Drop for CommandChannel {
-    fn drop(&mut self) {
-        if !self.inner.lock().unwrap().bytes.is_empty() {
-            warn!(
-                "CommandChannel has un-applied commands being dropped. Did you forget to call \
-                 SystemState::apply?"
-            );
-        }
-        self.apply_or_drop_queued(None);
     }
 }
 
