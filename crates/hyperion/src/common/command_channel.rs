@@ -15,7 +15,7 @@ use bevy::{
     },
     prelude::*,
 };
-use tracing::warn;
+use tracing::{error, warn};
 
 struct CommandMeta {
     /// SAFETY: The `value` must point to a value of type `T: Command`,
@@ -205,7 +205,11 @@ impl Plugin for CommandChannelPlugin {
     }
 }
 
-fn sync_command_channel(channel: Res<'_, CommandChannel>, mut commands: Commands<'_, '_>) {
-    let channel = channel.into_inner().clone();
-    commands.queue(move |world: &mut World| channel.apply(world));
+fn sync_command_channel(world: &mut World) {
+    let Some(channel) = world.get_resource::<CommandChannel>() else {
+        error!("cannot sync CommandChannel because it is missing");
+        return;
+    };
+    let channel = channel.clone();
+    channel.apply(world);
 }
