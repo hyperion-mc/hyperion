@@ -83,7 +83,7 @@ kanal = '0.1.1'
 libc = '0.2.172'
 libdeflater = '1.24.0'
 memmap2 = '0.9.5'
-mio = { version = '1.0.3', features = ['os-poll', 'net'] }
+mio = { version = '1.0.4', features = ['os-poll', 'net'] }
 more-asserts = '0.3.1'
 num-derive = '0.4.2'
 num-traits = '0.2.19'
@@ -110,10 +110,10 @@ tar = '0.4.41'
 thiserror = '2.0.12'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
-tokio = '1.45.0'
+tokio = '1.45.1'
 toml = '0.8.14'
 tracing-appender = '0.2.3'
-uuid = '1.16.0'
+uuid = '1.17.0'
 
 [workspace.dependencies.hyperion-proxy-module]
 path = "crates/hyperion-proxy-module"
