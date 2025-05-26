@@ -7,6 +7,7 @@ use bytes::{Buf, BytesMut};
 use dashmap::DashMap;
 use hyperion_proto::ArchivedProxyToServerMessage;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
 
@@ -14,9 +15,13 @@ use crate::{
     ConnectionId, PacketDecoder,
     command_channel::CommandChannel,
     ingress::Disconnect,
+    net::{Compose, packet_channel},
     runtime::AsyncRuntime,
     simulation::{EgressComm, StreamLookup, packet_state},
 };
+
+// TODO: Determine a better default
+const DEFAULT_FRAGMENT_SIZE: usize = 4096;
 
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     let output = if cfg!(target_os = "windows") {
@@ -97,6 +102,8 @@ async fn inner(
                 let command_channel = command_channel.clone();
                 tokio::spawn(async move {
                     let mut reader = ProxyReader::new(read);
+                    let mut player_packet_sender: FxHashMap<u64, packet_channel::Sender> =
+                        FxHashMap::default();
 
                     loop {
                         let buffer = match reader.next_server_packet_buffer().await {
@@ -115,6 +122,15 @@ async fn inner(
                             ArchivedProxyToServerMessage::PlayerConnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
+                                let (sender, receiver) =
+                                    packet_channel::channel(DEFAULT_FRAGMENT_SIZE);
+                                if player_packet_sender.insert(stream, sender).is_some() {
+                                    error!(
+                                        "PlayerConnect: player with same stream id already exists \
+                                         in player_packet_sender"
+                                    );
+                                }
+
                                 command_channel.push(move |world: &mut World| {
                                     let player = world
                                         .spawn((
@@ -124,6 +140,7 @@ async fn inner(
                                             packet_state::Handshake(()),
                                             // ActiveAnimation::NONE,
                                             PacketDecoder::default(),
+                                            receiver,
                                         ))
                                         .id();
                                     world
@@ -134,6 +151,14 @@ async fn inner(
                             }
                             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+
+                                if player_packet_sender.remove(&stream).is_none() {
+                                    error!(
+                                        "PlayerDisconnect: no player with stream id exists in \
+                                         player_packet_sender"
+                                    );
+                                }
+
                                 command_channel.push(move |world: &mut World| {
                                     let player = world
                                         .get_resource_mut::<StreamLookup>()
@@ -149,28 +174,45 @@ async fn inner(
                             ArchivedProxyToServerMessage::PlayerPackets(message) => {
                                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
 
-                                // TODO: avoid this allocation
-                                let data = message.data.to_vec();
-
-                                command_channel.push(move |world: &mut World| {
-                                    let lookup = world
-                                        .get_resource_mut::<StreamLookup>()
-                                        .expect("StreamLookup resource should exist");
-                                    let player = *lookup.get(&stream).expect(
-                                        "player from PlayerPackets must exist in the stream \
-                                         lookup map",
+                                let Some(sender) = player_packet_sender.get_mut(&stream) else {
+                                    error!(
+                                        "PlayerPackets: no player with stream id exists in \
+                                         player_packet_sender"
                                     );
+                                    return;
+                                };
 
-                                    let mut player = world
-                                        .get_entity_mut(player)
-                                        .expect("player from StreamLookup must be alive");
-                                    let mut decoder = player
-                                        .get_mut::<PacketDecoder>()
-                                        .expect("all players must have a PacketDecodewr");
-
-                                    decoder.shift_excess();
-                                    decoder.queue_slice(&data);
-                                });
+                                if let Err(e) = sender.send(&message.data) {
+                                    use packet_channel::SendError;
+                                    let needs_shutdown;
+                                    match e {
+                                        SendError::ZeroLengthPacket => {
+                                            warn!(
+                                                "A player sent an illegal zero-length packet, \
+                                                 disconnecting"
+                                            );
+                                            needs_shutdown = true;
+                                        }
+                                        SendError::TooLargePacket => {
+                                            warn!(
+                                                "A player sent a packet that is too large, \
+                                                 disconnecting"
+                                            );
+                                            needs_shutdown = true;
+                                        }
+                                        SendError::AlreadyClosed => {
+                                            needs_shutdown = false;
+                                        }
+                                    }
+                                    if needs_shutdown {
+                                        command_channel.push(move |world: &mut World| {
+                                            let compose = world
+                                                .get_resource::<Compose>()
+                                                .expect("Compose resource should exist");
+                                            compose.io_buf().shutdown(ConnectionId::new(stream));
+                                        });
+                                    }
+                                }
                             }
                         }
                     }

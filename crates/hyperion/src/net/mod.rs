@@ -27,6 +27,7 @@ use crate::{
 pub mod agnostic;
 pub mod decoder;
 pub mod encoder;
+pub mod packet_channel;
 pub mod packets;
 pub mod proxy;
 

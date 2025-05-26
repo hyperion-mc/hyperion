@@ -50,6 +50,7 @@ resolver = '2'
 [workspace.dependencies]
 anyhow = '1.0.98'
 approx = '0.5.1'
+arc-swap = '1.7.1'
 arrayvec = '0.7.4'
 base64 = '0.22.1'
 bitfield-struct = "0.10.1"

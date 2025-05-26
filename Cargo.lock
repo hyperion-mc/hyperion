@@ -333,6 +333,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3636,6 +3642,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "approx",
+ "arc-swap",
  "base64 0.22.1",
  "bevy",
  "bitfield-struct 0.10.1",
@@ -3658,7 +3665,6 @@ dependencies = [
  "heed",
  "humantime",
  "hyperion-crafting",
- "hyperion-genmap",
  "hyperion-nerd-font",
  "hyperion-palette",
  "hyperion-proto",
@@ -3676,6 +3682,7 @@ dependencies = [
  "ordered-float 5.0.0",
  "ouroboros",
  "parking_lot",
+ "proptest",
  "rayon",
  "reqwest",
  "rkyv",
