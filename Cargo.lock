@@ -1564,7 +1564,7 @@ dependencies = [
  "derive_more 2.0.1",
  "fastrand 2.3.0",
  "geometry",
- "glam 0.30.3",
+ "glam 0.29.3",
  "num-traits",
  "ordered-float 5.0.0",
  "plotters",
@@ -3091,7 +3091,7 @@ name = "geometry"
 version = "0.1.0"
 dependencies = [
  "approx",
- "glam 0.30.3",
+ "glam 0.29.3",
  "ordered-float 5.0.0",
  "rand 0.9.1",
  "serde",
@@ -3179,9 +3179,6 @@ name = "glam"
 version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b46b9ca4690308844c644e7c634d68792467260e051c8543e0c7871662b3ba7"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "glob"
@@ -3660,7 +3657,7 @@ dependencies = [
  "fastrand 2.3.0",
  "flate2",
  "geometry",
- "glam 0.30.3",
+ "glam 0.29.3",
  "heapless",
  "heed",
  "humantime",
@@ -3859,7 +3856,7 @@ dependencies = [
 name = "hyperion-proto"
 version = "0.1.0"
 dependencies = [
- "glam 0.30.3",
+ "glam 0.29.3",
  "rkyv",
 ]
 
@@ -3874,7 +3871,7 @@ dependencies = [
  "colored",
  "dotenvy",
  "envy",
- "glam 0.30.3",
+ "glam 0.29.3",
  "heapless",
  "hyperion-proto",
  "kanal",
@@ -6746,7 +6743,7 @@ dependencies = [
  "fastrand 2.3.0",
  "flecs_ecs",
  "geometry",
- "glam 0.30.3",
+ "glam 0.29.3",
  "hyperion",
  "hyperion-utils",
  "rayon",
