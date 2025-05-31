@@ -1024,7 +1024,7 @@ dependencies = [
  "approx",
  "bevy_reflect",
  "derive_more 1.0.0",
- "glam 0.29.3",
+ "glam",
  "itertools 0.14.0",
  "libm",
  "rand 0.8.5",
@@ -1066,7 +1066,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75e0258423c689f764556e36b5d9eebdbf624b29a1fd5b33cd9f6c42dcc4d5f3"
 dependencies = [
- "glam 0.29.3",
+ "glam",
 ]
 
 [[package]]
@@ -1115,7 +1115,7 @@ dependencies = [
  "downcast-rs 2.0.1",
  "erased-serde",
  "foldhash",
- "glam 0.29.3",
+ "glam",
  "serde",
  "smallvec",
  "smol_str",
@@ -1544,12 +1544,12 @@ checksum = "1628fb46dfa0b37568d12e5edd512553eccf6a22a78e8bde00bb4aed84d5bdbf"
 [[package]]
 name = "bvh"
 version = "0.1.0"
-source = "git+https://github.com/andrewgazelka/bvh-data#ab0291667aca15af6e38cff05a2581bd8ac81982"
+source = "git+https://github.com/TestingPlant/bvh-data#9bffb03a4b894a7884c9ec0da986bdde732ac704"
 dependencies = [
  "arrayvec",
  "bytes",
  "fast_hilbert",
- "glam 0.30.3",
+ "glam",
  "heapless",
  "more-asserts",
 ]
@@ -1564,7 +1564,7 @@ dependencies = [
  "derive_more 2.0.1",
  "fastrand 2.3.0",
  "geometry",
- "glam 0.29.3",
+ "glam",
  "num-traits",
  "ordered-float 5.0.0",
  "plotters",
@@ -2568,7 +2568,7 @@ checksum = "b0a05902cf601ed11d564128448097b98ebe3c6574bd7b6a653a3d56d54aa020"
 dependencies = [
  "const_panic",
  "encase_derive",
- "glam 0.29.3",
+ "glam",
  "thiserror 1.0.69",
 ]
 
@@ -3091,7 +3091,7 @@ name = "geometry"
 version = "0.1.0"
 dependencies = [
  "approx",
- "glam 0.29.3",
+ "glam",
  "ordered-float 5.0.0",
  "rand 0.9.1",
  "serde",
@@ -3173,12 +3173,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
 ]
-
-[[package]]
-name = "glam"
-version = "0.30.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b46b9ca4690308844c644e7c634d68792467260e051c8543e0c7871662b3ba7"
 
 [[package]]
 name = "glob"
@@ -3495,7 +3489,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c9e718d32b6e6b2b32354e1b0367025efdd0b11d6a740b905ddf5db1074679"
 dependencies = [
  "constgebra",
- "glam 0.29.3",
+ "glam",
  "tinyvec",
 ]
 
@@ -3657,12 +3651,13 @@ dependencies = [
  "fastrand 2.3.0",
  "flate2",
  "geometry",
- "glam 0.29.3",
+ "glam",
  "heapless",
  "heed",
  "humantime",
  "hyperion-crafting",
  "hyperion-nerd-font",
+ "hyperion-packet-macros",
  "hyperion-palette",
  "hyperion-proto",
  "hyperion-text",
@@ -3699,6 +3694,7 @@ dependencies = [
  "tracing-tracy",
  "uuid",
  "valence_anvil",
+ "valence_bytes",
  "valence_generated",
  "valence_ident",
  "valence_nbt",
@@ -3856,7 +3852,7 @@ dependencies = [
 name = "hyperion-proto"
 version = "0.1.0"
 dependencies = [
- "glam 0.29.3",
+ "glam",
  "rkyv",
 ]
 
@@ -3871,7 +3867,7 @@ dependencies = [
  "colored",
  "dotenvy",
  "envy",
- "glam 0.29.3",
+ "glam",
  "heapless",
  "hyperion-proto",
  "kanal",
@@ -6743,7 +6739,7 @@ dependencies = [
  "fastrand 2.3.0",
  "flecs_ecs",
  "geometry",
- "glam 0.29.3",
+ "glam",
  "hyperion",
  "hyperion-utils",
  "rayon",
@@ -7399,7 +7395,7 @@ dependencies = [
 [[package]]
 name = "valence_anvil"
 version = "0.1.0"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "bitfield-struct 0.9.5",
  "bitvec",
@@ -7407,6 +7403,7 @@ dependencies = [
  "flate2",
  "lru",
  "thiserror 1.0.69",
+ "valence_bytes",
  "valence_nbt",
  "valence_server",
 ]
@@ -7414,7 +7411,7 @@ dependencies = [
 [[package]]
 name = "valence_build_utils"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -7422,9 +7419,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "valence_bytes"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "valence_entity"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "bevy_app 0.12.1",
@@ -7453,7 +7458,7 @@ dependencies = [
 [[package]]
 name = "valence_generated"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -7470,17 +7475,19 @@ dependencies = [
 [[package]]
 name = "valence_ident"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
+ "bytes",
  "serde",
  "thiserror 1.0.69",
+ "valence_bytes",
  "valence_ident_macros",
 ]
 
 [[package]]
 name = "valence_ident_macros"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7490,15 +7497,15 @@ dependencies = [
 [[package]]
 name = "valence_math"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
- "glam 0.30.3",
+ "glam",
 ]
 
 [[package]]
 name = "valence_nbt"
 version = "0.8.0"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "byteorder",
  "cesu8",
@@ -7511,7 +7518,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7527,6 +7534,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "valence_bytes",
  "valence_generated",
  "valence_ident",
  "valence_math",
@@ -7538,7 +7546,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol_macros"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -7549,7 +7557,7 @@ dependencies = [
 [[package]]
 name = "valence_registry"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "bevy_app 0.12.1",
@@ -7567,7 +7575,7 @@ dependencies = [
 [[package]]
 name = "valence_server"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -7583,6 +7591,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "tracing",
  "uuid",
+ "valence_bytes",
  "valence_entity",
  "valence_generated",
  "valence_math",
@@ -7595,7 +7604,7 @@ dependencies = [
 [[package]]
 name = "valence_server_common"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "bevy_app 0.12.1",
  "bevy_ecs 0.12.1",
@@ -7608,7 +7617,7 @@ dependencies = [
 [[package]]
 name = "valence_text"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/andrewgazelka/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#a4a12e17b333d6cf78e460469541a5423c724d70"
 dependencies = [
  "serde",
  "serde_json",

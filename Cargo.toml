@@ -120,7 +120,7 @@ uuid = '1.16.0'
 path = "crates/hyperion-proxy-module"
 
 [workspace.dependencies.bvh]
-git = 'https://github.com/andrewgazelka/bvh-data'
+git = 'https://github.com/TestingPlant/bvh-data'
 
 [workspace.dependencies.bvh-region]
 path = 'crates/bvh-region'
@@ -267,43 +267,47 @@ features = ['timer-fallback']
 version = '0.11.4'
 
 [workspace.dependencies.valence_anvil]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['parsing']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_build_utils]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
+
+[workspace.dependencies.valence_bytes]
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_generated]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_ident]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_nbt]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['serde']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_protocol]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['compression']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_registry]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_server]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_text]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.tag]
 path = "events/tag"
