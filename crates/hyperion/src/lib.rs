@@ -35,6 +35,7 @@ use std::{
     io::Write,
     net::SocketAddr,
     sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -178,9 +179,6 @@ struct Shutdown {
 impl Plugin for HyperionCore {
     /// Initialize the server.
     fn build(&self, app: &mut App) {
-        // Minecraft is 20 TPS
-        app.insert_resource(Time::<Fixed>::from_hz(20.0));
-
         // 10k players * 2 file handles / player  = 20,000. We can probably get away with 16,384 file handles
         #[cfg(unix)]
         if let Err(e) = adjust_file_descriptor_limits(32_768) {
@@ -280,12 +278,22 @@ impl Plugin for HyperionCore {
         // app.insert_resource(runtime);
         app.insert_resource(StreamLookup::default());
         //
-        app.add_plugins((CommandChannelPlugin, IngressPlugin, EgressPlugin, SimPlugin));
+        app.add_plugins((
+            bevy::MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(
+                Duration::from_millis(10),
+            )),
+            CommandChannelPlugin,
+            IngressPlugin,
+            EgressPlugin,
+            SimPlugin,
+        ));
         // app
         //     .component::<Player>()
         //     .add_trait::<(flecs::With, EntitySize)>();
         //
         // app.insert_resource(IgnMap::default());
+        // Minecraft is 20 TPS
+        app.insert_resource(Time::<Fixed>::from_hz(20.0));
     }
 }
 

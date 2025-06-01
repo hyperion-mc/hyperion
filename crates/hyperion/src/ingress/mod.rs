@@ -437,12 +437,7 @@ fn decode_play_packets(
     for (entity_id, &connection_id, decoder, receiver) in query {
         let decoder = decoder.into_inner();
         let receiver = receiver.into_inner();
-        while let Some(frame) = try_next_frame(
-            compose,
-            connection_id,
-            decoder,
-            receiver)
-        {
+        while let Some(frame) = try_next_frame(compose, connection_id, decoder, receiver) {
             let packet = match frame.id {
                 packets::play::AdvancementTabC2s::ID => {
                     try_decode(frame, compose, connection_id).map(PlayPacket::AdvancementTab)
@@ -481,7 +476,8 @@ fn decode_play_packets(
                     try_decode(frame, compose, connection_id).map(PlayPacket::CraftRequest)
                 }
                 packets::play::CreativeInventoryActionC2s::ID => {
-                    try_decode(frame, compose, connection_id).map(PlayPacket::CreativeInventoryAction)
+                    try_decode(frame, compose, connection_id)
+                        .map(PlayPacket::CreativeInventoryAction)
                 }
                 packets::play::CustomPayloadC2s::ID => {
                     try_decode(frame, compose, connection_id).map(PlayPacket::CustomPayload)
@@ -550,7 +546,8 @@ fn decode_play_packets(
                     try_decode(frame, compose, connection_id).map(PlayPacket::RenameItem)
                 }
                 packets::play::RequestCommandCompletionsC2s::ID => {
-                    try_decode(frame, compose, connection_id).map(PlayPacket::RequestCommandCompletions)
+                    try_decode(frame, compose, connection_id)
+                        .map(PlayPacket::RequestCommandCompletions)
                 }
                 packets::play::ResourcePackStatusC2s::ID => {
                     try_decode(frame, compose, connection_id).map(PlayPacket::ResourcePackStatus)
