@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use bevy::prelude::*;
 pub use cached_save::cached_save;
-pub use lifetime::*;
 
 pub trait EntityExt: Sized {
     fn minecraft_id(&self) -> i32;

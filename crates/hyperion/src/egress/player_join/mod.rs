@@ -7,6 +7,7 @@ use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::{error, info, instrument, trace, warn};
+use valence_bytes::{Bytes, CowUtf8Bytes, Utf8Bytes};
 use valence_protocol::{
     ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
     game_mode::OptGameMode,
@@ -91,7 +92,6 @@ pub fn player_join_world(
     let entity_id = trigger.target();
     let id = entity_id.minecraft_id();
 
-    // TODO: skin may not exist yet
     let (uuid, name, &connection_id, position, yaw, pitch, skin) = match target_query.get(entity_id)
     {
         Ok(components) => components,
@@ -123,10 +123,10 @@ pub fn player_join_world(
     let registry_codec = registry_codec_raw();
     let codec = RegistryCodec::default();
 
-    let dimension_names: BTreeSet<Ident<Cow<'_, str>>> = codec
+    let dimension_names: BTreeSet<Ident> = codec
         .registry(BiomeRegistry::KEY)
         .iter()
-        .map(|value| value.name.as_str_ident().into())
+        .map(|value| value.name.clone())
         .collect();
 
     let dimension_name = ident!("overworld");
@@ -222,7 +222,7 @@ pub fn player_join_world(
         // Update player list entries
         let entry = PlayerListEntry {
             player_uuid: uuid.0,
-            username: name.to_string().into(),
+            username: (***name).into(),
             properties: Cow::Owned(Vec::new()),
             chat_data: None,
             listed: true,
@@ -253,7 +253,11 @@ pub fn player_join_world(
         //         metadata.encode(*flags);
     }
 
-    let all_player_names = all_player_names.iter().map(String::as_str).collect();
+    let all_player_names = all_player_names
+        .iter()
+        .map(String::as_str)
+        .map(Into::into)
+        .collect();
 
     let actions = PlayerListActions::default()
         .with_add_player(true)
@@ -278,16 +282,16 @@ pub fn player_join_world(
 
     // todo: in future, do not clone
     let property = valence_protocol::profile::Property {
-        name: "textures".to_string(),
-        value: textures,
-        signature: Some(signature),
+        name: Utf8Bytes::from_static("textures"),
+        value: textures.into(),
+        signature: Some(signature.into()),
     };
 
     let property = &[property];
 
     let singleton_entry = &[PlayerListEntry {
         player_uuid: **uuid,
-        username: Cow::Borrowed(name),
+        username: (***name).into(),
         properties: Cow::Borrowed(property),
         chat_data: None,
         listed: true,
@@ -305,11 +309,11 @@ pub fn player_join_world(
     compose.broadcast(&pkt).send().unwrap();
     bundle.add_packet(&pkt).unwrap();
 
-    let player_name: Vec<&str> = vec![&**name];
+    let player_name: Vec<CowUtf8Bytes<'_>> = vec![(***name).into()];
 
     compose
         .broadcast(&play::TeamS2c {
-            team_name: "no_tag",
+            team_name: Utf8Bytes::from_static("no_tag").into(),
             mode: Mode::AddEntities {
                 entities: player_name,
             },
@@ -341,7 +345,7 @@ pub fn player_join_world(
 
     bundle
         .add_packet(&play::TeamS2c {
-            team_name: "no_tag",
+            team_name: Utf8Bytes::from_static("no_tag").into(),
             mode: Mode::AddEntities {
                 entities: all_player_names,
             },
@@ -388,7 +392,7 @@ fn generate_cached_packet_bytes(
     buf.push(brand_len).unwrap();
     buf.extend_from_slice(brand).unwrap();
 
-    let bytes = RawBytes::from(buf.as_slice());
+    let bytes = RawBytes::from(Bytes::from_owner(buf));
 
     let brand = play::CustomPayloadS2c {
         channel: ident!("minecraft:brand").into(),
@@ -401,7 +405,7 @@ fn generate_cached_packet_bytes(
 
     encoder
         .append_packet(&play::TeamS2c {
-            team_name: "no_tag",
+            team_name: Utf8Bytes::from_static("no_tag").into(),
             mode: Mode::CreateTeam {
                 team_display_name: Cow::default(),
                 friendly_flags: TeamFlags::default(),

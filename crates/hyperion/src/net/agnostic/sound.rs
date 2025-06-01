@@ -10,7 +10,7 @@ use crate::PacketBundle;
 
 #[must_use]
 pub struct Sound {
-    raw: play::PlaySoundS2c<'static>,
+    raw: play::PlaySoundS2c,
 }
 
 #[must_use]
@@ -19,7 +19,7 @@ pub struct SoundBuilder {
     pitch: f32,
     volume: f32,
     seed: Option<i64>,
-    sound: valence_ident::Ident<&'static str>,
+    sound: valence_ident::Ident,
 }
 
 impl SoundBuilder {
@@ -61,7 +61,7 @@ impl PacketBundle for &Sound {
     }
 }
 
-pub const fn sound(sound: valence_ident::Ident<&'static str>, position: Vec3) -> SoundBuilder {
+pub const fn sound(sound: valence_ident::Ident, position: Vec3) -> SoundBuilder {
     SoundBuilder {
         position,
         pitch: 1.0,

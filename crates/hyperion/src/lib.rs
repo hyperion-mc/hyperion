@@ -47,7 +47,6 @@ use glam::{I16Vec2, IVec2};
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 // use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
-use simulation::blocks::Blocks;
 use storage::{LocalDb, SkinHandler};
 use tracing::{info, info_span, warn};
 pub use uuid;
@@ -74,7 +73,10 @@ use crate::{
     runtime::AsyncRuntime,
     // runtime::Tasks,
     simulation::{
+        SimPlugin,
         StreamLookup,
+        blocks::Blocks,
+        packet::{HandshakePacket, LoginPacket, PlayPacket, StatusPacket},
         //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
     },
     util::mojang::{ApiProvider, MojangClient},
@@ -254,9 +256,13 @@ impl Plugin for HyperionCore {
         app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
         app.insert_resource(Blocks::empty(&runtime));
         app.insert_resource(runtime);
-        //
         app.add_event::<SetEndpoint>();
         app.add_observer(set_server_endpoint);
+
+        app.add_event::<HandshakePacket>();
+        app.add_event::<StatusPacket>();
+        app.add_event::<LoginPacket>();
+        app.add_event::<PlayPacket>();
 
         let global = Global::new(shared.clone());
         //
@@ -274,9 +280,7 @@ impl Plugin for HyperionCore {
         // app.insert_resource(runtime);
         app.insert_resource(StreamLookup::default());
         //
-        app.add_plugins((CommandChannelPlugin, IngressPlugin, EgressPlugin));
-        // app.add_plugins((SimModule, EgressPlugin, IngressModule));
-        //
+        app.add_plugins((CommandChannelPlugin, IngressPlugin, EgressPlugin, SimPlugin));
         // app
         //     .component::<Player>()
         //     .add_trait::<(flecs::With, EntitySize)>();

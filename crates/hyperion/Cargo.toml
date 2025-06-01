@@ -33,7 +33,7 @@ hyperion-crafting = { workspace = true }
 # hyperion-event-macros = { workspace = true }
 # hyperion-inventory = { workspace = true }
 hyperion-nerd-font = { workspace = true }
-# hyperion-packet-macros = { workspace = true }
+hyperion-packet-macros = { workspace = true }
 hyperion-palette = { workspace = true }
 hyperion-proto = { workspace = true }
 hyperion-text = { workspace = true }
@@ -66,6 +66,7 @@ tracing = { workspace = true }
 tracing-tracy = { workspace = true }
 uuid = { workspace = true }
 valence_anvil = { workspace = true }
+valence_bytes = { workspace = true }
 valence_generated = { workspace = true }
 valence_ident = { workspace = true }
 valence_nbt = { workspace = true }

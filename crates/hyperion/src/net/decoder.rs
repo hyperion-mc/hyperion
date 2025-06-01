@@ -5,9 +5,10 @@ use std::{
 
 use anyhow::{Context, bail, ensure};
 use bevy::prelude::*;
-use bytes::Buf;
+use bytes::{Buf, Bytes};
 use valence_protocol::{
-    CompressionThreshold, Decode, MAX_PACKET_SIZE, Packet, VarInt, var_int::VarIntDecodeError,
+    CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
+    var_int::VarIntDecodeError,
 };
 
 use crate::net::packet_channel::RawPacket;
@@ -18,30 +19,33 @@ pub struct PacketDecoder {
     threshold: CompressionThreshold,
 }
 
-#[derive(Copy, Clone)]
-pub struct BorrowedPacketFrame<'a> {
+#[derive(Clone)]
+pub struct BorrowedPacketFrame {
     /// The ID of the decoded packet.
     pub id: i32,
     /// The contents of the packet after the leading [`VarInt`] ID.
-    pub body: &'a [u8],
+    // TODO: It may be more efficient to not create a Bytes if the packet implements Decode to
+    // avoid allocating the Bytes metadata. It might also be better to allocate the Bytes
+    // metadata over an entire Fragment, and then create subslices as needed to reduce allocations
+    pub body: Bytes,
 }
 
-impl std::fmt::Debug for BorrowedPacketFrame<'_> {
+impl std::fmt::Debug for BorrowedPacketFrame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BorrowedPacketFrame")
             .field("id", &format!("0x{:x}", self.id))
-            .field("body", &bytes::Bytes::copy_from_slice(self.body))
+            .field("body", &self.body)
             .finish()
     }
 }
 
-impl<'a> BorrowedPacketFrame<'a> {
+impl BorrowedPacketFrame {
     /// Attempts to decode this packet as type `P`. An error is returned if the
     /// packet ID does not match, the body of the packet failed to decode, or
     /// some input was missed.
-    pub fn decode<P>(&self) -> anyhow::Result<P>
+    pub fn decode<P>(self) -> anyhow::Result<P>
     where
-        P: Packet + Decode<'a>,
+        P: Packet + DecodeBytes,
     {
         ensure!(
             P::ID == self.id,
@@ -53,7 +57,7 @@ impl<'a> BorrowedPacketFrame<'a> {
 
         let mut r = self.body;
 
-        let pkt = P::decode(&mut r)?;
+        let pkt = P::decode_bytes(&mut r)?;
 
         ensure!(
             r.is_empty(),
@@ -67,12 +71,12 @@ impl<'a> BorrowedPacketFrame<'a> {
 }
 
 impl PacketDecoder {
-    pub fn try_next_packet<'b>(
-        &'b mut self,
-        bump: &'b bumpalo::Bump,
-        raw_packet: &'b RawPacket,
-    ) -> anyhow::Result<Option<BorrowedPacketFrame<'b>>> {
-        let mut raw_packet: &[u8] = &raw_packet;
+    pub fn try_next_packet(
+        &mut self,
+        bump: &bumpalo::Bump,
+        raw_packet_ref: &RawPacket,
+    ) -> anyhow::Result<Option<BorrowedPacketFrame>> {
+        let mut raw_packet: &[u8] = &raw_packet_ref;
         let mut data;
 
         #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
@@ -108,7 +112,8 @@ impl PacketDecoder {
                     "{written_len} != {data_len}"
                 );
 
-                data = &*decompression_buf;
+                // TODO: Don't allocate here
+                data = Bytes::copy_from_slice(&*decompression_buf);
             } else {
                 debug_assert_eq!(data_len, 0, "{data_len} != 0");
 
@@ -119,23 +124,20 @@ impl PacketDecoder {
                     self.threshold.0
                 );
 
-                data = raw_packet;
+                data = Bytes::from_owner(raw_packet_ref.clone()).slice_ref(raw_packet);
             }
         } else {
-            data = raw_packet;
+            data = Bytes::from_owner(raw_packet_ref.clone()).slice_ref(raw_packet);
         }
 
         // Decode the leading packet ID.
-        let packet_id = VarInt::decode(&mut data)
+        let packet_id = VarInt::decode_bytes(&mut data)
             .context("failed to decode packet ID")?
             .0;
 
-        let def_static: Box<_> = data.iter().copied().collect();
-        let def_static = Box::leak(def_static);
-
         Ok(Some(BorrowedPacketFrame {
             id: packet_id,
-            body: def_static,
+            body: data,
         }))
     }
 

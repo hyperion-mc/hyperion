@@ -1,166 +1,77 @@
-use std::{
-    any::{TypeId, type_name},
-    collections::HashMap,
-    mem::transmute,
-};
-
-use anyhow::Result;
 use bevy::prelude::*;
-use hyperion_utils::{Lifetime, LifetimeHandle};
-use rustc_hash::FxBuildHasher;
-use valence_protocol::{Decode, Packet};
+use valence_protocol::packets;
 
-use crate::simulation::handlers::{PacketSwitchQuery, add_builtin_handlers};
+// Unfortunately macros cannot expand to enum variants, so hyperion_packet_macros cannot be used
 
-type DeserializerFn = for<'packet> fn(
-    &HandlerRegistry,
-    &'packet [u8],
-    &dyn LifetimeHandle<'packet>,
-    &mut PacketSwitchQuery<'_>,
-) -> Result<()>;
-type AnyFn = Box<dyn Send + Sync>;
-type Handler<T> = Box<
-    dyn for<'packet> Fn(
-            &<T as Lifetime>::WithLifetime<'packet>,
-            &dyn LifetimeHandle<'packet>,
-            &mut PacketSwitchQuery<'_>,
-        ) -> Result<()>
-        + Send
-        + Sync,
->;
-
-fn packet_deserializer<'p, P>(
-    registry: &HandlerRegistry,
-    mut bytes: &'p [u8],
-    handle: &dyn LifetimeHandle<'p>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> Result<()>
-where
-    P: Packet + Decode<'static> + Lifetime + 'static,
-{
-    // If no handler is registered for this packet, skip decoding it
-    // TODO: consider moving this check out of the packet deserializer for performance
-    if !registry.has_handler::<P>() {
-        return Ok(());
-    }
-
-    // SAFETY: The transmute to 'static is sound because the result is immediately shortened to
-    // the original 'p lifetime. This transmute is necessary due to a technical limitation in the
-    // Decode trait; users can only use P with a concrete lifetime, meaning that Decode would
-    // decode to that lifetime, but we need to be able to decode to the 'p lifetime
-    // TODO: could be unsound if someone implemented Decode<'static> and kept the 'static references in the error
-    let packet = P::decode(unsafe { transmute::<&mut &'p [u8], &mut &'static [u8]>(&mut bytes) })?
-        .shorten_lifetime::<'p>();
-
-    registry.trigger(&packet, handle, query)?;
-
-    Ok(())
+#[derive(Event)]
+pub enum HandshakePacket {
+    Handshake(packets::handshaking::HandshakeC2s<'static>),
 }
 
-#[derive(Resource)]
-pub struct HandlerRegistry {
-    // Store deserializer and multiple handlers separately
-    deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,
-    handlers: HashMap<TypeId, Vec<AnyFn>, FxBuildHasher>,
+#[derive(Event)]
+pub enum StatusPacket {
+    QueryPing(packets::status::QueryPingC2s),
+    QueryRequest(packets::status::QueryRequestC2s),
 }
 
-impl HandlerRegistry {
-    // Add a handler
-    // TODO: With this current system, closures infer that 'a is a specific lifetime if the type isn't specified. Unsure if there's a way to fix it while allowing P to be inferred.
-    pub fn add_handler<'a, P, F>(&mut self, handler: Box<F>)
-    where
-        P: Lifetime,
-        // Needed to allow compiler to infer type of P.
-        F: Fn(&P, &dyn LifetimeHandle<'a>, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync,
-        // Actual type bounds for Handler<P>
-        for<'packet> F: Fn(
-                &P::WithLifetime<'packet>,
-                &dyn LifetimeHandle<'packet>,
-                &mut PacketSwitchQuery<'_>,
-            ) -> Result<()>
-            + Send
-            + Sync
-            + 'static,
-    {
-        // Add the handler to the vector
-        self.handlers
-            .entry(TypeId::of::<P::WithLifetime<'static>>())
-            .or_default()
-            .push(unsafe { transmute::<Handler<P>, AnyFn>(handler) });
-    }
-
-    // Process a packet, calling all registered handlers
-    pub fn process_packet<'p>(
-        &self,
-        id: i32,
-        bytes: &'p [u8],
-        handle: &dyn LifetimeHandle<'p>,
-        query: &mut PacketSwitchQuery<'_>,
-    ) -> Result<()> {
-        // Get the deserializer
-        let deserializer = self
-            .deserializers
-            .get(&id)
-            .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {}", id))?;
-
-        deserializer(self, bytes, handle, query)
-    }
-
-    #[must_use]
-    pub fn has_handler<T>(&self) -> bool
-    where
-        T: Lifetime,
-    {
-        self.handlers
-            .contains_key(&TypeId::of::<T::WithLifetime<'static>>())
-    }
-
-    pub fn trigger<'packet, T>(
-        &self,
-        value: &T,
-        handle: &dyn LifetimeHandle<'packet>,
-        query: &mut PacketSwitchQuery<'_>,
-    ) -> Result<()>
-    where
-        T: Lifetime + 'packet,
-    {
-        // Get all handlers for this type
-        let handlers = self
-            .handlers
-            .get(&TypeId::of::<T::WithLifetime<'static>>())
-            .ok_or_else(|| {
-                anyhow::anyhow!("No handlers registered for type {}", type_name::<T>())
-            })?;
-
-        // Call all handlers
-        for handler in handlers {
-            // SAFETY: The underlying handler type is Handler<T> because the type of T matches the
-            // type of the value passed to trigger, disregarding lifetimes. It is sound to pass a T
-            // of any lifetime to the handler because the borrow checker doesn't allow the handler
-            // to make any assumptions about the length of the lifetime of the T
-            let handler = unsafe { &*std::ptr::from_ref(handler).cast::<Handler<T>>() };
-
-            // shorten_lifetime is only needed because the handler accepts T::WithLifetime
-            handler(value.shorten_lifetime_ref(), handle, query)?;
-        }
-
-        Ok(())
-    }
+#[derive(Event)]
+pub enum LoginPacket {
+    LoginHello(packets::login::LoginHelloC2s<'static>),
+    LoginKey(packets::login::LoginKeyC2s<'static>),
+    LoginQueryResponse(packets::login::LoginQueryResponseC2s),
 }
 
-impl Default for HandlerRegistry {
-    fn default() -> Self {
-        let mut registry = Self {
-            deserializers: HashMap::default(),
-            handlers: HashMap::default(),
-        };
-        hyperion_packet_macros::for_each_static_play_c2s_packet! {
-            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET>);
-        }
-        hyperion_packet_macros::for_each_lifetime_play_c2s_packet! {
-            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET<'_>>);
-        }
-        add_builtin_handlers(&mut registry);
-        registry
-    }
+#[derive(Event)]
+pub enum PlayPacket {
+    AdvancementTab(packets::play::AdvancementTabC2s),
+    BoatPaddleState(packets::play::BoatPaddleStateC2s),
+    BookUpdate(packets::play::BookUpdateC2s<'static>),
+    ButtonClick(packets::play::ButtonClickC2s),
+    ChatMessage(packets::play::ChatMessageC2s<'static>),
+    ClickSlot(packets::play::ClickSlotC2s<'static>),
+    ClientCommand(packets::play::ClientCommandC2s),
+    ClientSettings(packets::play::ClientSettingsC2s<'static>),
+    ClientStatus(packets::play::ClientStatusC2s),
+    CloseHandledScreen(packets::play::CloseHandledScreenC2s),
+    CommandExecution(packets::play::CommandExecutionC2s<'static>),
+    CraftRequest(packets::play::CraftRequestC2s),
+    CreativeInventoryAction(packets::play::CreativeInventoryActionC2s),
+    CustomPayload(packets::play::CustomPayloadC2s),
+    Full(packets::play::FullC2s),
+    HandSwing(packets::play::HandSwingC2s),
+    JigsawGenerating(packets::play::JigsawGeneratingC2s),
+    KeepAlive(packets::play::KeepAliveC2s),
+    LookAndOnGround(packets::play::LookAndOnGroundC2s),
+    MessageAcknowledgment(packets::play::MessageAcknowledgmentC2s),
+    OnGroundOnly(packets::play::OnGroundOnlyC2s),
+    PickFromInventory(packets::play::PickFromInventoryC2s),
+    PlayPong(packets::play::PlayPongC2s),
+    PlayerAction(packets::play::PlayerActionC2s),
+    PlayerInput(packets::play::PlayerInputC2s),
+    PlayerInteractBlock(packets::play::PlayerInteractBlockC2s),
+    PlayerInteractEntity(packets::play::PlayerInteractEntityC2s),
+    PlayerInteractItem(packets::play::PlayerInteractItemC2s),
+    PlayerSession(packets::play::PlayerSessionC2s<'static>),
+    PositionAndOnGround(packets::play::PositionAndOnGroundC2s),
+    QueryBlockNbt(packets::play::QueryBlockNbtC2s),
+    QueryEntityNbt(packets::play::QueryEntityNbtC2s),
+    RecipeBookData(packets::play::RecipeBookDataC2s),
+    RecipeCategoryOptions(packets::play::RecipeCategoryOptionsC2s),
+    RenameItem(packets::play::RenameItemC2s<'static>),
+    RequestCommandCompletions(packets::play::RequestCommandCompletionsC2s<'static>),
+    ResourcePackStatus(packets::play::ResourcePackStatusC2s),
+    SelectMerchantTrade(packets::play::SelectMerchantTradeC2s),
+    SpectatorTeleport(packets::play::SpectatorTeleportC2s),
+    TeleportConfirm(packets::play::TeleportConfirmC2s),
+    UpdateBeacon(packets::play::UpdateBeaconC2s),
+    UpdateCommandBlock(packets::play::UpdateCommandBlockC2s<'static>),
+    UpdateCommandBlockMinecart(packets::play::UpdateCommandBlockMinecartC2s<'static>),
+    UpdateDifficulty(packets::play::UpdateDifficultyC2s),
+    UpdateDifficultyLock(packets::play::UpdateDifficultyLockC2s),
+    UpdateJigsaw(packets::play::UpdateJigsawC2s<'static>),
+    UpdatePlayerAbilities(packets::play::UpdatePlayerAbilitiesC2s),
+    UpdateSelectedSlot(packets::play::UpdateSelectedSlotC2s),
+    UpdateSign(packets::play::UpdateSignC2s<'static>),
+    UpdateStructureBlock(packets::play::UpdateStructureBlockC2s<'static>),
+    VehicleMove(packets::play::VehicleMoveC2s),
 }

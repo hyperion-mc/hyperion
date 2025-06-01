@@ -36,10 +36,10 @@ pub mod blocks;
 // pub mod command;
 // pub mod entity_kind;
 // pub mod event;
-// pub mod handlers;
+pub mod handlers;
 // pub mod inventory;
 // pub mod metadata;
-// pub mod packet;
+pub mod packet;
 pub mod packet_state;
 pub mod skin;
 pub mod util;
@@ -573,6 +573,14 @@ pub struct MovementTracking {
 pub struct Flight {
     pub allow: bool,
     pub is_flying: bool,
+}
+
+pub struct SimPlugin;
+
+impl Plugin for SimPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(handlers::process_chat);
+    }
 }
 
 // #[derive(Component)]

@@ -302,7 +302,7 @@ fn encode_chunk_packet(
         heightmaps: Cow::Owned(compound! {
             "MOTION_BLOCKING" => List::Long(map),
         }),
-        blocks_and_biomes: &section_bytes,
+        blocks_and_biomes: (&*section_bytes).into(),
         block_entities: Cow::Borrowed(&[]),
 
         sky_light_mask: Cow::Borrowed(&sky_light_data),
