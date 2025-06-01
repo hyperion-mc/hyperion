@@ -1,16 +1,47 @@
 use proc_macro::{TokenStream, TokenTree};
 
 #[proc_macro]
+pub fn for_each_static_handshake_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, STATIC_HANDSHAKE_C2S_PACKETS)
+}
+
+#[proc_macro]
+pub fn for_each_lifetime_handshake_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, LIFETIME_HANDSHAKE_C2S_PACKETS)
+}
+
+#[proc_macro]
+pub fn for_each_static_status_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, STATIC_STATUS_C2S_PACKETS)
+}
+
+#[proc_macro]
+pub fn for_each_lifetime_status_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, LIFETIME_STATUS_C2S_PACKETS)
+}
+
+#[proc_macro]
+pub fn for_each_static_login_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, STATIC_LOGIN_C2S_PACKETS)
+}
+
+#[proc_macro]
+pub fn for_each_lifetime_login_c2s_packet(input: TokenStream) -> TokenStream {
+    for_each_packet(input, LIFETIME_LOGIN_C2S_PACKETS)
+}
+
+#[proc_macro]
 pub fn for_each_static_play_c2s_packet(input: TokenStream) -> TokenStream {
-    STATIC_PLAY_C2S_PACKETS
-        .iter()
-        .flat_map(|packet| replace(input.clone(), packet))
-        .collect()
+    for_each_packet(input, STATIC_PLAY_C2S_PACKETS)
 }
 
 #[proc_macro]
 pub fn for_each_lifetime_play_c2s_packet(input: TokenStream) -> TokenStream {
-    LIFETIME_PLAY_C2S_PACKETS
+    for_each_packet(input, LIFETIME_PLAY_C2S_PACKETS)
+}
+
+fn for_each_packet(input: TokenStream, packets: &[&str]) -> TokenStream {
+    packets
         .iter()
         .flat_map(|packet| replace(input.clone(), packet))
         .collect()
@@ -44,15 +75,28 @@ fn replace(input: TokenStream, packet: &str) -> impl Iterator<Item = TokenTree> 
     })
 }
 
+static STATIC_HANDSHAKE_C2S_PACKETS: &[&str] = &[];
+
+static LIFETIME_HANDSHAKE_C2S_PACKETS: &[&str] = &["HandshakeC2s"];
+
+static STATIC_STATUS_C2S_PACKETS: &[&str] = &["QueryPingC2s", "QueryRequestC2s"];
+
+static LIFETIME_STATUS_C2S_PACKETS: &[&str] = &[];
+
+static STATIC_LOGIN_C2S_PACKETS: &[&str] = &["LoginQueryResponseC2s"];
+
+static LIFETIME_LOGIN_C2S_PACKETS: &[&str] = &["LoginHelloC2s", "LoginKeyC2s"];
+
 static STATIC_PLAY_C2S_PACKETS: &[&str] = &[
-    "ClientStatusC2s",
-    "ResourcePackStatusC2s",
-    "UpdatePlayerAbilitiesC2s",
+    "AdvancementTabC2s",
     "BoatPaddleStateC2s",
     "ButtonClickC2s",
     "ClientCommandC2s",
+    "ClientStatusC2s",
     "CloseHandledScreenC2s",
+    "CraftRequestC2s",
     "CreativeInventoryActionC2s",
+    "CustomPayloadC2s",
     "FullC2s",
     "HandSwingC2s",
     "JigsawGeneratingC2s",
@@ -70,28 +114,27 @@ static STATIC_PLAY_C2S_PACKETS: &[&str] = &[
     "PositionAndOnGroundC2s",
     "QueryBlockNbtC2s",
     "QueryEntityNbtC2s",
+    "RecipeBookDataC2s",
     "RecipeCategoryOptionsC2s",
+    "ResourcePackStatusC2s",
     "SelectMerchantTradeC2s",
     "SpectatorTeleportC2s",
     "TeleportConfirmC2s",
     "UpdateBeaconC2s",
     "UpdateDifficultyC2s",
     "UpdateDifficultyLockC2s",
+    "UpdatePlayerAbilitiesC2s",
     "UpdateSelectedSlotC2s",
     "VehicleMoveC2s",
 ];
 
 static LIFETIME_PLAY_C2S_PACKETS: &[&str] = &[
-    "AdvancementTabC2s",
     "BookUpdateC2s",
     "ChatMessageC2s",
     "ClickSlotC2s",
     "ClientSettingsC2s",
     "CommandExecutionC2s",
-    "CraftRequestC2s",
-    "CustomPayloadC2s",
     "PlayerSessionC2s",
-    "RecipeBookDataC2s",
     "RenameItemC2s",
     "RequestCommandCompletionsC2s",
     "UpdateCommandBlockC2s",

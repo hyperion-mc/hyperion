@@ -1,206 +1,93 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::Context;
+use bevy::prelude::*;
 use colored::Colorize;
-use flecs_ecs::prelude::*;
+use hyperion_packet_macros::*;
 use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
 use tracing::{error, info, info_span, trace, warn};
 use valence_protocol::{
-    Bounded, Packet, VarInt, packets,
+    Bounded, DecodeBytes, Packet, VarInt, packets,
     packets::{
-        handshaking::handshake_c2s::HandshakeNextState, login, login::LoginCompressionS2c, play,
+        handshaking, handshaking::handshake_c2s::HandshakeNextState, login,
+        login::LoginCompressionS2c, play, status,
     },
 };
 use valence_text::IntoText;
 
 use crate::{
-    Prev, Shutdown,
-    egress::sync_chunks::ChunkSendQueue,
+    Prev,
+    Shutdown,
+    command_channel::CommandChannel,
+    // egress::sync_chunks::ChunkSendQueue,
     net::{
         Compose, ConnectionId, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder,
-        decoder::BorrowedPacketFrame, proxy::ReceiveState,
+        decoder::BorrowedPacketFrame, packet_channel,
     },
     runtime::AsyncRuntime,
     simulation::{
-        AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, EntitySize, IgnMap,
-        ImmuneStatus, Name, PacketState, Pitch, Player, Position, StreamLookup, Uuid, Velocity, Xp,
+        AiTargetable,
+        ChunkPosition,
+        ConfirmBlockSequences,
+        EntitySize,
+        IgnMap,
+        ImmuneStatus,
+        Name,
+        Pitch,
+        Player,
+        Position,
+        StreamLookup,
+        Uuid,
+        Velocity,
+        Xp,
         Yaw,
-        animation::ActiveAnimation,
-        blocks::Blocks,
-        handlers::PacketSwitchQuery,
-        metadata::{MetadataPrefabs, entity::Pose},
-        packet::HandlerRegistry,
+        // animation::ActiveAnimation,
+        // blocks::Blocks,
+        // handlers::PacketSwitchQuery,
+        // metadata::{MetadataPrefabs, entity::Pose},
+        packet::{HandshakePacket, LoginPacket, PlayPacket, StatusPacket},
+        packet_state,
         skin::PlayerSkin,
     },
-    storage::{Events, PlayerJoinServer, SkinHandler},
-    util::{TracingExt, mojang::MojangClient},
+    storage::SkinHandler,
+    util::mojang::MojangClient,
 };
 
-/// This marks players who have already been disconnected and about to be destructed. This component should not be
-/// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
-#[derive(Component, Debug)]
-pub struct PendingRemove;
+/// This event is sent for players who have already been disconnected and about to be destructed. Packets
+/// cannot be sent to these players because they have already been disconnected.
+///
+/// This event cannot be sent to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
+#[derive(Event)]
+pub struct Disconnect(pub(crate) ());
 
-fn process_handshake(
-    login_state: &mut PacketState,
-    packet: &BorrowedPacketFrame<'_>,
-) -> anyhow::Result<()> {
-    debug_assert!(
-        *login_state == PacketState::Handshake,
-        "process_handshake called with invalid state: {login_state:?}"
-    );
+pub fn process_handshake(trigger: Trigger<'_, HandshakePacket>, mut commands: Commands<'_, '_>) {
+    let HandshakePacket::Handshake(handshake) = trigger.event();
+    let mut entity = commands.entity(trigger.target());
 
-    let handshake: packets::handshaking::HandshakeC2s<'_> = packet.decode()?;
-
-    // todo: check version is correct
+    entity.remove::<packet_state::Handshake>();
     match handshake.next_state {
         HandshakeNextState::Status => {
-            *login_state = PacketState::Status;
+            entity.insert(packet_state::Status(()));
         }
         HandshakeNextState::Login => {
-            *login_state = PacketState::Login;
+            entity.insert(packet_state::Login(()));
         }
     }
-
-    Ok(())
-}
-
-#[expect(clippy::too_many_arguments, reason = "todo; refactor")]
-fn process_login(
-    world: &WorldRef<'_>,
-    tasks: &AsyncRuntime,
-    login_state: &mut PacketState,
-    decoder: &PacketDecoder,
-    comms: &Comms,
-    skins_collection: SkinHandler,
-    mojang: MojangClient,
-    packet: &BorrowedPacketFrame<'_>,
-    stream_id: ConnectionId,
-    compose: &Compose,
-    entity: &EntityView<'_>,
-    system: EntityView<'_>,
-    ign_map: &IgnMap,
-) -> anyhow::Result<()> {
-    debug_assert!(
-        *login_state == PacketState::Login,
-        "process_login called with invalid state: {login_state:?}"
-    );
-
-    let login::LoginHelloC2s {
-        username,
-        profile_id,
-    } = packet.decode()?;
-
-    let username = username.0;
-
-    let player_join = PlayerJoinServer {
-        username: username.to_string(),
-        entity: entity.id(),
-    };
-
-    let username = player_join.username.as_str();
-
-    let global = compose.global();
-
-    let pkt = LoginCompressionS2c {
-        threshold: VarInt(global.shared.compression_threshold.0),
-    };
-
-    compose.unicast_no_compression(&pkt, stream_id, system)?;
-
-    decoder.set_compression(global.shared.compression_threshold);
-
-    let username = Arc::from(username);
-
-    let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
-    let uuid_s = format!("{uuid:?}").dimmed();
-    info!("Starting login: {username} {uuid_s}");
-
-    let skins = comms.skins_tx.clone();
-    let entity_id = entity.id();
-
-    if profile_id.is_some() {
-        tasks.spawn(async move {
-            let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
-                Ok(Some(skin)) => skin,
-                Err(e) => {
-                    error!("failed to get skin {e}. Using empty skin");
-                    PlayerSkin::EMPTY
-                }
-                Ok(None) => {
-                    error!("failed to get skin. Using empty skin");
-                    PlayerSkin::EMPTY
-                }
-            };
-
-            skins.send((entity_id, skin)).unwrap();
-        });
-    } else {
-        skins.send((entity_id, PlayerSkin::EMPTY)).unwrap();
-    }
-
-    let pkt = login::LoginSuccessS2c {
-        uuid,
-        username: Bounded(&username),
-        properties: Cow::default(),
-    };
-
-    compose
-        .unicast(&pkt, stream_id, system)
-        .context("failed to send login success packet")?;
-
-    *login_state = PacketState::Play;
-
-    ign_map.insert(username.clone(), entity_id, world);
-
-    world.get::<&MetadataPrefabs>(|prefabs| {
-        entity
-            .is_a(prefabs.player_base)
-            .set(Name::from(username))
-            .add(id::<AiTargetable>())
-            .set(ImmuneStatus::default())
-            .set(Uuid::from(uuid))
-            .add(id::<Xp>())
-            .set_pair::<Prev, _>(Xp::default())
-            .add(id::<ChunkSendQueue>())
-            .add(id::<Velocity>())
-            .set(ChunkPosition::null())
-    });
-
-    compose.io_buf().set_receive_broadcasts(stream_id, world);
-
-    Ok(())
-}
-
-/// Get a [`uuid::Uuid`] based on the given user's name.
-fn offline_uuid(username: &str) -> uuid::Uuid {
-    let digest = sha2::Sha256::digest(username);
-    let digest: [u8; 32] = digest.into();
-    let (&digest, ..) = digest.split_array_ref::<16>();
-
-    // todo: I have no idea which way we should go (be or le)
-    let digest = u128::from_be_bytes(digest);
-    uuid::Uuid::from_u128(digest)
 }
 
 fn process_status(
-    login_state: &mut PacketState,
-    system: EntityView<'_>,
-    packet: &BorrowedPacketFrame<'_>,
-    packets: ConnectionId,
-    compose: &Compose,
-) -> anyhow::Result<()> {
-    debug_assert!(
-        *login_state == PacketState::Status,
-        "process_status called with invalid state: {login_state:?}"
-    );
+    trigger: Trigger<'_, StatusPacket>,
+    query: Query<'_, '_, &ConnectionId>,
+    compose: Res<'_, Compose>,
+) {
+    let connection_id = *query
+        .get(trigger.target())
+        .expect("ConnectionId must be available for player");
 
-    match packet.id {
-        packets::status::QueryRequestC2s::ID => {
-            let query_request: packets::status::QueryRequestC2s = packet.decode()?;
-
+    match trigger.event() {
+        StatusPacket::QueryRequest(query_request) => {
             // let img_bytes = include_bytes!("data/hyperion.png");
 
             // let favicon = general_purpose::STANDARD.encode(img_bytes);
@@ -226,355 +113,560 @@ fn process_status(
                 // "favicon": favicon,
             });
 
-            let json = serde_json::to_string_pretty(&json)?;
+            let json =
+                serde_json::to_string_pretty(&json).expect("json serialization should succeed");
 
-            let send = packets::status::QueryResponseS2c { json: &json };
+            let send = packets::status::QueryResponseS2c {
+                json: json.as_str().into(),
+            };
 
-            trace!("sent query response: {query_request:?}");
-            compose.unicast_no_compression(&send, packets, system)?;
+            info!("sent query response: {query_request:?}");
+            compose
+                .unicast_no_compression(&send, connection_id)
+                .unwrap();
         }
-
-        packets::status::QueryPingC2s::ID => {
-            let query_ping: packets::status::QueryPingC2s = packet.decode()?;
-
+        StatusPacket::QueryPing(query_ping) => {
             let payload = query_ping.payload;
-
             let send = packets::status::QueryPongS2c { payload };
-
-            compose.unicast_no_compression(&send, packets, system)?;
-
-            trace!("sent query pong: {query_ping:?}");
-            *login_state = PacketState::Terminate;
+            info!("sent ping response: {send:?}");
+            compose
+                .unicast_no_compression(&send, connection_id)
+                .unwrap();
         }
-
-        _ => warn!("unexpected packet id during status: {packet:?}"),
     }
-
-    // todo: check version is correct
-
-    Ok(())
 }
 
-#[derive(Component)]
-pub struct IngressModule;
+pub fn process_login(
+    trigger: Trigger<'_, LoginPacket>,
+    compose: Res<'_, Compose>,
+    runtime: Res<'_, AsyncRuntime>,
+    skins_collection: Res<'_, SkinHandler>,
+    mojang: Res<'_, MojangClient>,
+    command_channel: Res<'_, CommandChannel>,
+    mut commands: Commands<'_, '_>,
+    mut query: Query<'_, '_, (&ConnectionId, &mut PacketDecoder)>,
+) {
+    let entity_id = trigger.target();
+    let (&connection_id, mut decoder) = query
+        .get_mut(entity_id)
+        .expect("ConnectionId and PacketDecoder must be available for player");
+    let mojang = mojang.into_inner().clone();
+    let skins_collection = skins_collection.into_inner().clone();
+    let command_channel = command_channel.into_inner().clone();
 
-impl Module for IngressModule {
-    #[expect(clippy::too_many_lines)]
-    fn module(world: &World) {
-        system!(
-            "shutdown",
-            world,
-            &Shutdown($),
-        )
-        .kind(id::<flecs::pipeline::OnLoad>())
-        .each_iter(|it, _, shutdown| {
-            let world = it.world();
-            if shutdown.value.load(std::sync::atomic::Ordering::Relaxed) {
-                info!("shutting down");
-                world.quit();
-            }
-        });
+    let LoginPacket::LoginHello(login) = trigger.event() else {
+        error!("expected LoginHello during login state");
+        compose.io_buf().shutdown(connection_id);
+        return;
+    };
 
-        system!(
-            "update_ign_map",
-            world,
-            &mut IgnMap($),
-        )
-        .kind(id::<flecs::pipeline::OnLoad>())
-        .each_iter(|_, _, ign_map| {
-            let span = info_span!("update_ign_map");
-            let _enter = span.enter();
-            ign_map.update();
-        });
+    let username = Arc::from(&*login.username.0);
+    let profile_id = login.profile_id;
 
-        system!(
-            "generate_ingress_events",
-            world,
-            &mut StreamLookup($),
-            &ReceiveState($),
-        )
-        .immediate(true)
-        .kind(id::<flecs::pipeline::OnLoad>())
-        .term_at(0)
-        .each_iter(move |it, _, (lookup, receive)| {
-            tracing_tracy::client::Client::running()
-                .expect("Tracy client should be running")
-                .frame_mark();
+    // Set compression
+    let global = compose.global();
+    let pkt = LoginCompressionS2c {
+        threshold: VarInt(global.shared.compression_threshold.0),
+    };
+    compose.unicast_no_compression(&pkt, connection_id).unwrap();
+    decoder.set_compression(global.shared.compression_threshold);
 
-            let span = info_span!("generate_ingress_events");
-            let _enter = span.enter();
+    let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
+    let uuid_s = format!("{uuid:?}").dimmed();
+    info!("Starting login: {username} {uuid_s}");
 
-            let world = it.world();
+    let pkt = login::LoginSuccessS2c {
+        uuid,
+        username: login.username.clone(),
+        properties: Cow::default(),
+    };
 
-            let recv = &receive.0;
+    compose.unicast(&pkt, connection_id).unwrap();
 
-            for connect in recv.player_connect.lock().drain(..) {
-                info!("player_connect");
-                let view = world
-                    .entity()
-                    .set(ConnectionId::new(connect))
-                    .set(hyperion_inventory::PlayerInventory::default())
-                    .set(ConfirmBlockSequences::default())
-                    .set(PacketState::Handshake)
-                    .set(ActiveAnimation::NONE)
-                    .set(PacketDecoder::default())
-                    .add(id::<Player>());
-
-                lookup.insert(connect, view.id());
-            }
-
-            for disconnect in recv.player_disconnect.lock().drain(..) {
-                // will initiate the removal of entity
-                info!("queue pending remove");
-                let Some(entity_id) = lookup.get(&disconnect).copied() else {
-                    error!("failed to get id for disconnect stream {disconnect:?}");
-                    continue;
-                };
-                world.entity_from_id(*entity_id).add(id::<PendingRemove>());
-            }
-        });
-
-        world
-            .system_named::<(&ReceiveState, &ConnectionId, &mut PacketDecoder)>("ingress_to_ecs")
-            .term_at(0u32)
-            .singleton() // StreamLookup
-            .immediate(true)
-            .kind(id::<flecs::pipeline::PostLoad>())
-            .each(move |(receive, connection_id, decoder)| {
-                // 134µs with par_iter
-                // 150-208µs with regular drain
-                let span = info_span!("ingress_to_ecs");
-                let _enter = span.enter();
-
-                let Some(mut bytes) = receive.0.packets.get_mut(&connection_id.inner()) else {
-                    return;
-                };
-
-                if bytes.is_empty() {
-                    return;
+    let skin = if profile_id.is_some() {
+        let mojang = mojang.clone();
+        let skins_collection = skins_collection.clone();
+        let command_channel = command_channel.clone();
+        runtime.spawn(async move {
+            let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
+                Ok(Some(skin)) => skin,
+                Err(e) => {
+                    error!("failed to get skin {e}. Using empty skin");
+                    PlayerSkin::EMPTY
                 }
+                Ok(None) => {
+                    error!("failed to get skin. Using empty skin");
+                    PlayerSkin::EMPTY
+                }
+            };
 
-                decoder.shift_excess();
-                decoder.queue_slice(bytes.as_ref());
-                bytes.clear();
+            command_channel.push(move |world: &mut World| {
+                let Ok(mut entity) = world.get_entity_mut(entity_id) else {
+                    warn!(
+                        "failed to get entity after skin has been fetched (likely because the \
+                         player has already left the server)"
+                    );
+                    return;
+                };
+
+                entity.insert(skin);
             });
-
-        system!(
-            "remove_player_from_visibility",
-            world,
-            &Uuid,
-            &Compose($),
-        )
-        .kind(id::<flecs::pipeline::PostLoad>())
-        .with(id::<PendingRemove>())
-        .each_iter(move |it, row, (uuid, compose)| {
-            let system = it.system();
-            let entity = it.entity(row).expect("row must be in bounds");
-            let uuids = &[uuid.0];
-            let entity_ids = [VarInt(entity.minecraft_id())];
-
-            // destroy
-            let pkt = play::EntitiesDestroyS2c {
-                entity_ids: Cow::Borrowed(&entity_ids),
-            };
-
-            if let Err(e) = compose.broadcast(&pkt, system).send() {
-                error!("failed to send player remove packet: {e}");
-                return;
-            }
-
-            let pkt = play::PlayerRemoveS2c {
-                uuids: Cow::Borrowed(uuids),
-            };
-
-            if let Err(e) = compose.broadcast(&pkt, system).send() {
-                error!("failed to send player remove packet: {e}");
-            }
         });
+        None
+    } else {
+        Some(PlayerSkin::EMPTY)
+    };
 
-        world
-            .system_named::<()>("remove_player")
-            .kind(id::<flecs::pipeline::PostLoad>())
-            .with(id::<&PendingRemove>())
-            .tracing_each_entity(info_span!("remove_player"), |entity, ()| {
-                entity.destruct();
-            });
+    let mut entity = commands.entity(entity_id);
+    entity
+        .remove::<packet_state::Login>()
+        .insert(Name::from(username))
+        .insert(AiTargetable)
+        .insert(ImmuneStatus::default())
+        .insert(Uuid::from(uuid))
+        .insert(ChunkPosition::null())
+        .insert(Yaw::default())
+        .insert(Pitch::default())
+        .insert(packet_state::Play(()));
+    if let Some(skin) = skin {
+        entity.insert(skin);
+    }
 
-        system!(
-            "recv_data",
-            world,
-            &Compose($),
-            &Blocks($),
-            &AsyncRuntime($),
-            &Comms($),
-            &SkinHandler($),
-            &MojangClient($),
-            &HandlerRegistry($),
-            &mut PacketDecoder,
-            &mut PacketState,
+    compose.io_buf().set_receive_broadcasts(connection_id);
+}
+
+/// Get a [`uuid::Uuid`] based on the given user's name.
+fn offline_uuid(username: &str) -> uuid::Uuid {
+    let digest = sha2::Sha256::digest(username);
+    let digest: [u8; 32] = digest.into();
+    let (&digest, ..) = digest.split_array_ref::<16>();
+
+    // todo: I have no idea which way we should go (be or le)
+    let digest = u128::from_be_bytes(digest);
+    uuid::Uuid::from_u128(digest)
+}
+
+fn try_next_frame(
+    compose: &Compose,
+    connection_id: ConnectionId,
+    decoder: &mut PacketDecoder,
+    receiver: &mut packet_channel::Receiver,
+) -> Option<BorrowedPacketFrame> {
+    let raw_packet = receiver.try_recv()?;
+    let bump = compose.bump();
+    match decoder.try_next_packet(bump, &raw_packet) {
+        Ok(Some(packet)) => Some(packet),
+        Ok(None) => None,
+        Err(e) => {
+            error!("failed to decode packet: {e}");
+            compose.io_buf().shutdown(connection_id);
+            None
+        }
+    }
+}
+
+fn try_decode<P: Packet + DecodeBytes>(
+    frame: BorrowedPacketFrame,
+    compose: &Compose,
+    connection_id: ConnectionId,
+) -> Option<P> {
+    match frame.decode() {
+        Ok(packet) => Some(packet),
+        Err(e) => {
+            error!("failed to decode packet: {e}");
+            compose.io_buf().shutdown(connection_id);
+            None
+        }
+    }
+}
+
+fn decode_handshake_packets(
+    query: Query<
+        '_,
+        '_,
+        (
+            Entity,
             &ConnectionId,
-            ?&mut Pose,
-            &Events($),
-            &mut EntitySize,
-            ?&mut Position,
-            &mut Yaw,
-            &mut Pitch,
-            &mut ConfirmBlockSequences,
-            &mut hyperion_inventory::PlayerInventory,
-            &mut ActiveAnimation,
-            &hyperion_crafting::CraftingRegistry($),
-            &IgnMap($),
-        )
-        .kind(id::<flecs::pipeline::OnUpdate>())
-        .each_iter(
-            move |it,
-                  row,
-                  (
-                compose,
-                blocks,
-                tasks,
-                comms,
-                skins_collection,
-                mojang,
-                handler_registry,
-                decoder,
-                login_state,
-                &io_ref,
-                mut pose,
-                event_queue,
-                size,
-                mut position,
-                yaw,
-                pitch,
-                confirm_block_sequences,
-                inventory,
-                animation,
-                crafting_registry,
-                ign_map,
-            )| {
-                let system = it.system();
-                let world = it.world();
-                let entity = it.entity(row).expect("row must be in bounds");
+            &mut PacketDecoder,
+            &mut packet_channel::Receiver,
+        ),
+        With<packet_state::Handshake>,
+    >,
+    compose: Res<'_, Compose>,
+    mut commands: Commands<'_, '_>,
+) {
+    let compose = compose.into_inner();
+    for (entity_id, &connection_id, decoder, receiver) in query {
+        let Some(frame) = try_next_frame(
+            compose,
+            connection_id,
+            decoder.into_inner(),
+            receiver.into_inner(),
+        ) else {
+            continue;
+        };
 
-                let bump = compose.bump.get(&world);
+        let packet = match frame.id {
+            handshaking::HandshakeC2s::ID => {
+                try_decode(frame, compose, connection_id).map(HandshakePacket::Handshake)
+            }
+            _ => {
+                error!("unknown handshake packet id: {}", frame.id);
+                compose.io_buf().shutdown(connection_id);
+                None
+            }
+        };
 
-                loop {
-                    let frame = match decoder.try_next_packet(bump) {
-                        Ok(frame) => frame,
-                        Err(e) => {
-                            error!("failed to decode packet: {e}");
-                            compose.io_buf().shutdown(io_ref, &world);
-                            break;
-                        }
-                    };
+        if let Some(packet) = packet {
+            commands.trigger_targets(packet, entity_id);
+        }
+    }
+}
 
-                    let Some(frame) = frame else {
-                        break;
-                    };
+fn decode_status_packets(
+    query: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &ConnectionId,
+            &mut PacketDecoder,
+            &mut packet_channel::Receiver,
+        ),
+        With<packet_state::Status>,
+    >,
+    compose: Res<'_, Compose>,
+    mut commands: Commands<'_, '_>,
+) {
+    let compose = compose.into_inner();
+    for (entity_id, &connection_id, decoder, receiver) in query {
+        let Some(frame) = try_next_frame(
+            compose,
+            connection_id,
+            decoder.into_inner(),
+            receiver.into_inner(),
+        ) else {
+            continue;
+        };
 
-                    match *login_state {
-                        PacketState::Handshake => {
-                            if process_handshake(login_state, &frame).is_err() {
-                                error!("failed to process handshake");
-                                compose.io_buf().shutdown(io_ref, &world);
-                                break;
-                            }
-                        }
-                        PacketState::Status => {
-                            if let Err(e) =
-                                process_status(login_state, system, &frame, io_ref, compose)
-                            {
-                                error!("failed to process status packet: {e}");
-                                compose.io_buf().shutdown(io_ref, &world);
-                                break;
-                            }
-                        }
-                        PacketState::Login => {
-                            if let Err(e) = process_login(
-                                &world,
-                                tasks,
-                                login_state,
-                                decoder,
-                                comms,
-                                skins_collection.clone(),
-                                mojang.clone(),
-                                &frame,
-                                io_ref,
-                                compose,
-                                &entity,
-                                system,
-                                ign_map,
-                            ) {
-                                error!("failed to process login packet");
-                                let msg = format!(
-                                    "§c§lFailed to process login packet:§r\n\n§4{e}§r\n\n§eAre \
-                                     you on the right version of Minecraft?§r\n§b(Required: \
-                                     1.20.1)§r"
-                                );
+        let packet = match frame.id {
+            status::QueryPingC2s::ID => {
+                try_decode(frame, compose, connection_id).map(StatusPacket::QueryPing)
+            }
+            status::QueryRequestC2s::ID => {
+                try_decode(frame, compose, connection_id).map(StatusPacket::QueryRequest)
+            }
+            _ => {
+                error!("unknown status packet id: {}", frame.id);
+                compose.io_buf().shutdown(connection_id);
+                None
+            }
+        };
 
-                                // hopefully we were in no compression mode
-                                // todo we want to handle sending different based on whether
-                                // we sent compression packet or not
-                                if let Err(e) = compose.unicast_no_compression(
-                                    &login::LoginDisconnectS2c {
-                                        reason: msg.into_cow_text(),
-                                    },
-                                    io_ref,
-                                    system,
-                                ) {
-                                    error!("failed to send login disconnect packet: {e}");
-                                }
+        if let Some(packet) = packet {
+            commands.trigger_targets(packet, entity_id);
+        }
+    }
+}
 
-                                compose.io_buf().shutdown(io_ref, &world);
-                                break;
-                            }
-                        }
-                        PacketState::Play => {
-                            // We call this code when you're in play.
-                            // Transitioning to play is just a way to make sure that the player is officially in play before we start sending them play packets.
-                            // We have a certain duration that we wait before doing this.
-                            // todo: better way?
-                            if let Some((position, pose)) = position.as_mut().zip(pose.as_mut()) {
-                                let world = &world;
-                                let id = entity.id();
+fn decode_login_packets(
+    query: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &ConnectionId,
+            &mut PacketDecoder,
+            &mut packet_channel::Receiver,
+        ),
+        With<packet_state::Login>,
+    >,
+    compose: Res<'_, Compose>,
+    mut commands: Commands<'_, '_>,
+) {
+    let compose = compose.into_inner();
+    for (entity_id, &connection_id, decoder, receiver) in query {
+        let Some(frame) = try_next_frame(
+            compose,
+            connection_id,
+            decoder.into_inner(),
+            receiver.into_inner(),
+        ) else {
+            continue;
+        };
 
-                                let mut query = PacketSwitchQuery {
-                                    id,
-                                    view: entity,
-                                    compose,
-                                    io_ref,
-                                    position,
-                                    yaw,
-                                    pitch,
-                                    size,
-                                    pose,
-                                    events: event_queue,
-                                    world,
-                                    blocks,
-                                    system,
-                                    confirm_block_sequences,
-                                    inventory,
-                                    animation,
-                                    crafting_registry,
-                                    handler_registry,
-                                };
+        let packet = match frame.id {
+            login::LoginHelloC2s::ID => {
+                try_decode(frame, compose, connection_id).map(LoginPacket::LoginHello)
+            }
+            login::LoginKeyC2s::ID => {
+                try_decode(frame, compose, connection_id).map(LoginPacket::LoginKey)
+            }
+            login::LoginQueryResponseC2s::ID => {
+                try_decode(frame, compose, connection_id).map(LoginPacket::LoginQueryResponse)
+            }
+            _ => {
+                error!("unknown login packet id: {}", frame.id);
+                compose.io_buf().shutdown(connection_id);
+                None
+            }
+        };
 
-                                // info_span!("ingress", ign = name).in_scope(|| {
-                                // SAFETY: The packet bytes are allocated in the compose bump
-                                if let Err(err) = unsafe {
-                                    crate::simulation::handlers::packet_switch(frame, &mut query)
-                                } {
-                                    error!("failed to process packet {frame:?}: {err}");
-                                }
-                                // });
-                            }
-                        }
-                        PacketState::Terminate => {
-                            // todo
-                        }
-                    }
+        if let Some(packet) = packet {
+            commands.trigger_targets(packet, entity_id);
+        }
+    }
+}
+
+fn decode_play_packets(
+    query: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &ConnectionId,
+            &mut PacketDecoder,
+            &mut packet_channel::Receiver,
+        ),
+        With<packet_state::Play>,
+    >,
+    compose: Res<'_, Compose>,
+    mut commands: Commands<'_, '_>,
+) {
+    let compose = compose.into_inner();
+    for (entity_id, &connection_id, decoder, receiver) in query {
+        let decoder = decoder.into_inner();
+        let receiver = receiver.into_inner();
+        while let Some(frame) = try_next_frame(compose, connection_id, decoder, receiver) {
+            let packet = match frame.id {
+                packets::play::AdvancementTabC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::AdvancementTab)
                 }
-            },
+                packets::play::BoatPaddleStateC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::BoatPaddleState)
+                }
+                packets::play::BookUpdateC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::BookUpdate)
+                }
+                packets::play::ButtonClickC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ButtonClick)
+                }
+                packets::play::ChatMessageC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ChatMessage)
+                }
+                packets::play::ClickSlotC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ClickSlot)
+                }
+                packets::play::ClientCommandC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ClientCommand)
+                }
+                packets::play::ClientSettingsC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ClientSettings)
+                }
+                packets::play::ClientStatusC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ClientStatus)
+                }
+                packets::play::CloseHandledScreenC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::CloseHandledScreen)
+                }
+                packets::play::CommandExecutionC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::CommandExecution)
+                }
+                packets::play::CraftRequestC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::CraftRequest)
+                }
+                packets::play::CreativeInventoryActionC2s::ID => {
+                    try_decode(frame, compose, connection_id)
+                        .map(PlayPacket::CreativeInventoryAction)
+                }
+                packets::play::CustomPayloadC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::CustomPayload)
+                }
+                packets::play::FullC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::Full)
+                }
+                packets::play::HandSwingC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::HandSwing)
+                }
+                packets::play::JigsawGeneratingC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::JigsawGenerating)
+                }
+                packets::play::KeepAliveC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::KeepAlive)
+                }
+                packets::play::LookAndOnGroundC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::LookAndOnGround)
+                }
+                packets::play::MessageAcknowledgmentC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::MessageAcknowledgment)
+                }
+                packets::play::OnGroundOnlyC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::OnGroundOnly)
+                }
+                packets::play::PickFromInventoryC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PickFromInventory)
+                }
+                packets::play::PlayPongC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayPong)
+                }
+                packets::play::PlayerActionC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerAction)
+                }
+                packets::play::PlayerInputC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerInput)
+                }
+                packets::play::PlayerInteractBlockC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerInteractBlock)
+                }
+                packets::play::PlayerInteractEntityC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerInteractEntity)
+                }
+                packets::play::PlayerInteractItemC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerInteractItem)
+                }
+                packets::play::PlayerSessionC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PlayerSession)
+                }
+                packets::play::PositionAndOnGroundC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::PositionAndOnGround)
+                }
+                packets::play::QueryBlockNbtC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::QueryBlockNbt)
+                }
+                packets::play::QueryEntityNbtC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::QueryEntityNbt)
+                }
+                packets::play::RecipeBookDataC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::RecipeBookData)
+                }
+                packets::play::RecipeCategoryOptionsC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::RecipeCategoryOptions)
+                }
+                packets::play::RenameItemC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::RenameItem)
+                }
+                packets::play::RequestCommandCompletionsC2s::ID => {
+                    try_decode(frame, compose, connection_id)
+                        .map(PlayPacket::RequestCommandCompletions)
+                }
+                packets::play::ResourcePackStatusC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::ResourcePackStatus)
+                }
+                packets::play::SelectMerchantTradeC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::SelectMerchantTrade)
+                }
+                packets::play::SpectatorTeleportC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::SpectatorTeleport)
+                }
+                packets::play::TeleportConfirmC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::TeleportConfirm)
+                }
+                packets::play::UpdateBeaconC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateBeacon)
+                }
+                packets::play::UpdateCommandBlockC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateCommandBlock)
+                }
+                packets::play::UpdateCommandBlockMinecartC2s::ID => {
+                    try_decode(frame, compose, connection_id)
+                        .map(PlayPacket::UpdateCommandBlockMinecart)
+                }
+                packets::play::UpdateDifficultyC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateDifficulty)
+                }
+                packets::play::UpdateDifficultyLockC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateDifficultyLock)
+                }
+                packets::play::UpdateJigsawC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateJigsaw)
+                }
+                packets::play::UpdatePlayerAbilitiesC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdatePlayerAbilities)
+                }
+                packets::play::UpdateSelectedSlotC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateSelectedSlot)
+                }
+                packets::play::UpdateSignC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateSign)
+                }
+                packets::play::UpdateStructureBlockC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::UpdateStructureBlock)
+                }
+                packets::play::VehicleMoveC2s::ID => {
+                    try_decode(frame, compose, connection_id).map(PlayPacket::VehicleMove)
+                }
+                _ => {
+                    error!("unknown play packet id: {}", frame.id);
+                    compose.io_buf().shutdown(connection_id);
+                    None
+                }
+            };
+
+            if let Some(packet) = packet {
+                commands.trigger_targets(packet, entity_id);
+            }
+        }
+    }
+}
+
+pub struct IngressPlugin;
+
+impl Plugin for IngressPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<Disconnect>();
+        app.add_systems(
+            FixedUpdate,
+            (
+                decode_handshake_packets,
+                decode_status_packets,
+                decode_login_packets,
+                decode_play_packets,
+            ),
         );
+        app.add_observer(process_handshake);
+        app.add_observer(process_status);
+        app.add_observer(process_login);
+
+        //        system!(
+        //            "remove_player_from_visibility",
+        //            world,
+        //            &Uuid,
+        //            &Compose($),
+        //        )
+        //        .kind(id::<flecs::pipeline::PostLoad>())
+        //        .with(id::<PendingRemove>())
+        //        .each_iter(move |it, row, (uuid, compose)| {
+        //            let system = it.system();
+        //            let entity = it.entity(row).expect("row must be in bounds");
+        //            let uuids = &[uuid.0];
+        //            let entity_ids = [VarInt(entity.minecraft_id())];
+        //
+        //            // destroy
+        //            let pkt = play::EntitiesDestroyS2c {
+        //                entity_ids: Cow::Borrowed(&entity_ids),
+        //            };
+        //
+        //            if let Err(e) = compose.broadcast(&pkt, system).send() {
+        //                error!("failed to send player remove packet: {e}");
+        //                return;
+        //            }
+        //
+        //            let pkt = play::PlayerRemoveS2c {
+        //                uuids: Cow::Borrowed(uuids),
+        //            };
+        //
+        //            if let Err(e) = compose.broadcast(&pkt, system).send() {
+        //                error!("failed to send player remove packet: {e}");
+        //            }
+        //        });
+        //
+        //        world
+        //            .system_named::<()>("remove_player")
+        //            .kind(id::<flecs::pipeline::PostLoad>())
+        //            .with(id::<&PendingRemove>())
+        //            .tracing_each_entity(info_span!("remove_player"), |entity, ()| {
+        //                entity.destruct();
+        //            });
+        //
     }
 }
