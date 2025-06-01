@@ -24,7 +24,7 @@ use hyperion::{
 //     regeneration::RegenerationModule, vanish::VanishModule,
 // };
 // use spatial::SpatialIndex;
-use crate::module::spawn::SpawnPlugin;
+use crate::module::{spawn::SpawnPlugin, stats::StatsPlugin};
 // use crate::{
 //     module::{bow::BowModule, chat::ChatModule, spawn::SpawnModule, stats::StatsModule},
 //     skin::SkinModule,
@@ -140,6 +140,7 @@ pub struct TagPlugin;
 
 impl Plugin for TagPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(StatsPlugin);
         app.add_plugins(SpawnPlugin);
     }
 }

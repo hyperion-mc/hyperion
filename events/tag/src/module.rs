@@ -6,5 +6,5 @@
 // pub mod level;
 // pub mod regeneration;
 pub mod spawn;
-// pub mod stats;
+pub mod stats;
 // pub mod vanish;
