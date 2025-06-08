@@ -49,6 +49,7 @@ ndarray = { workspace = true }
 once_cell = { workspace = true }
 ouroboros = { workspace = true }
 parking_lot = { workspace = true }
+paste = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rkyv = { workspace = true }

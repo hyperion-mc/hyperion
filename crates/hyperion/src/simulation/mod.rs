@@ -24,6 +24,7 @@ use crate::{
     Global,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
+        packet::PacketPlugin,
         //     command::Command,
         //     entity_kind::EntityKind,
         //     metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
@@ -579,7 +580,8 @@ pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(handlers::process_chat);
+        app.add_plugins(PacketPlugin);
+        app.add_systems(FixedUpdate, handlers::process_chat);
     }
 }
 

@@ -3674,6 +3674,7 @@ dependencies = [
  "ordered-float 5.0.0",
  "ouroboros",
  "parking_lot",
+ "paste",
  "proptest",
  "rayon",
  "reqwest",
@@ -3821,7 +3822,7 @@ name = "hyperion-packet-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
- "syn",
+ "quote",
 ]
 
 [[package]]

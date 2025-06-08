@@ -77,7 +77,6 @@ use crate::{
         SimPlugin,
         StreamLookup,
         blocks::Blocks,
-        packet::{HandshakePacket, LoginPacket, PlayPacket, StatusPacket},
         //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
     },
     util::mojang::{ApiProvider, MojangClient},
@@ -256,11 +255,6 @@ impl Plugin for HyperionCore {
         app.insert_resource(runtime);
         app.add_event::<SetEndpoint>();
         app.add_observer(set_server_endpoint);
-
-        app.add_event::<HandshakePacket>();
-        app.add_event::<StatusPacket>();
-        app.add_event::<LoginPacket>();
-        app.add_event::<PlayPacket>();
 
         let global = Global::new(shared.clone());
         //

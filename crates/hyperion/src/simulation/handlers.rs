@@ -8,13 +8,7 @@ use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
 };
-use valence_protocol::{
-    Hand, VarInt,
-    packets::play::{
-        self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
-        player_interact_entity_c2s::EntityInteraction,
-    },
-};
+use valence_protocol::{Hand, VarInt};
 use valence_text::IntoText;
 
 // use super::{
@@ -33,7 +27,7 @@ use crate::{
         Yaw,
         aabb,
         // metadata::{entity::Pose, living_entity::HandStates},
-        packet::PlayPacket,
+        packet::play,
     },
     // storage::{CommandCompletionRequest, Events, InteractEvent},
 };
@@ -612,12 +606,13 @@ use crate::{
 //     Ok(())
 // }
 
-pub fn process_chat(trigger: Trigger<'_, PlayPacket>, query: Query<'_, '_, &Name>) {
-    let PlayPacket::ChatMessage(chat) = trigger.event() else {
-        return;
-    };
-
-    let name = query.get(trigger.target()).unwrap();
-    let message = chat.message.as_str();
-    info!("{name} sent message {message}");
+pub fn process_chat(
+    mut packets: EventReader<'_, '_, play::ChatMessage>,
+    query: Query<'_, '_, &Name>,
+) {
+    for packet in packets.read() {
+        let name = query.get(packet.sender).unwrap();
+        let message = packet.data.message.as_str();
+        info!("{name} sent message {message}");
+    }
 }
