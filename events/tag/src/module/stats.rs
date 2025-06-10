@@ -8,7 +8,10 @@ use hyperion::{
 use tracing::info_span;
 
 #[derive(Resource)]
-struct TickStartTime(Instant);
+struct UpdateStart(Instant);
+
+#[derive(Resource)]
+struct TicksElapsed(u64);
 
 pub struct StatsPlugin;
 
@@ -19,17 +22,31 @@ impl Plugin for StatsPlugin {
 
         let mut tick_times = Vec::with_capacity(20 * 60); // 20 ticks per second, 60 seconds
 
-        app.insert_resource(TickStartTime(Instant::now()));
+        app.insert_resource(UpdateStart(Instant::now()));
+        app.insert_resource(TicksElapsed(0));
 
-        // TODO: There may be some other systems outside of FixedUpdate which should be included in
-        // the total tick time
-        app.add_systems(FixedPreUpdate, |mut start: ResMut<'_, TickStartTime>| {
+        // PreUpdate runs before FixedUpdate, which runs before Update
+        app.add_systems(PreUpdate, |mut start: ResMut<'_, UpdateStart>| {
             start.0 = Instant::now();
         });
 
+        app.add_systems(FixedUpdate, |mut elapsed: ResMut<'_, TicksElapsed>| {
+            elapsed.0 += 1;
+        });
+
         app.add_systems(
-            FixedPostUpdate,
-            move |compose: Res<'_, Compose>, start: Res<'_, TickStartTime>| {
+            Update,
+            move |compose: Res<'_, Compose>,
+                  start: Res<'_, UpdateStart>,
+                  mut elapsed: ResMut<'_, TicksElapsed>| {
+                if elapsed.0 == 0 {
+                    // No ticks occured on this frame
+                    return;
+                }
+
+                let ticks_elapsed = elapsed.0;
+                elapsed.0 = 0;
+
                 let span = info_span!("stats");
                 let _enter = span.enter();
                 let player_count = compose
@@ -37,9 +54,14 @@ impl Plugin for StatsPlugin {
                     .player_count
                     .load(std::sync::atomic::Ordering::Relaxed);
 
-                let ms_per_tick = start.0.elapsed().as_secs_f32() * 1000.0;
+                let ms_per_tick = start.0.elapsed().as_secs_f32() * 1000.0 / (ticks_elapsed as f32);
 
-                tick_times.push(ms_per_tick);
+                // If ticks_elapsed > 1, this inserts the average tick time multiple times for
+                // more accurate data
+                for _ in 0..ticks_elapsed {
+                    tick_times.push(ms_per_tick);
+                }
+
                 if tick_times.len() > 20 * 60 {
                     tick_times.remove(0);
                 }
