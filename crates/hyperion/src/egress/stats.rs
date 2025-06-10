@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use tracing::{error, info_span};
 
 use crate::{
     net::Compose,
@@ -22,10 +21,7 @@ fn global_update(mut compose: ResMut<'_, Compose>) {
     global.tick += 1;
 }
 
-pub fn player_join_world(
-    trigger: Trigger<'_, OnAdd, packet_state::Play>,
-    compose: Res<'_, Compose>,
-) {
+pub fn player_join_world(_: Trigger<'_, OnAdd, packet_state::Play>, compose: Res<'_, Compose>) {
     compose
         .global()
         .player_count
@@ -33,10 +29,7 @@ pub fn player_join_world(
 }
 
 // TODO: Is this ran when entity is despawned?
-pub fn player_leave_world(
-    trigger: Trigger<'_, OnRemove, packet_state::Play>,
-    compose: Res<'_, Compose>,
-) {
+pub fn player_leave_world(_: Trigger<'_, OnRemove, packet_state::Play>, compose: Res<'_, Compose>) {
     compose
         .global()
         .player_count

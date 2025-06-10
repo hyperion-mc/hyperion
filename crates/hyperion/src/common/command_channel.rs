@@ -9,13 +9,10 @@ use std::{
 };
 
 use bevy::{
-    ecs::{
-        error::{ErrorContext, HandleError},
-        ptr::{OwningPtr, Unaligned},
-    },
+    ecs::ptr::{OwningPtr, Unaligned},
     prelude::*,
 };
-use tracing::{error, warn};
+use tracing::error;
 
 struct CommandMeta {
     /// SAFETY: The `value` must point to a value of type `T: Command`,

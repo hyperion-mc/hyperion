@@ -1,9 +1,8 @@
 use bevy::prelude::*;
 use byteorder::WriteBytesExt;
-use hyperion_proto::{Flush, ServerToProxyMessage, UpdatePlayerChunkPositions};
+use hyperion_proto::{Flush, ServerToProxyMessage};
 use rkyv::util::AlignedVec;
-use tracing::{error, info_span};
-use valence_protocol::{VarInt, packets::play};
+use tracing::error;
 
 use crate::{net::Compose, simulation::EgressComm};
 // pub mod metadata;
@@ -17,7 +16,6 @@ use stats::StatsPlugin;
 use sync_chunks::SyncChunksPlugin;
 
 // use sync_entity_state::EntityStateSyncModule;
-use crate::{net::ConnectionId, simulation::ChunkPosition};
 
 #[derive(Resource)]
 struct EncodedFlush(bytes::Bytes);
@@ -47,7 +45,6 @@ pub struct EgressPlugin;
 
 impl Plugin for EgressPlugin {
     fn build(&self, app: &mut App) {
-        let world = app.world_mut();
         let flush = {
             let flush = ServerToProxyMessage::Flush(Flush);
 

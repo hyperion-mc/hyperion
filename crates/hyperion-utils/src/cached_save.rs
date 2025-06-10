@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use bevy::prelude::*;
-use directories::ProjectDirs;
 use futures_util::stream::StreamExt;
 use sha2::Digest;
 use tar::Archive;

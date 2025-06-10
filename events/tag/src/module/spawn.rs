@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use hyperion::{
     runtime::AsyncRuntime,
-    simulation::{Position, Uuid, blocks::Blocks, packet_state},
+    simulation::{Position, blocks::Blocks, packet_state},
     valence_protocol::{
         BlockKind,
         math::{IVec2, IVec3, Vec3},

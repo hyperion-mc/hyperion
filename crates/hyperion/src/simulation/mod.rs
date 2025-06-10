@@ -1,28 +1,17 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
+use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use dashmap::DashMap;
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use geometry::aabb::Aabb;
-use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
-use hyperion_utils::EntityExt;
+use glam::{DVec3, I16Vec2, IVec3, Vec3};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
 use uuid;
-use valence_generated::block::BlockState;
-use valence_protocol::{
-    ByteAngle, VarInt,
-    packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-        player_position_look_s2c::PlayerPositionLookFlags,
-    },
-};
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle},
     simulation::{
         packet::PacketPlugin,
         //     command::Command,

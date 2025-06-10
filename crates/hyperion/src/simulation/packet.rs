@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use hyperion_packet_macros::for_each_state;
-use valence_protocol::packets;
 
 use crate::net::ConnectionId;
 

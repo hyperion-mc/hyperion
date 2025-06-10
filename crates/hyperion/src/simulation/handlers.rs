@@ -1,15 +1,5 @@
-use anyhow::bail;
 use bevy::prelude::*;
-use geometry::aabb::Aabb;
-use glam::{DVec3, IVec3, Vec3};
-use hyperion_utils::EntityExt;
-use tracing::{info, instrument, warn};
-use valence_generated::{
-    block::{BlockKind, BlockState, PropName},
-    item::ItemKind,
-};
-use valence_protocol::{Hand, VarInt};
-use valence_text::IntoText;
+use tracing::info;
 
 // use super::{
 //     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
@@ -19,17 +9,10 @@ use valence_text::IntoText;
 //     event::ClientStatusEvent,
 //     inventory::{handle_click_slot, handle_update_selected_slot},
 // };
-use crate::{
-    net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::{
-        Name,
-        Pitch,
-        Yaw,
-        aabb,
-        // metadata::{entity::Pose, living_entity::HandStates},
-        packet::play,
-    },
-    // storage::{CommandCompletionRequest, Events, InteractEvent},
+use crate::simulation::{
+    Name,
+    // metadata::{entity::Pose, living_entity::HandStates},
+    packet::play,
 };
 
 // fn full(

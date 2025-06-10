@@ -3,14 +3,12 @@
 #![feature(stmt_expr_attributes)]
 #![feature(exact_size_is_empty)]
 
-use std::{collections::HashSet, net::SocketAddr};
+use std::net::SocketAddr;
 
 use bevy::prelude::*;
-use derive_more::{Deref, DerefMut};
 use hyperion::{
     HyperionCore,
     SetEndpoint,
-    glam::IVec3,
     // simulation::{Player, Position},
     // spatial,
 };

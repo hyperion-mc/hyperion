@@ -12,7 +12,6 @@ use std::{
 use arc_swap::ArcSwapOption;
 use bevy::prelude::*;
 use more_asserts::debug_assert_le;
-use tracing::warn;
 use valence_protocol::MAX_PACKET_SIZE;
 
 /// Reference counted fragment. Fragments are a fixed-size block of data which may contain one or

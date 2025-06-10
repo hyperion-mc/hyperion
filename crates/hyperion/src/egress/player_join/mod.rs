@@ -1,11 +1,10 @@
-use std::{borrow::Cow, collections::BTreeSet, ops::Index};
+use std::{borrow::Cow, collections::BTreeSet};
 
 use anyhow::Context;
 use bevy::{ecs::query::QueryEntityError, prelude::*};
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tracing::{error, info, instrument, trace, warn};
 use valence_bytes::{Bytes, CowUtf8Bytes, Utf8Bytes};
 use valence_protocol::{
@@ -22,7 +21,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, PacketState, Pitch};
+use crate::simulation::{MovementTracking, Pitch};
 
 mod list;
 pub use list::*;
@@ -32,12 +31,10 @@ use crate::{
     // egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Comms,
         Name,
         Position,
         Uuid,
         Yaw,
-        packet_state,
         // command::{Command, ROOT_COMMAND, get_command_packet},
         // metadata::{MetadataChanges, entity::EntityFlags},
         skin::PlayerSkin,
@@ -79,7 +76,6 @@ pub fn player_join_world(
             &Position,
             &Yaw,
             &Pitch,
-            &PlayerSkin,
             // &EntityFlags,
         ),
     >,
@@ -214,7 +210,7 @@ pub fn player_join_world(
     let mut entries = Vec::new();
     let mut all_player_names = Vec::new();
 
-    for (current_entity, uuid, name, position, yaw, pitch, skin) in others_query {
+    for (current_entity, uuid, name, position, yaw, pitch) in others_query {
         if entity_id == current_entity {
             continue;
         }

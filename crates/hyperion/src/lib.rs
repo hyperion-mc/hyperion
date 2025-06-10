@@ -28,28 +28,17 @@
 pub const NUM_THREADS: usize = 1;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
-use std::{
-    alloc::Allocator,
-    cell::RefCell,
-    fmt::Debug,
-    io::Write,
-    net::SocketAddr,
-    sync::{Arc, atomic::AtomicBool},
-    time::Duration,
-};
+use std::{alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, sync::Arc, time::Duration};
 
-use anyhow::Context;
 use bevy::prelude::*;
-use derive_more::{Constructor, Deref, DerefMut};
 use egress::EgressPlugin;
 pub use glam;
-use glam::{I16Vec2, IVec2};
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 // use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
 use storage::{LocalDb, SkinHandler};
-use tracing::{info, info_span, warn};
+use tracing::{info, warn};
 pub use uuid;
 pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
@@ -171,11 +160,6 @@ impl From<SocketAddr> for SetEndpoint {
 /// The central [`HyperionCore`] struct which owns and manages the entire server.
 pub struct HyperionCore;
 
-#[derive(Resource, Constructor)]
-struct Shutdown {
-    value: Arc<AtomicBool>,
-}
-
 impl Plugin for HyperionCore {
     /// Initialize the server.
     fn build(&self, app: &mut App) {
@@ -204,48 +188,12 @@ impl Plugin for HyperionCore {
             compression_level: CompressionLvl::new(2).expect("failed to create compression level"),
         });
 
-        // let shutdown = Arc::new(AtomicBool::new(false));
-        //
-        // app.insert_resource(Shutdown::new(shutdown.clone()));
-        // app.add_systems(Update, run_tasks);
-        //
         info!("starting hyperion");
         let config = config::Config::load("run/config.toml").expect("failed to load config");
         app.insert_resource(config);
 
         let runtime = AsyncRuntime::new();
 
-        // let (task_tx, task_rx) = kanal::bounded(32);
-        //
-        // #[cfg(unix)]
-        // #[allow(clippy::redundant_pub_crate)]
-        // runtime.spawn(async move {
-        // let mut sigterm =
-        // tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-        // let mut sigquit =
-        // tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
-        //
-        // tokio::select! {
-        // _ = tokio::signal::ctrl_c() => {
-        // warn!("SIGINT/ctrl-c received, shutting down");
-        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-        // }
-        // _ = sigterm.recv() => {
-        // warn!("SIGTERM received, shutting down");
-        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-        // }
-        // _ = sigquit.recv() => {
-        // warn!("SIGQUIT received, shutting down");
-        // shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-        // }
-        // }
-        // });
-        //
-        // let tasks = Tasks { tasks: task_rx };
-        // app.insert_resource(tasks);
-        //
-        // app.insert_resource(HandlerRegistry::default());
-        //
         let db = LocalDb::new().expect("failed to load database");
         let skins = SkinHandler::new(&db).expect("failed to load skin handler");
 
@@ -258,7 +206,7 @@ impl Plugin for HyperionCore {
         app.add_observer(set_server_endpoint);
 
         let global = Global::new(shared.clone());
-        //
+
         app.insert_resource(Compose::new(
             shared.compression_level,
             global,
@@ -272,7 +220,7 @@ impl Plugin for HyperionCore {
         //
         // app.insert_resource(runtime);
         app.insert_resource(StreamLookup::default());
-        //
+
         app.add_plugins((
             bevy::MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(
                 Duration::from_millis(10),

@@ -1,12 +1,10 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{io::Cursor, net::SocketAddr, process::Command, sync::Arc};
+use std::{io::Cursor, net::SocketAddr, process::Command};
 
 use bevy::prelude::*;
 use bytes::{Buf, BytesMut};
-use dashmap::DashMap;
 use hyperion_proto::ArchivedProxyToServerMessage;
-use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};

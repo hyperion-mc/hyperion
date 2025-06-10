@@ -1,21 +1,18 @@
 use std::{borrow::Cow, sync::Arc};
 
-use anyhow::Context;
 use bevy::prelude::*;
 use colored::Colorize;
-use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
 use tracing::{error, info, warn};
 use valence_protocol::{
-    DecodeBytes, Packet, VarInt,
+    VarInt,
     packets::{
         handshaking::handshake_c2s::HandshakeNextState,
         login::{LoginCompressionS2c, LoginSuccessS2c},
         status::{QueryPongS2c, QueryResponseS2c},
     },
 };
-use valence_text::IntoText;
 
 use crate::{
     command_channel::CommandChannel,

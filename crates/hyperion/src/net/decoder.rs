@@ -1,14 +1,8 @@
-use std::{
-    cell::Cell,
-    ops::{Index, RangeFull},
-};
-
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, ensure};
 use bevy::prelude::*;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use valence_protocol::{
     CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
-    var_int::VarIntDecodeError,
 };
 
 use crate::net::packet_channel::RawPacket;
