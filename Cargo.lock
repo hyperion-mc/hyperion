@@ -3763,7 +3763,7 @@ dependencies = [
 name = "hyperion-genmap"
 version = "0.1.0"
 dependencies = [
- "flecs_ecs",
+ "bevy",
  "hyperion",
  "hyperion-utils",
 ]
@@ -6742,6 +6742,7 @@ dependencies = [
  "geometry",
  "glam",
  "hyperion",
+ "hyperion-genmap",
  "hyperion-utils",
  "rayon",
  "roaring",

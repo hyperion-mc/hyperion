@@ -50,10 +50,9 @@ impl AppId {
     }
 }
 
-#[derive(Component)]
-pub struct HyperionUtilsModule;
+pub struct HyperionUtilsPlugin;
 
-impl Plugin for HyperionUtilsModule {
+impl Plugin for HyperionUtilsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(AppId {
             qualifier: "github".to_string(),

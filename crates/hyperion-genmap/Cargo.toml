@@ -7,7 +7,7 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-flecs_ecs = { workspace = true }
+bevy = { workspace = true }
 hyperion = { workspace = true }
 hyperion-utils = { workspace = true }
 

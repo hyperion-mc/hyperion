@@ -86,7 +86,6 @@ mod module;
 //         world.import::<hyperion_clap::ClapCommandModule>();
 //         world.import::<SkinModule>();
 //         world.import::<VanishModule>();
-//         world.import::<hyperion_genmap::GenMapModule>();
 //         world.import::<DamageModule>();
 //
 //         world.get::<&mut CommandRegistry>(|registry| {
@@ -140,8 +139,7 @@ pub struct TagPlugin;
 
 impl Plugin for TagPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(StatsPlugin);
-        app.add_plugins(SpawnPlugin);
+        app.add_plugins((StatsPlugin, SpawnPlugin, hyperion_genmap::GenMapPlugin));
     }
 }
 

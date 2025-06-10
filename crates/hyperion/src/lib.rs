@@ -65,6 +65,7 @@ pub use valence_server as server;
 mod common;
 pub use common::*;
 use hyperion_crafting::CraftingRegistry;
+use hyperion_utils::HyperionUtilsPlugin;
 pub use valence_ident;
 
 use crate::{
@@ -280,6 +281,7 @@ impl Plugin for HyperionCore {
             IngressPlugin,
             EgressPlugin,
             SimPlugin,
+            HyperionUtilsPlugin,
         ));
         // app
         //     .component::<Player>()
