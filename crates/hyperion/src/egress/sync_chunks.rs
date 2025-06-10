@@ -14,8 +14,9 @@ use crate::{
     config::Config,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        ChunkPosition, PacketState, PacketStatePlay, Position,
+        ChunkPosition, Position,
         blocks::{Blocks, GetChunk},
+        packet_state,
     },
 };
 
@@ -24,27 +25,38 @@ pub struct ChunkSendQueue {
     changes: Vec<I16Vec2>,
 }
 
-#[derive(Component)]
-pub struct SyncChunksModule;
+pub struct SyncChunksPlugin;
 
-impl Module for SyncChunksModule {
-    fn module(world: &World) {
-        world.add_systems(Update, (generate_chunk_changes, send_full_loaded_chunks));
+impl Plugin for SyncChunksPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            FixedUpdate,
+            (generate_chunk_changes, send_full_loaded_chunks),
+        );
     }
 }
 
 fn generate_chunk_changes(
+    config: Res<'_, Config>,
     compose: Res<'_, Compose>,
     mut query: Query<
         '_,
         '_,
-        (&ConnectionId, &mut ChunkSendQueue, &Position),
-        With<PacketStatePlay>,
+        (
+            &ConnectionId,
+            &mut ChunkPosition,
+            &mut ChunkSendQueue,
+            &Position,
+        ),
+        With<packet_state::Play>,
     >,
 ) {
+    let compose = compose.into_inner();
+    let radius = config.view_distance;
+    let liberal_radius = radius + 2;
     query
         .par_iter_mut()
-        .for_each(|(stream_id, mut chunk_changes, pose)| {
+        .for_each(|(&stream_id, mut last_sent, mut chunk_changes, pose)| {
             let last_sent_chunk = last_sent.position;
 
             let current_chunk = pose.to_chunk();
@@ -59,7 +71,7 @@ fn generate_chunk_changes(
                 chunk_z: VarInt(i32::from(current_chunk.y)),
             };
 
-            if let Err(e) = compose.unicast(&center_chunk, *stream_id, system) {
+            if let Err(e) = compose.unicast(&center_chunk, stream_id) {
                 error!(
                     "failed to send chunk render distance center packet: {e}. Chunk location: \
                      {current_chunk:?}"
@@ -91,7 +103,7 @@ fn generate_chunk_changes(
                 .filter(|(x, y)| !current_range_x.contains(x) || !current_range_z.contains(y))
                 .map(|(x, y)| I16Vec2::new(x, y));
 
-            let mut bundle = DataBundle::new(compose, system);
+            let mut bundle = DataBundle::new(compose);
 
             for chunk in removed_chunks {
                 let pos = ChunkPos::new(i32::from(chunk.x), i32::from(chunk.y));
@@ -148,16 +160,16 @@ fn generate_chunk_changes(
 fn send_full_loaded_chunks(
     compose: Res<'_, Compose>,
     blocks: Res<'_, Blocks>,
-    mut query: Query<'_, '_, &ConnectionId, With<PacketStatePlay>>,
+    mut query: Query<'_, '_, (&ConnectionId, &mut ChunkSendQueue), With<packet_state::Play>>,
 ) {
     const MAX_CHUNKS_PER_TICK: usize = 16;
 
-    query.par_iter_mut().for_each(|stream_id| {
+    query.par_iter_mut().for_each(|(&stream_id, mut queue)| {
         let last = None;
 
         let mut iter_count = 0;
 
-        let mut bundle = DataBundle::new(&compose, system);
+        let mut bundle = DataBundle::new(&compose);
 
         #[expect(
             clippy::cast_possible_wrap,

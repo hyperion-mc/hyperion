@@ -25,6 +25,7 @@ pub struct Login(pub(crate) ());
 /// - [`hyperion::simulation::AiTargetable`]
 /// - [`hyperion::simulation::ImmuneStatus`]
 /// - [`hyperion::simulation::ChunkPosition`]
+/// - [`hyperion::simulation::ChunkSendQueue`]
 /// - [`hyperion::simulation::Yaw`]
 /// - [`hyperion::simulation::Pitch`]
 ///

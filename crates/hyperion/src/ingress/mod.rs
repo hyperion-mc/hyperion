@@ -19,7 +19,7 @@ use valence_text::IntoText;
 
 use crate::{
     command_channel::CommandChannel,
-    // egress::sync_chunks::ChunkSendQueue,
+    egress::sync_chunks::ChunkSendQueue,
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
     runtime::AsyncRuntime,
     simulation::{
@@ -202,6 +202,9 @@ pub fn process_login_hello(
         };
 
         let mut entity = commands.entity(sender);
+
+        // TODO: The more specific components (such as ChunkSendQueue) should be added in a
+        // separate system
         entity
             .remove::<packet_state::Login>()
             .insert(Name::from(username))
@@ -209,6 +212,7 @@ pub fn process_login_hello(
             .insert(ImmuneStatus::default())
             .insert(Uuid::from(uuid))
             .insert(ChunkPosition::null())
+            .insert(ChunkSendQueue::default())
             .insert(Yaw::default())
             .insert(Pitch::default())
             .insert(packet_state::Play(()));
