@@ -41,7 +41,6 @@ members = [
     'crates/hyperion-text',
     'crates/hyperion-utils',
     'crates/simd-utils',
-    'crates/system-order',
     'events/tag',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
@@ -51,6 +50,7 @@ resolver = '2'
 [workspace.dependencies]
 anyhow = '1.0.98'
 approx = '0.5.1'
+arc-swap = '1.7.1'
 arrayvec = '0.7.4'
 base64 = '0.22.1'
 bitfield-struct = "0.10.1"
@@ -72,7 +72,7 @@ enumset = '1.1.6'
 fastrand = '2.1.0'
 flume = '0.11.1'
 futures-util = '0.3.31'
-glam = "0.30.3"
+glam = "0.29.3"
 heapless = '0.8.0'
 heed = "0.21.0"
 hex = '0.4.3'
@@ -93,6 +93,7 @@ ordered-float = "5.0.0"
 ouroboros = '0.18.5'
 papaya = "0.2.1"
 parking_lot = '0.12.3'
+paste = "1.0.15"
 plotters-bitmap = '0.3.6'
 proc-macro2 = '1.0.95'
 proptest = '1.5.0'
@@ -108,6 +109,7 @@ syn = '2.0.101'
 tango-bench = "0.6.0"
 tar = '0.4.41'
 thiserror = '2.0.12'
+thread_local = '1.1.8'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
 tokio = '1.45.0'
@@ -119,10 +121,15 @@ uuid = '1.16.0'
 path = "crates/hyperion-proxy-module"
 
 [workspace.dependencies.bvh]
-git = 'https://github.com/andrewgazelka/bvh-data'
+git = 'https://github.com/TestingPlant/bvh-data'
 
 [workspace.dependencies.bvh-region]
 path = 'crates/bvh-region'
+
+[workspace.dependencies.bevy]
+default-features = false
+features = ['multi_threaded']
+version = "0.16.0"
 
 [workspace.dependencies.bytemuck]
 features = ['derive']
@@ -244,9 +251,6 @@ path = 'crates/simd-utils'
 default-features = false
 version = '5.2.0'
 
-[workspace.dependencies.system-order]
-path = 'crates/system-order'
-
 [workspace.dependencies.tokio-util]
 features = ['full']
 version = '0.7.15'
@@ -264,43 +268,47 @@ features = ['timer-fallback']
 version = '0.11.4'
 
 [workspace.dependencies.valence_anvil]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['parsing']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_build_utils]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
+
+[workspace.dependencies.valence_bytes]
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_generated]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_ident]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_nbt]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['serde']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_protocol]
-branch = 'feat-open'
+branch = 'feat-bytes'
 features = ['compression']
-git = 'https://github.com/andrewgazelka/valence'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_registry]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_server]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_text]
-branch = 'feat-open'
-git = 'https://github.com/andrewgazelka/valence'
+branch = 'feat-bytes'
+git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.tag]
 path = "events/tag"

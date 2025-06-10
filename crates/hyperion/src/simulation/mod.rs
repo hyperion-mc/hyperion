@@ -1,49 +1,40 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
+use std::{collections::HashMap, hash::Hash, sync::Arc};
 
+use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
+use dashmap::DashMap;
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
-use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
-use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
-use hyperion_utils::EntityExt;
+use glam::{DVec3, I16Vec2, IVec3, Vec3};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use skin::PlayerSkin;
-use tracing::{debug, error};
 use uuid;
-use valence_generated::block::BlockState;
-use valence_protocol::{
-    ByteAngle, VarInt,
-    packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-        player_position_look_s2c::PlayerPositionLookFlags,
-    },
-};
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        command::Command,
-        entity_kind::EntityKind,
-        metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
+        packet::PacketPlugin,
+        //     command::Command,
+        //     entity_kind::EntityKind,
+        //     metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
+        skin::PlayerSkin,
     },
-    storage::ThreadLocalVec,
 };
 
-pub mod animation;
+// pub mod animation;
 pub mod blocks;
-pub mod command;
-pub mod entity_kind;
-pub mod event;
+// pub mod command;
+// pub mod entity_kind;
+// pub mod event;
 pub mod handlers;
-pub mod inventory;
-pub mod metadata;
+// pub mod inventory;
+// pub mod metadata;
 pub mod packet;
+pub mod packet_state;
 pub mod skin;
 pub mod util;
 
-#[derive(Component, Default, Debug, Deref, DerefMut)]
+#[derive(Resource, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {
     /// The UUID of all players
     inner: FxHashMap<u64, Entity>,
@@ -56,66 +47,18 @@ pub struct PlayerUuidLookup {
 }
 
 /// Communicates with the proxy server.
-#[derive(Component, Deref, DerefMut, From)]
+#[derive(Resource, Deref, DerefMut, From)]
 pub struct EgressComm {
     tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
-}
-
-#[derive(Debug)]
-pub struct DeferredMap<K, V> {
-    to_add: ThreadLocalVec<(K, V)>,
-    to_remove: ThreadLocalVec<K>,
-    map: FxHashMap<K, V>,
-}
-
-impl<K, V> Default for DeferredMap<K, V> {
-    fn default() -> Self {
-        Self {
-            to_add: ThreadLocalVec::default(),
-            to_remove: ThreadLocalVec::default(),
-            map: HashMap::default(),
-        }
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn insert(&self, key: K, value: V, world: &World) {
-        self.to_add.push((key, value), world);
-    }
-
-    pub fn get<Q>(&self, key: &Q) -> Option<&V>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(key)
-    }
-
-    pub fn remove(&self, key: K, world: &World) {
-        self.to_remove.push(key, world);
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn update(&mut self) {
-        for (key, value) in self.to_add.drain() {
-            self.map.insert(key, value);
-        }
-
-        for key in self.to_remove.drain() {
-            self.map.remove(&key);
-        }
-    }
 }
 
 /// The in-game name of a player.
 /// todo: fix the meta
 #[derive(Component, Deref, From, Display, Debug)]
-#[meta]
 pub struct Name(Arc<str>);
 
-#[derive(Component, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(DeferredMap<Arc<str>, Entity>);
+#[derive(Resource, Deref, DerefMut, From, Debug, Default)]
+pub struct IgnMap(DashMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;
@@ -137,11 +80,13 @@ pub enum PacketState {
     Terminate,
 }
 
+#[derive(Component)]
+pub struct PacketStatePlay;
+
 #[derive(
     Component, Debug, Deref, DerefMut, PartialEq, Eq, PartialOrd, Copy, Clone, Default, Pod,
     Zeroable, From
 )]
-#[meta]
 #[repr(C)]
 pub struct Xp {
     pub amount: u16,
@@ -302,7 +247,6 @@ pub struct ConfirmBlockSequences(pub Vec<i32>);
 
 #[derive(Component, Debug, Eq, PartialEq, Default)]
 #[expect(missing_docs)]
-#[meta]
 pub struct ImmuneStatus {
     /// The tick until the player is immune to player attacks.
     pub until: i64,
@@ -318,7 +262,7 @@ impl ImmuneStatus {
 
 /// Communication struct. Maybe should be refactored to some extent.
 /// This to communicate back from an [`crate::runtime::AsyncRuntime`] to the main thread.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Comms {
     /// Skin rx channel.
     pub skins_rx: kanal::Receiver<(Entity, PlayerSkin)>,
@@ -392,7 +336,6 @@ pub struct AiTargetable;
     From,
     PartialEq
 )]
-#[meta]
 pub struct Position {
     /// The (x, y, z) position of the entity.
     /// Note we are using [`Vec3`] instead of [`glam::DVec3`] because *cache locality* is important.
@@ -420,7 +363,6 @@ impl Position {
     Constructor,
     PartialEq
 )]
-#[meta]
 pub struct Yaw {
     yaw: f32,
 }
@@ -450,7 +392,6 @@ impl std::fmt::Display for Pitch {
     Constructor,
     PartialEq
 )]
-#[meta]
 pub struct Pitch {
     pitch: f32,
 }
@@ -459,7 +400,6 @@ const PLAYER_WIDTH: f32 = 0.6;
 const PLAYER_HEIGHT: f32 = 1.8;
 
 #[derive(Component, Copy, Clone, Debug, Constructor, PartialEq)]
-#[meta]
 pub struct EntitySize {
     pub half_width: f32,
     pub height: f32,
@@ -491,7 +431,6 @@ impl Position {
 }
 
 #[derive(Component, Debug, Copy, Clone)]
-#[meta]
 pub struct ChunkPosition {
     pub position: I16Vec2,
 }
@@ -559,7 +498,6 @@ impl Position {
 /// - Therefore, we have an [`Velocity`] component which is used to store the reaction of an entity to collisions.
 /// - Later we can apply the reaction to the entity's [`Position`] to move the entity.
 #[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
-#[meta]
 pub struct Velocity(pub Vec3);
 
 impl Velocity {
@@ -622,248 +560,256 @@ pub struct MovementTracking {
 }
 
 #[derive(Component, Default, Debug, Copy, Clone)]
-#[meta]
 pub struct Flight {
     pub allow: bool,
     pub is_flying: bool,
 }
 
-#[derive(Component)]
-pub struct SimModule;
+pub struct SimPlugin;
 
-impl Module for SimModule {
-    fn module(world: &World) {
-        component!(world, VarInt).member(id::<i32>(), "x");
-
-        component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
-
-        component!(world, IVec3 {
-            x: i32,
-            y: i32,
-            z: i32
-        });
-        component!(world, Vec3 {
-            x: f32,
-            y: f32,
-            z: f32
-        });
-
-        component!(world, Quat)
-            .member(id::<f32>(), "x")
-            .member(id::<f32>(), "y")
-            .member(id::<f32>(), "z")
-            .member(id::<f32>(), "w");
-
-        component!(world, BlockState).member(id::<u16>(), "id");
-
-        world.component::<Velocity>().meta();
-        world.component::<Player>();
-        world.component::<Visible>();
-        world.component::<Spawn>();
-        world.component::<Owner>();
-        world.component::<PendingTeleportation>();
-        world.component::<FlyingSpeed>();
-        world.component::<MovementTracking>();
-        world.component::<Flight>().meta();
-
-        world.component::<EntityKind>().meta();
-
-        // todo: how
-        // world
-        //     .component::<EntityKind>()
-        //     .add_trait::<(flecs::With, Yaw)>()
-        //     .add_trait::<(flecs::With, Pitch)>()
-        //     .add_trait::<(flecs::With, Velocity)>();
-
-        world.component::<MetadataPrefabs>();
-        world.component::<EntityFlags>();
-        let prefabs = metadata::register_prefabs(world);
-
-        world.set(prefabs);
-
-        world.component::<Xp>().meta();
-
-        world.component::<PlayerSkin>();
-        world.component::<Command>();
-
-        component!(world, IgnMap);
-
-        world.component::<Position>().meta();
-
-        world.component::<Name>();
-        component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
-
-        world.component::<AiTargetable>();
-        world.component::<ImmuneStatus>().meta();
-
-        world.component::<Uuid>();
-        component!(world, Uuid).opaque_func(meta_ser_stringify_type_display::<Uuid>);
-
-        world.component::<ChunkPosition>().meta();
-        world.component::<ConfirmBlockSequences>();
-        world.component::<animation::ActiveAnimation>();
-
-        world.component::<hyperion_inventory::PlayerInventory>();
-        world.component::<hyperion_inventory::CursorItem>();
-
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
-
-        observer!(
-            world,
-            Spawn,
-            &Compose($),
-            [filter] & Uuid,
-            [filter] & Position,
-            [filter] & Pitch,
-            [filter] & Yaw,
-            [filter] & Velocity,
-        )
-        .with(id::<flecs::Any>())
-        .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
-            let system = it.system();
-
-            let entity = it.entity(row).expect("row must be in bounds");
-            let minecraft_id = entity.minecraft_id();
-
-            let mut bundle = DataBundle::new(compose, system);
-
-            let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
-                let kind = kind as i32;
-
-                let velocity = velocity.to_packet_units();
-
-                let packet = play::EntitySpawnS2c {
-                    entity_id: VarInt(minecraft_id),
-                    object_uuid: uuid.0,
-                    kind: VarInt(kind),
-                    position: position.as_dvec3(),
-                    pitch: ByteAngle::from_degrees(**pitch),
-                    yaw: ByteAngle::from_degrees(**yaw),
-                    head_yaw: ByteAngle::from_degrees(0.0), // todo:
-                    data: VarInt::default(),                // todo:
-                    velocity,
-                };
-
-                bundle.add_packet(&packet).unwrap();
-
-                let packet = play::EntityVelocityUpdateS2c {
-                    entity_id: VarInt(minecraft_id),
-                    velocity,
-                };
-
-                bundle.add_packet(&packet).unwrap();
-
-                bundle.broadcast_local(position.to_chunk()).unwrap();
-
-                Ok(())
-            };
-
-            debug!("spawned entity");
-
-            entity.get::<&EntityKind>(|kind| {
-                if let Err(e) = spawn_entity(*kind) {
-                    error!("failed to spawn entity: {e}");
-                }
-            });
-        });
-
-        // for every new entity without a UUID, give it one
-        world
-            .observer::<flecs::OnAdd, ()>()
-            .with_enum_wildcard::<EntityKind>()
-            .without(id::<Uuid>())
-            .each_entity(|entity, ()| {
-                debug!("adding uuid to entity");
-                let uuid = uuid::Uuid::new_v4();
-                entity.set(Uuid::from(uuid));
-            });
-
-        world
-            .observer::<flecs::OnSet, ()>()
-            .with_enum_wildcard::<EntityKind>()
-            .each_entity(move |entity, ()| {
-                entity.get::<&EntityKind>(|kind| match kind {
-                    EntityKind::BlockDisplay => {
-                        entity.is_a(prefabs.block_display_base);
-                    }
-                    EntityKind::Player => {
-                        entity.is_a(prefabs.player_base);
-                    }
-                    _ => {}
-                });
-            });
-
-        // whenever a Player component is added, we add the Flight component to them.
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, Flight)>();
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, FlyingSpeed)>();
-
-        observer!(
-            world,
-            flecs::OnSet, &PendingTeleportation,
-            &Compose($), &Yaw, &Pitch, &ConnectionId
-        )
-        .each_iter(
-            |it, _, (pending_teleportation, compose, yaw, pitch, connection)| {
-                let system = it.system();
-
-                let pkt = play::PlayerPositionLookS2c {
-                    position: pending_teleportation.destination.as_dvec3(),
-                    yaw: **yaw,
-                    pitch: **pitch,
-                    flags: PlayerPositionLookFlags::default(),
-                    teleport_id: VarInt(pending_teleportation.teleport_id),
-                };
-
-                compose.unicast(&pkt, *connection, system).unwrap();
-            },
-        );
-
-        observer!(
-            world,
-            flecs::OnSet, &FlyingSpeed,
-            &Compose($), &ConnectionId, &Flight
-        )
-        .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
-            let system = it.system();
-
-            let pkt = PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.0,
-            };
-
-            compose.unicast(&pkt, *connection, system).unwrap();
-        });
-
-        observer!(
-            world,
-            flecs::OnSet, &Flight,
-            &Compose($), &ConnectionId, &FlyingSpeed
-        )
-        .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
-            let system = it.system();
-
-            let pkt = play::PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.,
-            };
-
-            compose.unicast(&pkt, *connection, system).unwrap();
-        });
+impl Plugin for SimPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(PacketPlugin);
+        app.add_systems(FixedUpdate, handlers::process_chat);
     }
 }
+
+// #[derive(Component)]
+// pub struct SimModule;
+//
+// impl Module for SimModule {
+//     fn module(world: &World) {
+//         component!(world, VarInt).member(id::<i32>(), "x");
+//
+//         component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
+//
+//         component!(world, IVec3 {
+//             x: i32,
+//             y: i32,
+//             z: i32
+//         });
+//         component!(world, Vec3 {
+//             x: f32,
+//             y: f32,
+//             z: f32
+//         });
+//
+//         component!(world, Quat)
+//             .member(id::<f32>(), "x")
+//             .member(id::<f32>(), "y")
+//             .member(id::<f32>(), "z")
+//             .member(id::<f32>(), "w");
+//
+//         component!(world, BlockState).member(id::<u16>(), "id");
+//
+//         world.component::<Velocity>().meta();
+//         world.component::<Player>();
+//         world.component::<Visible>();
+//         world.component::<Spawn>();
+//         world.component::<Owner>();
+//         world.component::<PendingTeleportation>();
+//         world.component::<FlyingSpeed>();
+//         world.component::<MovementTracking>();
+//         world.component::<Flight>().meta();
+//
+//         world.component::<EntityKind>().meta();
+//
+//         // todo: how
+//         // world
+//         //     .component::<EntityKind>()
+//         //     .add_trait::<(flecs::With, Yaw)>()
+//         //     .add_trait::<(flecs::With, Pitch)>()
+//         //     .add_trait::<(flecs::With, Velocity)>();
+//
+//         world.component::<MetadataPrefabs>();
+//         world.component::<EntityFlags>();
+//         let prefabs = metadata::register_prefabs(world);
+//
+//         world.set(prefabs);
+//
+//         world.component::<Xp>().meta();
+//
+//         world.component::<PlayerSkin>();
+//         world.component::<Command>();
+//
+//         component!(world, IgnMap);
+//
+//         world.component::<Position>().meta();
+//
+//         world.component::<Name>();
+//         component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
+//
+//         world.component::<AiTargetable>();
+//         world.component::<ImmuneStatus>().meta();
+//
+//         world.component::<Uuid>();
+//         component!(world, Uuid).opaque_func(meta_ser_stringify_type_display::<Uuid>);
+//
+//         world.component::<ChunkPosition>().meta();
+//         world.component::<ConfirmBlockSequences>();
+//         world.component::<animation::ActiveAnimation>();
+//
+//         world.component::<hyperion_inventory::PlayerInventory>();
+//         world.component::<hyperion_inventory::CursorItem>();
+//
+//         world
+//             .component::<Player>()
+//             .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
+//
+//         observer!(
+//             world,
+//             Spawn,
+//             &Compose($),
+//             [filter] & Uuid,
+//             [filter] & Position,
+//             [filter] & Pitch,
+//             [filter] & Yaw,
+//             [filter] & Velocity,
+//         )
+//         .with(id::<flecs::Any>())
+//         .with_enum_wildcard::<EntityKind>()
+//         .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
+//             let system = it.system();
+//
+//             let entity = it.entity(row).expect("row must be in bounds");
+//             let minecraft_id = entity.minecraft_id();
+//
+//             let mut bundle = DataBundle::new(compose, system);
+//
+//             let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
+//                 let kind = kind as i32;
+//
+//                 let velocity = velocity.to_packet_units();
+//
+//                 let packet = play::EntitySpawnS2c {
+//                     entity_id: VarInt(minecraft_id),
+//                     object_uuid: uuid.0,
+//                     kind: VarInt(kind),
+//                     position: position.as_dvec3(),
+//                     pitch: ByteAngle::from_degrees(**pitch),
+//                     yaw: ByteAngle::from_degrees(**yaw),
+//                     head_yaw: ByteAngle::from_degrees(0.0), // todo:
+//                     data: VarInt::default(),                // todo:
+//                     velocity,
+//                 };
+//
+//                 bundle.add_packet(&packet).unwrap();
+//
+//                 let packet = play::EntityVelocityUpdateS2c {
+//                     entity_id: VarInt(minecraft_id),
+//                     velocity,
+//                 };
+//
+//                 bundle.add_packet(&packet).unwrap();
+//
+//                 bundle.broadcast_local(position.to_chunk()).unwrap();
+//
+//                 Ok(())
+//             };
+//
+//             debug!("spawned entity");
+//
+//             entity.get::<&EntityKind>(|kind| {
+//                 if let Err(e) = spawn_entity(*kind) {
+//                     error!("failed to spawn entity: {e}");
+//                 }
+//             });
+//         });
+//
+//         // for every new entity without a UUID, give it one
+//         world
+//             .observer::<flecs::OnAdd, ()>()
+//             .with_enum_wildcard::<EntityKind>()
+//             .without(id::<Uuid>())
+//             .each_entity(|entity, ()| {
+//                 debug!("adding uuid to entity");
+//                 let uuid = uuid::Uuid::new_v4();
+//                 entity.set(Uuid::from(uuid));
+//             });
+//
+//         world
+//             .observer::<flecs::OnSet, ()>()
+//             .with_enum_wildcard::<EntityKind>()
+//             .each_entity(move |entity, ()| {
+//                 entity.get::<&EntityKind>(|kind| match kind {
+//                     EntityKind::BlockDisplay => {
+//                         entity.is_a(prefabs.block_display_base);
+//                     }
+//                     EntityKind::Player => {
+//                         entity.is_a(prefabs.player_base);
+//                     }
+//                     _ => {}
+//                 });
+//             });
+//
+//         // whenever a Player component is added, we add the Flight component to them.
+//         world
+//             .component::<Player>()
+//             .add_trait::<(flecs::With, Flight)>();
+//         world
+//             .component::<Player>()
+//             .add_trait::<(flecs::With, FlyingSpeed)>();
+//
+//         observer!(
+//             world,
+//             flecs::OnSet, &PendingTeleportation,
+//             &Compose($), &Yaw, &Pitch, &ConnectionId
+//         )
+//         .each_iter(
+//             |it, _, (pending_teleportation, compose, yaw, pitch, connection)| {
+//                 let system = it.system();
+//
+//                 let pkt = play::PlayerPositionLookS2c {
+//                     position: pending_teleportation.destination.as_dvec3(),
+//                     yaw: **yaw,
+//                     pitch: **pitch,
+//                     flags: PlayerPositionLookFlags::default(),
+//                     teleport_id: VarInt(pending_teleportation.teleport_id),
+//                 };
+//
+//                 compose.unicast(&pkt, *connection, system).unwrap();
+//             },
+//         );
+//
+//         observer!(
+//             world,
+//             flecs::OnSet, &FlyingSpeed,
+//             &Compose($), &ConnectionId, &Flight
+//         )
+//         .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
+//             let system = it.system();
+//
+//             let pkt = PlayerAbilitiesS2c {
+//                 flags: PlayerAbilitiesFlags::default()
+//                     .with_allow_flying(flight.allow)
+//                     .with_flying(flight.is_flying),
+//                 flying_speed: flying_speed.speed,
+//                 fov_modifier: 0.0,
+//             };
+//
+//             compose.unicast(&pkt, *connection, system).unwrap();
+//         });
+//
+//         observer!(
+//             world,
+//             flecs::OnSet, &Flight,
+//             &Compose($), &ConnectionId, &FlyingSpeed
+//         )
+//         .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
+//             let system = it.system();
+//
+//             let pkt = play::PlayerAbilitiesS2c {
+//                 flags: PlayerAbilitiesFlags::default()
+//                     .with_allow_flying(flight.allow)
+//                     .with_flying(flight.is_flying),
+//                 flying_speed: flying_speed.speed,
+//                 fov_modifier: 0.,
+//             };
+//
+//             compose.unicast(&pkt, *connection, system).unwrap();
+//         });
+//     }
+// }
 
 #[derive(Component)]
 pub struct Spawn;

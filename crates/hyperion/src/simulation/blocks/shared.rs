@@ -10,7 +10,7 @@ use super::manager::RegionManager;
 /// Inner state of the [`MinecraftWorld`] component.
 pub struct WorldShared {
     pub regions: RegionManager,
-    pub biome_to_id: BTreeMap<Ident<String>, BiomeId>,
+    pub biome_to_id: BTreeMap<Ident, BiomeId>,
 }
 
 impl WorldShared {
@@ -23,7 +23,7 @@ impl WorldShared {
 
         let biome_to_id = biomes
             .iter()
-            .map(|(id, name, _)| (name.to_string_ident(), id))
+            .map(|(id, name, _)| (name.clone(), id))
             .collect();
 
         Ok(Self {
