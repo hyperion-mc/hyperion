@@ -594,8 +594,8 @@ pub fn process_chat(
     query: Query<'_, '_, &Name>,
 ) {
     for packet in packets.read() {
-        let name = query.get(packet.sender).unwrap();
-        let message = packet.data.message.as_str();
+        let name = query.get(packet.sender()).unwrap();
+        let message = packet.message.as_str();
         info!("{name} sent message {message}");
     }
 }

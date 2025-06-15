@@ -99,11 +99,11 @@ mod decoders {
                                     #valence_packet::ID => {
                                         match frame.decode::<#static_valence_packet>() {
                                             Ok(data) => {
-                                                writers.#packet_name.write(Packet {
+                                                writers.#packet_name.write(Packet::new(
                                                     sender,
                                                     connection_id,
                                                     data
-                                                });
+                                                ));
                                                 Ok(())
                                             },
                                             Err(e) => Err(e)

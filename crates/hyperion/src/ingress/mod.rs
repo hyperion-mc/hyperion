@@ -53,10 +53,10 @@ pub fn process_handshake(
     mut commands: Commands<'_, '_>,
 ) {
     for packet in packets.read() {
-        let mut entity = commands.entity(packet.sender);
+        let mut entity = commands.entity(packet.sender());
 
         entity.remove::<packet_state::Handshake>();
-        match dbg!(packet.data.next_state) {
+        match dbg!(packet.next_state) {
             HandshakeNextState::Status => {
                 entity.insert(packet_state::Status(()));
             }
@@ -105,7 +105,7 @@ fn process_status_request(
 
         info!("sent query response: {packet:?}");
         compose
-            .unicast_no_compression(&send, packet.connection_id)
+            .unicast_no_compression(&send, packet.connection_id())
             .unwrap();
     }
 }
@@ -115,11 +115,11 @@ fn process_status_ping(
     compose: Res<'_, Compose>,
 ) {
     for packet in packets.read() {
-        let payload = packet.data.payload;
+        let payload = packet.payload;
         let send = QueryPongS2c { payload };
         info!("sent ping response: {send:?}");
         compose
-            .unicast_no_compression(&send, packet.connection_id)
+            .unicast_no_compression(&send, packet.connection_id())
             .unwrap();
     }
 }
@@ -134,13 +134,13 @@ pub fn process_login_hello(
     mut query: Query<'_, '_, &mut PacketDecoder>,
 ) {
     for packet in packets.read() {
-        let sender = packet.sender;
+        let sender = packet.sender();
         let mut decoder = query
             .get_mut(sender)
             .expect("PacketDecoder must be available for player");
 
-        let username = Arc::from(&*packet.data.username.0);
-        let profile_id = packet.data.profile_id;
+        let username = Arc::from(&*packet.username.0);
+        let profile_id = packet.profile_id;
 
         // Set compression
         let global = compose.global();
@@ -148,7 +148,7 @@ pub fn process_login_hello(
             threshold: VarInt(global.shared.compression_threshold.0),
         };
         compose
-            .unicast_no_compression(&pkt, packet.connection_id)
+            .unicast_no_compression(&pkt, packet.connection_id())
             .unwrap();
         decoder.set_compression(global.shared.compression_threshold);
 
@@ -158,11 +158,11 @@ pub fn process_login_hello(
 
         let pkt = LoginSuccessS2c {
             uuid,
-            username: packet.data.username.clone(),
+            username: packet.username.clone(),
             properties: Cow::default(),
         };
 
-        compose.unicast(&pkt, packet.connection_id).unwrap();
+        compose.unicast(&pkt, packet.connection_id()).unwrap();
 
         let skin = if profile_id.is_some() {
             let mojang = mojang.as_ref().clone();
@@ -219,7 +219,7 @@ pub fn process_login_hello(
 
         compose
             .io_buf()
-            .set_receive_broadcasts(packet.connection_id);
+            .set_receive_broadcasts(packet.connection_id());
     }
 }
 
