@@ -1,8 +1,5 @@
-//! Flecs components which are used for events.
-
-use flecs_ecs::{core::Entity, macros::Component};
+use bevy::prelude::*;
 use glam::{IVec3, Vec3};
-use hyperion_utils::{Lifetime, RuntimeLifetime};
 use valence_generated::block::BlockState;
 use valence_protocol::{
     Hand, ItemStack,
@@ -13,32 +10,29 @@ use valence_server::ItemKind;
 use super::blocks::RayCollision;
 use crate::simulation::skin::PlayerSkin;
 
-#[derive(Component, Default, Debug)]
+// TODO: Check that all of these events are needed
+
+#[derive(Event, Default, Debug)]
 pub struct ItemDropEvent {
     pub item: ItemStack,
     pub location: Vec3,
 }
 
-#[derive(Component, Default, Debug)]
+#[derive(Event, Debug)]
 pub struct ItemInteract {
     pub entity: Entity,
     pub hand: Hand,
     pub sequence: i32,
 }
 
-pub struct ChatMessage {
-    pub msg: RuntimeLifetime<&'static str>,
-    pub by: Entity,
-}
-
-#[derive(Debug)]
+#[derive(Event, Debug)]
 pub struct SetSkin {
     pub skin: PlayerSkin,
     pub by: Entity,
 }
 
 /// Represents an attack action by an entity in the game.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq)]
 pub struct AttackEntity {
     /// The entity that is performing the attack.
     pub origin: Entity,
@@ -47,21 +41,21 @@ pub struct AttackEntity {
     pub damage: f32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct StartDestroyBlock {
     pub position: IVec3,
     pub from: Entity,
     pub sequence: i32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct DestroyBlock {
     pub position: IVec3,
     pub from: Entity,
     pub sequence: i32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct PlaceBlock {
     pub position: IVec3,
     pub block: BlockState,
@@ -69,19 +63,19 @@ pub struct PlaceBlock {
     pub sequence: i32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ToggleDoor {
     pub position: IVec3,
     pub from: Entity,
     pub sequence: i32,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Event, Copy, Clone, Debug)]
 pub struct SwingArm {
     pub hand: Hand,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Event, Copy, Clone, Debug)]
 pub struct ReleaseUseItem {
     pub from: Entity,
     pub item: ItemKind,
@@ -109,48 +103,40 @@ pub enum Posture {
 }
 
 /// <https://wiki.vg/index.php?title=Protocol&oldid=18375#Set_Entity_Metadata>
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct PostureUpdate {
     /// The new posture of the entity.
     pub state: Posture,
 }
 
-pub struct Command {
-    pub raw: RuntimeLifetime<&'static str>,
-    pub by: Entity,
-}
-
+#[derive(Event)]
 pub struct BlockInteract {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Event, Clone, Debug, PartialEq, Eq)]
 pub enum ClientStatusCommand {
     PerformRespawn,
     RequestStats,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct ClientStatusEvent {
     pub client: Entity,
     pub status: ClientStatusCommand,
 }
 
-unsafe impl Lifetime for ClientStatusEvent {
-    type WithLifetime<'a> = Self;
-}
-
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct ProjectileEntityEvent {
     pub client: Entity,
     pub projectile: Entity,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct ProjectileBlockEvent {
     pub collision: RayCollision,
     pub projectile: Entity,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct ClickSlotEvent {
     pub client: Entity,
     pub window_id: u8,
@@ -162,20 +148,20 @@ pub struct ClickSlotEvent {
     pub carried_item: ItemStack,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct DropItemStackEvent {
     pub client: Entity,
     pub from_slot: Option<i16>,
     pub item: ItemStack,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct UpdateSelectedSlotEvent {
     pub client: Entity,
     pub slot: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct HitGroundEvent {
     pub client: Entity,
     /// This is at least 3

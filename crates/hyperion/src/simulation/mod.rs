@@ -25,7 +25,7 @@ use crate::{
 pub mod blocks;
 // pub mod command;
 // pub mod entity_kind;
-// pub mod event;
+pub mod event;
 pub mod handlers;
 // pub mod inventory;
 // pub mod metadata;
@@ -571,6 +571,26 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PacketPlugin);
         app.add_systems(FixedUpdate, handlers::process_chat);
+
+        app.add_event::<event::ItemDropEvent>();
+        app.add_event::<event::ItemInteract>();
+        app.add_event::<event::SetSkin>();
+        app.add_event::<event::AttackEntity>();
+        app.add_event::<event::StartDestroyBlock>();
+        app.add_event::<event::DestroyBlock>();
+        app.add_event::<event::PlaceBlock>();
+        app.add_event::<event::ToggleDoor>();
+        app.add_event::<event::SwingArm>();
+        app.add_event::<event::ReleaseUseItem>();
+        app.add_event::<event::PostureUpdate>();
+        app.add_event::<event::BlockInteract>();
+        app.add_event::<event::ClientStatusEvent>();
+        app.add_event::<event::ProjectileEntityEvent>();
+        app.add_event::<event::ProjectileBlockEvent>();
+        app.add_event::<event::ClickSlotEvent>();
+        app.add_event::<event::DropItemStackEvent>();
+        app.add_event::<event::UpdateSelectedSlotEvent>();
+        app.add_event::<event::HitGroundEvent>();
     }
 }
 
