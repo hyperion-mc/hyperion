@@ -398,9 +398,9 @@ pub fn parse_chunk(
         converted_biome_palette.clear();
 
         for biome_name in palette {
-            if !Ident::is_valid(&biome_name) {
+            if !Ident::is_valid(biome_name) {
                 return Err(ParseChunkError::BadBiomeName);
-            };
+            }
 
             converted_biome_palette.push(
                 biome_map

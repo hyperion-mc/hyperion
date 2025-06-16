@@ -133,7 +133,7 @@ fn on_inventory_close(
 
 fn update_player_inventory(
     compose: Res<'_, Compose>,
-    mut player_query: Query<
+    player_query: Query<
         '_,
         '_,
         (
@@ -147,9 +147,7 @@ fn update_player_inventory(
     >,
     mut inventory_query: Query<'_, '_, &mut Inventory>,
 ) {
-    for (entity, inv_state, position, cursor_item, open_inventory, &stream_id) in
-        player_query.iter_mut()
-    {
+    for (entity, inv_state, position, cursor_item, open_inventory, &stream_id) in player_query {
         let mut inventory;
         let open_inv;
         if let Some(open_inventory) = open_inventory {
@@ -162,7 +160,7 @@ fn update_player_inventory(
                     error!("failed to update player inventory: inventory query failed: {e}");
                     continue;
                 }
-            };
+            }
         } else {
             inventory = match inventory_query.get_mut(entity) {
                 Ok(inventory) => inventory,
@@ -531,7 +529,7 @@ fn handle_click_slot(
                     error!("failed to click slot: inventory query failed: {e}");
                     continue;
                 }
-            };
+            }
         } else {
             player_inventory = match inventory_query.get_mut(entity) {
                 Ok(inventory) => inventory,

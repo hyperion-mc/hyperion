@@ -253,7 +253,7 @@ fn set_server_endpoint(
     mut commands: Commands<'_, '_>,
 ) {
     let address = event.0;
-    let egress_comm = init_proxy_comms(&*runtime, command_channel.clone(), address);
+    let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address);
     commands.insert_resource(egress_comm);
 }
 

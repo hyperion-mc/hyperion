@@ -32,7 +32,7 @@ impl Encode for PlayerListS2c<'_> {
     }
 }
 
-impl<'a> DecodeBytes for PlayerListS2c<'a> {
+impl DecodeBytes for PlayerListS2c<'_> {
     fn decode_bytes(r: &mut Bytes) -> anyhow::Result<Self> {
         let actions = PlayerListActions(u8::decode_bytes(r)?);
 

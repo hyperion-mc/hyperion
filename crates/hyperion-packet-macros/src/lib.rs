@@ -11,31 +11,23 @@ pub fn for_each_handshake_c2s_packet(input: TokenStream) -> TokenStream {
     packet::for_each_packet(
         input,
         "handshaking",
-        packet::HANDSHAKE_C2S_PACKETS.into_iter().copied(),
+        packet::HANDSHAKE_C2S_PACKETS.iter().copied(),
     )
 }
 
 #[proc_macro]
 pub fn for_each_status_c2s_packet(input: TokenStream) -> TokenStream {
-    packet::for_each_packet(
-        input,
-        "status",
-        packet::STATUS_C2S_PACKETS.into_iter().copied(),
-    )
+    packet::for_each_packet(input, "status", packet::STATUS_C2S_PACKETS.iter().copied())
 }
 
 #[proc_macro]
 pub fn for_each_login_c2s_packet(input: TokenStream) -> TokenStream {
-    packet::for_each_packet(
-        input,
-        "login",
-        packet::LOGIN_C2S_PACKETS.into_iter().copied(),
-    )
+    packet::for_each_packet(input, "login", packet::LOGIN_C2S_PACKETS.iter().copied())
 }
 
 #[proc_macro]
 pub fn for_each_play_c2s_packet(input: TokenStream) -> TokenStream {
-    packet::for_each_packet(input, "play", packet::PLAY_C2S_PACKETS.into_iter().copied())
+    packet::for_each_packet(input, "play", packet::PLAY_C2S_PACKETS.iter().copied())
 }
 
 #[proc_macro]

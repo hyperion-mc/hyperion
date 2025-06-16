@@ -52,15 +52,12 @@ fn handle_interact(
 
         let id: u64 = bytemuck::cast(*id);
 
-        let handler = match Entity::try_from_bits(id) {
-            Ok(handler) => handler,
-            Err(_) => {
-                error!(
-                    "failed to handle interact event: nbt handler field contains an invalid \
-                     entity id {id}"
-                );
-                return;
-            }
+        let Ok(handler) = Entity::try_from_bits(id) else {
+            error!(
+                "failed to handle interact event: nbt handler field contains an invalid entity id \
+                 {id}"
+            );
+            return;
         };
 
         event_writer.write(NbtInteractEvent {

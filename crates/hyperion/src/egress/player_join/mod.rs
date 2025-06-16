@@ -42,10 +42,6 @@ use crate::{
     },
 };
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "todo: we should refactor at some point"
-)]
 #[instrument(skip_all)]
 pub fn player_join_world(
     trigger: Trigger<'_, OnAdd, (Position, PlayerSkin)>,
@@ -138,14 +134,14 @@ pub fn player_join_world(
         simulation_distance: config.simulation_distance.into(),
         reduced_debug_info: false,
         enable_respawn_screen: false,
-        dimension_name: dimension_name.into(),
+        dimension_name,
         hashed_seed: 0,
         game_mode: GameMode::Survival,
         is_flat: false,
         last_death_location: None,
         portal_cooldown: 60.into(),
         previous_game_mode: OptGameMode(Some(GameMode::Survival)),
-        dimension_type_name: ident!("minecraft:overworld").into(),
+        dimension_type_name: ident!("minecraft:overworld"),
         is_debug: false,
     };
 
@@ -386,7 +382,7 @@ fn generate_cached_packet_bytes(
     let bytes = RawBytes::from(Bytes::from_owner(buf));
 
     let brand = play::CustomPayloadS2c {
-        channel: ident!("minecraft:brand").into(),
+        channel: ident!("minecraft:brand"),
         data: bytes.into(),
     };
 

@@ -70,7 +70,7 @@ impl PacketDecoder {
         bump: &bumpalo::Bump,
         raw_packet_ref: &RawPacket,
     ) -> anyhow::Result<Option<BorrowedPacketFrame>> {
-        let mut raw_packet: &[u8] = &raw_packet_ref;
+        let mut raw_packet: &[u8] = raw_packet_ref;
         let mut data;
 
         #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
@@ -137,12 +137,12 @@ impl PacketDecoder {
 
     /// Get the compression threshold.
     #[must_use]
-    pub fn compression(&self) -> CompressionThreshold {
+    pub const fn compression(&self) -> CompressionThreshold {
         self.threshold
     }
 
     /// Sets the compression threshold.
-    pub fn set_compression(&mut self, threshold: CompressionThreshold) {
+    pub const fn set_compression(&mut self, threshold: CompressionThreshold) {
         self.threshold = threshold;
     }
 }

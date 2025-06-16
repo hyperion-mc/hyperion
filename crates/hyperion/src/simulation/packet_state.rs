@@ -32,6 +32,6 @@ pub struct Login(pub(crate) ());
 /// They may, but are not required to, have the following components:
 /// - [`hyperion::simulation::skin::PlayerSkin`]: is added once the player skin loads
 /// - [`hyperion::simulation::Position`]: is not set by Hyperion - the event code must add this
-/// component
+///   component
 #[derive(Component)]
 pub struct Play(pub(crate) ());

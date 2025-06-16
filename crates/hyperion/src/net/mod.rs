@@ -140,7 +140,7 @@ impl<'a> DataBundle<'a> {
 
 impl Compose {
     #[must_use]
-    pub fn new(compression_lvl: CompressionLvl, global: Global, io_buf: IoBuf) -> Self {
+    pub const fn new(compression_lvl: CompressionLvl, global: Global, io_buf: IoBuf) -> Self {
         Self {
             compression_lvl,
             compressor: ThreadLocal::new(),
@@ -165,7 +165,7 @@ impl Compose {
     /// Broadcast globally to all players
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
-    pub const fn broadcast<'a, P>(&'a self, packet: P) -> Broadcast<'a, P>
+    pub const fn broadcast<P>(&self, packet: P) -> Broadcast<'_, P>
     where
         P: PacketBundle,
     {
@@ -190,11 +190,7 @@ impl Compose {
     /// Broadcast a packet within a certain region.
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
-    pub const fn broadcast_local<'a, P>(
-        &'a self,
-        packet: P,
-        center: I16Vec2,
-    ) -> BroadcastLocal<'a, P>
+    pub const fn broadcast_local<P>(&self, packet: P, center: I16Vec2) -> BroadcastLocal<'_, P>
     where
         P: PacketBundle,
     {

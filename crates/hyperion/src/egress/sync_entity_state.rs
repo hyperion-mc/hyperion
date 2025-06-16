@@ -52,7 +52,7 @@ fn initialize_previous<T: Component + Clone>(
 }
 
 fn update_previous<T: Component + Clone>(mut query: Query<'_, '_, (&mut Prev<T>, &T)>) {
-    for (mut prev, current) in query.iter_mut() {
+    for (mut prev, current) in &mut query {
         prev.set(current.clone());
     }
 }
@@ -105,7 +105,7 @@ fn active_animation_sync(
     compose: Res<'_, Compose>,
     mut query: Query<'_, '_, (Entity, &Position, &ConnectionId, &mut ActiveAnimation)>,
 ) {
-    for (entity, position, &connection_id, mut animation) in query.iter_mut() {
+    for (entity, position, &connection_id, mut animation) in &mut query {
         let entity_id = VarInt(entity.minecraft_id());
 
         let chunk_pos = position.to_chunk();
@@ -157,7 +157,7 @@ fn sync_player_entity(
         pending_teleport,
         mut tracking,
         flight,
-    ) in query.iter_mut()
+    ) in &mut query
     {
         let entity_id = VarInt(entity.minecraft_id());
 
@@ -199,7 +199,7 @@ fn sync_player_entity(
                 return;
             }
 
-            let grounded = is_grounded(&position, &blocks);
+            let grounded = is_grounded(position, &blocks);
             tracking.was_on_ground = grounded;
             if grounded && !tracking.last_tick_flying && tracking.fall_start_y - position.y > 3. {
                 let event = HitGroundEvent {
@@ -393,7 +393,7 @@ fn update_projectile_positions(
                 position.y += velocity.0.y;
                 position.z += velocity.0.z;
             }
-        };
+        }
     }
 }
 

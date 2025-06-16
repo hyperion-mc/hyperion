@@ -1,9 +1,9 @@
 use proc_macro::{TokenStream, TokenTree};
 use quote::quote;
 
-use crate::replace::*;
+use crate::replace::{SpecialIdentReplacer, replace};
 
-pub(crate) fn for_each_packet(
+pub fn for_each_packet(
     input: TokenStream,
     state: &'static str,
     packets: impl Iterator<Item = Packet> + Clone,
@@ -12,7 +12,7 @@ pub(crate) fn for_each_packet(
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct Packet {
+pub struct Packet {
     name: &'static str,
     lifetime: bool,
 }
@@ -44,7 +44,7 @@ impl SpecialIdentReplacer<Packet> for PacketIdentReplacer {
             }
         } else if ident_str == "packet_name" {
             let packet_ident =
-                proc_macro::Ident::new(&packet.name[..packet.name.len() - 3], ident.span().into());
+                proc_macro::Ident::new(&packet.name[..packet.name.len() - 3], ident.span());
             Some(TokenStream::from(TokenTree::Ident(packet_ident)))
         } else {
             None
@@ -52,12 +52,12 @@ impl SpecialIdentReplacer<Packet> for PacketIdentReplacer {
     }
 }
 
-pub(crate) static HANDSHAKE_C2S_PACKETS: &[Packet] = &[Packet {
+pub static HANDSHAKE_C2S_PACKETS: &[Packet] = &[Packet {
     name: "HandshakeC2s",
     lifetime: true,
 }];
 
-pub(crate) static STATUS_C2S_PACKETS: &[Packet] = &[
+pub static STATUS_C2S_PACKETS: &[Packet] = &[
     Packet {
         name: "QueryPingC2s",
         lifetime: false,
@@ -68,7 +68,7 @@ pub(crate) static STATUS_C2S_PACKETS: &[Packet] = &[
     },
 ];
 
-pub(crate) static LOGIN_C2S_PACKETS: &[Packet] = &[
+pub static LOGIN_C2S_PACKETS: &[Packet] = &[
     Packet {
         name: "LoginQueryResponseC2s",
         lifetime: false,
@@ -83,7 +83,7 @@ pub(crate) static LOGIN_C2S_PACKETS: &[Packet] = &[
     },
 ];
 
-pub(crate) static PLAY_C2S_PACKETS: &[Packet] = &[
+pub static PLAY_C2S_PACKETS: &[Packet] = &[
     Packet {
         name: "AdvancementTabC2s",
         lifetime: false,

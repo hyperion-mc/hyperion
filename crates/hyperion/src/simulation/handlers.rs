@@ -37,6 +37,13 @@ use crate::{
     },
 };
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "This cannot be split into different systems because the events across the various \
+              EventReaders must be processed in order. Splitting each packet handler to different \
+              functions would add complexity because most parameters will still need to be passed \
+              manually."
+)]
 pub fn position_and_look_updates(
     mut full_reader: EventReader<'_, '_, play::Full>,
     mut position_reader: EventReader<'_, '_, play::PositionAndOnGround>,
@@ -125,12 +132,9 @@ pub fn position_and_look_updates(
             },
             packet in teleport_reader => {
                 let client = packet.sender();
-                let pending_teleport = match teleport_query.get(client) {
-                    Ok(pending_teleport) => pending_teleport,
-                    Err(_) => {
-                        warn!("failed to confirm teleportation: client is not pending teleportation, so there is nothing to confirm");
-                        continue;
-                    }
+                let Ok(pending_teleport) = teleport_query.get(client) else {
+                    warn!("failed to confirm teleportation: client is not pending teleportation, so there is nothing to confirm");
+                    continue;
                 };
 
                 let pending_teleport_id = pending_teleport.teleport_id;
@@ -204,7 +208,7 @@ fn change_position_or_correct_client(
         }
     };
 
-    if let Err(e) = try_change_position(proposed, &pose, size, &blocks) {
+    if let Err(e) = try_change_position(proposed, &pose, size, blocks) {
         // Send error message to player
         let msg = format!("§c{e}");
         let pkt = GameMessageS2c {

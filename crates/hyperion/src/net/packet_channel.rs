@@ -33,6 +33,7 @@ struct Fragment {
     /// Stores packets in the following format:
     /// - a `u32` for the packet size encoded as native-endian bytes
     /// - packet bytes
+    ///
     /// No padding is present. An individual packet will always be stored in exactly one fragment; a packet
     /// will never be stored across multiple [`Fragment`]s.
     data: Box<[SyncUnsafeCell<MaybeUninit<u8>>]>,
@@ -107,11 +108,11 @@ impl Sender {
     /// malfromed packet.
     pub fn send(&mut self, mut data: &[u8]) -> Result<(), SendError> {
         if data.is_empty() {
-            if self.send_state == SendState::Closed {
-                return Err(SendError::AlreadyClosed);
+            return if self.send_state == SendState::Closed {
+                Err(SendError::AlreadyClosed)
             } else {
-                return Ok(());
-            }
+                Ok(())
+            };
         }
 
         let mut last_full_packet_cursor = None;
@@ -126,7 +127,7 @@ impl Sender {
                     const DATA_MASK: u8 = 0b0111_1111;
                     const CONTINUE_BIT: u8 = !DATA_MASK;
 
-                    current_len |= ((first_byte & DATA_MASK) as u32) << bit_offset;
+                    current_len |= u32::from(first_byte & DATA_MASK) << bit_offset;
 
                     if current_len >= MAX_PACKET_SIZE as u32 {
                         self.send_state = SendState::Closed;
@@ -153,8 +154,8 @@ impl Sender {
                                 self.new_fragment(std::cmp::max(
                                     total_len,
                                     self.default_fragment_size,
-                                ))
-                            };
+                                ));
+                            }
 
                             // The read cursor in the previous fragment will have already been
                             // updated.
@@ -177,13 +178,23 @@ impl Sender {
                     data = &data[1..];
                 }
                 SendState::ReadData { remaining } => {
+                    // `len` describes the number of bytes that should be copied from `data` to
+                    // the current packet.
+                    // Doing a saturating cast of `data.len()` from `usize` to `u32` is okay
+                    // because the packet size must be less than `u32`, so if `data.len() > u32::MAX`,
+                    // it is not possible for the bytes after the `u32::MAX` index to be in the current packet.
                     // `len` is guaranteed to be nonzero because `remaining` is a `NonZeroU32`,
                     // and `data.len()` must be nonzero because `data.first()` succeeded.
-                    let len = std::cmp::min(remaining.get() as usize, data.len());
+                    let len = std::cmp::min(
+                        remaining.get(),
+                        u32::try_from(data.len()).unwrap_or(u32::MAX),
+                    );
 
-                    let bytes = &data[..len];
+                    let len_usize = len as usize;
 
-                    // SAFETY: When the length of the packet was initially read, the code ensures
+                    let bytes = &data[..len_usize];
+
+                    // SAFETY: When the length of the packet was initially read, the code ensured
                     // that the fragment has enough space to store the packet length and the packet
                     // data and allocated a new fragment is needed. In addition, `bytes` is
                     // guaranteed to not be empty because `len` is nonzero.
@@ -191,23 +202,23 @@ impl Sender {
                         self.write(bytes);
                     }
 
-                    if let Some(new_remaining) = NonZeroU32::new(remaining.get() - (len as u32)) {
+                    if let Some(new_remaining) = NonZeroU32::new(remaining.get() - len) {
                         // The packet is still incomplete and needs more bytes from future send
                         // calls.
                         self.send_state = SendState::ReadData {
                             remaining: new_remaining,
                         };
                         break;
-                    } else {
-                        // The full packet has been read. The next iteration of this loop will
-                        // begin sending the next packet.
-                        last_full_packet_cursor = Some(self.write_cursor);
-                        data = &data[len..];
-                        self.send_state = SendState::ReadLen {
-                            current_len: 0,
-                            bit_offset: 0,
-                        };
                     }
+
+                    // The full packet has been read. The next iteration of this loop will
+                    // begin sending the next packet.
+                    last_full_packet_cursor = Some(self.write_cursor);
+                    data = &data[len_usize..];
+                    self.send_state = SendState::ReadLen {
+                        current_len: 0,
+                        bit_offset: 0,
+                    };
                 }
                 SendState::Closed => {
                     result = Err(SendError::AlreadyClosed);
@@ -399,10 +410,11 @@ pub struct RawPacket {
 impl RawPacket {
     /// # Safety
     /// `range` must be within `0..read_cursor`
-    unsafe fn new_unchecked(fragment: Arc<Fragment>, range: Range<usize>) -> Self {
+    const unsafe fn new_unchecked(fragment: Arc<Fragment>, range: Range<usize>) -> Self {
         Self { fragment, range }
     }
 
+    #[expect(clippy::missing_const_for_fn, reason = "false positive")]
     #[must_use]
     pub fn fragment_id(&self) -> usize {
         self.fragment.id
@@ -424,9 +436,10 @@ impl AsRef<[u8]> for RawPacket {
     }
 }
 
-/// Unbounded spsc channel of VarInt length-prefixed packets. The data for any specific packet is stored contiguously.
+/// Unbounded spsc channel of `VarInt` length-prefixed packets. The data for any specific packet is stored contiguously.
 /// This channel is implemented internally through a linked list of one or more packets in each node, although this is
 /// subject to change.
+#[must_use]
 pub fn channel(default_fragment_size: usize) -> (Sender, Receiver) {
     let fragment = Arc::new(Fragment::new(default_fragment_size, 0));
     let sender = Sender {

@@ -18,7 +18,7 @@ pub struct Packet<T> {
 }
 
 impl<T> Packet<T> {
-    pub fn new(sender: Entity, connection_id: ConnectionId, packet_id: u64, body: T) -> Self {
+    pub const fn new(sender: Entity, connection_id: ConnectionId, packet_id: u64, body: T) -> Self {
         Self {
             sender,
             connection_id,
@@ -28,13 +28,13 @@ impl<T> Packet<T> {
     }
 
     /// Entity of the player who sent this packet
-    pub fn sender(&self) -> Entity {
+    pub const fn sender(&self) -> Entity {
         self.sender
     }
 
     /// Connection id of the player who sent this packet. This is included for convenience; it is
     /// the same connection id component in the [`Packet::sender`] entity.
-    pub fn connection_id(&self) -> ConnectionId {
+    pub const fn connection_id(&self) -> ConnectionId {
         self.connection_id
     }
 
@@ -45,7 +45,7 @@ impl<T> Packet<T> {
     }
 
     /// Unique monotonically-increasing packet id
-    pub fn packet_id(&self) -> u64 {
+    pub const fn packet_id(&self) -> u64 {
         self.packet_id
     }
 }

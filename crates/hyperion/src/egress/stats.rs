@@ -15,6 +15,7 @@ impl Plugin for StatsPlugin {
     }
 }
 
+#[expect(clippy::missing_const_for_fn, reason = "false positive")]
 fn global_update(mut compose: ResMut<'_, Compose>) {
     let global = compose.global_mut();
 

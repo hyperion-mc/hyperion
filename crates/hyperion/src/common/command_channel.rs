@@ -48,8 +48,6 @@ impl CommandChannel {
     /// Push a [`Command`] onto the channel.
     #[inline]
     pub fn push<C: Command>(&self, command: C) {
-        let mut inner = self.inner.lock().unwrap();
-
         // Stores a command alongside its metadata.
         // `repr(C)` prevents the compiler from reordering the fields,
         // while `repr(packed)` prevents the compiler from inserting padding bytes.
@@ -58,6 +56,8 @@ impl CommandChannel {
             meta: CommandMeta,
             command: C,
         }
+
+        let mut inner = self.inner.lock().unwrap();
 
         let meta = CommandMeta {
             consume_command_and_get_size: |command, mut world, cursor| {

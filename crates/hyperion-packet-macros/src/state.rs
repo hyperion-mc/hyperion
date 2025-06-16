@@ -1,9 +1,9 @@
 use proc_macro::{TokenStream, TokenTree};
 use quote::quote;
 
-use crate::replace::*;
+use crate::replace::{SpecialIdentReplacer, replace};
 
-pub(crate) fn for_each_state(input: TokenStream) -> TokenStream {
+pub fn for_each_state(input: TokenStream) -> TokenStream {
     replace(input, STATES.iter().copied(), StateIdentReplacer)
 }
 
@@ -25,7 +25,7 @@ impl SpecialIdentReplacer<State> for StateIdentReplacer {
             );
             Some(quote!(::hyperion_packet_macros::#state_ident).into())
         } else if ident_str == "state" {
-            let state_ident = proc_macro::Ident::new(state.name, ident.span().into());
+            let state_ident = proc_macro::Ident::new(state.name, ident.span());
             Some(TokenStream::from(TokenTree::Ident(state_ident)))
         } else {
             None

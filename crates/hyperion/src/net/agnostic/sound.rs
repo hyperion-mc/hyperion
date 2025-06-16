@@ -42,7 +42,7 @@ impl SoundBuilder {
         Sound {
             raw: play::PlaySoundS2c {
                 id: SoundId::Direct {
-                    id: self.sound.into(),
+                    id: self.sound,
                     range: None,
                 },
                 position: (self.position * 8.0).as_ivec3(),

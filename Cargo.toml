@@ -327,6 +327,9 @@ print_stdout = 'deny'
 single_match_else = 'allow'
 too_long_first_doc_paragraph = 'allow'
 too_many_lines = 'allow'
+needless_pass_by_value = 'allow'
+type_complexity = 'allow'
+too_many_arguments = 'allow'
 
 upper_case_acronyms = 'deny'
 

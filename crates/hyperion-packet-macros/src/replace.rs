@@ -1,10 +1,10 @@
 use proc_macro::{TokenStream, TokenTree};
 
-pub(crate) trait SpecialIdentReplacer<T> {
+pub trait SpecialIdentReplacer<T> {
     fn replace(&self, ident: proc_macro::Ident, data: T) -> Option<TokenStream>;
 }
 
-pub(crate) fn replace<T: Clone>(
+pub fn replace<T: Clone>(
     input: TokenStream,
     data_iterator: impl Iterator<Item = T> + Clone,
     replacer: impl SpecialIdentReplacer<T> + Clone,
@@ -64,7 +64,7 @@ pub(crate) fn replace<T: Clone>(
         .collect()
 }
 
-pub(crate) fn replace_inner<T: Clone>(
+pub fn replace_inner<T: Clone>(
     input: TokenStream,
     data: T,
     replacer: impl SpecialIdentReplacer<T> + Clone,
