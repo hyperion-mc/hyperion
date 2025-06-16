@@ -1,10 +1,10 @@
 [dependencies]
+bevy = {workspace = true}
 hyperion-crafting = {workspace = true}
 roaring = {workspace = true}
 snafu = {workspace = true}
 valence_protocol = {workspace = true}
 valence_generated = {workspace = true}
-flecs_ecs = {workspace = true}
 derive_more = {workspace = true}
 tracing = {workspace = true}
 

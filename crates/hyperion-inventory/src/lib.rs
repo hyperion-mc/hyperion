@@ -1,8 +1,8 @@
 #![feature(thread_local)]
 use std::{cell::Cell, cmp::min, num::Wrapping};
 
+use bevy::prelude::*;
 use derive_more::{Deref, DerefMut};
-use flecs_ecs::{core::Entity, macros::Component};
 use tracing::debug;
 use valence_generated::item::EquipmentSlot;
 use valence_protocol::{

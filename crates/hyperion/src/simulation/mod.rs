@@ -13,6 +13,7 @@ use uuid;
 use crate::{
     Global,
     simulation::{
+        inventory::InventoryPlugin,
         packet::PacketPlugin,
         //     command::Command,
         //     entity_kind::EntityKind,
@@ -27,7 +28,7 @@ pub mod blocks;
 // pub mod entity_kind;
 pub mod event;
 pub mod handlers;
-// pub mod inventory;
+pub mod inventory;
 // pub mod metadata;
 pub mod packet;
 pub mod packet_state;
@@ -570,6 +571,7 @@ pub struct SimPlugin;
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PacketPlugin);
+        app.add_plugins(InventoryPlugin);
         app.add_systems(FixedUpdate, handlers::process_chat);
 
         app.add_event::<event::ItemDropEvent>();

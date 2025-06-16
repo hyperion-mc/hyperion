@@ -14,7 +14,7 @@ hyperion = { workspace = true }
 # hyperion-clap = { workspace = true }
 hyperion-genmap = { workspace = true }
 # hyperion-gui = { workspace = true }
-# hyperion-inventory = { workspace = true }
+hyperion-inventory = { workspace = true }
 # hyperion-item = { workspace = true }
 # hyperion-permission = { workspace = true }
 # hyperion-proxy-module = { workspace = true }

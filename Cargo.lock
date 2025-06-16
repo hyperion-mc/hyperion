@@ -3656,6 +3656,7 @@ dependencies = [
  "heed",
  "humantime",
  "hyperion-crafting",
+ "hyperion-inventory",
  "hyperion-nerd-font",
  "hyperion-packet-macros",
  "hyperion-palette",
@@ -3786,8 +3787,8 @@ dependencies = [
 name = "hyperion-inventory"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "derive_more 2.0.1",
- "flecs_ecs",
  "hyperion-crafting",
  "roaring",
  "snafu",
@@ -6743,6 +6744,7 @@ dependencies = [
  "glam",
  "hyperion",
  "hyperion-genmap",
+ "hyperion-inventory",
  "hyperion-utils",
  "rayon",
  "roaring",

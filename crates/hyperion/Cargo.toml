@@ -31,7 +31,7 @@ heed = { workspace = true }
 humantime = { workspace = true }
 hyperion-crafting = { workspace = true }
 # hyperion-event-macros = { workspace = true }
-# hyperion-inventory = { workspace = true }
+hyperion-inventory = { workspace = true }
 hyperion-nerd-font = { workspace = true }
 hyperion-packet-macros = { workspace = true }
 hyperion-palette = { workspace = true }
