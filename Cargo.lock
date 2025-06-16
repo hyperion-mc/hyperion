@@ -7402,7 +7402,7 @@ dependencies = [
 [[package]]
 name = "valence_anvil"
 version = "0.1.0"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "bitfield-struct 0.9.5",
  "bitvec",
@@ -7418,7 +7418,7 @@ dependencies = [
 [[package]]
 name = "valence_build_utils"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -7428,7 +7428,7 @@ dependencies = [
 [[package]]
 name = "valence_bytes"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "bytes",
 ]
@@ -7436,7 +7436,7 @@ dependencies = [
 [[package]]
 name = "valence_entity"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "bevy_app 0.12.1",
@@ -7465,7 +7465,7 @@ dependencies = [
 [[package]]
 name = "valence_generated"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "heck 0.5.0",
@@ -7482,7 +7482,7 @@ dependencies = [
 [[package]]
 name = "valence_ident"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "bytes",
  "serde",
@@ -7494,7 +7494,7 @@ dependencies = [
 [[package]]
 name = "valence_ident_macros"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7504,7 +7504,7 @@ dependencies = [
 [[package]]
 name = "valence_math"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "glam",
 ]
@@ -7512,7 +7512,7 @@ dependencies = [
 [[package]]
 name = "valence_nbt"
 version = "0.8.0"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "byteorder",
  "cesu8",
@@ -7525,7 +7525,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7553,7 +7553,7 @@ dependencies = [
 [[package]]
 name = "valence_protocol_macros"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -7564,7 +7564,7 @@ dependencies = [
 [[package]]
 name = "valence_registry"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "bevy_app 0.12.1",
@@ -7582,7 +7582,7 @@ dependencies = [
 [[package]]
 name = "valence_server"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -7611,7 +7611,7 @@ dependencies = [
 [[package]]
 name = "valence_server_common"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "bevy_app 0.12.1",
  "bevy_ecs 0.12.1",
@@ -7624,7 +7624,7 @@ dependencies = [
 [[package]]
 name = "valence_text"
 version = "0.2.0-alpha.1+mc.1.20.1"
-source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#9637ba89d601124faa88686e4b464a1201617a4f"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
  "serde",
  "serde_json",
