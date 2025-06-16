@@ -1,4 +1,4 @@
-use flecs_ecs::core::{World, WorldGet};
+use bevy::prelude::*;
 use hyperion_inventory::PlayerInventory;
 use hyperion_item::builder::{AttackDamage, BookBuilder, Color, ItemBuilder};
 use valence_protocol::ItemKind;
@@ -30,7 +30,7 @@ impl Class {
         self,
         team: Team,
         inventory: &mut PlayerInventory,
-        world: &World,
+        handles: &Handles,
         build_count: i8,
         extra_levels: u8,
     ) {
@@ -90,22 +90,20 @@ impl Class {
             ItemKind::Cactus,  // Damage
         ];
 
-        world.get::<&Handles>(|handles| {
-            for ((i, upgrade), available_item) in upgrades.enumerate().zip(upgrade_available) {
-                let slot = u16::try_from(i).unwrap() + UPGRADE_START_SLOT;
-                let mut item = upgrade_not_available
-                    .clone()
-                    .name(upgrade)
-                    .handler(handles.speed);
+        for ((i, upgrade), available_item) in upgrades.enumerate().zip(upgrade_available) {
+            let slot = u16::try_from(i).unwrap() + UPGRADE_START_SLOT;
+            let mut item = upgrade_not_available
+                .clone()
+                .name(upgrade)
+                .handler(handles.speed);
 
-                if extra_levels > 0 {
-                    item = item.kind(available_item);
-                }
-
-                let item = item.build();
-                inventory.set_hotbar(slot, item).unwrap();
+            if extra_levels > 0 {
+                item = item.kind(available_item);
             }
-        });
+
+            let item = item.build();
+            inventory.set_hotbar(slot, item).unwrap();
+        }
 
         let default_pickaxe = ItemBuilder::new(ItemKind::WoodenPickaxe).build();
         inventory.set_hotbar(PICKAXE_SLOT, default_pickaxe).unwrap();

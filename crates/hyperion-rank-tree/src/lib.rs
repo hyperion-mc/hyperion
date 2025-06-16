@@ -1,13 +1,9 @@
+use bevy::prelude::*;
 use clap::ValueEnum;
-use flecs_ecs::{
-    core::{Entity, IdOperations, World, flecs},
-    macros::Component,
-    prelude::Module,
-};
-use hyperion::{
-    simulation::{Player, handlers::PacketSwitchQuery},
-    storage::{EventFn, InteractEvent},
-};
+use hyperion::simulation::packet_state;
+use hyperion_inventory::PlayerInventory;
+use hyperion_item::NbtInteractEvent;
+use tracing::{debug, error};
 
 pub mod inventory;
 
@@ -42,36 +38,52 @@ pub enum Team {
     Yellow,
 }
 
-#[derive(Component)]
-pub struct RankTree;
+pub struct RankTreePlugin;
 
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Handles {
     pub speed: Entity,
 }
 
-impl Module for RankTree {
-    fn module(world: &World) {
-        world.import::<hyperion_item::ItemModule>();
-        world.component::<Team>();
-        world.component::<Class>();
-        world.component::<Handles>();
+fn initialize_player(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands
+        .entity(trigger.target())
+        .insert(Team::default())
+        .insert(Class::default());
+}
 
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, Team)>();
+fn handle_interact(
+    mut events: EventReader<'_, '_, NbtInteractEvent>,
+    handles: Res<'_, Handles>,
+    query: Query<'_, '_, &PlayerInventory>,
+) {
+    for event in events.read() {
+        if event.handler != handles.speed {
+            continue;
+        }
 
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, Class)>();
+        let inventory = match query.get(event.client) {
+            Ok(inventory) => inventory,
+            Err(e) => {
+                error!("failed to handle speed interact: query failed: {e}");
+                continue;
+            }
+        };
 
-        let handler: EventFn<InteractEvent> = Box::new(|query: &mut PacketSwitchQuery<'_>, _| {
-            let cursor = query.inventory.get_cursor();
-            tracing::debug!("clicked {cursor:?}");
-        });
+        let cursor = inventory.get_cursor();
+        debug!("clicked {cursor:?}");
+    }
+}
 
-        let speed = world.entity().set(hyperion_item::Handler::new(handler));
+impl Plugin for RankTreePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(initialize_player);
+        app.add_systems(FixedUpdate, handle_interact);
 
-        world.set(Handles { speed: speed.id() });
+        let speed = app.world_mut().spawn_empty().id();
+        app.insert_resource(Handles { speed });
     }
 }

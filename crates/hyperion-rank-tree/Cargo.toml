@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 clap = { workspace = true }
-flecs_ecs = { workspace = true }
+bevy = { workspace = true }
 hyperion = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-item.workspace = true

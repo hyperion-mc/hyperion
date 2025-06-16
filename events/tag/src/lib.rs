@@ -142,6 +142,7 @@ impl Plugin for TagPlugin {
             SpawnPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,
+            hyperion_rank_tree::RankTreePlugin,
         ));
     }
 }

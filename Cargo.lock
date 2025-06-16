@@ -3902,8 +3902,8 @@ dependencies = [
 name = "hyperion-rank-tree"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "clap",
- "flecs_ecs",
  "hyperion",
  "hyperion-inventory",
  "hyperion-item",
@@ -6747,6 +6747,7 @@ dependencies = [
  "hyperion-genmap",
  "hyperion-inventory",
  "hyperion-item",
+ "hyperion-rank-tree",
  "hyperion-utils",
  "rayon",
  "roaring",
