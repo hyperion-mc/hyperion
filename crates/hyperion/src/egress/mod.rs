@@ -1,10 +1,13 @@
 use bevy::prelude::*;
 use byteorder::WriteBytesExt;
-use hyperion_proto::{Flush, ServerToProxyMessage};
+use hyperion_proto::{Flush, ServerToProxyMessage, UpdatePlayerChunkPositions};
 use rkyv::util::AlignedVec;
 use tracing::error;
 
-use crate::{net::Compose, simulation::EgressComm};
+use crate::{
+    net::{Compose, ConnectionId},
+    simulation::{ChunkPosition, EgressComm},
+};
 // pub mod metadata;
 pub mod player_join;
 mod stats;
@@ -40,6 +43,46 @@ fn send_egress(
     }
 }
 
+fn send_chunk_positions(
+    egress: Res<'_, EgressComm>,
+    query: Query<'_, '_, (&ConnectionId, &ChunkPosition)>,
+) {
+    let count = query.iter().count();
+    let mut stream = Vec::with_capacity(count);
+    let mut positions = Vec::with_capacity(count);
+
+    for (io, pos) in query.iter() {
+        stream.push(io.inner());
+
+        let position = hyperion_proto::ChunkPosition {
+            x: pos.position.x,
+            z: pos.position.y,
+        };
+
+        positions.push(position);
+    }
+
+    let packet = UpdatePlayerChunkPositions { stream, positions };
+
+    let chunk_positions = ServerToProxyMessage::UpdatePlayerChunkPositions(packet);
+
+    let mut v: AlignedVec = AlignedVec::new();
+    // length
+    v.write_u64::<byteorder::BigEndian>(0).unwrap();
+
+    rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&chunk_positions, &mut v).unwrap();
+
+    let len = u64::try_from(v.len() - size_of::<u64>()).unwrap();
+    v[0..8].copy_from_slice(&len.to_be_bytes());
+
+    let v = v.into_boxed_slice();
+    let bytes = bytes::Bytes::from(v);
+
+    if let Err(e) = egress.send(bytes) {
+        error!("failed to send egress: {e}");
+    }
+}
+
 #[derive(Component)]
 pub struct EgressPlugin;
 
@@ -62,7 +105,7 @@ impl Plugin for EgressPlugin {
         };
 
         app.insert_resource(EncodedFlush(flush));
-        app.add_systems(PostUpdate, send_egress);
+        app.add_systems(PostUpdate, (send_egress, send_chunk_positions));
         app.add_plugins((PlayerJoinPlugin, StatsPlugin, SyncChunksPlugin));
 
         // let pipeline = world
@@ -76,60 +119,6 @@ impl Plugin for EgressPlugin {
         //             SyncChunksPlugin,
         //             EntityStateSyncPlugin,
         //         ));
-
-        // let player_location_query = world.new_query::<(&ConnectionId, &ChunkPosition)>();
-
-        //         system!(
-        //             "egress",
-        //             world,
-        //             &mut Compose($),
-        //             &mut EgressComm($),
-        //         )
-        //         .kind(pipeline)
-        //         .each(move |(compose, egress)| {
-        //             let span = info_span!("egress");
-        //             let _enter = span.enter();
-        //
-        //             {
-        //                 let span = info_span!("chunk_positions");
-        //                 let _enter = span.enter();
-        //
-        //                 let mut stream = Vec::new();
-        //                 let mut positions = Vec::new();
-        //
-        //                 player_location_query.each(|(io, pos)| {
-        //                     stream.push(io.inner());
-        //
-        //                     let position = hyperion_proto::ChunkPosition {
-        //                         x: pos.position.x,
-        //                         z: pos.position.y,
-        //                     };
-        //
-        //                     positions.push(position);
-        //                 });
-        //
-        //                 let packet = UpdatePlayerChunkPositions { stream, positions };
-        //
-        //                 let chunk_positions = ServerToProxyMessage::UpdatePlayerChunkPositions(packet);
-        //
-        //                 let mut v: AlignedVec = AlignedVec::new();
-        //                 // length
-        //                 v.write_u64::<byteorder::BigEndian>(0).unwrap();
-        //
-        //                 rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&chunk_positions, &mut v)
-        //                     .unwrap();
-        //
-        //                 let len = u64::try_from(v.len() - size_of::<u64>()).unwrap();
-        //                 v[0..8].copy_from_slice(&len.to_be_bytes());
-        //
-        //                 let v = v.into_boxed_slice();
-        //                 let bytes = bytes::Bytes::from(v);
-        //
-        //                 if let Err(e) = egress.send(bytes) {
-        //                     error!("failed to send egress: {e}");
-        //                 }
-        //             }
-        //        });
 
         //         system!(
         //             "clear_bump",
