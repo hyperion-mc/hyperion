@@ -572,10 +572,7 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(PacketPlugin);
         app.add_plugins(InventoryPlugin);
-        app.add_systems(
-            FixedUpdate,
-            (handlers::player_interact_item, handlers::process_chat),
-        );
+        app.add_systems(FixedUpdate, handlers::player_interact_item);
 
         app.add_event::<event::ItemDropEvent>();
         app.add_event::<event::ItemInteract>();

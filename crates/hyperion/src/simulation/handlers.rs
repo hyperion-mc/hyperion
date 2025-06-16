@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use hyperion_inventory::PlayerInventory;
-use tracing::{error, info};
+use tracing::error;
 use valence_generated::item::ItemKind;
 use valence_protocol::packets::play::OpenWrittenBookS2c;
 
@@ -15,7 +15,6 @@ use valence_protocol::packets::play::OpenWrittenBookS2c;
 use crate::{
     net::Compose,
     simulation::{
-        Name,
         // metadata::{entity::Pose, living_entity::HandStates},
         event,
         packet::play,
@@ -610,14 +609,3 @@ pub fn player_interact_item(
 //     });
 //     Ok(())
 // }
-
-pub fn process_chat(
-    mut packets: EventReader<'_, '_, play::ChatMessage>,
-    query: Query<'_, '_, &Name>,
-) {
-    for packet in packets.read() {
-        let name = query.get(packet.sender()).unwrap();
-        let message = packet.message.as_str();
-        info!("{name} sent message {message}");
-    }
-}

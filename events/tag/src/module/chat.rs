@@ -1,101 +1,89 @@
-use flecs_ecs::{
-    core::{
-        ComponentOrPairId, EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
-        World, flecs,
-    },
-    macros::{Component, system},
-    prelude::Module,
-};
+use bevy::prelude::*;
 use hyperion::{
-    net::ConnectionId,
-    simulation::{Name, Player, Position, event},
-    storage::EventQueue,
+    net::{Compose, ConnectionId},
+    simulation::{Name, Position, packet, packet_state},
     valence_protocol::{packets::play, text::IntoText},
 };
 use hyperion_rank_tree::Team;
-use tracing::info_span;
+use tracing::error;
 
-const CHAT_COOLDOWN_SECONDS: i64 = 15; // 15 seconds
+const CHAT_COOLDOWN_SECONDS: i64 = 3; // 3 seconds
 const CHAT_COOLDOWN_TICKS: i64 = CHAT_COOLDOWN_SECONDS * 20; // Convert seconds to ticks
 
 #[derive(Default, Component)]
-#[meta]
 pub struct ChatCooldown {
     pub expires: i64,
 }
 
-#[derive(Component)]
-pub struct ChatModule;
+pub fn initialize_cooldown(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands
+        .entity(trigger.target())
+        .insert(ChatCooldown::default());
+}
 
-impl Module for ChatModule {
-    fn module(world: &World) {
-        world.component::<ChatCooldown>().meta();
+pub fn handle_chat_messages(
+    mut packets: EventReader<'_, '_, packet::play::ChatMessage>,
+    compose: Res<'_, Compose>,
+    mut query: Query<'_, '_, (&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>,
+) {
+    let current_tick = compose.global().tick;
 
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, ChatCooldown)>();
+    for packet in packets.read() {
+        let (name, position, mut cooldown, io, team) = match query.get_mut(packet.sender()) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("could not process chat message: query failed: {e}");
+                continue;
+            }
+        };
 
-        system!("handle_chat_messages", world, &mut EventQueue<event::ChatMessage>($), &hyperion::net::Compose($))
+        // Check if player is still on cooldown
+        if cooldown.expires > current_tick {
+            let remaining_ticks = cooldown.expires - current_tick;
+            let remaining_secs = remaining_ticks as f32 / 20.0;
 
-            .each_iter(move |it: TableIter<'_, false>, _: usize, (event_queue, compose): (&mut EventQueue<event::ChatMessage>, &hyperion::net::Compose)| {
-                let world = it.world();
-                let span = info_span!("handle_chat_messages");
-                let _enter = span.enter();
+            let cooldown_msg =
+                format!("§cPlease wait {remaining_secs:.2} seconds before sending another message")
+                    .into_cow_text();
 
-                let system = it.system();
+            let packet = play::GameMessageS2c {
+                chat: cooldown_msg,
+                overlay: false,
+            };
 
-                let current_tick = compose.global().tick;
+            compose.unicast(&packet, *io).unwrap();
+            continue;
+        }
 
-                for event::ChatMessage { msg, by } in event_queue.drain() {
-                    let msg = msg.get();
-                    let by = world.entity_from_id(by);
+        cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
 
-                    // todo: we should not need this; death should occur such that this is always valid
-                    if !by.is_alive() {
-                        continue;
-                    }
+        let color_prefix = match team {
+            Team::Blue => "§9",
+            Team::Green => "§a",
+            Team::Red => "§c",
+            Team::Yellow => "§e",
+        };
 
-                    // Check cooldown
-                    // todo: try_get if entity is dead/not found what will happen?
-                    by.get::<(&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>(|(name, position, cooldown, io, team)| {
-                        // Check if player is still on cooldown
-                        if cooldown.expires > current_tick {
-                            let remaining_ticks = cooldown.expires - current_tick;
-                            let remaining_secs = remaining_ticks as f32 / 20.0;
+        let chat = format!("§8<{color_prefix}{name}§8>§r {}", &packet.message).into_cow_text();
+        let packet = play::GameMessageS2c {
+            chat,
+            overlay: false,
+        };
 
-                            let cooldown_msg = format!("§cPlease wait {remaining_secs:.2} seconds before sending another message").into_cow_text();
+        let center = position.to_chunk();
 
-                            let packet = play::GameMessageS2c {
-                                chat: cooldown_msg,
-                                overlay: false,
-                            };
+        compose.broadcast_local(&packet, center).send().unwrap();
+    }
+}
 
-                            compose.unicast(&packet, *io, system).unwrap();
-                            return;
-                        }
+pub struct ChatPlugin;
 
-                        cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
-
-                        let color_prefix = match team {
-                            Team::Blue => "§9",
-                            Team::Green => "§a",
-                            Team::Red => "§c",
-                            Team::Yellow => "§e",
-                        };
-
-                        let chat = format!("§8<{color_prefix}{name}§8>§r {msg}").into_cow_text();
-                        let packet = play::GameMessageS2c {
-                            chat,
-                            overlay: false,
-                        };
-
-                        let center = position.to_chunk();
-
-                        compose.broadcast_local(&packet, center, system)
-                            .send()
-                            .unwrap();
-                    });
-                }
-            });
+impl Plugin for ChatPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(initialize_cooldown);
+        app.add_systems(FixedUpdate, handle_chat_messages);
     }
 }
