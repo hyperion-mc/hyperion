@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
+
 use bevy::prelude::*;
-use derive_more::Deref;
+use derive_more::{Deref, From, Into};
 use hyperion_packet_macros::for_each_state;
 use hyperion_utils::EntityExt;
 
@@ -9,16 +11,18 @@ use crate::net::ConnectionId;
 pub struct Packet<T> {
     sender: Entity,
     connection_id: ConnectionId,
+    packet_id: u64,
 
     #[deref]
     body: T,
 }
 
 impl<T> Packet<T> {
-    pub fn new(sender: Entity, connection_id: ConnectionId, body: T) -> Self {
+    pub fn new(sender: Entity, connection_id: ConnectionId, packet_id: u64, body: T) -> Self {
         Self {
             sender,
             connection_id,
+            packet_id,
             body,
         }
     }
@@ -38,6 +42,27 @@ impl<T> Packet<T> {
     /// the same Minecraft id in the [`Packet::sender`] entity.
     pub fn minecraft_id(&self) -> i32 {
         self.sender().minecraft_id()
+    }
+
+    /// Unique monotonically-increasing packet id
+    pub fn packet_id(&self) -> u64 {
+        self.packet_id
+    }
+}
+
+/// Packet ordered by the time it was received by the server
+#[derive(Copy, Clone, Debug, Deref, From, Into)]
+pub struct OrderedPacketRef<'a, T>(&'a Packet<T>);
+
+impl<T, U> PartialOrd<OrderedPacketRef<'_, U>> for OrderedPacketRef<'_, T> {
+    fn partial_cmp(&self, other: &OrderedPacketRef<'_, U>) -> Option<Ordering> {
+        self.packet_id().partial_cmp(&other.packet_id())
+    }
+}
+
+impl<T, U> PartialEq<OrderedPacketRef<'_, U>> for OrderedPacketRef<'_, T> {
+    fn eq(&self, other: &OrderedPacketRef<'_, U>) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
     }
 }
 

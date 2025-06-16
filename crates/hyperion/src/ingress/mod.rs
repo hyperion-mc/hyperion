@@ -26,6 +26,7 @@ use crate::{
         Name,
         Pitch,
         Uuid,
+        Velocity,
         Yaw,
         packet,
         // animation::ActiveAnimation,
@@ -205,6 +206,7 @@ pub fn process_login_hello(
             .insert(ChunkSendQueue::default())
             .insert(Yaw::default())
             .insert(Pitch::default())
+            .insert(Velocity::default())
             .insert(packet_state::Play(()));
         if let Some(skin) = skin {
             entity.insert(skin);

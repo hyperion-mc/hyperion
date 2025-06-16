@@ -8,10 +8,15 @@ use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Vec3};
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use uuid;
+use tracing::error;
+use valence_protocol::{
+    VarInt,
+    packets::play::{self, player_position_look_s2c::PlayerPositionLookFlags},
+};
 
 use crate::{
     Global,
+    net::{Compose, ConnectionId},
     simulation::{
         inventory::InventoryPlugin,
         packet::PacketPlugin,
@@ -22,10 +27,10 @@ use crate::{
     },
 };
 
-// pub mod animation;
+pub mod animation;
 pub mod blocks;
 // pub mod command;
-// pub mod entity_kind;
+pub mod entity_kind;
 pub mod event;
 pub mod handlers;
 pub mod inventory;
@@ -566,13 +571,58 @@ pub struct Flight {
     pub is_flying: bool,
 }
 
+fn initialize_player(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands
+        .entity(trigger.target())
+        .insert(EntitySize::default())
+        .insert(Flight::default())
+        .insert(FlyingSpeed::default())
+        .insert(hyperion_inventory::CursorItem::default());
+}
+
+fn send_pending_teleportation(
+    trigger: Trigger<'_, OnInsert, PendingTeleportation>,
+    query: Query<'_, '_, (&PendingTeleportation, &Yaw, &Pitch, &ConnectionId)>,
+    compose: Res<'_, Compose>,
+) {
+    let (pending_teleportation, yaw, pitch, &connection) = match query.get(trigger.target()) {
+        Ok(data) => data,
+        Err(e) => {
+            error!("failed to send pending teleportation: query failed: {e}");
+            return;
+        }
+    };
+
+    let pkt = play::PlayerPositionLookS2c {
+        position: pending_teleportation.destination.as_dvec3(),
+        yaw: **yaw,
+        pitch: **pitch,
+        flags: PlayerPositionLookFlags::default(),
+        teleport_id: VarInt(pending_teleportation.teleport_id),
+    };
+
+    compose.unicast(&pkt, connection).unwrap();
+}
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
+        app.add_observer(initialize_player);
+        app.add_observer(send_pending_teleportation);
+
         app.add_plugins(PacketPlugin);
         app.add_plugins(InventoryPlugin);
-        app.add_systems(FixedUpdate, handlers::player_interact_item);
+        app.add_systems(
+            FixedUpdate,
+            (
+                handlers::position_and_look_updates,
+                handlers::player_interact_item,
+            ),
+        );
 
         app.add_event::<event::ItemDropEvent>();
         app.add_event::<event::ItemInteract>();
@@ -675,10 +725,6 @@ impl Plugin for SimPlugin {
 //         world.component::<hyperion_inventory::PlayerInventory>();
 //         world.component::<hyperion_inventory::CursorItem>();
 //
-//         world
-//             .component::<Player>()
-//             .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
-//
 //         observer!(
 //             world,
 //             Spawn,
@@ -764,35 +810,6 @@ impl Plugin for SimPlugin {
 //                     _ => {}
 //                 });
 //             });
-//
-//         // whenever a Player component is added, we add the Flight component to them.
-//         world
-//             .component::<Player>()
-//             .add_trait::<(flecs::With, Flight)>();
-//         world
-//             .component::<Player>()
-//             .add_trait::<(flecs::With, FlyingSpeed)>();
-//
-//         observer!(
-//             world,
-//             flecs::OnSet, &PendingTeleportation,
-//             &Compose($), &Yaw, &Pitch, &ConnectionId
-//         )
-//         .each_iter(
-//             |it, _, (pending_teleportation, compose, yaw, pitch, connection)| {
-//                 let system = it.system();
-//
-//                 let pkt = play::PlayerPositionLookS2c {
-//                     position: pending_teleportation.destination.as_dvec3(),
-//                     yaw: **yaw,
-//                     pitch: **pitch,
-//                     flags: PlayerPositionLookFlags::default(),
-//                     teleport_id: VarInt(pending_teleportation.teleport_id),
-//                 };
-//
-//                 compose.unicast(&pkt, *connection, system).unwrap();
-//             },
-//         );
 //
 //         observer!(
 //             world,

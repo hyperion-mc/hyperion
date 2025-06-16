@@ -12,13 +12,12 @@ use crate::{
 pub mod player_join;
 mod stats;
 pub mod sync_chunks;
-// mod sync_entity_state;
+mod sync_entity_state;
 
 use player_join::PlayerJoinPlugin;
 use stats::StatsPlugin;
 use sync_chunks::SyncChunksPlugin;
-
-// use sync_entity_state::EntityStateSyncModule;
+use sync_entity_state::EntityStateSyncPlugin;
 
 #[derive(Resource)]
 struct EncodedFlush(bytes::Bytes);
@@ -106,7 +105,12 @@ impl Plugin for EgressPlugin {
 
         app.insert_resource(EncodedFlush(flush));
         app.add_systems(PostUpdate, (send_egress, send_chunk_positions));
-        app.add_plugins((PlayerJoinPlugin, StatsPlugin, SyncChunksPlugin));
+        app.add_plugins((
+            PlayerJoinPlugin,
+            StatsPlugin,
+            SyncChunksPlugin,
+            EntityStateSyncPlugin,
+        ));
 
         // let pipeline = world
         //     .entity()

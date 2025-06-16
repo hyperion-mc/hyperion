@@ -5,7 +5,7 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 use hyperion_packet_macros::*;
 use paste::paste;
-use tracing::error;
+use tracing::{error, warn};
 use valence_protocol::Packet as _;
 
 use crate::{
@@ -15,6 +15,28 @@ use crate::{
         packet_state,
     },
 };
+
+#[derive(Default, Resource)]
+struct PacketIdGenerator(u64);
+
+impl PacketIdGenerator {
+    fn next(&mut self) -> u64 {
+        let id = self.0;
+        match id.checked_add(1) {
+            Some(new_id) => {
+                self.0 = new_id;
+            }
+            None => {
+                warn!(
+                    "c2s packet ids are wrapping around to 0, this may cause issues with packet \
+                     ordering"
+                );
+                self.0 = 0;
+            }
+        };
+        id
+    }
+}
 
 fn try_next_frame(
     compose: &Compose,
@@ -75,6 +97,7 @@ mod decoders {
                 paste! { With<packet_state::[< #state:camel >]> }
                 >,
                 compose: Res<'_, Compose>,
+                mut packet_id_generator: ResMut<'_, PacketIdGenerator>,
                 mut writers: super::writers::#state<'_>,
             ) {
                 let compose = compose.into_inner();
@@ -102,6 +125,7 @@ mod decoders {
                                                 writers.#packet_name.write(Packet::new(
                                                     sender,
                                                     connection_id,
+                                                    packet_id_generator.next(),
                                                     data
                                                 ));
                                                 Ok(())
@@ -142,6 +166,7 @@ pub struct DecodePlugin;
 
 impl Plugin for DecodePlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(PacketIdGenerator::default());
         for_each_state! {
             app.add_systems(
                 FixedPreUpdate, (

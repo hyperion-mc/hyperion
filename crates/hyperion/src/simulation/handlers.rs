@@ -1,8 +1,14 @@
 use bevy::prelude::*;
+use glam::DVec3;
 use hyperion_inventory::PlayerInventory;
-use tracing::error;
+use hyperion_utils::next_lowest;
+use tracing::{error, warn};
 use valence_generated::item::ItemKind;
-use valence_protocol::packets::play::OpenWrittenBookS2c;
+use valence_protocol::{
+    VarInt,
+    packets::play::{GameMessageS2c, OpenWrittenBookS2c},
+};
+use valence_text::IntoText;
 
 // use super::{
 //     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
@@ -13,173 +19,294 @@ use valence_protocol::packets::play::OpenWrittenBookS2c;
 //     inventory::{handle_click_slot, handle_update_selected_slot},
 // };
 use crate::{
-    net::Compose,
+    net::{Compose, ConnectionId},
     simulation::{
+        Aabb,
+        EntitySize,
+        MovementTracking,
+        PendingTeleportation,
+        Pitch,
+        Position,
+        Yaw,
         // metadata::{entity::Pose, living_entity::HandStates},
+        aabb,
+        block_bounds,
+        blocks::Blocks,
         event,
-        packet::play,
+        packet::{OrderedPacketRef, play},
     },
 };
 
-// fn full(
-//     &play::FullC2s {
-//         position,
-//         yaw,
-//         pitch,
-//         on_ground,
-//     }: &play::FullC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     // check to see if the player is moving too fast
-//     // if they are, ignore the packet
-//
-//     let position = position.as_vec3();
-//     change_position_or_correct_client(query, position, on_ground);
-//
-//     query.yaw.yaw = yaw;
-//     query.pitch.pitch = pitch;
-//
-//     Ok(())
-// }
-//
-// // #[instrument(skip_all)]
-// fn change_position_or_correct_client(
-//     query: &mut PacketSwitchQuery<'_>,
-//     proposed: Vec3,
-//     on_ground: bool,
-// ) {
-//     let pose = &mut *query.position;
-//
-//     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
-//         // Send error message to player
-//         let msg = format!("§c{e}");
-//         let pkt = play::GameMessageS2c {
-//             chat: msg.into_cow_text(),
-//             overlay: false,
-//         };
-//
-//         if let Err(e) = query.compose.unicast(&pkt, query.io_ref, query.system) {
-//             warn!("Failed to send error message to player: {e}");
-//         }
-//
-//         query
-//             .id
-//             .entity_view(query.world)
-//             .set(PendingTeleportation::new(pose.position));
-//     }
-//     query.view.get::<&mut MovementTracking>(|tracking| {
-//         tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
-//         let y_delta = proposed.y - pose.y;
-//
-//         if y_delta > 0. && tracking.was_on_ground && !on_ground {
-//             tracking.server_velocity.y = 0.419_999_986_886_978_15;
-//
-//             if tracking.sprinting {
-//                 let smth = query.yaw.yaw * 0.017_453_292;
-//                 tracking.server_velocity += DVec3::new(
-//                     f64::from(-smth.sin()) * 0.2,
-//                     0.0,
-//                     f64::from(smth.cos()) * 0.2,
-//                 );
-//             }
-//         }
-//     });
-//
-//     **pose = proposed;
-// }
-//
-// /// Returns true if the position was changed, false if it was not.
-// ///
-// /// Movement validity rules:
-// /// ```text
-// ///   From  |   To    | Allowed
-// /// --------|---------|--------
-// /// in  🧱  | in  🧱  |   ✅
-// /// in  🧱  | out 🌫️  |   ✅
-// /// out 🌫️  | in  🧱  |   ❌
-// /// out 🌫️  | out 🌫️  |   ✅
-// /// ```
-// /// Only denies movement if starting outside a block and moving into a block.
-// /// This prevents players from glitching into blocks while allowing them to move out.
-// fn try_change_position(
-//     proposed: Vec3,
-//     position: &Position,
-//     size: EntitySize,
-//     blocks: &Blocks,
-// ) -> anyhow::Result<()> {
-//     // Only check collision if we're starting outside a block
-//     if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks)
-//     {
-//         return Err(anyhow::anyhow!("Cannot move into solid blocks"));
-//     }
-//
-//     Ok(())
-// }
-//
-// #[must_use]
-// #[allow(clippy::cast_possible_truncation)]
-// pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
-//     // Calculate the block position by flooring the x and z coordinates
-//     let block_x = position.x as i32;
-//     let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
-//     let block_z = position.z as i32;
-//
-//     // Check if the block at the calculated position is not air
-//     !blocks
-//         .get_block(IVec3::new(block_x, block_y, block_z))
-//         .unwrap()
-//         .is_air()
-// }
-//
-// fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {
-//     use std::ops::ControlFlow;
-//
-//     let (min, max) = block_bounds(*position, size);
-//     let shrunk = aabb(*position, size).shrink(0.01);
-//
-//     let res = blocks.get_blocks(min, max, |pos, block| {
-//         let pos = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
-//
-//         for aabb in block.collision_shapes() {
-//             let aabb = Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3());
-//             let aabb = aabb.move_by(pos);
-//
-//             if shrunk.collides(&aabb) {
-//                 return ControlFlow::Break(false);
-//             }
-//         }
-//
-//         ControlFlow::Continue(())
-//     });
-//
-//     res.is_break()
-// }
-//
-// fn look_and_on_ground(
-//     &play::LookAndOnGroundC2s { yaw, pitch, .. }: &play::LookAndOnGroundC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     **query.yaw = yaw;
-//     **query.pitch = pitch;
-//
-//     Ok(())
-// }
-//
-// fn position_and_on_ground(
-//     &play::PositionAndOnGroundC2s {
-//         position,
-//         on_ground,
-//     }: &play::PositionAndOnGroundC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     change_position_or_correct_client(query, position.as_vec3(), on_ground);
-//
-//     Ok(())
-// }
-//
+pub fn position_and_look_updates(
+    mut full_reader: EventReader<'_, '_, play::Full>,
+    mut position_reader: EventReader<'_, '_, play::PositionAndOnGround>,
+    mut look_reader: EventReader<'_, '_, play::LookAndOnGround>,
+    mut teleport_reader: EventReader<'_, '_, play::TeleportConfirm>,
+    mut queries: ParamSet<
+        '_,
+        '_,
+        (
+            Query<'_, '_, (&EntitySize, &mut MovementTracking, &mut Position, &Yaw)>,
+            Query<'_, '_, (&mut Yaw, &mut Pitch)>,
+            Query<'_, '_, &mut Position>,
+        ),
+    >,
+    teleport_query: Query<'_, '_, &PendingTeleportation>,
+    blocks: Res<'_, Blocks>,
+    compose: Res<'_, Compose>,
+    mut commands: Commands<'_, '_>,
+) {
+    let mut full_reader = full_reader.read().map(OrderedPacketRef::from).peekable();
+    let mut position_reader = position_reader
+        .read()
+        .map(OrderedPacketRef::from)
+        .peekable();
+    let mut look_reader = look_reader.read().map(OrderedPacketRef::from).peekable();
+    let mut teleport_reader = teleport_reader
+        .read()
+        .map(OrderedPacketRef::from)
+        .peekable();
+    let blocks = blocks.into_inner();
+    let compose = compose.into_inner();
+
+    loop {
+        // next_lowest is used to process the packet which was sent first. It is important to
+        // process position packets of different types in the order they were sent by the client
+        // so the client is at the correct final position after processing all packets.
+        let result = next_lowest! {
+            packet in full_reader => {
+                change_position_or_correct_client(
+                    packet.sender(),
+                    packet.connection_id(),
+                    queries.p0(),
+                    blocks,
+                    compose,
+                    &mut commands,
+                    packet.position.as_vec3(),
+                    packet.on_ground,
+                );
+
+                let mut query = queries.p1();
+                let (mut yaw, mut pitch) = match query.get_mut(packet.sender()) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("failed to handle full packet: query failed: {e}");
+                        return;
+                    }
+                };
+
+                yaw.yaw = packet.yaw;
+                pitch.pitch = packet.pitch;
+            },
+            packet in position_reader => {
+                change_position_or_correct_client(
+                    packet.sender(),
+                    packet.connection_id(),
+                    queries.p0(),
+                    blocks,
+                    compose,
+                    &mut commands,
+                    packet.position.as_vec3(),
+                    packet.on_ground,
+                );
+            },
+            packet in look_reader => {
+                let mut query = queries.p1();
+                let (mut yaw, mut pitch) = match query.get_mut(packet.sender()) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("failed to handle look and on ground: query failed: {e}");
+                        return;
+                }
+                };
+
+                yaw.yaw = packet.yaw;
+                pitch.pitch = packet.pitch;
+            },
+            packet in teleport_reader => {
+                let client = packet.sender();
+                let pending_teleport = match teleport_query.get(client) {
+                    Ok(pending_teleport) => pending_teleport,
+                    Err(_) => {
+                        warn!("failed to confirm teleportation: client is not pending teleportation, so there is nothing to confirm");
+                        continue;
+                    }
+                };
+
+                let pending_teleport_id = pending_teleport.teleport_id;
+
+                if VarInt(pending_teleport_id) != packet.teleport_id {
+                    // If this is reached and the client is behaving correctly, the client has been
+                    // teleported again (with teleport id `pending_teleport_id`) since the initial teleport
+                    // (with teleport id `packet.teleport_id`). The current teleport confirmation
+                    // can be ignored; the client will need to send a new one for the newer
+                    // teleport.
+                    continue;
+                }
+
+                let mut query = queries.p2();
+                let mut position  = match query.get_mut(client) {
+                    Ok(position) => position,
+                    Err(e) => {
+                        error!("failed to confirm teleportation: query failed: {e}");
+                        return;
+                    }
+                };
+
+                **position = pending_teleport.destination;
+
+                commands.queue(move |world: &mut World| {
+                    let Ok(mut entity) = world.get_entity_mut(client) else {
+                        error!("failed to confirm teleportation: client entity has despawned");
+                        return;
+                    };
+
+                    let Some(pending_teleport) = entity.get::<PendingTeleportation>() else {
+                        error!(
+                            "failed to confirm teleportation: client is missing PendingTeleportation \
+                             component"
+                        );
+                        return;
+                    };
+
+                    if pending_teleport.teleport_id != pending_teleport_id {
+                        // A new pending teleport must have started between the time that this
+                        // command was queued and the time that this command was ran. Therefore,
+                        // this should not remove the PendingTeleportation component.
+                        return;
+                    }
+
+                    entity.remove::<PendingTeleportation>();
+                });
+            }
+        };
+        if result.is_none() {
+            break;
+        }
+    }
+}
+
+fn change_position_or_correct_client(
+    client: Entity,
+    connection_id: ConnectionId,
+    mut query: Query<'_, '_, (&EntitySize, &mut MovementTracking, &mut Position, &Yaw)>,
+    blocks: &Blocks,
+    compose: &Compose,
+    commands: &mut Commands<'_, '_>,
+    proposed: Vec3,
+    on_ground: bool,
+) {
+    let (&size, mut tracking, mut pose, yaw) = match query.get_mut(client) {
+        Ok(data) => data,
+        Err(e) => {
+            error!("change_position_or_correct_client failed: query failed: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = try_change_position(proposed, &pose, size, &blocks) {
+        // Send error message to player
+        let msg = format!("§c{e}");
+        let pkt = GameMessageS2c {
+            chat: msg.into_cow_text(),
+            overlay: false,
+        };
+
+        if let Err(e) = compose.unicast(&pkt, connection_id) {
+            warn!("Failed to send error message to player: {e}");
+        }
+
+        commands
+            .entity(client)
+            .insert(PendingTeleportation::new(pose.position));
+    }
+
+    tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
+    let y_delta = proposed.y - pose.y;
+
+    if y_delta > 0. && tracking.was_on_ground && !on_ground {
+        tracking.server_velocity.y = 0.419_999_986_886_978_15;
+
+        if tracking.sprinting {
+            let smth = yaw.yaw * 0.017_453_292;
+            tracking.server_velocity += DVec3::new(
+                f64::from(-smth.sin()) * 0.2,
+                0.0,
+                f64::from(smth.cos()) * 0.2,
+            );
+        }
+    }
+
+    **pose = proposed;
+}
+
+/// Returns true if the position was changed, false if it was not.
+///
+/// Movement validity rules:
+/// ```text
+///   From  |   To    | Allowed
+/// --------|---------|--------
+/// in  🧱  | in  🧱  |   ✅
+/// in  🧱  | out 🌫️  |   ✅
+/// out 🌫️  | in  🧱  |   ❌
+/// out 🌫️  | out 🌫️  |   ✅
+/// ```
+/// Only denies movement if starting outside a block and moving into a block.
+/// This prevents players from glitching into blocks while allowing them to move out.
+fn try_change_position(
+    proposed: Vec3,
+    position: &Position,
+    size: EntitySize,
+    blocks: &Blocks,
+) -> anyhow::Result<()> {
+    // Only check collision if we're starting outside a block
+    if !has_block_collision(position, size, blocks) && has_block_collision(&proposed, size, blocks)
+    {
+        return Err(anyhow::anyhow!("Cannot move into solid blocks"));
+    }
+
+    Ok(())
+}
+
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
+    // Calculate the block position by flooring the x and z coordinates
+    let block_x = position.x as i32;
+    let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
+    let block_z = position.z as i32;
+
+    // Check if the block at the calculated position is not air
+    !blocks
+        .get_block(IVec3::new(block_x, block_y, block_z))
+        .unwrap()
+        .is_air()
+}
+
+fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {
+    use std::ops::ControlFlow;
+
+    let (min, max) = block_bounds(*position, size);
+    let shrunk = aabb(*position, size).shrink(0.01);
+
+    let res = blocks.get_blocks(min, max, |pos, block| {
+        let pos = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
+
+        for aabb in block.collision_shapes() {
+            let aabb = Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3());
+            let aabb = aabb.move_by(pos);
+
+            if shrunk.collides(&aabb) {
+                return ControlFlow::Break(false);
+            }
+        }
+
+        ControlFlow::Continue(())
+    });
+
+    res.is_break()
+}
+
 // fn chat_command<'a>(
 //     pkt: &play::CommandExecutionC2s<'a>,
 //     handle: &dyn LifetimeHandle<'a>,
@@ -571,27 +698,6 @@ pub fn player_interact_item(
 //     };
 //
 //     query.handler_registry.trigger(&command, handle, query)?;
-//
-//     Ok(())
-// }
-//
-// pub fn confirm_teleportation(
-//     pkt: &play::TeleportConfirmC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let entity = query.id.entity_view(query.world);
-//
-//     entity.get::<Option<&PendingTeleportation>>(|pending_teleport| {
-//         if let Some(pending_teleport) = pending_teleport {
-//             if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
-//                 return;
-//             }
-//
-//             **query.position = pending_teleport.destination;
-//             entity.remove(id::<PendingTeleportation>());
-//         }
-//     });
 //
 //     Ok(())
 // }

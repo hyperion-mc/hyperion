@@ -31,6 +31,7 @@ pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 use std::{alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
+use derive_more::Deref;
 use egress::EgressPlugin;
 pub use glam;
 #[cfg(unix)]
@@ -79,9 +80,16 @@ pub mod simulation;
 // pub mod spatial;
 pub mod storage;
 
-/// Relationship for previous values
-#[derive(Component)]
-pub struct Prev;
+/// Component storing the value of a component in the previous frame. This is updated every
+/// `FixedPreUpdate`.
+#[derive(Component, Copy, Clone, Deref, PartialEq, Eq, Debug)]
+pub struct Prev<T>(#[deref] T);
+
+impl<T> Prev<T> {
+    fn set(&mut self, new: T) {
+        self.0 = new;
+    }
+}
 
 pub trait PacketBundle {
     fn encode_including_ids(self, w: impl Write) -> anyhow::Result<()>;
@@ -231,10 +239,7 @@ impl Plugin for HyperionCore {
             SimPlugin,
             HyperionUtilsPlugin,
         ));
-        // app
-        //     .component::<Player>()
-        //     .add_trait::<(flecs::With, EntitySize)>();
-        //
+
         // app.insert_resource(IgnMap::default());
         // Minecraft is 20 TPS
         app.insert_resource(Time::<Fixed>::from_hz(20.0));

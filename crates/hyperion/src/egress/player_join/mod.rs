@@ -13,7 +13,6 @@ use valence_protocol::{
     ident,
     packets::play::{
         self, GameJoinS2c,
-        player_position_look_s2c::PlayerPositionLookFlags,
         team_s2c::{CollisionRule, Mode, NameTagVisibility, TeamColor, TeamFlags},
     },
 };
@@ -32,6 +31,7 @@ use crate::{
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         Name,
+        PendingTeleportation,
         Position,
         Uuid,
         Yaw,
@@ -198,15 +198,10 @@ pub fn player_join_world(
 
     compose.broadcast(&text).send().unwrap();
 
-    bundle
-        .add_packet(&play::PlayerPositionLookS2c {
-            position: position.as_dvec3(),
-            yaw: **yaw,
-            pitch: **pitch,
-            flags: PlayerPositionLookFlags::default(),
-            teleport_id: 1.into(),
-        })
-        .unwrap();
+    commands
+        .entity(trigger.target())
+        .insert(PendingTeleportation::new(**position));
+
     let mut entries = Vec::new();
     let mut all_player_names = Vec::new();
 
