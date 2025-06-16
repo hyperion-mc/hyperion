@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use derive_more::Deref;
 use hyperion_packet_macros::for_each_state;
+use hyperion_utils::EntityExt;
 
 use crate::net::ConnectionId;
 
@@ -27,10 +28,16 @@ impl<T> Packet<T> {
         self.sender
     }
 
-    /// Connection ID of the player who sent this packet. This is included for convenience; it is
-    /// the same connection ID component in the [`Packet::sender`] entity.
+    /// Connection id of the player who sent this packet. This is included for convenience; it is
+    /// the same connection id component in the [`Packet::sender`] entity.
     pub fn connection_id(&self) -> ConnectionId {
         self.connection_id
+    }
+
+    /// Minecraft id of the player who sent this packet. This is included for convenience; it is
+    /// the same Minecraft id in the [`Packet::sender`] entity.
+    pub fn minecraft_id(&self) -> i32 {
+        self.sender().minecraft_id()
     }
 }
 
