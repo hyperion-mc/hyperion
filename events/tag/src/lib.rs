@@ -137,7 +137,12 @@ pub struct TagPlugin;
 
 impl Plugin for TagPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((StatsPlugin, SpawnPlugin, hyperion_genmap::GenMapPlugin));
+        app.add_plugins((
+            StatsPlugin,
+            SpawnPlugin,
+            hyperion_genmap::GenMapPlugin,
+            hyperion_item::ItemPlugin,
+        ));
     }
 }
 

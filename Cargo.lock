@@ -3801,12 +3801,13 @@ dependencies = [
 name = "hyperion-item"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "bytemuck",
  "derive_more 2.0.1",
- "flecs_ecs",
  "hyperion",
  "hyperion-inventory",
  "hyperion-utils",
+ "tracing",
  "valence_protocol",
 ]
 
@@ -6745,6 +6746,7 @@ dependencies = [
  "hyperion",
  "hyperion-genmap",
  "hyperion-inventory",
+ "hyperion-item",
  "hyperion-utils",
  "rayon",
  "roaring",

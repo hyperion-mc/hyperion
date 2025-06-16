@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use tracing::info;
+use hyperion_inventory::PlayerInventory;
+use tracing::{error, info};
+use valence_generated::item::ItemKind;
+use valence_protocol::packets::play::OpenWrittenBookS2c;
 
 // use super::{
 //     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
@@ -9,10 +12,14 @@ use tracing::info;
 //     event::ClientStatusEvent,
 //     inventory::{handle_click_slot, handle_update_selected_slot},
 // };
-use crate::simulation::{
-    Name,
-    // metadata::{entity::Pose, living_entity::HandStates},
-    packet::play,
+use crate::{
+    net::Compose,
+    simulation::{
+        Name,
+        // metadata::{entity::Pose, living_entity::HandStates},
+        event,
+        packet::play,
+    },
 };
 
 // fn full(
@@ -334,45 +341,60 @@ use crate::simulation::{
 //
 //     Ok(())
 // }
-//
-// /// Handles player interaction with items in hand
-// ///
-// /// Common uses:
-// /// - Starting to wind up a bow for shooting arrows
-// /// - Using consumable items like food or potions
-// /// - Throwing items like snowballs or ender pearls
-// /// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
-// /// - Activating items with duration effects (e.g. chorus fruit teleport)
-// pub fn player_interact_item(
-//     &play::PlayerInteractItemC2s { hand, sequence }: &play::PlayerInteractItemC2s,
-//     handle: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let event = InteractEvent {
-//         hand,
-//         sequence: sequence.0,
-//     };
-//
-//     let cursor = &query.inventory.get_cursor().stack;
-//
-//     if !cursor.is_empty() {
-//         let flecs_event = event::ItemInteract {
-//             entity: query.id,
-//             hand,
-//             sequence: sequence.0,
-//         };
-//         if cursor.item == ItemKind::WrittenBook {
-//             let packet = play::OpenWrittenBookS2c { hand };
-//             query.compose.unicast(&packet, query.io_ref, query.system)?;
-//         }
-//         query.events.push(flecs_event, query.world);
-//     }
-//
-//     query.handler_registry.trigger(&event, handle, query)?;
-//
-//     Ok(())
-// }
-//
+
+/// Handles player interaction with items in hand
+///
+/// Common uses:
+/// - Starting to wind up a bow for shooting arrows
+/// - Using consumable items like food or potions
+/// - Throwing items like snowballs or ender pearls
+/// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
+/// - Activating items with duration effects (e.g. chorus fruit teleport)
+pub fn player_interact_item(
+    mut packets: EventReader<'_, '_, play::PlayerInteractItem>,
+    compose: Res<'_, Compose>,
+    query: Query<'_, '_, &PlayerInventory>,
+    mut interact_event_writer: EventWriter<'_, event::InteractEvent>,
+    mut item_interact_writer: EventWriter<'_, event::ItemInteract>,
+) {
+    for packet in packets.read() {
+        let inventory = match query.get(packet.sender()) {
+            Ok(inventory) => inventory,
+            Err(e) => {
+                error!("failed to process player interact item: query failed: {e}");
+                continue;
+            }
+        };
+
+        let event = event::InteractEvent {
+            client: packet.sender(),
+            hand: packet.hand,
+            sequence: packet.sequence.0,
+        };
+
+        let cursor = &inventory.get_cursor().stack;
+
+        if !cursor.is_empty() {
+            let event = event::ItemInteract {
+                entity: packet.sender(),
+                hand: packet.hand,
+                sequence: packet.sequence.0,
+            };
+            if cursor.item == ItemKind::WrittenBook {
+                compose
+                    .unicast(
+                        &OpenWrittenBookS2c { hand: packet.hand },
+                        packet.connection_id(),
+                    )
+                    .unwrap();
+            }
+            item_interact_writer.write(event);
+        }
+
+        interact_event_writer.write(event);
+    }
+}
+
 // pub fn player_interact_block(
 //     &packet: &play::PlayerInteractBlockC2s,
 //     _: &dyn LifetimeHandle<'_>,

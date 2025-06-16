@@ -15,15 +15,6 @@ unsafe impl Lifetime for CommandCompletionRequest<'_> {
     type WithLifetime<'a> = CommandCompletionRequest<'a>;
 }
 
-pub struct InteractEvent {
-    pub hand: Hand,
-    pub sequence: i32,
-}
-
-unsafe impl Lifetime for InteractEvent {
-    type WithLifetime<'a> = Self;
-}
-
 pub struct PlayerJoinServer {
     pub username: String,
     pub entity: Entity,

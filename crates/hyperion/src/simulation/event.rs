@@ -167,3 +167,10 @@ pub struct HitGroundEvent {
     /// This is at least 3
     pub fall_distance: f32,
 }
+
+#[derive(Event, Clone, Debug)]
+pub struct InteractEvent {
+    pub client: Entity,
+    pub hand: Hand,
+    pub sequence: i32,
+}
