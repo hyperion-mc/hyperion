@@ -41,13 +41,6 @@ use crate::{
 
 mod decode;
 
-/// This event is sent for players who have already been disconnected and about to be destructed. Packets
-/// cannot be sent to these players because they have already been disconnected.
-///
-/// This event cannot be sent to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
-#[derive(Event)]
-pub struct Disconnect(pub(crate) ());
-
 pub fn process_handshake(
     mut packets: EventReader<'_, '_, packet::handshake::Handshake>,
     mut commands: Commands<'_, '_>,
@@ -238,7 +231,6 @@ pub struct IngressPlugin;
 
 impl Plugin for IngressPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<Disconnect>();
         app.add_plugins(decode::DecodePlugin);
         app.add_systems(
             FixedUpdate,

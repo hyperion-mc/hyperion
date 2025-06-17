@@ -12,7 +12,6 @@ use tracing::{error, info, warn};
 use crate::{
     ConnectionId, PacketDecoder,
     command_channel::CommandChannel,
-    ingress::Disconnect,
     net::{Compose, packet_channel},
     runtime::AsyncRuntime,
     simulation::{EgressComm, StreamLookup, packet_state},
@@ -166,7 +165,8 @@ async fn inner(
                                             "player from PlayerDisconnect must exist in the \
                                              stream lookup map",
                                         );
-                                    world.trigger_targets(Disconnect(()), player);
+
+                                    world.despawn(player);
                                 });
                             }
                             ArchivedProxyToServerMessage::PlayerPackets(message) => {
