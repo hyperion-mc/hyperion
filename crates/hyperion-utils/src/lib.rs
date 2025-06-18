@@ -68,12 +68,12 @@ mod tests {
 
     #[test]
     fn test_entity_id() {
-        let entity = Entity::from_raw(0xDEAD_BEEF);
-        let id = entity.minecraft_id().unwrap();
-        assert_eq!(id, 0xDEAD_BEEF);
-
-        let entity = Entity::from_raw(0xDEAD_BEEF);
-        let id = entity.minecraft_id().unwrap();
-        assert_eq!(id, 0xDEAD_BEEF);
+        let mut world = World::new();
+        let entity_id = world.spawn_empty().id();
+        let minecraft_id = entity_id.minecraft_id();
+        assert_eq!(
+            Entity::from_minecraft_id(minecraft_id, &world).unwrap(),
+            entity_id
+        );
     }
 }
