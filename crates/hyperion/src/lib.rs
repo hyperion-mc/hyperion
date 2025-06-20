@@ -77,7 +77,7 @@ pub mod egress;
 pub mod ingress;
 pub mod net;
 pub mod simulation;
-// pub mod spatial;
+pub mod spatial;
 pub mod storage;
 
 /// Component storing the value of a component in the previous frame. This is updated every

@@ -9,8 +9,9 @@ use bevy::prelude::*;
 use hyperion::{
     HyperionCore,
     SetEndpoint,
+    simulation::packet_state,
     // simulation::{Player, Position},
-    // spatial,
+    spatial,
 };
 
 // use hyperion_clap::hyperion_command::CommandRegistry;
@@ -132,6 +133,13 @@ mod module;
 //     }
 // }
 
+fn initialize_player(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands.entity(trigger.target()).insert(spatial::Spatial);
+}
+
 #[derive(Component)]
 pub struct TagPlugin;
 
@@ -141,10 +149,12 @@ impl Plugin for TagPlugin {
             ChatPlugin,
             StatsPlugin,
             SpawnPlugin,
+            spatial::SpatialPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,
             hyperion_rank_tree::RankTreePlugin,
         ));
+        app.add_observer(initialize_player);
     }
 }
 
