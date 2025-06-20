@@ -12,8 +12,7 @@ use bevy::{app::FixedMain, prelude::*};
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::Vec3;
 use hyperion::{
-    HyperionCore,
-    simulation::{EntitySize, Position, entity_kind::EntityKind},
+    simulation::{EntitySize, Position},
     spatial,
 };
 use spatial::{Spatial, SpatialIndex, SpatialPlugin};
