@@ -104,7 +104,6 @@ proptest! {
          default_fragment_size in 0..10usize
     ) {
         let encoded_packets = encode(&packets, total_len);
-        let default_fragment_size = 10;
 
         let (mut sender, mut receiver) = packet_channel::channel(default_fragment_size);
         assert!(receiver.try_recv().is_none());
