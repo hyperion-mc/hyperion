@@ -82,7 +82,7 @@ dashmap = "6.1.0"
 approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
-# hyperion-genmap = { workspace = true }
+hyperion-genmap = { workspace = true }
 proptest = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }

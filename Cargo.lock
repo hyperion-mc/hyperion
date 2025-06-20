@@ -3662,6 +3662,7 @@ dependencies = [
  "heed",
  "humantime",
  "hyperion-crafting",
+ "hyperion-genmap",
  "hyperion-inventory",
  "hyperion-nerd-font",
  "hyperion-packet-macros",

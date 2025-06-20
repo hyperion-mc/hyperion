@@ -5,77 +5,80 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
+use bevy::{app::FixedMain, prelude::*};
 use glam::Vec3;
-// use hyperion::{
-//     HyperionCore,
-//     simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
-//     spatial::{Spatial, SpatialModule},
-// };
+use hyperion::{
+    HyperionCore,
+    simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
+    spatial::{Spatial, SpatialPlugin},
+};
 
-// #[test]
-// #[ignore = "this test takes a SUPER long time to run; unsure why"]
-// fn test_get_first_collision() {
-//     /// Function to spawn arrows at different angles
-//     fn spawn_arrow(world: &World, position: Vec3, direction: Vec3) -> EntityView<'_> {
-//         tracing::debug!("Spawning arrow at position: {position:?} with direction: {direction:?}");
-//         world
-//             .entity()
-//             .add_enum(EntityKind::Arrow)
-//             .set(Velocity::new(direction.x, direction.y, direction.z))
-//             .set(Position::new(position.x, position.y, position.z))
-//     }
-//
-//     let world = World::new();
-//     world.import::<HyperionCore>();
-//     world.import::<SpatialModule>();
-//     world.import::<hyperion_utils::HyperionUtilsModule>();
-//     world.import::<hyperion_genmap::GenMapModule>();
-//
-//     // Make all entities have Spatial component so they are spatially indexed
-//     world
-//         .observer::<flecs::OnAdd, ()>()
-//         .with_enum_wildcard::<EntityKind>()
-//         .each_entity(|entity, ()| {
-//             entity.add(id::<Spatial>());
-//         });
-//
-//     // Create a player entity
-//     let player = world
-//         .entity_named("test_player")
-//         .add_enum(EntityKind::Player)
-//         .set(EntitySize::default())
-//         .set(Position::new(0.0, 21.0, 0.0))
-//         .set(Yaw::new(0.0))
-//         .set(Pitch::new(90.0));
-//
-//     // Spawn arrows at different angles
-//     let arrow_velocities = [Vec3::new(0.0, -1.0, 0.0)];
-//
-//     let arrows: Vec<EntityView<'_>> = arrow_velocities
-//         .iter()
-//         .map(|velocity| {
-//             spawn_arrow(&world, Vec3::new(0.0, 21.0, 0.0), *velocity).set(Owner::new(*player))
-//         })
-//         .collect();
-//
-//     // Progress the world to ensure that the index is updated
-//     world.progress();
-//
-//     // Get all entities with Position and Velocity components
-//     for arrow in &arrows {
-//         arrow.get::<(&Position, &Velocity)>(|(position, velocity)| {
-//             println!("position: {position:?}");
-//             println!("velocity: {velocity:?}");
-//         });
-//     }
-//
-//     world.progress();
-//
-//     // Get all entities with Position and Velocity components
-//     for arrow in &arrows {
-//         arrow.get::<(&Position, &Velocity)>(|(position, velocity)| {
-//             println!("position: {position:?}");
-//             println!("velocity: {velocity:?}");
-//         });
-//     }
-// }
+#[test]
+fn test_get_first_collision() {
+    let mut app = App::new();
+
+    /// Function to spawn arrows at different angles
+    fn spawn_arrow(world: &mut World, position: Vec3, direction: Vec3, owner: Owner) -> Entity {
+        tracing::debug!("Spawning arrow at position: {position:?} with direction: {direction:?}");
+        world
+            .spawn((
+                EntityKind::Arrow,
+                Spatial,
+                Velocity::new(direction.x, direction.y, direction.z),
+                Position::new(position.x, position.y, position.z),
+                owner,
+            ))
+            .id()
+    }
+
+    app.add_plugins((HyperionCore, SpatialPlugin, hyperion_genmap::GenMapPlugin));
+
+    let world = app.world_mut();
+
+    // Create a player entity
+    let player = world
+        .spawn((
+            EntityKind::Player,
+            EntitySize::default(),
+            Position::new(0.0, 21.0, 0.0),
+            Yaw::new(0.0),
+            Pitch::new(90.0),
+        ))
+        .id();
+
+    // Spawn arrows at different angles
+    let arrow_velocities = [Vec3::new(0.0, -1.0, 0.0)];
+
+    let arrows: Vec<Entity> = arrow_velocities
+        .iter()
+        .map(|velocity| {
+            spawn_arrow(
+                world,
+                Vec3::new(0.0, 21.0, 0.0),
+                *velocity,
+                Owner::new(player),
+            )
+        })
+        .collect();
+
+    // Progress the world to ensure that the index is updated
+    FixedMain::run_fixed_main(world);
+
+    let mut query = world.query::<(&Position, &Velocity)>();
+
+    // Get all entities with Position and Velocity components
+    for arrow in &arrows {
+        let (position, velocity) = query.get(world, *arrow).unwrap();
+        println!("position: {position:?}");
+        println!("velocity: {velocity:?}");
+    }
+
+    FixedMain::run_fixed_main(world);
+
+    // Get all entities with Position and Velocity components
+    for arrow in &arrows {
+        let (position, velocity) = query.get(world, *arrow).unwrap();
+        println!("position: {position:?}");
+        println!("velocity: {velocity:?}");
+    }
+}
