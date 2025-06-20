@@ -184,8 +184,7 @@ mod tests {
 
     #[test]
     fn test_get_uuid() {
-        let (tx, _rx) = kanal::bounded(1);
-        let tasks = AsyncRuntime::new(tx);
+        let tasks = AsyncRuntime::new();
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let uuid = tasks.block_on(mojang.get_uuid("Emerald_Explorer")).unwrap();
@@ -195,8 +194,7 @@ mod tests {
 
     #[test]
     fn test_get_username() {
-        let (tx, _rx) = kanal::bounded(1);
-        let tasks = AsyncRuntime::new(tx);
+        let tasks = AsyncRuntime::new();
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let username = tasks
@@ -209,8 +207,7 @@ mod tests {
 
     #[test]
     fn test_retrieve_username() {
-        let (tx, _rx) = kanal::bounded(1);
-        let tasks = AsyncRuntime::new(tx);
+        let tasks = AsyncRuntime::new();
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let res = tasks
