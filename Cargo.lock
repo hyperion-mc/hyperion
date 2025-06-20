@@ -3847,8 +3847,8 @@ name = "hyperion-permission"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bevy",
  "clap",
- "flecs_ecs",
  "heed",
  "hyperion",
  "num-derive",
@@ -6753,6 +6753,7 @@ dependencies = [
  "hyperion-genmap",
  "hyperion-inventory",
  "hyperion-item",
+ "hyperion-permission",
  "hyperion-rank-tree",
  "hyperion-utils",
  "rayon",

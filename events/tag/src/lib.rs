@@ -152,6 +152,7 @@ impl Plugin for TagPlugin {
             spatial::SpatialPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,
+            hyperion_permission::PermissionPlugin,
             hyperion_rank_tree::RankTreePlugin,
         ));
         app.add_observer(initialize_player);
