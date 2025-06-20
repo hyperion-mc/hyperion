@@ -1024,7 +1024,7 @@ dependencies = [
  "approx",
  "bevy_reflect",
  "derive_more 1.0.0",
- "glam",
+ "glam 0.29.3",
  "itertools 0.14.0",
  "libm",
  "rand 0.8.5",
@@ -1066,7 +1066,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75e0258423c689f764556e36b5d9eebdbf624b29a1fd5b33cd9f6c42dcc4d5f3"
 dependencies = [
- "glam",
+ "glam 0.29.3",
 ]
 
 [[package]]
@@ -1115,7 +1115,7 @@ dependencies = [
  "downcast-rs 2.0.1",
  "erased-serde",
  "foldhash",
- "glam",
+ "glam 0.29.3",
  "serde",
  "smallvec",
  "smol_str",
@@ -1549,7 +1549,7 @@ dependencies = [
  "arrayvec",
  "bytes",
  "fast_hilbert",
- "glam",
+ "glam 0.29.3",
  "heapless",
  "more-asserts",
 ]
@@ -1564,7 +1564,7 @@ dependencies = [
  "derive_more 2.0.1",
  "fastrand 2.3.0",
  "geometry",
- "glam",
+ "glam 0.29.3",
  "num-traits",
  "ordered-float 5.0.0",
  "plotters",
@@ -2568,7 +2568,7 @@ checksum = "b0a05902cf601ed11d564128448097b98ebe3c6574bd7b6a653a3d56d54aa020"
 dependencies = [
  "const_panic",
  "encase_derive",
- "glam",
+ "glam 0.29.3",
  "thiserror 1.0.69",
 ]
 
@@ -3091,7 +3091,7 @@ name = "geometry"
 version = "0.1.0"
 dependencies = [
  "approx",
- "glam",
+ "glam 0.29.3",
  "ordered-float 5.0.0",
  "rand 0.9.1",
  "serde",
@@ -3173,6 +3173,12 @@ dependencies = [
  "rand 0.8.5",
  "serde",
 ]
+
+[[package]]
+name = "glam"
+version = "0.30.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50a99dbe56b72736564cfa4b85bf9a33079f16ae8b74983ab06af3b1a3696b11"
 
 [[package]]
 name = "glob"
@@ -3489,7 +3495,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c9e718d32b6e6b2b32354e1b0367025efdd0b11d6a740b905ddf5db1074679"
 dependencies = [
  "constgebra",
- "glam",
+ "glam 0.29.3",
  "tinyvec",
 ]
 
@@ -3651,7 +3657,7 @@ dependencies = [
  "fastrand 2.3.0",
  "flate2",
  "geometry",
- "glam",
+ "glam 0.29.3",
  "heapless",
  "heed",
  "humantime",
@@ -3697,13 +3703,13 @@ dependencies = [
  "uuid",
  "valence_anvil",
  "valence_bytes",
- "valence_generated",
- "valence_ident",
- "valence_nbt",
- "valence_protocol",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_registry",
  "valence_server",
- "valence_text",
+ "valence_text 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3717,7 +3723,7 @@ dependencies = [
  "hyperion-command",
  "hyperion-permission",
  "tracing",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3747,7 +3753,7 @@ dependencies = [
  "bevy",
  "derive-build",
  "slotmap",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3780,7 +3786,7 @@ dependencies = [
  "hyperion-utils",
  "serde",
  "tracing",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3793,8 +3799,8 @@ dependencies = [
  "roaring",
  "snafu",
  "tracing",
- "valence_generated",
- "valence_protocol",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3808,7 +3814,7 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-utils",
  "tracing",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3833,7 +3839,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "roaring",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3855,7 +3861,7 @@ dependencies = [
 name = "hyperion-proto"
 version = "0.1.0"
 dependencies = [
- "glam",
+ "glam 0.29.3",
  "rkyv",
 ]
 
@@ -3870,7 +3876,7 @@ dependencies = [
  "colored",
  "dotenvy",
  "envy",
- "glam",
+ "glam 0.29.3",
  "heapless",
  "hyperion-proto",
  "kanal",
@@ -3908,7 +3914,7 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-item",
  "tracing",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3940,7 +3946,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "uuid",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -3961,7 +3967,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -5245,8 +5251,8 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
- "valence_build_utils",
- "valence_protocol",
+ "valence_build_utils 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
 ]
 
 [[package]]
@@ -6742,7 +6748,7 @@ dependencies = [
  "fastrand 2.3.0",
  "flecs_ecs",
  "geometry",
- "glam",
+ "glam 0.29.3",
  "hyperion",
  "hyperion-genmap",
  "hyperion-inventory",
@@ -6758,7 +6764,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_server",
 ]
 
@@ -7411,7 +7417,7 @@ dependencies = [
  "lru",
  "thiserror 1.0.69",
  "valence_bytes",
- "valence_nbt",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_server",
 ]
 
@@ -7419,6 +7425,16 @@ dependencies = [
 name = "valence_build_utils"
 version = "0.2.0-alpha.1+mc.1.20.1"
 source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
+dependencies = [
+ "anyhow",
+ "proc-macro2",
+ "syn",
+]
+
+[[package]]
+name = "valence_build_utils"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
 dependencies = [
  "anyhow",
  "proc-macro2",
@@ -7454,11 +7470,11 @@ dependencies = [
  "syn",
  "tracing",
  "uuid",
- "valence_build_utils",
- "valence_generated",
- "valence_math",
- "valence_nbt",
- "valence_protocol",
+ "valence_build_utils 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_server_common",
 ]
 
@@ -7474,9 +7490,26 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
- "valence_build_utils",
- "valence_ident",
- "valence_math",
+ "valence_build_utils 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+]
+
+[[package]]
+name = "valence_generated"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "anyhow",
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "uuid",
+ "valence_build_utils 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
 ]
 
 [[package]]
@@ -7488,7 +7521,17 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "valence_bytes",
- "valence_ident_macros",
+ "valence_ident_macros 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+]
+
+[[package]]
+name = "valence_ident"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "serde",
+ "thiserror 1.0.69",
+ "valence_ident_macros 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
 ]
 
 [[package]]
@@ -7502,11 +7545,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "valence_ident_macros"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "valence_math"
 version = "0.2.0-alpha.1+mc.1.20.1"
 source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
 dependencies = [
- "glam",
+ "glam 0.29.3",
+]
+
+[[package]]
+name = "valence_math"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "glam 0.30.4",
 ]
 
 [[package]]
@@ -7519,6 +7580,16 @@ dependencies = [
  "indexmap",
  "serde",
  "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "valence_nbt"
+version = "0.8.0"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "byteorder",
+ "cesu8",
  "uuid",
 ]
 
@@ -7542,18 +7613,56 @@ dependencies = [
  "url",
  "uuid",
  "valence_bytes",
- "valence_generated",
- "valence_ident",
- "valence_math",
- "valence_nbt",
- "valence_protocol_macros",
- "valence_text",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol_macros 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_text 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+]
+
+[[package]]
+name = "valence_protocol"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bevy_ecs 0.12.1",
+ "bitfield-struct 0.9.5",
+ "byteorder",
+ "bytes",
+ "derive_more 1.0.0",
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+ "url",
+ "uuid",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_protocol_macros 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_text 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
 ]
 
 [[package]]
 name = "valence_protocol_macros"
 version = "0.2.0-alpha.1+mc.1.20.1"
 source = "git+https://github.com/TestingPlant/valence?branch=feat-bytes#4686fc697209967a01a406a880e9d359b80c6326"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "valence_protocol_macros"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -7573,9 +7682,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "valence_ident",
- "valence_nbt",
- "valence_protocol",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_server_common",
 ]
 
@@ -7600,10 +7709,10 @@ dependencies = [
  "uuid",
  "valence_bytes",
  "valence_entity",
- "valence_generated",
- "valence_math",
- "valence_nbt",
- "valence_protocol",
+ "valence_generated 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_math 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_registry",
  "valence_server_common",
 ]
@@ -7618,7 +7727,7 @@ dependencies = [
  "derive_more 1.0.0",
  "rand 0.8.5",
  "uuid",
- "valence_protocol",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
@@ -7630,8 +7739,21 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "uuid",
- "valence_ident",
- "valence_nbt",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+]
+
+[[package]]
+name = "valence_text"
+version = "0.2.0-alpha.1+mc.1.20.1"
+source = "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+ "valence_ident 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-open)",
 ]
 
 [[package]]

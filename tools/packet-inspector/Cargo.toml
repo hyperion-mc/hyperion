@@ -12,7 +12,7 @@ publish = false
 workspace = true
 
 [dependencies]
-valence_protocol = { workspace = true, features = ["compression"] }
+valence_protocol = { git = 'https://github.com/TestingPlant/valence', branch = 'feat-open', features = ["compression"] }
 anyhow.workspace = true
 bytes.workspace = true
 flate2.workspace = true
@@ -35,7 +35,7 @@ serde = { workspace = true, features = ["derive"] }
 [build-dependencies]
 anyhow.workspace = true
 syn = { workspace = true, features = ["full"] }
-valence_build_utils.workspace = true
+valence_build_utils = { git = 'https://github.com/TestingPlant/valence', branch = 'feat-open' }
 quote = { workspace = true, features = ["proc-macro"] }
 serde_json = { workspace = true, features = ["raw_value"] }
 proc-macro2.workspace = true
