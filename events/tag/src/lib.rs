@@ -3,16 +3,17 @@
 #![feature(stmt_expr_attributes)]
 #![feature(exact_size_is_empty)]
 
-use std::net::SocketAddr;
+use std::{collections::HashSet, net::SocketAddr};
 
 use bevy::prelude::*;
 use hyperion::{
     HyperionCore,
     SetEndpoint,
-    simulation::packet_state,
+    simulation::{EntitySize, Position, packet_state},
     // simulation::{Player, Position},
-    spatial,
+    spatial::{Spatial, SpatialIndex, SpatialPlugin},
 };
+use tracing::error;
 
 // use hyperion_clap::hyperion_command::CommandRegistry;
 // use hyperion_gui::Gui;
@@ -29,15 +30,14 @@ use crate::module::{chat::ChatPlugin, spawn::SpawnPlugin, stats::StatsPlugin};
 //     skin::SkinModule,
 // };
 
+mod command;
 mod module;
-// mod command;
 // mod skin;
 
-// #[derive(Component, Default, Deref, DerefMut)]
-// struct OreVeins {
-//     ores: HashSet<IVec3>,
-// }
-//
+#[derive(Resource, Default, Deref, DerefMut)]
+struct OreVeins {
+    ores: HashSet<IVec3>,
+}
 // #[derive(Component, Deref, DerefMut)]
 // struct MainBlockCount(i8);
 //
@@ -47,9 +47,8 @@ mod module;
 //     }
 // }
 //
-// #[derive(Component)]
-// struct FollowClosestPlayer;
-//
+#[derive(Component)]
+struct FollowClosestPlayer;
 // impl Module for TagModule {
 //     fn module(world: &World) {
 //         // on entity kind set UUID
@@ -63,9 +62,6 @@ mod module;
 //             .add_trait::<(flecs::With, MainBlockCount)>();
 //
 //         world.import::<hyperion_rank_tree::RankTree>();
-//
-//         world.component::<OreVeins>();
-//         world.set(OreVeins::default());
 //
 //         world
 //             .component::<Player>()
@@ -102,34 +98,6 @@ mod module;
 //         world
 //             .component::<Player>()
 //             .add_trait::<(flecs::With, spatial::Spatial)>();
-//
-//         system!(
-//             "follow_closest_player",
-//             world,
-//             &SpatialIndex($),
-//             &mut Position,
-//         )
-//         .with(id::<FollowClosestPlayer>())
-//         .each_entity(|entity, (index, position)| {
-//             let world = entity.world();
-//
-//             let Some(closest) = index.closest_to(**position, &world) else {
-//                 return;
-//             };
-//
-//             closest.get::<&Position>(|target_position| {
-//                 let delta = **target_position - **position;
-//
-//                 if delta.length_squared() < 0.01 {
-//                     // we are already at the target position
-//                     return;
-//                 }
-//
-//                 let delta = delta.normalize() * 0.1;
-//
-//                 **position += delta;
-//             });
-//         });
 //     }
 // }
 
@@ -137,7 +105,61 @@ fn initialize_player(
     trigger: Trigger<'_, OnAdd, packet_state::Play>,
     mut commands: Commands<'_, '_>,
 ) {
-    commands.entity(trigger.target()).insert(spatial::Spatial);
+    commands.entity(trigger.target()).insert(Spatial);
+}
+
+fn follow_closest_player(
+    index: Res<'_, SpatialIndex>,
+    follow_query: Query<'_, '_, Entity, With<FollowClosestPlayer>>,
+    mut queries: ParamSet<
+        '_,
+        '_,
+        (
+            Query<'_, '_, &mut Position>,
+            Query<'_, '_, (&Position, &EntitySize)>,
+        ),
+    >,
+) {
+    for entity in follow_query.iter() {
+        let position = match queries.p0().get(entity) {
+            Ok(position) => **position,
+            Err(e) => {
+                error!("follow closest player failed: query failed: {e}");
+                continue;
+            }
+        };
+
+        let Some(closest) = index.closest_to(position, queries.p1()) else {
+            continue;
+        };
+
+        let target_position = match queries.p0().get(closest) {
+            Ok(position) => **position,
+            Err(e) => {
+                error!("follow closest player failed: query failed: {e}");
+                continue;
+            }
+        };
+
+        let delta = target_position - position;
+
+        if delta.length_squared() < 0.01 {
+            // we are already at the target position
+            return;
+        }
+
+        let delta = delta.normalize() * 0.1;
+
+        match queries.p0().get_mut(entity) {
+            Ok(mut position) => {
+                **position += delta;
+                dbg!(position);
+            }
+            Err(e) => {
+                error!("follow closest player failed: query failed: {e}");
+            }
+        }
+    }
 }
 
 #[derive(Component)]
@@ -145,17 +167,22 @@ pub struct TagPlugin;
 
 impl Plugin for TagPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(OreVeins::default());
         app.add_plugins((
             ChatPlugin,
             StatsPlugin,
             SpawnPlugin,
-            spatial::SpatialPlugin,
+            SpatialPlugin,
+            hyperion_clap::ClapCommandPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,
             hyperion_permission::PermissionPlugin,
             hyperion_rank_tree::RankTreePlugin,
         ));
         app.add_observer(initialize_player);
+        app.add_systems(FixedUpdate, follow_closest_player);
+
+        command::register(app.world_mut());
     }
 }
 

@@ -11,7 +11,7 @@ flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true }
 hyperion = { workspace = true }
-# hyperion-clap = { workspace = true }
+hyperion-clap = { workspace = true }
 hyperion-genmap = { workspace = true }
 # hyperion-gui = { workspace = true }
 hyperion-inventory = { workspace = true }

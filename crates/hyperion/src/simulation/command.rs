@@ -1,5 +1,7 @@
 use bevy::prelude::*;
-use tracing::warn;
+use derive_more::Deref;
+use tracing::{error, warn};
+use valence_bytes::Utf8Bytes;
 pub use valence_protocol::packets::play::command_tree_s2c::Parser;
 use valence_protocol::{
     VarInt,
@@ -12,12 +14,8 @@ pub struct Command {
     has_permission: fn(world: &World, caller: Entity) -> bool,
 }
 
-pub(crate) static ROOT_COMMAND: once_cell::sync::OnceCell<Entity> =
-    once_cell::sync::OnceCell::new();
-
-pub fn get_root_command_entity() -> Entity {
-    *ROOT_COMMAND.get().unwrap()
-}
+#[derive(Resource, Deref)]
+pub struct RootCommand(Entity);
 
 impl Command {
     pub const ROOT: Self = Self {
@@ -27,7 +25,7 @@ impl Command {
 
     #[must_use]
     pub fn literal(
-        name: impl Into<String>,
+        name: impl Into<Utf8Bytes>,
         has_permission: fn(world: &World, caller: Entity) -> bool,
     ) -> Self {
         let name = name.into();
@@ -38,7 +36,7 @@ impl Command {
     }
 
     #[must_use]
-    pub fn argument(name: impl Into<String>, parser: Parser) -> Self {
+    pub fn argument(name: impl Into<Utf8Bytes>, parser: Parser) -> Self {
         let name = name.into();
         Self {
             data: NodeData::Argument {
@@ -57,7 +55,6 @@ const MAX_DEPTH: usize = 64;
 
 pub fn get_command_packet(
     world: &World,
-    root: Entity,
     player_opt: Option<Entity>,
 ) -> valence_protocol::packets::play::CommandTreeS2c {
     struct StackElement {
@@ -66,12 +63,14 @@ pub fn get_command_packet(
         entity: Entity,
     }
 
+    let root = world.resource::<RootCommand>();
+
     let mut commands = Vec::new();
 
     let mut stack = vec![StackElement {
         depth: 0,
         ptr: 0,
-        entity: root,
+        entity: **root,
     }];
 
     commands.push(Node {
@@ -92,33 +91,40 @@ pub fn get_command_packet(
             break;
         }
 
-        world.entity_from_id(entity).each_child(|child| {
-            child.get::<&Command>(|command| {
-                if let Some(player) = player_opt
-                    && !(command.has_permission)(world, player)
-                {
-                    return;
-                }
+        let Some(children) = world.entity(entity).get::<Children>() else {
+            continue;
+        };
 
-                let ptr = commands.len();
+        for &child in children {
+            let Some(command) = world.entity(child).get::<Command>() else {
+                error!("child is missing Command component");
+                continue;
+            };
 
-                commands.push(Node {
-                    data: command.data.clone(),
-                    executable: true,
-                    children: Vec::new(),
-                    redirect_node: None,
-                });
+            if let Some(player) = player_opt
+                && !(command.has_permission)(world, player)
+            {
+                continue;
+            }
 
-                let node = &mut commands[parent_ptr];
-                node.children.push(i32::try_from(ptr).unwrap().into());
+            let ptr = commands.len();
 
-                stack.push(StackElement {
-                    depth: depth + 1,
-                    ptr,
-                    entity: child.id(),
-                });
+            commands.push(Node {
+                data: command.data.clone(),
+                executable: true,
+                children: Vec::new(),
+                redirect_node: None,
             });
-        });
+
+            let node = &mut commands[parent_ptr];
+            node.children.push(i32::try_from(ptr).unwrap().into());
+
+            stack.push(StackElement {
+                depth: depth + 1,
+                ptr,
+                entity: child,
+            });
+        }
     }
 
     valence_protocol::packets::play::CommandTreeS2c {
@@ -126,6 +132,16 @@ pub fn get_command_packet(
         root_index: VarInt(0),
     }
 }
+
+pub struct CommandPlugin;
+
+impl Plugin for CommandPlugin {
+    fn build(&self, app: &mut App) {
+        let root_command = app.world_mut().spawn(Command::ROOT).id();
+        app.insert_resource(RootCommand(root_command));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use flecs_ecs::prelude::*;

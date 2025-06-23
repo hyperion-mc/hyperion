@@ -1,10 +1,11 @@
+use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
 use hyperion::{
     net::{Compose, ConnectionId, agnostic},
     simulation::FlyingSpeed,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
+use tracing::error;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "speed")]
@@ -14,16 +15,29 @@ pub struct SpeedCommand {
 }
 
 impl MinecraftCommand for SpeedCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let world = system.world();
+    type State = SystemState<(
+        Query<'static, 'static, &'static ConnectionId>,
+        Res<'static, Compose>,
+        Commands<'static, 'static>,
+    )>;
+
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let (query, compose, mut commands) = state.get(world);
+
+        let &connection_id = match query.get(caller) {
+            Ok(connection_id) => connection_id,
+            Err(e) => {
+                error!("speed command failed: query failed: {e}");
+                return;
+            }
+        };
+
         let msg = format!("Setting speed to {}", self.amount);
         let chat = agnostic::chat(msg);
+        compose.unicast(&chat, connection_id).unwrap();
 
-        world.get::<&Compose>(|compose| {
-            caller.entity_view(world).get::<&ConnectionId>(|stream| {
-                caller.entity_view(world).set(FlyingSpeed::new(self.amount));
-                compose.unicast(&chat, *stream, system).unwrap();
-            });
-        });
+        commands
+            .entity(caller)
+            .insert(FlyingSpeed::new(self.amount));
     }
 }

@@ -2,7 +2,10 @@ mod cached_save;
 pub mod iterator;
 use std::path::PathBuf;
 
-use bevy::prelude::*;
+use bevy::{
+    ecs::system::{SystemParam, SystemState},
+    prelude::*,
+};
 pub use cached_save::cached_save;
 
 pub trait EntityExt: Sized {
@@ -25,6 +28,23 @@ impl EntityExt for Entity {
             .resolve_from_id(id)
             .ok_or_else(|| anyhow::anyhow!("minecraft id is invalid"))
     }
+}
+
+pub trait ApplyWorld {
+    fn apply(&mut self, world: &mut World);
+}
+
+impl<Param> ApplyWorld for SystemState<Param>
+where
+    Param: SystemParam + 'static,
+{
+    fn apply(&mut self, world: &mut World) {
+        self.apply(world);
+    }
+}
+
+impl ApplyWorld for () {
+    fn apply(&mut self, _: &mut World) {}
 }
 
 /// Represents application identification information used for caching and other system-level operations

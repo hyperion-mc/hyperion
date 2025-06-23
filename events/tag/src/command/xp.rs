@@ -1,5 +1,5 @@
+use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider, id};
 use hyperion::simulation::Xp;
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 
@@ -11,15 +11,12 @@ pub struct XpCommand {
 }
 
 impl MinecraftCommand for XpCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let Self { amount } = self;
+    type State = SystemState<Commands<'static, 'static>>;
 
-        let world = system.world();
-        let caller = caller.entity_view(world);
-
-        caller.get::<&mut Xp>(|xp| {
-            xp.amount = amount;
-            caller.modified(id::<Xp>());
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let mut commands = state.get(world);
+        commands.entity(caller).insert(Xp {
+            amount: self.amount,
         });
     }
 }

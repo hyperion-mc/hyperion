@@ -1,5 +1,5 @@
 use clap::Parser;
-use flecs_ecs::core::{Builder, Entity, EntityView, QueryAPI, WorldProvider};
+use bevy::{ecs::system::SystemState, prelude::*};
 use hyperion::{
     ItemKind, ItemStack,
     simulation::{Spawn, entity_kind::EntityKind},
@@ -16,17 +16,16 @@ use valence_protocol::packets::play::open_screen_s2c::WindowType;
 pub struct ChestCommand;
 
 impl MinecraftCommand for ChestCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let world = system.world();
+    type State = SystemState<Query<'static, 'static, Gui>>;
 
-        let gui = world.query::<&Gui>().build();
-        let mut found = false;
-        gui.each_iter(|_it, _, gui| {
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let gui_query = state.get(world);
+        for gui in gui_query.iter() {
             if gui.id == 28 {
                 gui.open(system, caller);
                 found = true;
             }
-        });
+        }
 
         if !found {
             debug!("Creating new GUI");

@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider};
+use bevy::{ecs::system::SystemState, prelude::*};
 use hyperion::{BlockState, glam::IVec3, simulation::blocks::Blocks};
 use hyperion_clap::CommandPermission;
 use rayon::iter::ParallelIterator;
@@ -105,21 +105,25 @@ fn group(positions: &HashSet<IVec3>) -> Vec<Vec<IVec3>> {
 }
 
 impl hyperion_clap::MinecraftCommand for ReplaceCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let world = system.world();
-        world.get::<&mut Blocks>(|blocks| {
+    type State = SystemState<Commands<'static, 'static>>;
+
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let mut commands = state.get(world);
+
+        commands.queue(move |world: &mut World| {
             let started_time = std::time::Instant::now();
 
-            let concrete_positions: HashSet<_> =
-                blocks.par_scan_for(BlockState::PINK_CONCRETE).collect();
+            let (len, scan_time) = world.resource_scope::<Blocks, _>(|world, mut blocks| {
+                let concrete_positions: HashSet<_> =
+                    blocks.par_scan_for(BlockState::PINK_CONCRETE).collect();
 
-            let scan_time = started_time.elapsed();
+                let scan_time = started_time.elapsed();
 
-            let len = concrete_positions.len();
+                let len = concrete_positions.len();
 
-            let groups = group(&concrete_positions);
+                let groups = group(&concrete_positions);
 
-            world.get::<&mut OreVeins>(|ore_veins| {
+                let mut ore_veins = world.resource_mut::<OreVeins>();
                 for group in groups {
                     let group_ore = pick_ore();
                     for position in group {
@@ -133,6 +137,8 @@ impl hyperion_clap::MinecraftCommand for ReplaceCommand {
                         ore_veins.insert(position);
                     }
                 }
+
+                (len, scan_time)
             });
 
             let elapsed = started_time.elapsed();
@@ -143,15 +149,12 @@ impl hyperion_clap::MinecraftCommand for ReplaceCommand {
                 "Replaced {len} concrete blocks in {elapsed:?} with scan time {scan_time:?}"
             );
 
-            world.get::<&hyperion::net::Compose>(|compose| {
-                caller
-                    .entity_view(world)
-                    .get::<&hyperion::net::ConnectionId>(|stream| {
-                        let mut bundle = hyperion::net::DataBundle::new(compose, system);
-                        bundle.add_packet(&msg).unwrap();
-                        bundle.unicast(*stream).unwrap();
-                    });
-            });
+            let caller = world.entity(caller);
+            let connection_id = *caller.get::<hyperion::net::ConnectionId>().unwrap();
+            let compose = world.resource::<hyperion::net::Compose>();
+            let mut bundle = hyperion::net::DataBundle::new(compose);
+            bundle.add_packet(&msg).unwrap();
+            bundle.unicast(connection_id).unwrap();
         });
     }
 }

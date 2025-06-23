@@ -65,10 +65,8 @@ use crate::{
     runtime::AsyncRuntime,
     // runtime::Tasks,
     simulation::{
-        SimPlugin,
-        StreamLookup,
-        blocks::Blocks,
-        //     EgressComm, EntitySize, IgnMap, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry,
+        IgnMap, /* EgressComm, EntitySize, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry, */
+        SimPlugin, StreamLookup, blocks::Blocks,
     },
     util::mojang::{ApiProvider, MojangClient},
 };
@@ -240,7 +238,7 @@ impl Plugin for HyperionCore {
             HyperionUtilsPlugin,
         ));
 
-        // app.insert_resource(IgnMap::default());
+        app.insert_resource(IgnMap::default());
         // Minecraft is 20 TPS
         app.insert_resource(Time::<Fixed>::from_hz(20.0));
     }

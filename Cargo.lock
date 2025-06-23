@@ -2182,20 +2182,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dashmap"
-version = "6.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
- "hashbrown 0.14.5",
- "lock_api",
- "once_cell",
- "parking_lot_core",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3650,7 +3636,6 @@ dependencies = [
  "byteorder",
  "bytes",
  "colored",
- "dashmap",
  "derive_more 2.0.1",
  "divan",
  "enumset",
@@ -3717,13 +3702,15 @@ dependencies = [
 name = "hyperion-clap"
 version = "0.1.0"
 dependencies = [
+ "bevy",
  "clap",
- "flecs_ecs",
  "hyperion",
  "hyperion-clap-macros",
  "hyperion-command",
  "hyperion-permission",
+ "hyperion-utils",
  "tracing",
+ "valence_bytes",
  "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
@@ -3739,11 +3726,13 @@ dependencies = [
 name = "hyperion-command"
 version = "0.1.0"
 dependencies = [
- "flecs_ecs",
+ "bevy",
+ "derive_more 2.0.1",
  "hyperion",
  "hyperion-utils",
  "indexmap",
  "tracing",
+ "valence_bytes",
 ]
 
 [[package]]
@@ -6751,6 +6740,7 @@ dependencies = [
  "geometry",
  "glam 0.29.3",
  "hyperion",
+ "hyperion-clap",
  "hyperion-genmap",
  "hyperion-inventory",
  "hyperion-item",

@@ -1,18 +1,19 @@
 #![feature(iter_intersperse)]
 
-use flecs_ecs::{core::World, macros::Component, prelude::Module};
+use bevy::prelude::*;
 
 mod component;
 mod system;
 
-pub use component::{CommandHandler, CommandRegistry};
+pub use component::{CommandHandler, CommandRegistry, ExecutableCommand};
 
-#[derive(Component)]
-pub struct CommandModule;
+pub struct CommandPlugin;
 
-impl Module for CommandModule {
-    fn module(world: &World) {
-        world.import::<component::CommandComponentModule>();
-        world.import::<system::CommandSystemModule>();
+impl Plugin for CommandPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((
+            component::CommandComponentPlugin,
+            system::CommandSystemPlugin,
+        ));
     }
 }

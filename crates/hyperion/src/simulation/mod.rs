@@ -2,26 +2,32 @@ use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
-use dashmap::DashMap;
 use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Vec3};
+use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 use valence_protocol::{
-    VarInt,
-    packets::play::{self, player_position_look_s2c::PlayerPositionLookFlags},
+    ByteAngle, VarInt,
+    packets::play::{
+        self,
+        player_abilities_s2c::{PlayerAbilitiesFlags, PlayerAbilitiesS2c},
+        player_position_look_s2c::PlayerPositionLookFlags,
+    },
 };
+use valence_text::IntoText;
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId},
+    net::{Compose, ConnectionId, DataBundle},
     simulation::{
+        command::CommandPlugin,
+        //     command::Command,
+        entity_kind::EntityKind,
         inventory::InventoryPlugin,
         packet::PacketPlugin,
-        //     command::Command,
-        //     entity_kind::EntityKind,
         //     metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
         skin::PlayerSkin,
     },
@@ -29,7 +35,7 @@ use crate::{
 
 pub mod animation;
 pub mod blocks;
-// pub mod command;
+pub mod command;
 pub mod entity_kind;
 pub mod event;
 pub mod handlers;
@@ -64,7 +70,7 @@ pub struct EgressComm {
 pub struct Name(Arc<str>);
 
 #[derive(Resource, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(DashMap<Arc<str>, Entity>);
+pub struct IgnMap(FxHashMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;
@@ -573,6 +579,10 @@ pub struct Flight {
 
 fn initialize_player(
     trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut ign_map: ResMut<'_, IgnMap>,
+    compose: Res<'_, Compose>,
+    name_query: Query<'_, '_, &Name>,
+    connection_id_query: Query<'_, '_, &ConnectionId>,
     mut commands: Commands<'_, '_>,
 ) {
     commands
@@ -581,6 +591,35 @@ fn initialize_player(
         .insert(Flight::default())
         .insert(FlyingSpeed::default())
         .insert(hyperion_inventory::CursorItem::default());
+
+    let Ok(name) = name_query.get(trigger.target()) else {
+        error!("failed to initialize player: missing Name component");
+        return;
+    };
+
+    if let Some(other) = ign_map.insert((**name).clone(), trigger.target()) {
+        // Another player with the same username is already connected to the server.
+        // Disconnect the previous player with the same username.
+        // There are some Minecraft accounts with the same username, but this is an extremely
+        // rare edge case which is not worth handling.
+
+        let Ok(&other_connection_id) = connection_id_query.get(other) else {
+            error!(
+                "failed to kick player with same username: other player is missing ConnectionId \
+                 component"
+            );
+            return;
+        };
+
+        let pkt = play::DisconnectS2c {
+            reason: "A different player with the same username as your account has joined on a \
+                     different device"
+                .into_cow_text(),
+        };
+
+        compose.unicast(&pkt, other_connection_id).unwrap();
+        compose.io_buf().shutdown(other_connection_id);
+    }
 }
 
 fn send_pending_teleportation(
@@ -607,13 +646,86 @@ fn send_pending_teleportation(
     compose.unicast(&pkt, connection).unwrap();
 }
 
+fn spawn_entities(
+    mut reader: EventReader<'_, '_, SpawnEvent>,
+    compose: Res<'_, Compose>,
+    query: Query<'_, '_, (&Uuid, &Position, &Pitch, &Yaw, &Velocity, &EntityKind)>,
+) {
+    for event in reader.read() {
+        let entity = event.0;
+        let (uuid, position, pitch, yaw, velocity, &kind) = match query.get(entity) {
+            Ok(data) => data,
+            Err(e) => {
+                error!(
+                    "spawn entity failed: query failed (likely because entity is missing one or \
+                     more required components): {e}"
+                );
+                continue;
+            }
+        };
+
+        let minecraft_id = entity.minecraft_id();
+
+        let mut bundle = DataBundle::new(&compose);
+
+        let kind = kind as i32;
+
+        let velocity = velocity.to_packet_units();
+
+        let packet = play::EntitySpawnS2c {
+            entity_id: VarInt(minecraft_id),
+            object_uuid: uuid.0,
+            kind: VarInt(kind),
+            position: position.as_dvec3(),
+            pitch: ByteAngle::from_degrees(**pitch),
+            yaw: ByteAngle::from_degrees(**yaw),
+            head_yaw: ByteAngle::from_degrees(0.0), // todo:
+            data: VarInt::default(),                // todo:
+            velocity,
+        };
+
+        bundle.add_packet(&packet).unwrap();
+
+        let packet = play::EntityVelocityUpdateS2c {
+            entity_id: VarInt(minecraft_id),
+            velocity,
+        };
+
+        bundle.add_packet(&packet).unwrap();
+
+        bundle.broadcast_local(position.to_chunk()).unwrap();
+    }
+}
+
+fn update_flight(
+    trigger: Trigger<'_, OnInsert, (FlyingSpeed, Flight)>,
+    compose: Res<'_, Compose>,
+    query: Query<'_, '_, (&ConnectionId, &Flight, &FlyingSpeed)>,
+) {
+    let Ok((&connection_id, flight, flying_speed)) = query.get(trigger.target()) else {
+        return;
+    };
+
+    let pkt = PlayerAbilitiesS2c {
+        flags: PlayerAbilitiesFlags::default()
+            .with_allow_flying(flight.allow)
+            .with_flying(flight.is_flying),
+        flying_speed: flying_speed.speed,
+        fov_modifier: 0.0,
+    };
+
+    compose.unicast(&pkt, connection_id).unwrap();
+}
+
 pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_player);
         app.add_observer(send_pending_teleportation);
+        app.add_observer(update_flight);
 
+        app.add_plugins(CommandPlugin);
         app.add_plugins(PacketPlugin);
         app.add_plugins(InventoryPlugin);
         app.add_systems(
@@ -621,9 +733,11 @@ impl Plugin for SimPlugin {
             (
                 handlers::position_and_look_updates,
                 handlers::player_interact_item,
+                spawn_entities,
             ),
         );
 
+        app.add_event::<SpawnEvent>();
         app.add_event::<event::ItemDropEvent>();
         app.add_event::<event::ItemInteract>();
         app.add_event::<event::SetSkin>();
@@ -725,66 +839,6 @@ impl Plugin for SimPlugin {
 //         world.component::<hyperion_inventory::PlayerInventory>();
 //         world.component::<hyperion_inventory::CursorItem>();
 //
-//         observer!(
-//             world,
-//             Spawn,
-//             &Compose($),
-//             [filter] & Uuid,
-//             [filter] & Position,
-//             [filter] & Pitch,
-//             [filter] & Yaw,
-//             [filter] & Velocity,
-//         )
-//         .with(id::<flecs::Any>())
-//         .with_enum_wildcard::<EntityKind>()
-//         .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
-//             let system = it.system();
-//
-//             let entity = it.entity(row).expect("row must be in bounds");
-//             let minecraft_id = entity.minecraft_id();
-//
-//             let mut bundle = DataBundle::new(compose, system);
-//
-//             let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
-//                 let kind = kind as i32;
-//
-//                 let velocity = velocity.to_packet_units();
-//
-//                 let packet = play::EntitySpawnS2c {
-//                     entity_id: VarInt(minecraft_id),
-//                     object_uuid: uuid.0,
-//                     kind: VarInt(kind),
-//                     position: position.as_dvec3(),
-//                     pitch: ByteAngle::from_degrees(**pitch),
-//                     yaw: ByteAngle::from_degrees(**yaw),
-//                     head_yaw: ByteAngle::from_degrees(0.0), // todo:
-//                     data: VarInt::default(),                // todo:
-//                     velocity,
-//                 };
-//
-//                 bundle.add_packet(&packet).unwrap();
-//
-//                 let packet = play::EntityVelocityUpdateS2c {
-//                     entity_id: VarInt(minecraft_id),
-//                     velocity,
-//                 };
-//
-//                 bundle.add_packet(&packet).unwrap();
-//
-//                 bundle.broadcast_local(position.to_chunk()).unwrap();
-//
-//                 Ok(())
-//             };
-//
-//             debug!("spawned entity");
-//
-//             entity.get::<&EntityKind>(|kind| {
-//                 if let Err(e) = spawn_entity(*kind) {
-//                     error!("failed to spawn entity: {e}");
-//                 }
-//             });
-//         });
-//
 //         // for every new entity without a UUID, give it one
 //         world
 //             .observer::<flecs::OnAdd, ()>()
@@ -810,49 +864,18 @@ impl Plugin for SimPlugin {
 //                     _ => {}
 //                 });
 //             });
-//
-//         observer!(
-//             world,
-//             flecs::OnSet, &FlyingSpeed,
-//             &Compose($), &ConnectionId, &Flight
-//         )
-//         .each_iter(|it, _, (flying_speed, compose, connection, flight)| {
-//             let system = it.system();
-//
-//             let pkt = PlayerAbilitiesS2c {
-//                 flags: PlayerAbilitiesFlags::default()
-//                     .with_allow_flying(flight.allow)
-//                     .with_flying(flight.is_flying),
-//                 flying_speed: flying_speed.speed,
-//                 fov_modifier: 0.0,
-//             };
-//
-//             compose.unicast(&pkt, *connection, system).unwrap();
-//         });
-//
-//         observer!(
-//             world,
-//             flecs::OnSet, &Flight,
-//             &Compose($), &ConnectionId, &FlyingSpeed
-//         )
-//         .each_iter(|it, _, (flight, compose, connection, flying_speed)| {
-//             let system = it.system();
-//
-//             let pkt = play::PlayerAbilitiesS2c {
-//                 flags: PlayerAbilitiesFlags::default()
-//                     .with_allow_flying(flight.allow)
-//                     .with_flying(flight.is_flying),
-//                 flying_speed: flying_speed.speed,
-//                 fov_modifier: 0.,
-//             };
-//
-//             compose.unicast(&pkt, *connection, system).unwrap();
-//         });
 //     }
 // }
 
-#[derive(Component)]
-pub struct Spawn;
+/// Event used to spawn a non-player entity. The entity must have the following components:
+/// - [`Uuid`]
+/// - [`Position`]
+/// - [`Pitch`]
+/// - [`Yaw`]
+/// - [`Velocity`]
+/// - [`EntityKind`]
+#[derive(Event)]
+pub struct SpawnEvent(pub Entity);
 
 #[derive(Component)]
 pub struct Visible;

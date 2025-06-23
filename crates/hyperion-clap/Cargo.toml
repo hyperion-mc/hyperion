@@ -7,14 +7,16 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-clap ={ workspace = true }
-flecs_ecs = { workspace = true }
+clap = { workspace = true }
+bevy = { workspace = true }
 hyperion = { workspace = true }
 hyperion-clap-macros = { workspace = true }
 hyperion-command = { workspace = true }
 hyperion-permission = { workspace = true }
+hyperion-utils = { workspace = true }
 tracing = { workspace = true }
 valence_protocol = { workspace = true }
+valence_bytes = { workspace = true }
 
 [lints]
 workspace = true
