@@ -9,7 +9,7 @@ use itertools::Itertools;
 use libdeflater::{CompressionLvl, Compressor};
 use parse::ColumnData;
 use rustc_hash::FxHashSet;
-use tracing::{debug, warn};
+use tracing::{trace, warn};
 use valence_generated::block::BlockState;
 use valence_nbt::{List, compound};
 use valence_protocol::{ChunkPos, CompressionThreshold, FixedArray, packets::play};
@@ -158,7 +158,7 @@ impl ChunkLoader {
                 .unique()
                 .count();
 
-            debug!("{NERD_ROCKET} loaded chunk {position} with {unique_blocks} unique blocks");
+            trace!("{NERD_ROCKET} loaded chunk {position} with {unique_blocks} unique blocks");
 
             tx_load_chunks.send(loaded_chunk).unwrap();
         });
