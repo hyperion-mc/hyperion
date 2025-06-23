@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-flecs_ecs = { workspace = true }
+bevy = { workspace = true }
 hyperion = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-utils = { workspace = true }

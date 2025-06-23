@@ -3770,7 +3770,7 @@ name = "hyperion-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "flecs_ecs",
+ "bevy",
  "hyperion",
  "hyperion-inventory",
  "hyperion-utils",
@@ -6742,6 +6742,7 @@ dependencies = [
  "hyperion",
  "hyperion-clap",
  "hyperion-genmap",
+ "hyperion-gui",
  "hyperion-inventory",
  "hyperion-item",
  "hyperion-permission",
