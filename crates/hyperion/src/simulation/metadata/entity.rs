@@ -13,7 +13,7 @@
 //! 7 -> VarInt (1)           TicksFrozenInPowderSnow(0)
 //! ```
 
-use flecs_ecs::prelude::*;
+use bevy::prelude::*;
 use valence_protocol::{Encode, VarInt};
 
 use crate::{define_and_register_components, simulation::Metadata};
@@ -63,7 +63,6 @@ impl Default for TicksFrozenInPowderSnow {
 
 #[derive(Encode, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[derive(Component)]
-#[meta]
 #[repr(C)] // ideally this would be u8
 pub enum Pose {
     #[default]

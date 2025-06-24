@@ -27,7 +27,7 @@ pub use list::*;
 
 use crate::{
     config::Config,
-    // egress::metadata::show_all,
+    egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         Name,
@@ -36,7 +36,6 @@ use crate::{
         Uuid,
         Yaw,
         // command::{Command, ROOT_COMMAND, get_command_packet},
-        // metadata::{MetadataChanges, entity::EntityFlags},
         skin::PlayerSkin,
         util::registry_codec_raw,
     },
@@ -232,12 +231,8 @@ pub fn player_join_world(
 
         bundle.add_packet(&pkt).unwrap();
 
-        //         let show_all = show_all(current_entity.minecraft_id());
-        //         bundle
-        //             .add_packet(show_all.borrow_packet())
-        //             .unwrap();
-
-        //         metadata.encode(*flags);
+        let show_all = show_all(current_entity.minecraft_id());
+        bundle.add_packet(show_all.borrow_packet()).unwrap();
     }
 
     let all_player_names = all_player_names
@@ -324,11 +319,8 @@ pub fn player_join_world(
         .send()
         .unwrap();
 
-    //     let show_all = show_all(entity_id.minecraft_id());
-    //     compose
-    //         .broadcast(show_all.borrow_packet())
-    //         .send()
-    //         .unwrap();
+    let show_all = show_all(entity_id.minecraft_id());
+    compose.broadcast(show_all.borrow_packet()).send().unwrap();
 
     bundle
         .add_packet(&play::TeamS2c {

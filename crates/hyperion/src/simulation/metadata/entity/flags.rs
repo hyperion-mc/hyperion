@@ -1,11 +1,10 @@
+use bevy::prelude::*;
 use derive_more::Deref;
-use flecs_ecs::{core::ComponentOrPairId, macros::Component};
 
 use crate::simulation::metadata::Metadata;
 
 // todo: can be u8
 #[derive(Component, PartialEq, Eq, Copy, Clone, Debug, Deref)]
-#[meta]
 pub struct EntityFlags {
     value: u8,
 }

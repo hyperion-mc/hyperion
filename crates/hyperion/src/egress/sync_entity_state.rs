@@ -1,66 +1,30 @@
 use bevy::prelude::*;
 use glam::{IVec3, Vec3};
-use hyperion_utils::EntityExt;
+use hyperion_utils::{EntityExt, Prev, track_prev};
 use itertools::Either;
 use tracing::error;
+use valence_bytes::CowBytes;
 use valence_protocol::{
-    ByteAngle, VarInt,
+    ByteAngle, RawBytes, VarInt,
     packets::play::{self},
 };
 
 use crate::{
-    Blocks, Prev,
+    Blocks,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        EntitySize,
-        Flight,
-        MovementTracking,
-        Owner,
-        // metadata::{MetadataChanges, get_and_clear_metadata},
-        PendingTeleportation,
-        Pitch,
-        Position,
-        Velocity,
-        Xp,
-        Yaw,
+        EntitySize, Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position,
+        Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         event,
         event::HitGroundEvent,
         handlers::is_grounded,
+        metadata::{MetadataChanges, get_and_clear_metadata},
     },
     spatial::{SpatialIndex, get_first_collision},
 };
 
 pub struct EntityStateSyncPlugin;
-
-fn initialize_previous<T: Component + Clone>(
-    trigger: Trigger<'_, OnAdd, T>,
-    query: Query<'_, '_, &T>,
-    mut commands: Commands<'_, '_>,
-) {
-    let value = match query.get(trigger.target()) {
-        Ok(value) => value,
-        Err(e) => {
-            error!("could not initialize previous: query failed: {e}");
-            return;
-        }
-    };
-
-    commands
-        .entity(trigger.target())
-        .insert(Prev(value.clone()));
-}
-
-fn update_previous<T: Component + Clone>(mut query: Query<'_, '_, (&mut Prev<T>, &T)>) {
-    for (mut prev, current) in &mut query {
-        prev.set(current.clone());
-    }
-}
-
-fn track_previous<T: Component + Clone>(app: &mut App) {
-    app.add_observer(initialize_previous::<T>);
-    app.add_systems(FixedPreUpdate, update_previous::<T>);
-}
 
 fn entity_xp_sync(
     compose: Res<'_, Compose>,
@@ -81,25 +45,25 @@ fn entity_xp_sync(
     }
 }
 
-// fn entity_metadata_sync(
-//     compose: Res<'_, Compose>,
-//     mut query: Query<'_, '_, (Entity, &Position, &mut MetadataChanges)>,
-// ) {
-//     for (entity_id, position, mut metadata_changes) in query.iter_mut() {
-//         let metadata = get_and_clear_metadata(&mut metadata_changes);
-//
-//         if let Some(view) = metadata {
-//             let pkt = play::EntityTrackerUpdateS2c {
-//                 entity_id,
-//                 tracked_values: RawBytes(view),
-//             };
-//             compose
-//                 .broadcast_local(&pkt, position.to_chunk())
-//                 .send()
-//                 .unwrap();
-//         }
-//     }
-// }
+fn entity_metadata_sync(
+    compose: Res<'_, Compose>,
+    mut query: Query<'_, '_, (Entity, &Position, &mut MetadataChanges)>,
+) {
+    for (entity_id, position, mut metadata_changes) in query.iter_mut() {
+        let metadata = get_and_clear_metadata(&mut metadata_changes);
+
+        if let Some(view) = metadata {
+            let pkt = play::EntityTrackerUpdateS2c {
+                entity_id: VarInt(entity_id.minecraft_id()),
+                tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+            };
+            compose
+                .broadcast_local(&pkt, position.to_chunk())
+                .send()
+                .unwrap();
+        }
+    }
+}
 
 fn active_animation_sync(
     compose: Res<'_, Compose>,
@@ -403,16 +367,16 @@ impl Plugin for EntityStateSyncPlugin {
             FixedPostUpdate,
             (
                 entity_xp_sync,
-                // entity_metadata_sync,
+                entity_metadata_sync,
                 active_animation_sync,
                 sync_player_entity,
                 update_projectile_positions,
             ),
         );
 
-        track_previous::<Xp>(app);
-        track_previous::<Position>(app);
-        track_previous::<Yaw>(app);
-        track_previous::<Pitch>(app);
+        track_prev::<Xp>(app);
+        track_prev::<Position>(app);
+        track_prev::<Yaw>(app);
+        track_prev::<Pitch>(app);
     }
 }

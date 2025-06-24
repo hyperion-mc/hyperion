@@ -1,5 +1,6 @@
 mod cached_save;
 pub mod iterator;
+pub mod prev;
 use std::path::PathBuf;
 
 use bevy::{
@@ -7,6 +8,7 @@ use bevy::{
     prelude::*,
 };
 pub use cached_save::cached_save;
+pub use prev::{Prev, track_prev};
 
 pub trait EntityExt: Sized {
     fn minecraft_id(&self) -> i32;

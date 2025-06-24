@@ -27,8 +27,8 @@ use crate::{
         //     command::Command,
         entity_kind::EntityKind,
         inventory::InventoryPlugin,
+        metadata::Metadata,
         packet::PacketPlugin,
-        //     metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
         skin::PlayerSkin,
     },
 };
@@ -40,7 +40,7 @@ pub mod entity_kind;
 pub mod event;
 pub mod handlers;
 pub mod inventory;
-// pub mod metadata;
+pub mod metadata;
 pub mod packet;
 pub mod packet_state;
 pub mod skin;

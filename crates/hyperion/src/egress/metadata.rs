@@ -1,6 +1,7 @@
 //! Utilities for working with the Entity Metadata packet.
 
 use ouroboros::self_referencing;
+use valence_bytes::CowBytes;
 use valence_protocol::{Encode, RawBytes, VarInt, packets::play};
 
 #[self_referencing]
@@ -37,7 +38,7 @@ pub fn show_all(id: i32) -> ShowAll {
         bytes,
         packet_builder: |bytes| play::EntityTrackerUpdateS2c {
             entity_id,
-            tracked_values: RawBytes(bytes),
+            tracked_values: RawBytes(CowBytes::Borrowed(&bytes)),
         },
     }
     .build()

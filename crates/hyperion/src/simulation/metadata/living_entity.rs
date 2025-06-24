@@ -12,7 +12,7 @@
 
 use std::fmt::Display;
 
-use flecs_ecs::prelude::*;
+use bevy::prelude::*;
 use valence_protocol::VarInt;
 
 use super::Metadata;

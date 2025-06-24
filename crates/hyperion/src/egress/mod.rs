@@ -8,7 +8,7 @@ use crate::{
     net::{Compose, ConnectionId},
     simulation::{ChunkPosition, EgressComm},
 };
-// pub mod metadata;
+pub mod metadata;
 pub mod player_join;
 mod stats;
 pub mod sync_chunks;

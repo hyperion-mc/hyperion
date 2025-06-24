@@ -31,7 +31,6 @@ pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 use std::{alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
-use derive_more::Deref;
 use egress::EgressPlugin;
 pub use glam;
 #[cfg(unix)]
@@ -77,17 +76,6 @@ pub mod net;
 pub mod simulation;
 pub mod spatial;
 pub mod storage;
-
-/// Component storing the value of a component in the previous frame. This is updated every
-/// `FixedPreUpdate`.
-#[derive(Component, Copy, Clone, Deref, PartialEq, Eq, Debug)]
-pub struct Prev<T>(#[deref] T);
-
-impl<T> Prev<T> {
-    fn set(&mut self, new: T) {
-        self.0 = new;
-    }
-}
 
 pub trait PacketBundle {
     fn encode_including_ids(self, w: impl Write) -> anyhow::Result<()>;

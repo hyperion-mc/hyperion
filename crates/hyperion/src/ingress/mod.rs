@@ -28,6 +28,7 @@ use crate::{
         Uuid,
         Velocity,
         Yaw,
+        entity_kind::EntityKind,
         packet,
         // animation::ActiveAnimation,
         // blocks::Blocks,
@@ -207,6 +208,7 @@ pub fn process_login_hello(
             .insert(Yaw::default())
             .insert(Pitch::default())
             .insert(Velocity::default())
+            .insert(EntityKind::Player)
             .insert(packet_state::Play(()));
         if let Some(skin) = skin {
             entity.insert(skin);
