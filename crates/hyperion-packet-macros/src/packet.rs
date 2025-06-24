@@ -71,7 +71,7 @@ pub static STATUS_C2S_PACKETS: &[Packet] = &[
 pub static LOGIN_C2S_PACKETS: &[Packet] = &[
     Packet {
         name: "LoginQueryResponseC2s",
-        lifetime: false,
+        lifetime: true,
     },
     Packet {
         name: "LoginHelloC2s",
@@ -114,10 +114,6 @@ pub static PLAY_C2S_PACKETS: &[Packet] = &[
     },
     Packet {
         name: "CreativeInventoryActionC2s",
-        lifetime: false,
-    },
-    Packet {
-        name: "CustomPayloadC2s",
         lifetime: false,
     },
     Packet {
@@ -254,6 +250,10 @@ pub static PLAY_C2S_PACKETS: &[Packet] = &[
     },
     Packet {
         name: "CommandExecutionC2s",
+        lifetime: true,
+    },
+    Packet {
+        name: "CustomPayloadC2s",
         lifetime: true,
     },
     Packet {

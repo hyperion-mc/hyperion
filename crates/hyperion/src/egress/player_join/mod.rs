@@ -6,7 +6,7 @@ use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
 use tracing::{error, info, instrument, trace, warn};
-use valence_bytes::{Bytes, CowUtf8Bytes, Utf8Bytes};
+use valence_bytes::{CowBytes, CowUtf8Bytes, Utf8Bytes};
 use valence_protocol::{
     ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
     game_mode::OptGameMode,
@@ -379,7 +379,7 @@ fn generate_cached_packet_bytes(
     buf.push(brand_len).unwrap();
     buf.extend_from_slice(brand).unwrap();
 
-    let bytes = RawBytes::from(Bytes::from_owner(buf));
+    let bytes = RawBytes::from(CowBytes::Borrowed(&buf));
 
     let brand = play::CustomPayloadS2c {
         channel: ident!("minecraft:brand"),
