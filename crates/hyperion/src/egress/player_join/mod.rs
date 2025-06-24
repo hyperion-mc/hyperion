@@ -30,14 +30,7 @@ use crate::{
     egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Name,
-        PendingTeleportation,
-        Position,
-        Uuid,
-        Yaw,
-        // command::{Command, ROOT_COMMAND, get_command_packet},
-        skin::PlayerSkin,
-        util::registry_codec_raw,
+        Name, PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
     },
 };
 
@@ -331,10 +324,6 @@ pub fn player_join_world(
         })
         .unwrap();
 
-    //     let command_packet = get_command_packet(root_command, Some(**entity));
-    //
-    //     bundle.add_packet(&command_packet).unwrap();
-
     bundle.unicast(connection_id).unwrap();
 
     info!("{name} joined the world");
@@ -454,9 +443,5 @@ pub struct PlayerJoinPlugin;
 impl Plugin for PlayerJoinPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(player_join_world);
-        // let world = app.world_mut();
-
-        // world.spawn()
-        // let root_command = world.spawn(Command::ROOT);
     }
 }
