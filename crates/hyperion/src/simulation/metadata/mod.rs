@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use bevy::prelude::*;
 use hyperion_utils::{Prev, track_prev};
+use tracing::error;
 use valence_protocol::{Encode, VarInt};
 
 use crate::simulation::metadata::entity::{EntityFlags, Pose};
@@ -33,25 +34,40 @@ where
     );
 }
 
-fn initialize_entity(trigger: Trigger<'_, OnInsert, EntityKind>, world: &mut World) {
-    let mut entity = world.entity_mut(trigger.target());
-    let kind = *entity.get::<EntityKind>().unwrap();
+fn initialize_entity(
+    trigger: Trigger<'_, OnInsert, EntityKind>,
+    query: Query<'_, '_, &EntityKind>,
+    mut commands: Commands<'_, '_>,
+) {
+    let kind = match query.get(trigger.target()) {
+        Ok(kind) => *kind,
+        Err(e) => {
+            error!("failed to initialize entity: query failed: {e}");
+            return;
+        }
+    };
+
+    let mut entity = commands.entity(trigger.target());
 
     entity.insert((
         MetadataChanges::default(),
         EntityFlags::default(),
         Pose::default(),
+        entity::default_components(),
     ));
-    entity::insert_default_components(&mut entity);
 
     match kind {
         EntityKind::BlockDisplay => {
-            display::insert_default_components(&mut entity);
-            block_display::insert_default_components(&mut entity);
+            entity.insert((
+                display::default_components(),
+                block_display::default_components(),
+            ));
         }
         EntityKind::Player => {
-            living_entity::insert_default_components(&mut entity);
-            player::insert_default_components(&mut entity);
+            entity.insert((
+                living_entity::default_components(),
+                player::default_components(),
+            ));
         }
         _ => {}
     }
@@ -165,12 +181,13 @@ macro_rules! define_and_register_components {
             )*
         }
 
-        pub fn insert_default_components(entity: &mut EntityWorldMut<'_>) {
-            entity.insert((
+        #[must_use]
+        pub fn default_components() -> impl bevy::ecs::bundle::Bundle {
+            (
                 $(
                     $name::default(),
                 )*
-            ));
+            )
         }
     };
 }
