@@ -163,7 +163,9 @@ impl Plugin for HyperionCore {
             warn!("failed to set file limits: {e}");
         }
 
-        rayon::ThreadPoolBuilder::new()
+        // Errors are ignored because they will only occur when the thread pool is initialized
+        // twice, which may occur in tests that add the `HyperionCore` plugin to different apps
+        let _result = rayon::ThreadPoolBuilder::new()
             .num_threads(NUM_THREADS)
             .spawn_handler(|thread| {
                 std::thread::Builder::new()
@@ -174,8 +176,7 @@ impl Plugin for HyperionCore {
                     .expect("Failed to spawn thread");
                 Ok(())
             })
-            .build_global()
-            .expect("failed to build thread pool");
+            .build_global();
 
         let shared = Arc::new(Shared {
             compression_threshold: CompressionThreshold(256),
