@@ -38,7 +38,7 @@ pub fn show_all(id: i32) -> ShowAll {
         bytes,
         packet_builder: |bytes| play::EntityTrackerUpdateS2c {
             entity_id,
-            tracked_values: RawBytes(CowBytes::Borrowed(&bytes)),
+            tracked_values: RawBytes(CowBytes::Borrowed(bytes)),
         },
     }
     .build()

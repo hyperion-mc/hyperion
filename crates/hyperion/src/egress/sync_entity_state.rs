@@ -49,7 +49,7 @@ fn entity_metadata_sync(
     compose: Res<'_, Compose>,
     mut query: Query<'_, '_, (Entity, &Position, &mut MetadataChanges)>,
 ) {
-    for (entity_id, position, mut metadata_changes) in query.iter_mut() {
+    for (entity_id, position, mut metadata_changes) in &mut query {
         let metadata = get_and_clear_metadata(&mut metadata_changes);
 
         if let Some(view) = metadata {
