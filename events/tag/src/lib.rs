@@ -24,7 +24,9 @@ use tracing::error;
 //     regeneration::RegenerationModule, vanish::VanishModule,
 // };
 // use spatial::SpatialIndex;
-use crate::module::{chat::ChatPlugin, spawn::SpawnPlugin, stats::StatsPlugin};
+use crate::module::{
+    chat::ChatPlugin, spawn::SpawnPlugin, stats::StatsPlugin, vanish::VanishPlugin,
+};
 // use crate::{
 //     module::{bow::BowModule, chat::ChatModule, spawn::SpawnModule, stats::StatsModule},
 //     skin::SkinModule,
@@ -171,6 +173,7 @@ impl Plugin for TagPlugin {
             ChatPlugin,
             StatsPlugin,
             SpawnPlugin,
+            VanishPlugin,
             hyperion_clap::ClapCommandPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,

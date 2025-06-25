@@ -1,8 +1,8 @@
-use clap::Parser;
 use bevy::{ecs::system::SystemState, prelude::*};
+use clap::Parser;
 use hyperion::net::{Compose, ConnectionId};
-use tracing::error;
 use hyperion_clap::{CommandPermission, MinecraftCommand};
+use tracing::error;
 
 use crate::module::vanish::Vanished;
 
@@ -12,10 +12,22 @@ use crate::module::vanish::Vanished;
 pub struct VanishCommand;
 
 impl MinecraftCommand for VanishCommand {
-    type State = SystemState<(Query<'static, 'static, &'static ConnectionId, &'static Name, Option<&'static Vanished>>, Res<'static, Compose>, Commands<'static, 'static>)>;
+    type State = SystemState<(
+        Query<
+            'static,
+            'static,
+            (
+                &'static ConnectionId,
+                &'static Name,
+                Option<&'static Vanished>,
+            ),
+        >,
+        Res<'static, Compose>,
+        Commands<'static, 'static>,
+    )>;
 
     fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
-        let (query, mut commands) = state.get(world);
+        let (query, compose, mut commands) = state.get(world);
 
         let (&connection_id, name, vanished) = match query.get(caller) {
             Ok(data) => data,
@@ -30,8 +42,8 @@ impl MinecraftCommand for VanishCommand {
         commands.entity(caller).insert(Vanished::new(is_vanished));
 
         let packet = hyperion::net::agnostic::chat(format!(
-                "§7[Admin] §f{name} §7is now {}",
-                if is_vanished { "vanished" } else { "visible" }
+            "§7[Admin] §f{name} §7is now {}",
+            if is_vanished { "vanished" } else { "visible" }
         ));
         compose.unicast(&packet, connection_id).unwrap();
     }
