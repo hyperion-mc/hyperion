@@ -622,6 +622,19 @@ fn initialize_player(
     }
 }
 
+/// For every new entity without a UUID, give it one
+fn initialize_uuid(trigger: Trigger<'_, OnAdd, EntityKind>, mut commands: Commands<'_, '_>) {
+    let target = trigger.target();
+    commands.queue(move |world: &mut World| {
+        let mut entity = world.entity_mut(target);
+
+        // This doesn't use insert_if_new to avoid the cost of generating a random uuid if it is not needed
+        if entity.get::<Uuid>().is_none() {
+            entity.insert(Uuid::new_v4());
+        }
+    });
+}
+
 fn send_pending_teleportation(
     trigger: Trigger<'_, OnInsert, PendingTeleportation>,
     query: Query<'_, '_, (&PendingTeleportation, &Yaw, &Pitch, &ConnectionId)>,
@@ -724,6 +737,7 @@ impl Plugin for SimPlugin {
         app.add_observer(initialize_player);
         app.add_observer(send_pending_teleportation);
         app.add_observer(update_flight);
+        app.add_observer(initialize_uuid);
 
         app.add_plugins(CommandPlugin);
         app.add_plugins(PacketPlugin);
@@ -837,17 +851,6 @@ impl Plugin for SimPlugin {
 //
 //         world.component::<hyperion_inventory::PlayerInventory>();
 //         world.component::<hyperion_inventory::CursorItem>();
-//
-//         // for every new entity without a UUID, give it one
-//         world
-//             .observer::<flecs::OnAdd, ()>()
-//             .with_enum_wildcard::<EntityKind>()
-//             .without(id::<Uuid>())
-//             .each_entity(|entity, ()| {
-//                 debug!("adding uuid to entity");
-//                 let uuid = uuid::Uuid::new_v4();
-//                 entity.set(Uuid::from(uuid));
-//             });
 //
 //         world
 //             .observer::<flecs::OnSet, ()>()
