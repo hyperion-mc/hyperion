@@ -21,7 +21,6 @@ members = [
     'crates/hyperion-clap',
     'crates/hyperion-command',
     'crates/hyperion-crafting',
-    'crates/hyperion-event-macros',
     'crates/hyperion-genmap',
     'crates/hyperion-gui',
     'crates/hyperion-inventory',
@@ -167,9 +166,6 @@ path = 'crates/hyperion-command'
 
 [workspace.dependencies.hyperion-crafting]
 path = 'crates/hyperion-crafting'
-
-[workspace.dependencies.hyperion-event-macros]
-path = 'crates/hyperion-event-macros'
 
 [workspace.dependencies.hyperion-genmap]
 path = 'crates/hyperion-genmap'
