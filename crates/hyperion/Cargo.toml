@@ -41,7 +41,6 @@ memmap2 = { workspace = true }
 more-asserts = { workspace = true }
 ndarray = { workspace = true }
 once_cell = { workspace = true }
-ouroboros = { workspace = true }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 rayon = { workspace = true }

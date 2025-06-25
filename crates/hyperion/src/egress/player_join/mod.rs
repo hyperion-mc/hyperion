@@ -190,8 +190,12 @@ pub fn player_join_world(
         .entity(trigger.target())
         .insert(PendingTeleportation::new(**position));
 
-    let mut entries = Vec::new();
-    let mut all_player_names = Vec::new();
+    // Subtracts one to exclude current player
+    let others_len = others_query.iter().len() - 1;
+    let mut entries = Vec::with_capacity(others_len);
+    let mut spawn_packets = Vec::with_capacity(others_len);
+    let mut show_all_packets = Vec::with_capacity(others_len);
+    let mut all_player_names = Vec::with_capacity(others_len);
 
     for (current_entity, uuid, name, position, yaw, pitch) in others_query {
         if entity_id == current_entity {
@@ -222,10 +226,8 @@ pub fn player_join_world(
             pitch: ByteAngle::from_degrees(**pitch),
         };
 
-        bundle.add_packet(&pkt).unwrap();
-
-        let show_all = show_all(current_entity.minecraft_id());
-        bundle.add_packet(show_all.borrow_packet()).unwrap();
+        spawn_packets.push(pkt);
+        show_all_packets.push(show_all(current_entity.minecraft_id()));
     }
 
     let all_player_names = all_player_names
@@ -248,6 +250,24 @@ pub fn player_join_world(
                 entries: Cow::Owned(entries),
             })
             .unwrap();
+    }
+
+    {
+        let scope = tracing::info_span!("unicasting_spawn");
+        let _enter = scope.enter();
+
+        for spawn in &spawn_packets {
+            bundle.add_packet(spawn).unwrap();
+        }
+    }
+
+    {
+        let scope = tracing::info_span!("unicasting_show_all");
+        let _enter = scope.enter();
+
+        for show_all in &show_all_packets {
+            bundle.add_packet(show_all).unwrap();
+        }
     }
 
     let PlayerSkin {
@@ -313,7 +333,7 @@ pub fn player_join_world(
         .unwrap();
 
     let show_all = show_all(entity_id.minecraft_id());
-    compose.broadcast(show_all.borrow_packet()).send().unwrap();
+    compose.broadcast(&show_all).send().unwrap();
 
     bundle
         .add_packet(&play::TeamS2c {
