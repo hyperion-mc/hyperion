@@ -11,7 +11,7 @@ use hyperion::{
     SetEndpoint,
     simulation::{EntitySize, Position, packet_state},
     // simulation::{Player, Position},
-    spatial::{Spatial, SpatialIndex, SpatialPlugin},
+    spatial::{Spatial, SpatialIndex},
 };
 use hyperion_proxy_module::SetProxyAddress;
 use tracing::error;
@@ -171,7 +171,6 @@ impl Plugin for TagPlugin {
             ChatPlugin,
             StatsPlugin,
             SpawnPlugin,
-            SpatialPlugin,
             hyperion_clap::ClapCommandPlugin,
             hyperion_genmap::GenMapPlugin,
             hyperion_item::ItemPlugin,

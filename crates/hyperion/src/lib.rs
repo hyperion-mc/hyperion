@@ -66,6 +66,7 @@ use crate::{
         IgnMap, /* EgressComm, EntitySize, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry, */
         SimPlugin, StreamLookup, blocks::Blocks,
     },
+    spatial::SpatialPlugin,
     util::mojang::{ApiProvider, MojangClient},
 };
 
@@ -222,6 +223,7 @@ impl Plugin for HyperionCore {
             IngressPlugin,
             EgressPlugin,
             SimPlugin,
+            SpatialPlugin,
             HyperionUtilsPlugin,
         ));
 

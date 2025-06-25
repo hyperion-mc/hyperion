@@ -10,7 +10,7 @@ use glam::Vec3;
 use hyperion::{
     HyperionCore,
     simulation::{EntitySize, Owner, Pitch, Position, Velocity, Yaw, entity_kind::EntityKind},
-    spatial::{Spatial, SpatialPlugin},
+    spatial::Spatial,
 };
 
 #[test]
@@ -31,7 +31,7 @@ fn test_get_first_collision() {
 
     let mut app = App::new();
 
-    app.add_plugins((HyperionCore, SpatialPlugin, hyperion_genmap::GenMapPlugin));
+    app.add_plugins((HyperionCore, hyperion_genmap::GenMapPlugin));
 
     let world = app.world_mut();
 
