@@ -2,10 +2,6 @@
 harness = false
 name = "set"
 
-[[bench]]
-harness = false
-name = "atomic"
-
 [dependencies]
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
