@@ -112,18 +112,6 @@ pub struct PostureUpdate {
 #[derive(Event)]
 pub struct BlockInteract {}
 
-#[derive(Event, Clone, Debug, PartialEq, Eq)]
-pub enum ClientStatusCommand {
-    PerformRespawn,
-    RequestStats,
-}
-
-#[derive(Event, Clone, Debug)]
-pub struct ClientStatusEvent {
-    pub client: Entity,
-    pub status: ClientStatusCommand,
-}
-
 #[derive(Event, Clone, Debug)]
 pub struct ProjectileEntityEvent {
     pub client: Entity,

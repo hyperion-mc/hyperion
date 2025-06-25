@@ -49,7 +49,6 @@ pub use valence_protocol::{
     ItemKind, ItemStack, Particle,
     block::{BlockKind, BlockState},
 };
-pub use valence_server as server;
 
 mod common;
 pub use common::*;

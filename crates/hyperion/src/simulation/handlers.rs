@@ -688,24 +688,6 @@ pub fn player_interact_item(
 //     Ok(())
 // }
 //
-// pub fn client_status(
-//     pkt: &play::ClientStatusC2s,
-//     handle: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let command = ClientStatusEvent {
-//         client: query.id,
-//         status: match pkt {
-//             play::ClientStatusC2s::PerformRespawn => event::ClientStatusCommand::PerformRespawn,
-//             play::ClientStatusC2s::RequestStats => event::ClientStatusCommand::RequestStats,
-//         },
-//     };
-//
-//     query.handler_registry.trigger(&command, handle, query)?;
-//
-//     Ok(())
-// }
-//
 // pub fn player_abilities(
 //     pkt: &play::UpdatePlayerAbilitiesC2s,
 //     _: &dyn LifetimeHandle<'_>,

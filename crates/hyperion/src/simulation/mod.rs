@@ -750,7 +750,6 @@ impl Plugin for SimPlugin {
         app.add_event::<event::ReleaseUseItem>();
         app.add_event::<event::PostureUpdate>();
         app.add_event::<event::BlockInteract>();
-        app.add_event::<event::ClientStatusEvent>();
         app.add_event::<event::ProjectileEntityEvent>();
         app.add_event::<event::ProjectileBlockEvent>();
         app.add_event::<event::ClickSlotEvent>();

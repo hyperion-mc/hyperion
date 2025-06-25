@@ -19,7 +19,7 @@ hyperion-item = { workspace = true }
 hyperion-permission = { workspace = true }
 # hyperion-proxy-module = { workspace = true }
 hyperion-rank-tree = { workspace = true }
-# hyperion-respawn = { workspace = true }
+hyperion-respawn = { workspace = true }
 # hyperion-scheduled = { workspace = true }
 # hyperion-text = { workspace = true }
 hyperion-utils = { workspace = true }

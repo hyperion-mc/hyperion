@@ -178,6 +178,7 @@ impl Plugin for TagPlugin {
             hyperion_item::ItemPlugin,
             hyperion_permission::PermissionPlugin,
             hyperion_rank_tree::RankTreePlugin,
+            hyperion_respawn::RespawnPlugin,
         ));
         app.add_observer(initialize_player);
         app.add_systems(FixedUpdate, follow_closest_player);
