@@ -144,17 +144,17 @@ impl Plugin for CommandPlugin {
 
 #[cfg(test)]
 mod tests {
-    use flecs_ecs::prelude::*;
+    use bevy::prelude::*;
 
-    use super::*;
+    use super::{Command as HyperionCommand, *};
 
     #[test]
     fn test_empty_command_tree() {
-        let world = World::new();
-        world.component::<Command>();
-        let root = world.entity();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let world = app.world_mut();
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 1);
         assert_eq!(packet.root_index, VarInt(0));
@@ -164,94 +164,100 @@ mod tests {
 
     #[test]
     fn test_single_command() {
-        let world = World::new();
-        world.component::<Command>();
-        let root = world.entity();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        world
-            .entity()
-            .set(Command {
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
+
+        world.spawn((
+            HyperionCommand {
                 data: NodeData::Literal {
-                    name: "test".to_string(),
+                    name: "test".into(),
                 },
                 has_permission: |_: _, _: _| true,
-            })
-            .child_of(root);
+            },
+            ChildOf(root_command),
+        ));
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 2);
         assert_eq!(packet.root_index, VarInt(0));
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "test".to_string(),
+            name: "test".into(),
         });
     }
 
     #[test]
     fn test_nested_commands() {
-        let world = World::new();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        world.component::<Command>();
-
-        let root = world.entity();
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
 
         let parent = world
-            .entity()
-            .set(Command {
+            .spawn((
+                HyperionCommand {
+                    data: NodeData::Literal {
+                        name: "parent".into(),
+                    },
+                    has_permission: |_: _, _: _| true,
+                },
+                ChildOf(root_command),
+            ))
+            .id();
+
+        let _child = world.spawn((
+            HyperionCommand {
                 data: NodeData::Literal {
-                    name: "parent".to_string(),
+                    name: "child".into(),
                 },
                 has_permission: |_: _, _: _| true,
-            })
-            .child_of(root);
+            },
+            ChildOf(parent),
+        ));
 
-        let _child = world
-            .entity()
-            .set(Command {
-                data: NodeData::Literal {
-                    name: "child".to_string(),
-                },
-                has_permission: |_: _, _: _| true,
-            })
-            .child_of(parent);
-
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 3);
         assert_eq!(packet.root_index, VarInt(0));
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].children, vec![VarInt(2)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "parent".to_string(),
+            name: "parent".into(),
         });
         assert_eq!(packet.commands[2].data, NodeData::Literal {
-            name: "child".to_string(),
+            name: "child".into(),
         });
     }
 
     #[test]
     fn test_max_depth() {
-        let world = World::new();
-        world.component::<Command>();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        let root = world.entity();
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
 
-        let mut parent = root;
+        let mut parent = root_command;
         for i in 0..=MAX_DEPTH {
-            let child = world
-                .entity()
-                .set(Command {
-                    data: NodeData::Literal {
-                        name: format!("command_{i}"),
+            parent = world
+                .spawn((
+                    HyperionCommand {
+                        data: NodeData::Literal {
+                            name: format!("command_{i}").into(),
+                        },
+                        has_permission: |_: _, _: _| true,
                     },
-                    has_permission: |_: _, _: _| true,
-                })
-                .child_of(parent);
-            parent = child;
+                    ChildOf(parent),
+                ))
+                .id();
         }
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), MAX_DEPTH + 1);
     }

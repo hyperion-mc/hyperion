@@ -15,8 +15,6 @@ use hyperion::{
 
 #[test]
 fn test_get_first_collision() {
-    let mut app = App::new();
-
     /// Function to spawn arrows at different angles
     fn spawn_arrow(world: &mut World, position: Vec3, direction: Vec3, owner: Owner) -> Entity {
         tracing::debug!("Spawning arrow at position: {position:?} with direction: {direction:?}");
@@ -30,6 +28,8 @@ fn test_get_first_collision() {
             ))
             .id()
     }
+
+    let mut app = App::new();
 
     app.add_plugins((HyperionCore, SpatialPlugin, hyperion_genmap::GenMapPlugin));
 

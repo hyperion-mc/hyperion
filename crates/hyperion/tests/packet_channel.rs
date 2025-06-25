@@ -12,7 +12,9 @@ fn packets_and_splits() -> impl Strategy<Value = (Vec<Vec<u8>>, usize, Vec<usize
         .prop_flat_map(|packets| {
             let total_len = packets
                 .iter()
-                .map(|packet| VarInt(packet.len() as i32).written_size() + packet.len())
+                .map(|packet| {
+                    VarInt(i32::try_from(packet.len()).unwrap()).written_size() + packet.len()
+                })
                 .sum();
             (
                 Just(packets),
@@ -31,8 +33,10 @@ fn packets_and_splits() -> impl Strategy<Value = (Vec<Vec<u8>>, usize, Vec<usize
 fn encode(packets: &[Vec<u8>], total_len: usize) -> Vec<u8> {
     let mut cursor = Cursor::new(Vec::with_capacity(total_len));
     for packet in packets {
-        VarInt(packet.len() as i32).encode(&mut cursor).unwrap();
-        cursor.write_all(&packet).unwrap();
+        VarInt(i32::try_from(packet.len()).unwrap())
+            .encode(&mut cursor)
+            .unwrap();
+        cursor.write_all(packet).unwrap();
     }
     let encoded_packets = cursor.into_inner();
     assert_eq!(encoded_packets.len(), total_len);
