@@ -1,7 +1,7 @@
 [dependencies]
+bevy = { workspace = true }
 hyperion-proxy = { workspace = true }
 hyperion = { workspace = true }
-flecs_ecs = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true , features = ["full"]}
 

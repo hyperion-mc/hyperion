@@ -13,11 +13,11 @@ use hyperion::{
     // simulation::{Player, Position},
     spatial::{Spatial, SpatialIndex, SpatialPlugin},
 };
+use hyperion_proxy_module::SetProxyAddress;
 use tracing::error;
 
 // use hyperion_clap::hyperion_command::CommandRegistry;
 // use hyperion_gui::Gui;
-// use hyperion_proxy_module::{HyperionProxyModule, ProxyAddress};
 // use hyperion_rank_tree::Team;
 // use module::{
 //     attack::AttackModule, block::BlockModule, damage::DamageModule, level::LevelModule,
@@ -179,6 +179,7 @@ impl Plugin for TagPlugin {
             hyperion_permission::PermissionPlugin,
             hyperion_rank_tree::RankTreePlugin,
             hyperion_respawn::RespawnPlugin,
+            hyperion_proxy_module::HyperionProxyPlugin,
         ));
         app.add_observer(initialize_player);
         app.add_systems(FixedUpdate, follow_closest_player);
@@ -192,6 +193,10 @@ pub fn init_game(address: SocketAddr) -> anyhow::Result<()> {
 
     app.add_plugins((HyperionCore, TagPlugin));
     app.world_mut().trigger(SetEndpoint::from(address));
+    app.world_mut().trigger(SetProxyAddress {
+        server: address.to_string(),
+        ..SetProxyAddress::default()
+    });
 
     app.run();
 

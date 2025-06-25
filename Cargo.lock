@@ -3887,7 +3887,7 @@ dependencies = [
 name = "hyperion-proxy-module"
 version = "0.1.0"
 dependencies = [
- "flecs_ecs",
+ "bevy",
  "hyperion",
  "hyperion-proxy",
  "tokio",
@@ -6749,6 +6749,7 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-item",
  "hyperion-permission",
+ "hyperion-proxy-module",
  "hyperion-rank-tree",
  "hyperion-respawn",
  "hyperion-utils",

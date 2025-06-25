@@ -17,7 +17,7 @@ hyperion-gui = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-item = { workspace = true }
 hyperion-permission = { workspace = true }
-# hyperion-proxy-module = { workspace = true }
+hyperion-proxy-module = { workspace = true }
 hyperion-rank-tree = { workspace = true }
 hyperion-respawn = { workspace = true }
 # hyperion-scheduled = { workspace = true }
