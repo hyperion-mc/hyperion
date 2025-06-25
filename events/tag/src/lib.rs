@@ -153,7 +153,6 @@ fn follow_closest_player(
         match queries.p0().get_mut(entity) {
             Ok(mut position) => {
                 **position += delta;
-                dbg!(position);
             }
             Err(e) => {
                 error!("follow closest player failed: query failed: {e}");

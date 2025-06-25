@@ -51,7 +51,7 @@ pub fn process_handshake(
         let mut entity = commands.entity(packet.sender());
 
         entity.remove::<packet_state::Handshake>();
-        match dbg!(packet.next_state) {
+        match packet.next_state {
             HandshakeNextState::Status => {
                 entity.insert(packet_state::Status(()));
             }
