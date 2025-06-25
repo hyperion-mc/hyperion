@@ -128,18 +128,21 @@ macro_rules! next_lowest {
 #[cfg(test)]
 mod tests {
     #[test]
+    #[expect(clippy::diverging_sub_expression)]
     fn test_empty() {
         #[derive(PartialEq, Debug)]
         enum Never {}
 
         assert_eq!(next_lowest! {}, None::<Never>);
+
         assert_eq!(
-            next_lowest! { _ in std::iter::empty::<()>().peekable() => unreachable!() },
+            next_lowest! { () in std::iter::empty::<()>().peekable() => unreachable!() },
             None::<()>
         );
     }
 
     #[test]
+    #[expect(clippy::diverging_sub_expression)]
     fn test_jumps() {
         next_lowest! {
             _ in std::iter::once(1).peekable() => {
