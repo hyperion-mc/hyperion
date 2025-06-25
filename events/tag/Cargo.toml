@@ -7,7 +7,6 @@ derive_more = { workspace = true }
 dotenvy = { workspace = true }
 envy = "0.4"
 fastrand = { workspace = true }
-flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true }
 hyperion = { workspace = true }

@@ -23,7 +23,6 @@ enumset = { workspace = true }
 bevy.workspace = true
 fastrand = { workspace = true }
 flate2 = { workspace = true, features = ["zlib-ng"] }
-#flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true, features = ["serde"] }
 heapless = { workspace = true }
