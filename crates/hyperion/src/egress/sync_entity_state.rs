@@ -281,9 +281,8 @@ fn sync_player_entity(
     }
 }
 
-// TODO: Requiring ConnectionId for arrows may be a bug
 fn update_projectile_positions(
-    arrow_query: Query<'_, '_, (Entity, &Owner), With<ConnectionId>>,
+    arrow_query: Query<'_, '_, (Entity, &Owner)>,
     mut query_set: ParamSet<
         '_,
         '_,
