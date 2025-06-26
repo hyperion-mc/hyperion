@@ -6,6 +6,8 @@
               casing"
 )]
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use bevy::prelude::*;
 use tracing::{error, warn};
 
@@ -14,22 +16,16 @@ use crate::net::{
 };
 
 #[derive(Default, Resource)]
-struct PacketIdGenerator(u64);
+struct PacketIdGenerator(AtomicU64);
 
 impl PacketIdGenerator {
-    fn next(&mut self) -> u64 {
-        let id = self.0;
-        match id.checked_add(1) {
-            Some(new_id) => {
-                self.0 = new_id;
-            }
-            None => {
-                warn!(
-                    "c2s packet ids are wrapping around to 0, this may cause issues with packet \
-                     ordering"
-                );
-                self.0 = 0;
-            }
+    fn next(&self) -> u64 {
+        let id = self.0.fetch_add(1, Ordering::Relaxed);
+        if id == u64::MAX {
+            warn!(
+                "c2s packet ids are wrapping around to 0, this may cause issues with packet \
+                 ordering"
+            );
         }
         id
     }
@@ -50,6 +46,21 @@ fn try_next_frame(
             error!("failed to decode packet: {e}");
             compose.io_buf().shutdown(connection_id);
             None
+        }
+    }
+}
+
+mod buffers {
+    use crate::simulation::packet;
+
+    hyperion_packet_macros::for_each_state! {
+        #{
+            #for_each_packet! {
+                #[derive(Default)]
+                pub struct #state {
+                    #{pub #packet_name: boxcar::Vec<packet::#state::#packet_name>,}
+                }
+            }
         }
     }
 }
@@ -94,7 +105,7 @@ mod decoders {
     hyperion_packet_macros::for_each_state! {
         #{
             pub fn #state(
-                query: Query<
+                mut query: Query<
                 '_,
                 '_,
                 (
@@ -106,11 +117,16 @@ mod decoders {
                 paste! { With<packet_state::[< #state:camel >]> }
                 >,
                 compose: Res<'_, Compose>,
-                mut packet_id_generator: ResMut<'_, super::PacketIdGenerator>,
+                packet_id_generator: Res<'_, super::PacketIdGenerator>,
                 mut writers: super::writers::#state<'_>,
             ) {
-                let compose = compose.into_inner();
-                for (sender, &connection_id, decoder, receiver) in query {
+                let compose = &compose;
+                let packet_id_generator = &packet_id_generator;
+                let buffers = super::buffers::#state::default();
+
+                // Fill buffers
+                let scope = tracing::info_span!("fill_buffers").entered();
+                query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
                     let decoder = decoder.into_inner();
                     let receiver = receiver.into_inner();
                     loop {
@@ -131,7 +147,7 @@ mod decoders {
                                     #valence_packet::ID => {
                                         match frame.decode::<#static_valence_packet>() {
                                             Ok(data) => {
-                                                writers.#packet_name.write(Packet::new(
+                                                buffers.#packet_name.push(Packet::new(
                                                     sender,
                                                     connection_id,
                                                     packet_id_generator.next(),
@@ -165,7 +181,17 @@ mod decoders {
                             break;
                         }
                     }
+                });
+                scope.exit();
+
+                // Copy buffers to the EventWriters
+                let scope = tracing::info_span!("write_events").entered();
+                #for_each_packet! {
+                    #{
+                        writers.#packet_name.write_batch(buffers.#packet_name);
+                    }
                 }
+                scope.exit();
             }
         }
     }

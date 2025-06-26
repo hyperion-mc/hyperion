@@ -8,8 +8,9 @@ arc-swap = { workspace = true }
 base64 = { workspace = true }
 bitfield-struct = { workspace = true }
 bitvec = { workspace = true }
-bvh-region = { workspace = true }
+boxcar = { workspace = true }
 bumpalo = { workspace = true }
+bvh-region = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
