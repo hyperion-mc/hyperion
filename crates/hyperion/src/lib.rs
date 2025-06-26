@@ -178,6 +178,19 @@ impl Plugin for HyperionCore {
             })
             .build_global();
 
+        // Initialize the compute task pool. This is done manually instead of by using
+        // TaskPoolPlugin because TaskPoolPlugin also initializes AsyncComputeTaskPool and
+        // IoTaskPool which are not used by Hyperion but are given 50% of the available cores.
+        // Setting up ComputeTaskPool manually allows it to use 100% of the available cores.
+        let mut init = false;
+        bevy::tasks::ComputeTaskPool::get_or_init(|| {
+            init = true;
+            bevy::tasks::TaskPool::new()
+        });
+        if !init {
+            warn!("failed to initialize ComputeTaskPool because it was already initialized");
+        }
+
         let shared = Arc::new(Shared {
             compression_threshold: CompressionThreshold(256),
             compression_level: CompressionLvl::new(2).expect("failed to create compression level"),
@@ -217,9 +230,8 @@ impl Plugin for HyperionCore {
         app.insert_resource(StreamLookup::default());
 
         app.add_plugins((
-            bevy::MinimalPlugins.set(bevy::app::ScheduleRunnerPlugin::run_loop(
-                Duration::from_millis(10),
-            )),
+            bevy::time::TimePlugin,
+            bevy::app::ScheduleRunnerPlugin::run_loop(Duration::from_millis(10)),
             CommandChannelPlugin,
             IngressPlugin,
             EgressPlugin,
