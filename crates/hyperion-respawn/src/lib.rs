@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use hyperion::{
+    ingress,
     net::{Compose, DataBundle},
     simulation::{
         metadata::{entity::Pose, living_entity::Health},
@@ -118,6 +119,6 @@ pub struct RespawnPlugin;
 
 impl Plugin for RespawnPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, handle_respawn);
+        app.add_systems(FixedUpdate, handle_respawn.after(ingress::decode::play));
     }
 }

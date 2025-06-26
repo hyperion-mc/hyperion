@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use derive_more::Deref;
-use hyperion::simulation::event::InteractEvent;
+use hyperion::{ingress, simulation::event::InteractEvent};
 use hyperion_inventory::PlayerInventory;
 use tracing::error;
 use valence_protocol::nbt;
@@ -70,6 +70,6 @@ fn handle_interact(
 impl Plugin for ItemPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<NbtInteractEvent>();
-        app.add_systems(FixedUpdate, handle_interact);
+        app.add_systems(FixedUpdate, handle_interact.after(ingress::decode::play));
     }
 }

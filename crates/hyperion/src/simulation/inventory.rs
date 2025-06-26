@@ -19,6 +19,7 @@ use valence_text::IntoText;
 
 use super::event;
 use crate::{
+    ingress,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{Position, packet, packet_state},
 };
@@ -33,9 +34,10 @@ impl Plugin for InventoryPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                update_player_inventory,
-                handle_update_selected_slot,
-                handle_click_slot,
+                (handle_update_selected_slot, handle_click_slot).after(ingress::decode::play),
+                update_player_inventory
+                    .after(handle_update_selected_slot)
+                    .after(handle_click_slot),
             ),
         );
     }

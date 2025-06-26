@@ -20,7 +20,7 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use crate::{
-    Global,
+    Global, ingress,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         command::CommandPlugin,
@@ -745,8 +745,11 @@ impl Plugin for SimPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                handlers::position_and_look_updates,
-                handlers::player_interact_item,
+                (
+                    handlers::position_and_look_updates,
+                    handlers::player_interact_item,
+                )
+                    .after(ingress::decode::play),
                 spawn_entities,
             ),
         );

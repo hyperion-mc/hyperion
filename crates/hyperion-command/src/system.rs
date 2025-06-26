@@ -2,6 +2,7 @@ use std::{fmt::Write, sync::TryLockError};
 
 use bevy::prelude::*;
 use hyperion::{
+    ingress,
     net::{Compose, agnostic},
     simulation::packet::play,
 };
@@ -148,7 +149,9 @@ impl Plugin for CommandSystemPlugin {
         // but they avoid lock contention on the CommandRegistry.
         app.add_systems(
             FixedUpdate,
-            (execute_commands, apply_deferred_changes, complete_commands).chain(),
+            (execute_commands, apply_deferred_changes, complete_commands)
+                .chain()
+                .after(ingress::decode::play),
         );
     }
 }

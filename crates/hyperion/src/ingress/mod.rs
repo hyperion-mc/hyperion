@@ -41,7 +41,7 @@ use crate::{
     util::mojang::MojangClient,
 };
 
-mod decode;
+pub mod decode;
 
 pub fn process_handshake(
     mut packets: EventReader<'_, '_, packet::handshake::Handshake>,
@@ -239,10 +239,9 @@ impl Plugin for IngressPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                process_handshake,
-                process_status_request,
-                process_status_ping,
-                process_login_hello,
+                process_handshake.after(decode::handshake),
+                (process_status_request, process_status_ping).after(decode::status),
+                process_login_hello.after(decode::login),
             ),
         );
 

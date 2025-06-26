@@ -6,46 +6,35 @@
               casing"
 )]
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use bevy::prelude::*;
-use tracing::{error, warn};
+use paste::paste;
+use tracing::error;
+use valence_protocol::Packet as _;
 
-use crate::net::{
-    Compose, ConnectionId, PacketDecoder, decoder::BorrowedPacketFrame, packet_channel,
+use crate::{
+    net::{Compose, ConnectionId, PacketDecoder, decoder::BorrowedPacketFrame, packet_channel},
+    simulation::{packet::Packet, packet_state},
 };
 
-#[derive(Default, Resource)]
-struct PacketIdGenerator(AtomicU64);
+mod __private {
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-impl PacketIdGenerator {
-    fn next(&self) -> u64 {
-        let id = self.0.fetch_add(1, Ordering::Relaxed);
-        if id == u64::MAX {
-            warn!(
-                "c2s packet ids are wrapping around to 0, this may cause issues with packet \
-                 ordering"
-            );
-        }
-        id
-    }
-}
+    use bevy::prelude::*;
+    use tracing::warn;
 
-fn try_next_frame(
-    compose: &Compose,
-    connection_id: ConnectionId,
-    decoder: &mut PacketDecoder,
-    receiver: &mut packet_channel::Receiver,
-) -> Option<BorrowedPacketFrame> {
-    let raw_packet = receiver.try_recv()?;
-    let bump = compose.bump();
-    match decoder.try_next_packet(bump, &raw_packet) {
-        Ok(Some(packet)) => Some(packet),
-        Ok(None) => None,
-        Err(e) => {
-            error!("failed to decode packet: {e}");
-            compose.io_buf().shutdown(connection_id);
-            None
+    #[derive(Default, Resource)]
+    pub struct PacketIdGenerator(AtomicU64);
+
+    impl PacketIdGenerator {
+        pub(crate) fn next(&self) -> u64 {
+            let id = self.0.fetch_add(1, Ordering::Relaxed);
+            if id == u64::MAX {
+                warn!(
+                    "c2s packet ids are wrapping around to 0, this may cause issues with packet \
+                     ordering"
+                );
+            }
+            id
         }
     }
 }
@@ -91,108 +80,115 @@ mod may_transition {
     pub const play: bool = false;
 }
 
-mod decoders {
-    use bevy::prelude::*;
-    use paste::paste;
-    use tracing::error;
-    use valence_protocol::Packet as _;
+fn try_next_frame(
+    compose: &Compose,
+    connection_id: ConnectionId,
+    decoder: &mut PacketDecoder,
+    receiver: &mut packet_channel::Receiver,
+) -> Option<BorrowedPacketFrame> {
+    let raw_packet = receiver.try_recv()?;
+    let bump = compose.bump();
+    match decoder.try_next_packet(bump, &raw_packet) {
+        Ok(Some(packet)) => Some(packet),
+        Ok(None) => None,
+        Err(e) => {
+            error!("failed to decode packet: {e}");
+            compose.io_buf().shutdown(connection_id);
+            None
+        }
+    }
+}
 
-    use crate::{
-        net::{Compose, ConnectionId, PacketDecoder, packet_channel},
-        simulation::{packet::Packet, packet_state},
-    };
+hyperion_packet_macros::for_each_state! {
+    #{
+        pub fn #state(
+            mut query: Query<
+            '_,
+            '_,
+            (
+                Entity,
+                &ConnectionId,
+                &mut PacketDecoder,
+                &mut packet_channel::Receiver,
+            ),
+            paste! { With<packet_state::[< #state:camel >]> }
+            >,
+            compose: Res<'_, Compose>,
+            packet_id_generator: Res<'_, __private::PacketIdGenerator>,
+            mut writers: writers::#state<'_>,
+        ) {
+            let compose = &compose;
+            let packet_id_generator = &packet_id_generator;
+            let buffers = buffers::#state::default();
 
-    hyperion_packet_macros::for_each_state! {
-        #{
-            pub fn #state(
-                mut query: Query<
-                '_,
-                '_,
-                (
-                    Entity,
-                    &ConnectionId,
-                    &mut PacketDecoder,
-                    &mut packet_channel::Receiver,
-                ),
-                paste! { With<packet_state::[< #state:camel >]> }
-                >,
-                compose: Res<'_, Compose>,
-                packet_id_generator: Res<'_, super::PacketIdGenerator>,
-                mut writers: super::writers::#state<'_>,
-            ) {
-                let compose = &compose;
-                let packet_id_generator = &packet_id_generator;
-                let buffers = super::buffers::#state::default();
+            // Fill buffers
+            let scope = tracing::info_span!("fill_buffers").entered();
+            query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
+                let decoder = decoder.into_inner();
+                let receiver = receiver.into_inner();
+                loop {
+                    let Some(frame) = try_next_frame(
+                        compose,
+                        connection_id,
+                        decoder,
+                        receiver,
+                    ) else {
+                        break;
+                    };
 
-                // Fill buffers
-                let scope = tracing::info_span!("fill_buffers").entered();
-                query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
-                    let decoder = decoder.into_inner();
-                    let receiver = receiver.into_inner();
-                    loop {
-                        let Some(frame) = super::try_next_frame(
-                            compose,
-                            connection_id,
-                            decoder,
-                            receiver,
-                        ) else {
-                            break;
+                    let frame_id = frame.id;
+
+                    #for_each_packet! {
+                        let result: anyhow::Result<()> = match frame_id {
+                            #{
+                                #valence_packet::ID => {
+                                    match frame.decode::<#static_valence_packet>() {
+                                        Ok(data) => {
+                                            buffers.#packet_name.push(Packet::new(
+                                                sender,
+                                                connection_id,
+                                                packet_id_generator.next(),
+                                                data
+                                            ));
+                                            Ok(())
+                                        },
+                                        Err(e) => Err(e)
+                                    }
+                                },
+                            }
+                            _ => {
+                                Err(anyhow::Error::msg("invalid packet id"))
+                            }
                         };
-
-                        let frame_id = frame.id;
-
-                        #for_each_packet! {
-                            let result: anyhow::Result<()> = match frame_id {
-                                #{
-                                    #valence_packet::ID => {
-                                        match frame.decode::<#static_valence_packet>() {
-                                            Ok(data) => {
-                                                buffers.#packet_name.push(Packet::new(
-                                                    sender,
-                                                    connection_id,
-                                                    packet_id_generator.next(),
-                                                    data
-                                                ));
-                                                Ok(())
-                                            },
-                                            Err(e) => Err(e)
-                                        }
-                                    },
-                                }
-                                _ => {
-                                    Err(anyhow::Error::msg("invalid packet id"))
-                                }
-                            };
-                        }
-
-                        if let Err(e) = result {
-                            // The call to error! is placed outside of the match statement to help reduce
-                            // compile times by reducing code duplication from the expansion of the error!
-                            // macro
-                            error!("error while decoding packet (id: {frame_id}): {e}");
-                            compose.io_buf().shutdown(connection_id);
-                            break;
-                        }
-
-                        if super::may_transition::#state {
-                            // The packet handler for this packet might change the player to
-                            // another packet state, so more packets cannot be decoded at this
-                            // moment
-                            break;
-                        }
                     }
-                });
-                scope.exit();
 
-                // Copy buffers to the EventWriters
-                let scope = tracing::info_span!("write_events").entered();
-                #for_each_packet! {
-                    #{
-                        writers.#packet_name.write_batch(buffers.#packet_name);
+                    if let Err(e) = result {
+                        // The call to error! is placed outside of the match statement to help reduce
+                        // compile times by reducing code duplication from the expansion of the error!
+                        // macro
+                        error!("error while decoding packet (id: {frame_id}): {e}");
+                        compose.io_buf().shutdown(connection_id);
+                        break;
+                    }
+
+                    if may_transition::#state {
+                        // The packet handler for this packet might change the player to
+                        // another packet state, so more packets cannot be decoded at this
+                        // moment
+                        break;
                     }
                 }
-                scope.exit();
+            });
+            scope.exit();
+
+            // Copy buffers to the EventWriters
+            let scope = tracing::info_span!("write_events").entered();
+            #for_each_packet! {
+                #{
+                    writers.#packet_name.write_batch(buffers.#packet_name);
+                }
             }
+            scope.exit();
         }
     }
 }
@@ -201,12 +197,12 @@ pub struct DecodePlugin;
 
 impl Plugin for DecodePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(PacketIdGenerator::default());
+        app.insert_resource(__private::PacketIdGenerator::default());
         hyperion_packet_macros::for_each_state! {
             app.add_systems(
-                FixedPreUpdate, (
+                FixedUpdate, (
                     #{
-                        decoders::#state,
+                        #state,
                     }
                 )
             );

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use clap::ValueEnum;
-use hyperion::simulation::packet_state;
+use hyperion::{ingress, simulation::packet_state};
 use hyperion_inventory::PlayerInventory;
 use hyperion_item::NbtInteractEvent;
 use tracing::{debug, error};
@@ -81,7 +81,7 @@ fn handle_interact(
 impl Plugin for RankTreePlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_player);
-        app.add_systems(FixedUpdate, handle_interact);
+        app.add_systems(FixedUpdate, handle_interact.after(ingress::decode::play));
 
         let speed = app.world_mut().spawn_empty().id();
         app.insert_resource(Handles { speed });

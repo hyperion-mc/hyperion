@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use hyperion::{
+    ingress,
     net::{Compose, ConnectionId},
     simulation::{Name, Position, packet, packet_state},
     valence_protocol::{packets::play, text::IntoText},
@@ -84,6 +85,9 @@ pub struct ChatPlugin;
 impl Plugin for ChatPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_cooldown);
-        app.add_systems(FixedUpdate, handle_chat_messages);
+        app.add_systems(
+            FixedUpdate,
+            handle_chat_messages.after(ingress::decode::play),
+        );
     }
 }
