@@ -27,6 +27,7 @@ use crate::{
         Pitch,
         Uuid,
         Velocity,
+        Xp,
         Yaw,
         entity_kind::EntityKind,
         packet,
@@ -197,19 +198,20 @@ pub fn process_login_hello(
 
         // TODO: The more specific components (such as ChunkSendQueue) should be added in a
         // separate system
-        entity
-            .remove::<packet_state::Login>()
-            .insert(Name::from(username))
-            .insert(AiTargetable)
-            .insert(ImmuneStatus::default())
-            .insert(Uuid::from(uuid))
-            .insert(ChunkPosition::null())
-            .insert(ChunkSendQueue::default())
-            .insert(Yaw::default())
-            .insert(Pitch::default())
-            .insert(Velocity::default())
-            .insert(EntityKind::Player)
-            .insert(packet_state::Play(()));
+        entity.remove::<packet_state::Login>().insert((
+            Name::from(username),
+            AiTargetable,
+            ImmuneStatus::default(),
+            Uuid::from(uuid),
+            ChunkPosition::null(),
+            ChunkSendQueue::default(),
+            Yaw::default(),
+            Pitch::default(),
+            Velocity::default(),
+            Xp::default(),
+            EntityKind::Player,
+            packet_state::Play(()),
+        ));
         if let Some(skin) = skin {
             entity.insert(skin);
         }
