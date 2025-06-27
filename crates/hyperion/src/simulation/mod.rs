@@ -27,7 +27,7 @@ use crate::{
         //     command::Command,
         entity_kind::EntityKind,
         inventory::InventoryPlugin,
-        metadata::Metadata,
+        metadata::{Metadata, MetadataPlugin},
         packet::PacketPlugin,
         skin::PlayerSkin,
     },
@@ -725,9 +725,7 @@ impl Plugin for SimPlugin {
         app.add_observer(update_flight);
         app.add_observer(initialize_uuid);
 
-        app.add_plugins(CommandPlugin);
-        app.add_plugins(PacketPlugin);
-        app.add_plugins(InventoryPlugin);
+        app.add_plugins((CommandPlugin, PacketPlugin, InventoryPlugin, MetadataPlugin));
         app.add_systems(
             FixedUpdate,
             (
