@@ -81,20 +81,6 @@ pub struct RaycastTravel;
 #[derive(Component, Debug, Default)]
 pub struct Player;
 
-/// The state of the login process.
-#[derive(Component, Debug, Eq, PartialEq)]
-#[repr(C)]
-pub enum PacketState {
-    Handshake,
-    Status,
-    Login,
-    Play,
-    Terminate,
-}
-
-#[derive(Component)]
-pub struct PacketStatePlay;
-
 #[derive(
     Component, Debug, Deref, DerefMut, PartialEq, Eq, PartialOrd, Copy, Clone, Default, Pod,
     Zeroable, From
