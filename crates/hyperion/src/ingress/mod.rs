@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use bevy::prelude::*;
 use colored::Colorize;
@@ -23,7 +23,6 @@ use crate::{
         AiTargetable,
         ChunkPosition,
         ImmuneStatus,
-        Name,
         Pitch,
         Uuid,
         Velocity,
@@ -135,7 +134,7 @@ pub fn process_login_hello(
             .get_mut(sender)
             .expect("PacketDecoder must be available for player");
 
-        let username = Arc::from(&*packet.username.0);
+        let username = &packet.username;
         let profile_id = packet.profile_id;
 
         // Set compression
@@ -148,13 +147,13 @@ pub fn process_login_hello(
             .unwrap();
         decoder.set_compression(global.shared.compression_threshold);
 
-        let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
+        let uuid = profile_id.unwrap_or_else(|| offline_uuid(username));
         let uuid_s = format!("{uuid:?}").dimmed();
         info!("Starting login: {username} {uuid_s}");
 
         let pkt = LoginSuccessS2c {
             uuid,
-            username: packet.username.clone(),
+            username: username.clone(),
             properties: Cow::default(),
         };
 
@@ -199,7 +198,7 @@ pub fn process_login_hello(
         // TODO: The more specific components (such as ChunkSendQueue) should be added in a
         // separate system
         entity.remove::<packet_state::Login>().insert((
-            Name::from(username),
+            Name::new(username.to_string()),
             AiTargetable,
             ImmuneStatus::default(),
             Uuid::from(uuid),

@@ -30,7 +30,7 @@ use crate::{
     egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Name, PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
+        PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
     },
 };
 
@@ -235,7 +235,7 @@ fn process_player_join(
             // Update player list entries
             let entry = PlayerListEntry {
                 player_uuid: uuid.0,
-                username: (***name).into(),
+                username: CowUtf8Bytes::Borrowed(name),
                 properties: Cow::Owned(Vec::new()),
                 chat_data: None,
                 listed: true,
@@ -314,7 +314,7 @@ fn process_player_join(
 
         let singleton_entry = &[PlayerListEntry {
             player_uuid: **uuid,
-            username: (***name).into(),
+            username: CowUtf8Bytes::Borrowed(name),
             properties: Cow::Borrowed(property),
             chat_data: None,
             listed: true,
@@ -332,7 +332,7 @@ fn process_player_join(
         compose.broadcast(&pkt).send().unwrap();
         bundle.add_packet(&pkt).unwrap();
 
-        let player_name: Vec<CowUtf8Bytes<'_>> = vec![(***name).into()];
+        let player_name = vec![CowUtf8Bytes::Borrowed(name.as_str())];
 
         compose
             .broadcast(&play::TeamS2c {

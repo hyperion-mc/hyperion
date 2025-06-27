@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, sync::Arc};
+use std::{collections::HashMap, hash::Hash};
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -64,13 +64,8 @@ pub struct EgressComm {
     tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }
 
-/// The in-game name of a player.
-/// todo: fix the meta
-#[derive(Component, Deref, From, Display, Debug)]
-pub struct Name(Arc<str>);
-
 #[derive(Resource, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(FxHashMap<Arc<str>, Entity>);
+pub struct IgnMap(FxHashMap<String, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;
@@ -583,7 +578,7 @@ fn initialize_player(
         return;
     };
 
-    if let Some(other) = ign_map.insert((**name).clone(), trigger.target()) {
+    if let Some(other) = ign_map.insert(name.to_string(), trigger.target()) {
         // Another player with the same username is already connected to the server.
         // Disconnect the previous player with the same username.
         // There are some Minecraft accounts with the same username, but this is an extremely

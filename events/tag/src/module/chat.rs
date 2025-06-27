@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use hyperion::{
     ingress,
     net::{Compose, ConnectionId},
-    simulation::{Name, Position, packet, packet_state},
+    simulation::{Position, packet, packet_state},
     valence_protocol::{packets::play, text::IntoText},
 };
 use hyperion_rank_tree::Team;
