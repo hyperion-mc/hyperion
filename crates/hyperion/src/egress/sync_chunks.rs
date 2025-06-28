@@ -162,7 +162,7 @@ fn send_full_loaded_chunks(
     blocks: Res<'_, Blocks>,
     mut query: Query<'_, '_, (&ConnectionId, &mut ChunkSendQueue), With<packet_state::Play>>,
 ) {
-    const MAX_CHUNKS_PER_TICK: usize = 16;
+    const MAX_CHUNKS_PER_TICK: usize = 128;
 
     query.par_iter_mut().for_each(|(&stream_id, mut queue)| {
         let last = None;
