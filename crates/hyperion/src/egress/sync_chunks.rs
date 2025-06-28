@@ -203,13 +203,6 @@ fn send_full_loaded_chunks(
                 GetChunk::Loaded(chunk) => {
                     bundle.add_raw(&chunk.base_packet_bytes);
 
-                    for packet in chunk.original_delta_packets() {
-                        if let Err(e) = bundle.add_packet(packet) {
-                            error!("failed to send chunk delta packet: {e}");
-                            return;
-                        }
-                    }
-
                     iter_count += 1;
                     #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
                     queue.changes.swap_remove(idx as usize);
