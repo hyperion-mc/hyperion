@@ -1,6 +1,6 @@
 use anyhow::{Context, ensure};
 use bevy::prelude::*;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use valence_protocol::{
     CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
 };
@@ -67,7 +67,7 @@ impl BorrowedPacketFrame {
 impl PacketDecoder {
     pub fn try_next_packet(
         &mut self,
-        bump: &bumpalo::Bump,
+        decompressor: &mut libdeflater::Decompressor,
         raw_packet_ref: &RawPacket,
     ) -> anyhow::Result<Option<BorrowedPacketFrame>> {
         let mut raw_packet: &[u8] = raw_packet_ref;
@@ -91,23 +91,19 @@ impl PacketDecoder {
                     self.threshold.0
                 );
 
-                // todo(perf): make uninit memory ...  MaybeUninit
-                let decompression_buf: &mut [u8] = bump.alloc_slice_fill_default(data_len as usize);
+                // todo(perf): find a decompression library which accepts &[MaybeUninit<u8>] to
+                // avoid cost of initializing the data
+                let mut decompression_buf = BytesMut::zeroed(usize::try_from(data_len)?);
 
-                let written_len = {
-                    // todo: does it make sense to cache ever?
-                    let mut decompressor = libdeflater::Decompressor::new();
-
-                    decompressor.zlib_decompress(raw_packet, decompression_buf)?
-                };
+                let written_len =
+                    decompressor.zlib_decompress(raw_packet, &mut decompression_buf)?;
 
                 debug_assert_eq!(
                     written_len, data_len as usize,
                     "{written_len} != {data_len}"
                 );
 
-                // TODO: Don't allocate here
-                data = Bytes::copy_from_slice(&*decompression_buf);
+                data = decompression_buf.freeze();
             } else {
                 debug_assert_eq!(data_len, 0, "{data_len} != 0");
 

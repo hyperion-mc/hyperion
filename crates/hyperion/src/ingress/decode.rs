@@ -17,9 +17,13 @@ use crate::{
 };
 
 mod __private {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{
+        cell::RefCell,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use bevy::prelude::*;
+    use thread_local::ThreadLocal;
     use tracing::warn;
 
     #[derive(Default, Resource)]
@@ -37,6 +41,9 @@ mod __private {
             id
         }
     }
+
+    #[derive(Default, Resource)]
+    pub struct Decompressor(pub ThreadLocal<RefCell<libdeflater::Decompressor>>);
 }
 
 mod buffers {
@@ -84,11 +91,11 @@ fn try_next_frame(
     compose: &Compose,
     connection_id: ConnectionId,
     decoder: &mut PacketDecoder,
+    decompressor: &mut libdeflater::Decompressor,
     receiver: &mut packet_channel::Receiver,
 ) -> Option<BorrowedPacketFrame> {
     let raw_packet = receiver.try_recv()?;
-    let bump = compose.bump();
-    match decoder.try_next_packet(bump, &raw_packet) {
+    match decoder.try_next_packet(decompressor, &raw_packet) {
         Ok(Some(packet)) => Some(packet),
         Ok(None) => None,
         Err(e) => {
@@ -115,6 +122,7 @@ hyperion_packet_macros::for_each_state! {
             >,
             compose: Res<'_, Compose>,
             packet_id_generator: Res<'_, __private::PacketIdGenerator>,
+            decompressor: Res<'_, __private::Decompressor>,
             mut writers: writers::#state<'_>,
         ) {
             let compose = &compose;
@@ -126,11 +134,14 @@ hyperion_packet_macros::for_each_state! {
             query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
                 let decoder = decoder.into_inner();
                 let receiver = receiver.into_inner();
+                let mut decompressor = decompressor.0.get_or_default().borrow_mut();
+
                 loop {
                     let Some(frame) = try_next_frame(
                         compose,
                         connection_id,
                         decoder,
+                        &mut decompressor,
                         receiver,
                     ) else {
                         break;
@@ -198,6 +209,7 @@ pub struct DecodePlugin;
 impl Plugin for DecodePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(__private::PacketIdGenerator::default());
+        app.insert_resource(__private::Decompressor::default());
         hyperion_packet_macros::for_each_state! {
             app.add_systems(
                 FixedUpdate, (
