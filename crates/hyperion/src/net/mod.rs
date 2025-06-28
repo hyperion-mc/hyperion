@@ -7,7 +7,6 @@ use std::{
 };
 
 use bevy::prelude::*;
-use bumpalo::Bump;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
@@ -88,7 +87,6 @@ pub struct Compose {
     scratch: ThreadLocal<RefCell<Scratch>>,
     global: Global,
     io_buf: IoBuf,
-    pub bump: ThreadLocal<Bump>,
 }
 
 #[must_use]
@@ -147,7 +145,6 @@ impl Compose {
             scratch: ThreadLocal::new(),
             global,
             io_buf,
-            bump: ThreadLocal::new(),
         }
     }
 
@@ -257,17 +254,6 @@ impl Compose {
     pub fn compressor(&self) -> &RefCell<libdeflater::Compressor> {
         self.compressor
             .get_or(|| RefCell::new(libdeflater::Compressor::new(self.compression_lvl)))
-    }
-
-    #[must_use]
-    pub(crate) fn bump(&self) -> &Bump {
-        self.bump.get_or_default()
-    }
-
-    pub fn clear_bump(&mut self) {
-        for bump in &mut self.bump {
-            bump.reset();
-        }
     }
 }
 
