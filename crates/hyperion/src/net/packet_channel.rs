@@ -419,6 +419,22 @@ impl RawPacket {
     pub fn fragment_id(&self) -> usize {
         self.fragment.id
     }
+
+    /// Removes the first `n` bytes from this packet
+    pub const fn remove_front(&mut self, n: usize) {
+        if let Some(range_len) = self.range.end.checked_sub(self.range.start)
+            && range_len > n
+        {
+            // The length of the range is greater than `n`, so adding `n` to the range start is
+            // okay and will not cause an integer overflow
+            self.range.start += n;
+        } else {
+            // `n` is greater than or equal to the length of the range, so the resulting range is
+            // empty. This code cannot use `start += n` because that could cause an integer
+            // overflow
+            self.range.start = self.range.end;
+        }
+    }
 }
 
 impl Deref for RawPacket {

@@ -95,7 +95,7 @@ fn try_next_frame(
     receiver: &mut packet_channel::Receiver,
 ) -> Option<BorrowedPacketFrame> {
     let raw_packet = receiver.try_recv()?;
-    match decoder.try_next_packet(decompressor, &raw_packet) {
+    match decoder.try_next_packet(decompressor, raw_packet) {
         Ok(Some(packet)) => Some(packet),
         Ok(None) => None,
         Err(e) => {
