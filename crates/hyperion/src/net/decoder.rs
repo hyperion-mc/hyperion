@@ -74,10 +74,10 @@ impl BorrowedPacketFrame {
 
 impl PacketDecoder {
     pub fn try_next_packet(
-        &mut self,
+        &self,
         decompressor: &mut libdeflater::Decompressor,
         mut raw_packet: RawPacket,
-    ) -> anyhow::Result<Option<BorrowedPacketFrame>> {
+    ) -> anyhow::Result<BorrowedPacketFrame> {
         let mut raw_packet_slice: &[u8] = &raw_packet;
         let mut data;
 
@@ -146,10 +146,10 @@ impl PacketDecoder {
             }
         };
 
-        Ok(Some(BorrowedPacketFrame {
+        Ok(BorrowedPacketFrame {
             id: packet_id,
             body: data,
-        }))
+        })
     }
 
     /// Get the compression threshold.

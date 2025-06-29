@@ -90,14 +90,13 @@ mod may_transition {
 fn try_next_frame(
     compose: &Compose,
     connection_id: ConnectionId,
-    decoder: &mut PacketDecoder,
+    decoder: &PacketDecoder,
     decompressor: &mut libdeflater::Decompressor,
     receiver: &mut packet_channel::Receiver,
 ) -> Option<BorrowedPacketFrame> {
     let raw_packet = receiver.try_recv()?;
     match decoder.try_next_packet(decompressor, raw_packet) {
-        Ok(Some(packet)) => Some(packet),
-        Ok(None) => None,
+        Ok(packet) => Some(packet),
         Err(e) => {
             error!("failed to decode packet: {e}");
             compose.io_buf().shutdown(connection_id);
@@ -115,7 +114,7 @@ hyperion_packet_macros::for_each_state! {
             (
                 Entity,
                 &ConnectionId,
-                &mut PacketDecoder,
+                &PacketDecoder,
                 &mut packet_channel::Receiver,
             ),
             paste! { With<packet_state::[< #state:camel >]> }
@@ -132,7 +131,6 @@ hyperion_packet_macros::for_each_state! {
             // Fill buffers
             let scope = tracing::info_span!("fill_buffers").entered();
             query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
-                let decoder = decoder.into_inner();
                 let receiver = receiver.into_inner();
                 let mut decompressor = decompressor.0.get_or_default().borrow_mut();
 
