@@ -1,54 +1,66 @@
-use flecs_ecs::{
-    core::{
-        ComponentOrPairId, QueryBuilderImpl, SystemAPI, World, WorldProvider, flecs,
-        term::TermBuilderImpl,
-    },
-    macros::Component,
-    prelude::Module,
-};
-use hyperion::simulation::{Player, Xp};
+use bevy::prelude::*;
+use hyperion::simulation::{Xp, packet_state};
 use hyperion_inventory::PlayerInventory;
-use hyperion_rank_tree::{Class, Team};
-use tracing::debug;
+use hyperion_rank_tree::{Class, Handles, Team};
+use tracing::error;
 
 use crate::MainBlockCount;
 
-#[derive(Component)]
-pub struct LevelModule;
-
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
 pub struct UpgradedTo {
     pub value: u8,
 }
 
-impl Module for LevelModule {
-    #[allow(clippy::excessive_nesting)]
-    fn module(world: &World) {
-        world.component::<UpgradedTo>().meta();
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, UpgradedTo)>(); // todo: how does this even call Default? (IndraDb)
+fn initialize_player(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands
+        .entity(trigger.target())
+        .insert(UpgradedTo::default());
+}
 
-        world
-            .observer::<flecs::OnSet, (
-                &Xp,                  //                  (0)
-                &UpgradedTo,          //                  (1)
-                &Class,               //                  (2)
-                &Team,                //                  (3)
-                &MainBlockCount,      //                  (4)
-                &mut PlayerInventory, //             (5)
-            )>()
-            .term_at(5u32)
-            .filter()
-            .each_entity(
-                |entity, (xp, upgraded_to, rank, team, main_block_count, inventory)| {
-                    debug!("updating level");
-                    let new_level = xp.get_visual().level;
-                    let world = entity.world();
-                    let level_diff = new_level - upgraded_to.value;
-                    rank.apply_inventory(*team, inventory, &world, **main_block_count, level_diff);
-                },
-            );
+fn update_level(
+    trigger: Trigger<'_, OnInsert, Xp>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &Xp,
+            &UpgradedTo,
+            &Class,
+            &Team,
+            &MainBlockCount,
+            &mut PlayerInventory,
+        ),
+    >,
+    handles: Res<'_, Handles>,
+) {
+    let (xp, upgraded_to, rank, team, main_block_count, mut inventory) =
+        match query.get_mut(trigger.target()) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("failed to update level: query failed: {e}");
+                return;
+            }
+        };
+
+    let new_level = xp.get_visual().level;
+    let level_diff = new_level - upgraded_to.value;
+    rank.apply_inventory(
+        *team,
+        &mut inventory,
+        &handles,
+        **main_block_count,
+        level_diff,
+    );
+}
+
+pub struct LevelPlugin;
+
+impl Plugin for LevelPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(initialize_player);
+        app.add_observer(update_level);
     }
 }
