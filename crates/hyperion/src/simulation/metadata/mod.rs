@@ -150,20 +150,6 @@ macro_rules! define_metadata_component {
 }
 
 #[macro_export]
-macro_rules! register_component_ids {
-    ($world:expr, $entity:ident, $($name:ident),* $(,)?) => {
-        {
-            $(
-                let reg = $crate::simulation::metadata::component_and_track::<$name>($world);
-                reg(&mut $entity);
-            )*
-
-            $entity
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! define_and_register_components {
     {
         $(
