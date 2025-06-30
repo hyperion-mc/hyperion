@@ -2,10 +2,12 @@ use bevy::prelude::*;
 use glam::{IVec3, Vec3};
 use valence_generated::block::BlockState;
 use valence_protocol::{
-    Hand, ItemStack,
-    packets::play::click_slot_c2s::{ClickMode, SlotChange},
+    Hand, Ident, ItemStack,
+    packets::play::{
+        ParticleS2c,
+        click_slot_c2s::{ClickMode, SlotChange},
+    },
 };
-use valence_server::ItemKind;
 
 use super::blocks::RayCollision;
 use crate::simulation::skin::PlayerSkin;
@@ -31,14 +33,24 @@ pub struct SetSkin {
     pub by: Entity,
 }
 
-/// Represents an attack action by an entity in the game.
-#[derive(Event, Copy, Clone, Debug, PartialEq)]
+/// Represents an attack action by a player in the game. This attack may not be succesful such as
+/// when a player attempts to attack a teammate.
+#[derive(Event, Clone, Debug)]
 pub struct AttackEntity {
-    /// The entity that is performing the attack.
+    /// The player that is performing the attack. This can be indirect, such as the player who
+    /// fired an arrow.
     pub origin: Entity,
+    /// The entity that is being attacked.
     pub target: Entity,
+    /// The direction of the attack. This value is normalized. This is used to calculate knockback.
+    pub direction: Vec3,
     /// The damage dealt by the attack. This corresponds to the same unit as [`crate::simulation::metadata::living_entity::Health`].
     pub damage: f32,
+    /// Sound to play on a successful attack
+    pub sound: Ident,
+    /// Particles to broadcast to all clients except the origin. The origin may already have
+    /// generated these particles locally
+    pub particles: Option<ParticleS2c<'static>>,
 }
 
 #[derive(Event, Copy, Clone, Debug, PartialEq, Eq)]
@@ -78,7 +90,6 @@ pub struct SwingArm {
 #[derive(Event, Copy, Clone, Debug)]
 pub struct ReleaseUseItem {
     pub from: Entity,
-    pub item: ItemKind,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

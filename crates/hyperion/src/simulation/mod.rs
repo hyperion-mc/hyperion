@@ -20,12 +20,13 @@ use valence_protocol::{
 use valence_text::IntoText;
 
 use crate::{
-    Global, ingress,
+    Global,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         command::CommandPlugin,
         //     command::Command,
         entity_kind::EntityKind,
+        handlers::HandlersPlugin,
         inventory::InventoryPlugin,
         metadata::{Metadata, MetadataPlugin},
         packet::PacketPlugin,
@@ -720,18 +721,14 @@ impl Plugin for SimPlugin {
         app.add_observer(update_flight);
         app.add_observer(initialize_uuid);
 
-        app.add_plugins((CommandPlugin, PacketPlugin, InventoryPlugin, MetadataPlugin));
-        app.add_systems(
-            FixedUpdate,
-            (
-                (
-                    handlers::position_and_look_updates,
-                    handlers::player_interact_item,
-                )
-                    .after(ingress::decode::play),
-                spawn_entities,
-            ),
-        );
+        app.add_plugins((
+            CommandPlugin,
+            HandlersPlugin,
+            PacketPlugin,
+            InventoryPlugin,
+            MetadataPlugin,
+        ));
+        app.add_systems(FixedUpdate, spawn_entities);
 
         app.add_event::<SpawnEvent>();
         app.add_event::<event::ItemDropEvent>();

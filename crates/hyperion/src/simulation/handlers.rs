@@ -3,36 +3,30 @@ use glam::DVec3;
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::next_lowest;
 use tracing::{error, warn};
-use valence_generated::item::ItemKind;
+use valence_generated::{
+    block::{BlockKind, BlockState, PropName},
+    item::ItemKind,
+};
 use valence_protocol::{
-    VarInt,
-    packets::play::{GameMessageS2c, OpenWrittenBookS2c},
+    Hand, VarInt,
+    packets::play::{
+        GameMessageS2c, OpenWrittenBookS2c, UpdatePlayerAbilitiesC2s,
+        client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
+    },
 };
 use valence_text::IntoText;
 
-// use super::{
-//     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
-//     animation::{self, ActiveAnimation},
-//     block_bounds,
-//     blocks::Blocks,
-//     event::ClientStatusEvent,
-//     inventory::{handle_click_slot, handle_update_selected_slot},
-// };
 use crate::{
+    ingress,
     net::{Compose, ConnectionId},
     simulation::{
-        Aabb,
-        EntitySize,
-        MovementTracking,
-        PendingTeleportation,
-        Pitch,
-        Position,
-        Yaw,
-        // metadata::{entity::Pose, living_entity::HandStates},
-        aabb,
+        Aabb, ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation,
+        Pitch, Position, Yaw, aabb,
+        animation::{self, ActiveAnimation},
         block_bounds,
         blocks::Blocks,
         event,
+        metadata::{entity::Pose, living_entity::HandStates},
         packet::{OrderedPacketRef, play},
     },
 };
@@ -44,7 +38,7 @@ use crate::{
               functions would add complexity because most parameters will still need to be passed \
               manually."
 )]
-pub fn position_and_look_updates(
+fn position_and_look_updates(
     mut full_reader: EventReader<'_, '_, play::Full>,
     mut position_reader: EventReader<'_, '_, play::PositionAndOnGround>,
     mut look_reader: EventReader<'_, '_, play::LookAndOnGround>,
@@ -98,7 +92,7 @@ pub fn position_and_look_updates(
                     Ok(data) => data,
                     Err(e) => {
                         error!("failed to handle full packet: query failed: {e}");
-                        return;
+                        continue;
                     }
                 };
 
@@ -123,8 +117,8 @@ pub fn position_and_look_updates(
                     Ok(data) => data,
                     Err(e) => {
                         error!("failed to handle look and on ground: query failed: {e}");
-                        return;
-                }
+                        continue;
+                    }
                 };
 
                 yaw.yaw = packet.yaw;
@@ -153,7 +147,7 @@ pub fn position_and_look_updates(
                     Ok(position) => position,
                     Err(e) => {
                         error!("failed to confirm teleportation: query failed: {e}");
-                        return;
+                        continue;
                     }
                 };
 
@@ -311,166 +305,112 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
     res.is_break()
 }
 
-// fn chat_command<'a>(
-//     pkt: &play::CommandExecutionC2s<'a>,
-//     handle: &dyn LifetimeHandle<'a>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let command = RuntimeLifetime::new(pkt.command.0, handle);
-//
-//     query.events.push(
-//         event::Command {
-//             raw: command,
-//             by: query.id,
-//         },
-//         query.world,
-//     );
-//
-//     Ok(())
-// }
-//
-// fn hand_swing(
-//     &packet: &play::HandSwingC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     match packet.hand {
-//         Hand::Main => {
-//             query.animation.push(animation::Kind::SwingMainArm);
-//         }
-//         Hand::Off => {
-//             query.animation.push(animation::Kind::SwingOffHand);
-//         }
-//     }
-//
-//     Ok(())
-// }
-//
-// #[instrument(skip_all)]
-// fn player_interact_entity(
-//     packet: &play::PlayerInteractEntityC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     // attack
-//     if packet.interact != EntityInteraction::Attack {
-//         return Ok(());
-//     }
-//
-//     let target = packet.entity_id.0;
-//     let target = Entity::from_minecraft_id(target);
-//
-//     query.events.push(
-//         event::AttackEntity {
-//             origin: query.id,
-//             target,
-//             damage: 1.0,
-//         },
-//         query.world,
-//     );
-//
-//     Ok(())
-// }
-//
-// pub struct PacketSwitchQuery<'a> {
-//     pub id: Entity,
-//     pub handler_registry: &'a HandlerRegistry,
-//     pub view: EntityView<'a>,
-//     pub compose: &'a Compose,
-//     pub io_ref: ConnectionId,
-//     pub position: &'a mut Position,
-//     pub yaw: &'a mut Yaw,
-//     pub pitch: &'a mut Pitch,
-//     pub size: &'a mut EntitySize,
-//     pub world: &'a World,
-//     pub blocks: &'a Blocks,
-//     pub pose: &'a mut Pose,
-//     pub events: &'a Events,
-//     pub confirm_block_sequences: &'a mut ConfirmBlockSequences,
-//     pub system: EntityView<'a>,
-//     pub inventory: &'a mut hyperion_inventory::PlayerInventory,
-//     pub animation: &'a mut ActiveAnimation,
-//     pub crafting_registry: &'a hyperion_crafting::CraftingRegistry,
-// }
-//
-// // i.e., shooting a bow, digging a block, etc
-// fn player_action(
-//     &packet: &play::PlayerActionC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let sequence = packet.sequence.0;
-//     let position = IVec3::new(packet.position.x, packet.position.y, packet.position.z);
-//
-//     match packet.action {
-//         PlayerAction::StartDestroyBlock => {
-//             let event = event::StartDestroyBlock {
-//                 position,
-//                 from: query.id,
-//                 sequence,
-//             };
-//             query.events.push(event, query.world);
-//         }
-//         PlayerAction::StopDestroyBlock => {
-//             let event = event::DestroyBlock {
-//                 position,
-//                 from: query.id,
-//                 sequence,
-//             };
-//
-//             query.events.push(event, query.world);
-//         }
-//         PlayerAction::ReleaseUseItem => {
-//             let event = event::ReleaseUseItem {
-//                 from: query.id,
-//                 item: query.inventory.get_cursor().stack.item,
-//             };
-//
-//             query.id.entity_view(query.world).set(HandStates::new(0));
-//
-//             query.events.push(event, query.world);
-//         }
-//         action => bail!("unimplemented {action:?}"),
-//     }
-//
-//     // todo: implement
-//
-//     Ok(())
-// }
-//
-// // for sneaking/crouching/etc
-// fn client_command(
-//     &packet: &play::ClientCommandC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     match packet.action {
-//         ClientCommand::StartSneaking => {
-//             *query.pose = Pose::Sneaking;
-//             query.size.height = 1.5;
-//         }
-//         ClientCommand::StopSneaking | ClientCommand::LeaveBed => {
-//             *query.pose = Pose::Standing;
-//             query.size.height = 1.8;
-//         }
-//         ClientCommand::StartSprinting => {
-//             query.view.get::<&mut MovementTracking>(|tracking| {
-//                 tracking.sprinting = true;
-//             });
-//         }
-//         ClientCommand::StopSprinting => {
-//             query.view.get::<&mut MovementTracking>(|tracking| {
-//                 tracking.sprinting = false;
-//             });
-//         }
-//         ClientCommand::StartJumpWithHorse
-//         | ClientCommand::StopJumpWithHorse
-//         | ClientCommand::OpenHorseInventory
-//         | ClientCommand::StartFlyingWithElytra => {}
-//     }
-//
-//     Ok(())
-// }
+fn hand_swing(
+    mut packets: EventReader<'_, '_, play::HandSwing>,
+    mut query: Query<'_, '_, &mut ActiveAnimation>,
+) {
+    for packet in packets.read() {
+        let mut animation = match query.get_mut(packet.sender()) {
+            Ok(animation) => animation,
+            Err(e) => {
+                error!("failed to handle hand swing: query failed: {e}");
+                continue;
+            }
+        };
+
+        match packet.hand {
+            Hand::Main => {
+                animation.push(animation::Kind::SwingMainArm);
+            }
+            Hand::Off => {
+                animation.push(animation::Kind::SwingOffHand);
+            }
+        }
+    }
+}
+
+// i.e., shooting a bow, digging a block, etc
+fn player_action(
+    mut packets: EventReader<'_, '_, play::PlayerAction>,
+    mut start_destroy_writer: EventWriter<'_, event::StartDestroyBlock>,
+    mut stop_destroy_writer: EventWriter<'_, event::DestroyBlock>,
+    mut release_writer: EventWriter<'_, event::ReleaseUseItem>,
+    mut commands: Commands<'_, '_>,
+) {
+    for packet in packets.read() {
+        let sequence = packet.sequence.0;
+        let position = IVec3::new(packet.position.x, packet.position.y, packet.position.z);
+
+        match packet.action {
+            PlayerAction::StartDestroyBlock => {
+                let event = event::StartDestroyBlock {
+                    position,
+                    from: packet.sender(),
+                    sequence,
+                };
+                start_destroy_writer.write(event);
+            }
+            PlayerAction::StopDestroyBlock => {
+                let event = event::DestroyBlock {
+                    position,
+                    from: packet.sender(),
+                    sequence,
+                };
+
+                stop_destroy_writer.write(event);
+            }
+            PlayerAction::ReleaseUseItem => {
+                let event = event::ReleaseUseItem {
+                    from: packet.sender(),
+                };
+
+                commands.entity(packet.sender()).insert(HandStates::new(0));
+
+                release_writer.write(event);
+            }
+            action => error!("failed to handle player action: unimplemented {action:?}"),
+        }
+
+        // todo: implement
+    }
+}
+
+// for sneaking/crouching/etc
+fn client_command(
+    mut packets: EventReader<'_, '_, play::ClientCommand>,
+    mut query: Query<'_, '_, (&mut Pose, &mut EntitySize, &mut MovementTracking)>,
+) {
+    for packet in packets.read() {
+        let (mut pose, mut size, mut tracking) = match query.get_mut(packet.sender()) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("failed to handle client command: query failed: {e}");
+                continue;
+            }
+        };
+
+        match packet.action {
+            ClientCommand::StartSneaking => {
+                *pose = Pose::Sneaking;
+                size.height = 1.5;
+            }
+            ClientCommand::StopSneaking | ClientCommand::LeaveBed => {
+                *pose = Pose::Standing;
+                size.height = 1.8;
+            }
+            ClientCommand::StartSprinting => {
+                tracking.sprinting = true;
+            }
+            ClientCommand::StopSprinting => {
+                tracking.sprinting = false;
+            }
+            ClientCommand::StartJumpWithHorse
+            | ClientCommand::StopJumpWithHorse
+            | ClientCommand::OpenHorseInventory
+            | ClientCommand::StartFlyingWithElytra => {}
+        }
+    }
+}
 
 /// Handles player interaction with items in hand
 ///
@@ -480,7 +420,7 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
 /// - Throwing items like snowballs or ender pearls
 /// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
 /// - Activating items with duration effects (e.g. chorus fruit teleport)
-pub fn player_interact_item(
+fn player_interact_item(
     mut packets: EventReader<'_, '_, play::PlayerInteractItem>,
     compose: Res<'_, Compose>,
     query: Query<'_, '_, &PlayerInventory>,
@@ -525,179 +465,173 @@ pub fn player_interact_item(
     }
 }
 
-// pub fn player_interact_block(
-//     &packet: &play::PlayerInteractBlockC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     // PlayerInteractBlockC2s contains:
-//     // - hand: Hand (enum: MainHand or OffHand)
-//     // - position: BlockPos (x, y, z coordinates of the block)
-//     // - face: Direction (enum: Down, Up, North, South, West, East)
-//     // - cursor_position: Vec3 (x, y, z coordinates of cursor on the block face)
-//     // - inside_block: bool (whether the player's head is inside a block)
-//     // - sequence: VarInt (sequence number for this interaction)
-//
-//     query.confirm_block_sequences.push(packet.sequence.0);
-//
-//     let interacted_block_pos = packet.position;
-//     let interacted_block_pos_vec = IVec3::new(
-//         interacted_block_pos.x,
-//         interacted_block_pos.y,
-//         interacted_block_pos.z,
-//     );
-//
-//     let Some(interacted_block) = query.blocks.get_block(interacted_block_pos_vec) else {
-//         return Ok(());
-//     };
-//
-//     if interacted_block.get(PropName::Open).is_some() {
-//         // Toggle the open state of a door
-//         // todo: place block instead of toggling door if the player is crouching and holding a
-//         // block
-//
-//         query.events.push(
-//             event::ToggleDoor {
-//                 position: interacted_block_pos_vec,
-//                 from: query.id,
-//                 sequence: packet.sequence.0,
-//             },
-//             query.world,
-//         );
-//     } else {
-//         // Attempt to place a block
-//
-//         let held = &query.inventory.get_cursor().stack;
-//
-//         if held.is_empty() {
-//             return Ok(());
-//         }
-//
-//         let kind = held.item;
-//
-//         let Some(block_kind) = BlockKind::from_item_kind(kind) else {
-//             warn!("invalid item kind to place: {kind:?}");
-//             return Ok(());
-//         };
-//
-//         let block_state = BlockState::from_kind(block_kind);
-//
-//         let position = interacted_block_pos.get_in_direction(packet.face);
-//         let position = IVec3::new(position.x, position.y, position.z);
-//
-//         let position_dvec3 = position.as_vec3();
-//
-//         // todo(hack): technically players can do some crazy position stuff to abuse this probably
-//         let player_aabb = aabb(**query.position, *query.size);
-//
-//         let collides_player = block_state
-//             .collision_shapes()
-//             .map(|aabb| {
-//                 Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position_dvec3)
-//             })
-//             .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
-//
-//         if collides_player {
-//             return Ok(());
-//         }
-//
-//         query.events.push(
-//             event::PlaceBlock {
-//                 position,
-//                 from: query.id,
-//                 sequence: packet.sequence.0,
-//                 block: block_state,
-//             },
-//             query.world,
-//         );
-//     }
-//
-//     Ok(())
-// }
-//
-// pub fn update_selected_slot(
-//     &packet: &play::UpdateSelectedSlotC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     handle_update_selected_slot(packet, query);
-//
-//     Ok(())
-// }
-//
-// pub fn creative_inventory_action(
-//     play::CreativeInventoryActionC2s { slot, clicked_item }: &play::CreativeInventoryActionC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     info!("creative inventory action: {slot} {clicked_item:?}");
-//
-//     let Ok(slot) = u16::try_from(*slot) else {
-//         warn!("invalid slot {slot}");
-//         return Ok(());
-//     };
-//
-//     query.inventory.set(slot, clicked_item.clone())?;
-//
-//     Ok(())
-// }
-//
-// // keywords: inventory
-// fn click_slot(
-//     pkt: &play::ClickSlotC2s<'_>,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     handle_click_slot(pkt, query);
-//
-//     Ok(())
-// }
-//
-// fn chat_message<'a>(
-//     pkt: &play::ChatMessageC2s<'a>,
-//     handle: &dyn LifetimeHandle<'a>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let msg = RuntimeLifetime::new(pkt.message.0, handle);
-//
-//     query
-//         .events
-//         .push(event::ChatMessage { msg, by: query.id }, query.world);
-//
-//     Ok(())
-// }
-//
-// pub fn request_command_completions<'a>(
-//     play::RequestCommandCompletionsC2s {
-//         transaction_id,
-//         text,
-//     }: &play::RequestCommandCompletionsC2s<'a>,
-//     handle: &dyn LifetimeHandle<'a>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let text = text.0;
-//     let transaction_id = transaction_id.0;
-//
-//     let completion = CommandCompletionRequest {
-//         query: text,
-//         id: transaction_id,
-//     };
-//
-//     query.handler_registry.trigger(&completion, handle, query)?;
-//
-//     Ok(())
-// }
-//
-// pub fn player_abilities(
-//     pkt: &play::UpdatePlayerAbilitiesC2s,
-//     _: &dyn LifetimeHandle<'_>,
-//     query: &mut PacketSwitchQuery<'_>,
-// ) -> anyhow::Result<()> {
-//     let entity = query.id.entity_view(query.world);
-//
-//     entity.get::<&mut Flight>(|flight| match pkt {
-//         play::UpdatePlayerAbilitiesC2s::StopFlying => flight.is_flying = false,
-//         play::UpdatePlayerAbilitiesC2s::StartFlying => flight.is_flying = flight.allow,
-//     });
-//     Ok(())
-// }
+fn player_interact_block(
+    mut packets: EventReader<'_, '_, play::PlayerInteractBlock>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &mut ConfirmBlockSequences,
+            &PlayerInventory,
+            &Position,
+            &EntitySize,
+        ),
+    >,
+    blocks: Res<'_, Blocks>,
+    mut toggle_door_writer: EventWriter<'_, event::ToggleDoor>,
+    mut place_block_writer: EventWriter<'_, event::PlaceBlock>,
+) {
+    for packet in packets.read() {
+        // PlayerInteractBlock contains:
+        // - hand: Hand (enum: MainHand or OffHand)
+        // - position: BlockPos (x, y, z coordinates of the block)
+        // - face: Direction (enum: Down, Up, North, South, West, East)
+        // - cursor_position: Vec3 (x, y, z coordinates of cursor on the block face)
+        // - inside_block: bool (whether the player's head is inside a block)
+        // - sequence: VarInt (sequence number for this interaction)
+
+        let (mut confirm_block_sequences, inventory, client_position, size) =
+            match query.get_mut(packet.sender()) {
+                Ok(data) => data,
+                Err(e) => {
+                    error!("failed to handle player interact block: query failed: {e}");
+                    continue;
+                }
+            };
+
+        confirm_block_sequences.push(packet.sequence.0);
+
+        let interacted_block_pos = packet.position;
+        let interacted_block_pos_vec = IVec3::new(
+            interacted_block_pos.x,
+            interacted_block_pos.y,
+            interacted_block_pos.z,
+        );
+
+        let Some(interacted_block) = blocks.get_block(interacted_block_pos_vec) else {
+            continue;
+        };
+
+        if interacted_block.get(PropName::Open).is_some() {
+            // Toggle the open state of a door
+            // todo: place block instead of toggling door if the player is crouching and holding a
+            // block
+
+            toggle_door_writer.write(event::ToggleDoor {
+                position: interacted_block_pos_vec,
+                from: packet.sender(),
+                sequence: packet.sequence.0,
+            });
+        } else {
+            // Attempt to place a block
+
+            let held = &inventory.get_cursor().stack;
+
+            if held.is_empty() {
+                continue;
+            }
+
+            let kind = held.item;
+
+            let Some(block_kind) = BlockKind::from_item_kind(kind) else {
+                warn!("invalid item kind to place: {kind:?}");
+                continue;
+            };
+
+            let block_state = BlockState::from_kind(block_kind);
+
+            let position = interacted_block_pos.get_in_direction(packet.face);
+            let position = IVec3::new(position.x, position.y, position.z);
+
+            let position_dvec3 = position.as_vec3();
+
+            // todo(hack): technically players can do some crazy position stuff to abuse this probably
+            let player_aabb = aabb(**client_position, *size);
+
+            let collides_player = block_state
+                .collision_shapes()
+                .map(|aabb| {
+                    Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position_dvec3)
+                })
+                .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
+
+            if collides_player {
+                continue;
+            }
+
+            place_block_writer.write(event::PlaceBlock {
+                position,
+                from: packet.sender(),
+                sequence: packet.sequence.0,
+                block: block_state,
+            });
+        }
+    }
+}
+
+fn creative_inventory_action(
+    mut packets: EventReader<'_, '_, play::CreativeInventoryAction>,
+    mut query: Query<'_, '_, &mut PlayerInventory>,
+) {
+    for packet in packets.read() {
+        // TODO: Verify that the player is in creative mode
+
+        let Ok(slot) = u16::try_from(packet.slot) else {
+            warn!("invalid slot {}", packet.slot);
+            continue;
+        };
+
+        let mut inventory = match query.get_mut(packet.sender()) {
+            Ok(inventory) => inventory,
+            Err(e) => {
+                error!("failed to handle creative inventory action: query failed: {e}");
+                continue;
+            }
+        };
+
+        if let Err(e) = inventory.set(slot, packet.clicked_item.clone()) {
+            error!("failed to handle creative inventory action: inventory set failed: {e}");
+        }
+    }
+}
+
+fn player_abilities(
+    mut packets: EventReader<'_, '_, play::UpdatePlayerAbilities>,
+    mut query: Query<'_, '_, &mut Flight>,
+) {
+    for packet in packets.read() {
+        let mut flight = match query.get_mut(packet.sender()) {
+            Ok(flight) => flight,
+            Err(e) => {
+                error!("player abilities failed: query failed: {e}");
+                continue;
+            }
+        };
+
+        match **packet {
+            UpdatePlayerAbilitiesC2s::StopFlying => flight.is_flying = false,
+            UpdatePlayerAbilitiesC2s::StartFlying => flight.is_flying = flight.allow,
+        }
+    }
+}
+
+pub struct HandlersPlugin;
+
+impl Plugin for HandlersPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            FixedUpdate,
+            (
+                position_and_look_updates,
+                hand_swing,
+                player_action,
+                client_command,
+                player_interact_item,
+                player_interact_block,
+                creative_inventory_action,
+                player_abilities,
+            )
+                .after(ingress::decode::play),
+        );
+    }
+}
