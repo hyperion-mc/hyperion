@@ -1,19 +1,14 @@
 use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
 use hyperion::{
-    // BlockState,
+    BlockState,
     simulation::{
-        Pitch,
-        Position,
-        SpawnEvent,
-        //        metadata::{
-        //            block_display::DisplayedBlockState,
-        //            display::{Height, Width},
-        //        },
-        Uuid,
-        Velocity,
-        Yaw,
+        Pitch, Position, SpawnEvent, Uuid, Velocity, Yaw,
         entity_kind::EntityKind,
+        metadata::{
+            block_display::DisplayedBlockState,
+            display::{Height, Width},
+        },
     },
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
@@ -31,14 +26,13 @@ impl MinecraftCommand for SpawnCommand {
     fn execute(self, world: &World, state: &mut Self::State, _caller: Entity) {
         let mut commands = state.get(world);
 
-        // TODO: add missing components
         let entity = commands
             .spawn((
                 EntityKind::BlockDisplay,
                 // EntityFlags::ON_FIRE
                 Uuid::new_v4(),
-                // Width::new(1.0),
-                // Height::new(1.0),
+                Width::new(1.0),
+                Height::new(1.0),
                 // ViewRange::new(100.0)
                 // EntityKind::Zombie
                 Position::new(0.0, 22.0, 0.0),
@@ -46,7 +40,7 @@ impl MinecraftCommand for SpawnCommand {
                 Yaw::new(0.0),
                 Velocity::new(0.0, 0.0, 0.0),
                 FollowClosestPlayer,
-                // DisplayedBlockState::new(BlockState::DIRT)
+                DisplayedBlockState::new(BlockState::DIRT),
             ))
             .id();
 
