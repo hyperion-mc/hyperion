@@ -30,6 +30,7 @@ use crate::{
         Velocity,
         Xp,
         Yaw,
+        animation::ActiveAnimation,
         entity_kind::EntityKind,
         packet,
         // animation::ActiveAnimation,
@@ -201,6 +202,7 @@ pub fn process_login_hello(
         // separate system
         entity.remove::<packet_state::Login>().insert((
             Name::new(username.to_string()),
+            ActiveAnimation::NONE,
             AiTargetable,
             ImmuneStatus::default(),
             Uuid::from(uuid),
