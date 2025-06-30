@@ -6718,6 +6718,8 @@ dependencies = [
  "hyperion-proxy-module",
  "hyperion-rank-tree",
  "hyperion-respawn",
+ "hyperion-scheduled",
+ "hyperion-text",
  "hyperion-utils",
  "rayon",
  "roaring",
@@ -6728,6 +6730,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "valence_bytes",
  "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_server",
 ]

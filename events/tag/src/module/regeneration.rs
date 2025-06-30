@@ -1,72 +1,63 @@
-use flecs_ecs::{
-    core::{ComponentOrPairId, QueryBuilderImpl, TermBuilderImpl, World, flecs},
-    macros::{Component, system},
-    prelude::Module,
-};
+use bevy::prelude::*;
 use hyperion::{
-    Prev,
     net::Compose,
-    simulation::{Player, metadata::living_entity::Health},
-    util::TracingExt,
+    simulation::{metadata::living_entity::Health, packet_state},
 };
-use tracing::info_span;
+use hyperion_utils::Prev;
 
-#[derive(Component)]
-pub struct RegenerationModule;
+const MAX_HEALTH: f32 = 20.0;
+
+pub struct RegenerationPlugin;
 
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
 pub struct LastDamaged {
     pub tick: i64,
 }
 
-const MAX_HEALTH: f32 = 20.0;
+fn initialize_player(
+    trigger: Trigger<'_, OnAdd, packet_state::Play>,
+    mut commands: Commands<'_, '_>,
+) {
+    commands
+        .entity(trigger.target())
+        .insert(LastDamaged::default());
+}
 
-impl Module for RegenerationModule {
-    #[allow(clippy::excessive_nesting)]
-    fn module(world: &World) {
-        world.component::<LastDamaged>().meta();
+fn regenerate(
+    query: Query<'_, '_, (&mut LastDamaged, &Prev<Health>, &mut Health)>,
+    compose: Res<'_, Compose>,
+) {
+    let current_tick = compose.global().tick;
 
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, LastDamaged)>(); // todo: how does this even call Default? (IndraDb)
+    for (mut last_damaged, prev_health, mut health) in query {
+        if *health < **prev_health {
+            last_damaged.tick = current_tick;
+        }
 
-        system!(
-            "regenerate",
-            world,
-            &mut LastDamaged,
-            &(Prev, Health),
-            &mut Health,
-            &Compose($)
-        )
-        .tracing_each(
-            info_span!("regenerate"),
-            |(last_damaged, prev_health, health, compose)| {
-                let current_tick = compose.global().tick;
+        let ticks_since_damage = current_tick - last_damaged.tick;
 
-                if *health < *prev_health {
-                    last_damaged.tick = current_tick;
-                }
+        if health.is_dead() {
+            return;
+        }
 
-                let ticks_since_damage = current_tick - last_damaged.tick;
+        // Calculate regeneration rate based on time since last damage
+        let base_regen = 0.01; // Base regeneration per tick
+        let ramp_factor = 0.0001_f32; // Increase in regeneration per tick
+        let max_regen = 0.1; // Maximum regeneration per tick
 
-                if health.is_dead() {
-                    return;
-                }
+        let regen_rate = ramp_factor
+            .mul_add(ticks_since_damage as f32, base_regen)
+            .min(max_regen);
 
-                // Calculate regeneration rate based on time since last damage
-                let base_regen = 0.01; // Base regeneration per tick
-                let ramp_factor = 0.0001_f32; // Increase in regeneration per tick
-                let max_regen = 0.1; // Maximum regeneration per tick
+        // Apply regeneration, capped at max health
+        health.heal(regen_rate);
+        **health = health.min(MAX_HEALTH);
+    }
+}
 
-                let regen_rate = ramp_factor
-                    .mul_add(ticks_since_damage as f32, base_regen)
-                    .min(max_regen);
-
-                // Apply regeneration, capped at max health
-                health.heal(regen_rate);
-                **health = health.min(MAX_HEALTH);
-            },
-        );
+impl Plugin for RegenerationPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(initialize_player);
+        app.add_systems(FixedPostUpdate, regenerate);
     }
 }

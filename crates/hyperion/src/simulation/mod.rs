@@ -5,7 +5,7 @@ use std::{
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
-use derive_more::{Constructor, Deref, DerefMut, Display, From};
+use derive_more::{Add, Constructor, Deref, DerefMut, Display, From, Sub};
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Vec3};
 use hyperion_utils::EntityExt;
@@ -311,7 +311,9 @@ pub struct AiTargetable;
     Deref,
     DerefMut,
     From,
-    PartialEq
+    PartialEq,
+    Add,
+    Sub
 )]
 pub struct Position {
     /// The (x, y, z) position of the entity.

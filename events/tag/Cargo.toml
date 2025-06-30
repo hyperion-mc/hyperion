@@ -19,8 +19,8 @@ hyperion-permission = { workspace = true }
 hyperion-proxy-module = { workspace = true }
 hyperion-rank-tree = { workspace = true }
 hyperion-respawn = { workspace = true }
-# hyperion-scheduled = { workspace = true }
-# hyperion-text = { workspace = true }
+hyperion-scheduled = { workspace = true }
+hyperion-text = { workspace = true }
 hyperion-utils = { workspace = true }
 rayon = { workspace = true }
 roaring = { workspace = true }
@@ -30,6 +30,7 @@ tap = "1.0.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
+valence_bytes = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
 
