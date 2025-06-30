@@ -30,7 +30,6 @@ use crate::{
         inventory::InventoryPlugin,
         metadata::{Metadata, MetadataPlugin},
         packet::PacketPlugin,
-        skin::PlayerSkin,
     },
 };
 
@@ -251,24 +250,6 @@ impl ImmuneStatus {
     #[expect(missing_docs)]
     pub const fn is_invincible(&self, global: &Global) -> bool {
         global.tick < self.until
-    }
-}
-
-/// Communication struct. Maybe should be refactored to some extent.
-/// This to communicate back from an [`crate::runtime::AsyncRuntime`] to the main thread.
-#[derive(Resource)]
-pub struct Comms {
-    /// Skin rx channel.
-    pub skins_rx: kanal::Receiver<(Entity, PlayerSkin)>,
-    /// Skin tx channel.
-    pub skins_tx: kanal::Sender<(Entity, PlayerSkin)>,
-}
-
-impl Default for Comms {
-    fn default() -> Self {
-        let (skins_tx, skins_rx) = kanal::unbounded();
-
-        Self { skins_rx, skins_tx }
     }
 }
 
