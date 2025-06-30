@@ -1,4 +1,7 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    hash::Hash,
+};
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -8,7 +11,7 @@ use glam::{DVec3, I16Vec2, IVec3, Vec3};
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{error, info};
 use valence_protocol::{
     ByteAngle, VarInt,
     packets::play::{
@@ -24,7 +27,6 @@ use crate::{
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         command::CommandPlugin,
-        //     command::Command,
         entity_kind::EntityKind,
         handlers::HandlersPlugin,
         inventory::InventoryPlugin,
@@ -585,6 +587,41 @@ fn initialize_player(
     }
 }
 
+fn remove_player(
+    trigger: Trigger<'_, OnRemove, packet_state::Play>,
+    mut ign_map: ResMut<'_, IgnMap>,
+    name_query: Query<'_, '_, &Name>,
+) {
+    let name = match name_query.get(trigger.target()) {
+        Ok(name) => name,
+        Err(e) => {
+            error!("failed to remove player: query failed: {e}");
+            return;
+        }
+    };
+
+    match ign_map.entry(name.to_string()) {
+        Entry::Occupied(entry) => {
+            if *entry.get() == trigger.target() {
+                // This entry points to the same entity that got disconnected
+                entry.remove();
+            } else {
+                info!(
+                    "skipped removing player '{name}' from ign map on disconnect: a different \
+                     entity with the same name is in the ign map (this could happen if the same \
+                     player joined twice, causing the first player to be kicked"
+                );
+            }
+        }
+        Entry::Vacant(_) => {
+            error!(
+                "failed to remove player '{name}' from ign map on disconnect: player is not in \
+                 ign map"
+            );
+        }
+    }
+}
+
 /// For every new entity without a UUID, give it one
 fn initialize_uuid(trigger: Trigger<'_, OnAdd, EntityKind>, mut commands: Commands<'_, '_>) {
     let target = trigger.target();
@@ -698,6 +735,7 @@ pub struct SimPlugin;
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_player);
+        app.add_observer(remove_player);
         app.add_observer(send_pending_teleportation);
         app.add_observer(update_flight);
         app.add_observer(initialize_uuid);

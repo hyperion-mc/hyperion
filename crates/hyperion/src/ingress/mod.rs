@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use bevy::prelude::*;
 use colored::Colorize;
+use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
 use tracing::{error, info, warn};
@@ -10,6 +11,7 @@ use valence_protocol::{
     packets::{
         handshaking::handshake_c2s::HandshakeNextState,
         login::{LoginCompressionS2c, LoginSuccessS2c},
+        play::{EntitiesDestroyS2c, PlayerRemoveS2c},
         status::{QueryPongS2c, QueryResponseS2c},
     },
 };
@@ -232,6 +234,41 @@ fn offline_uuid(username: &str) -> uuid::Uuid {
     uuid::Uuid::from_u128(digest)
 }
 
+fn remove_player_from_visibility(
+    trigger: Trigger<'_, OnRemove, packet_state::Play>,
+    query: Query<'_, '_, &Uuid>,
+    compose: Res<'_, Compose>,
+) {
+    let uuid = match query.get(trigger.target()) {
+        Ok(uuid) => uuid,
+        Err(e) => {
+            error!("failed to send player remove packet: query failed: {e}");
+            return;
+        }
+    };
+
+    let uuids = &[uuid.0];
+    let entity_ids = [VarInt(trigger.target().minecraft_id())];
+
+    // destroy
+    let pkt = EntitiesDestroyS2c {
+        entity_ids: Cow::Borrowed(&entity_ids),
+    };
+
+    if let Err(e) = compose.broadcast(&pkt).send() {
+        error!("failed to send player remove packet: {e}");
+        return;
+    }
+
+    let pkt = PlayerRemoveS2c {
+        uuids: Cow::Borrowed(uuids),
+    };
+
+    if let Err(e) = compose.broadcast(&pkt).send() {
+        error!("failed to send player remove packet: {e}");
+    }
+}
+
 pub struct IngressPlugin;
 
 impl Plugin for IngressPlugin {
@@ -245,47 +282,6 @@ impl Plugin for IngressPlugin {
                 process_login_hello.after(decode::login),
             ),
         );
-
-        //        system!(
-        //            "remove_player_from_visibility",
-        //            world,
-        //            &Uuid,
-        //            &Compose($),
-        //        )
-        //        .kind(id::<flecs::pipeline::PostLoad>())
-        //        .with(id::<PendingRemove>())
-        //        .each_iter(move |it, row, (uuid, compose)| {
-        //            let system = it.system();
-        //            let entity = it.entity(row).expect("row must be in bounds");
-        //            let uuids = &[uuid.0];
-        //            let entity_ids = [VarInt(entity.minecraft_id())];
-        //
-        //            // destroy
-        //            let pkt = play::EntitiesDestroyS2c {
-        //                entity_ids: Cow::Borrowed(&entity_ids),
-        //            };
-        //
-        //            if let Err(e) = compose.broadcast(&pkt, system).send() {
-        //                error!("failed to send player remove packet: {e}");
-        //                return;
-        //            }
-        //
-        //            let pkt = play::PlayerRemoveS2c {
-        //                uuids: Cow::Borrowed(uuids),
-        //            };
-        //
-        //            if let Err(e) = compose.broadcast(&pkt, system).send() {
-        //                error!("failed to send player remove packet: {e}");
-        //            }
-        //        });
-        //
-        //        world
-        //            .system_named::<()>("remove_player")
-        //            .kind(id::<flecs::pipeline::PostLoad>())
-        //            .with(id::<&PendingRemove>())
-        //            .tracing_each_entity(info_span!("remove_player"), |entity, ()| {
-        //                entity.destruct();
-        //            });
-        //
+        app.add_observer(remove_player_from_visibility);
     }
 }
