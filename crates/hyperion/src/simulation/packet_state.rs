@@ -28,10 +28,7 @@ pub struct Login(pub(crate) ());
 /// - [`crate::egress::sync_chunks::ChunkSendQueue`]
 /// - [`crate::simulation::Yaw`]
 /// - [`crate::simulation::Pitch`]
-///
-/// They may, but are not required to, have the following components:
-/// - [`crate::simulation::skin::PlayerSkin`]: is added once the player skin loads
-/// - [`crate::simulation::Position`]: is not set by Hyperion - the event code must add this
-///   component
+/// - [`crate::simulation::skin::PlayerSkin`]
+/// - [`crate::simulation::Position`]
 #[derive(Component)]
 pub struct Play(pub(crate) ());

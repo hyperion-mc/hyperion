@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use hyperion::{
+    InitializePlayerPosition,
     runtime::AsyncRuntime,
-    simulation::{Position, blocks::Blocks, packet_state},
+    simulation::{Position, blocks::Blocks},
     valence_protocol::{
         BlockKind,
         math::{IVec2, IVec3, Vec3},
@@ -45,14 +46,13 @@ impl Plugin for SpawnPlugin {
         let avoid_blocks = avoid_blocks();
 
         app.add_observer(
-            move |trigger: Trigger<'_, OnAdd, packet_state::Play>,
-                  // TODO: Refactor to not require &mut so that this can run in parallel
+            move |trigger: Trigger<'_, InitializePlayerPosition>,
                   mut blocks: ResMut<'_, Blocks>,
                   runtime: Res<'_, AsyncRuntime>,
                   mut commands: Commands<'_, '_>| {
                 let position =
                     Position::from(find_spawn_position(&mut blocks, &runtime, &avoid_blocks));
-                let target = trigger.target();
+                let target = trigger.event().0;
                 commands.entity(target).insert(position);
             },
         );

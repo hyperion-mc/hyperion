@@ -145,6 +145,9 @@ impl From<SocketAddr> for SetEndpoint {
     }
 }
 
+#[derive(Event, Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct InitializePlayerPosition(pub Entity);
+
 /// The central [`HyperionCore`] struct which owns and manages the entire server.
 pub struct HyperionCore;
 
@@ -204,6 +207,7 @@ impl Plugin for HyperionCore {
         app.insert_resource(Blocks::empty(&runtime));
         app.insert_resource(runtime);
         app.add_event::<SetEndpoint>();
+        app.add_event::<InitializePlayerPosition>();
         app.add_observer(set_server_endpoint);
 
         let global = Global::new(shared.clone());

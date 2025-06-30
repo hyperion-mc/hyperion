@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::BTreeSet};
 
 use anyhow::Context;
-use bevy::{ecs::query::QueryEntityError, prelude::*};
+use bevy::prelude::*;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
@@ -20,7 +20,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, Pitch};
+use crate::simulation::{MovementTracking, Pitch, packet_state};
 
 mod list;
 pub use list::*;
@@ -38,51 +38,10 @@ use crate::{
 struct ProcessPlayerJoin(Entity);
 
 fn add_process_player_join(
-    trigger: Trigger<'_, OnAdd, (Position, PlayerSkin)>,
+    trigger: Trigger<'_, OnAdd, PlayerSkin>,
     mut events: EventWriter<'_, ProcessPlayerJoin>,
-    query: Query<'_, '_, (), (With<Position>, With<PlayerSkin>)>,
 ) {
-    match query.get(trigger.target()) {
-        Ok(()) => {
-            // Write the event only when both Position and PlayerSkin is added
-            events.write(ProcessPlayerJoin(trigger.target()));
-        }
-        Err(QueryEntityError::QueryDoesNotMatch(..)) => {
-            // Do nothing
-        }
-        Err(e) => {
-            error!("add_process_player_join failed: query failed: {e}");
-        }
-    }
-}
-
-fn initialize_players(
-    mut events: EventReader<'_, '_, ProcessPlayerJoin>,
-    mut commands: Commands<'_, '_>,
-    query: Query<'_, '_, &Position, With<PlayerSkin>>,
-) {
-    for event in events.read() {
-        let position = match query.get(event.0) {
-            Ok(components) => components,
-            Err(e) => {
-                error!("player_join_world failed: {e}");
-                continue;
-            }
-        };
-
-        commands.entity(event.0).insert((
-            MovementTracking {
-                received_movement_packets: 0,
-                last_tick_flying: false,
-                last_tick_position: **position,
-                fall_start_y: position.y,
-                server_velocity: DVec3::ZERO,
-                sprinting: false,
-                was_on_ground: false,
-            },
-            PendingTeleportation::new(**position),
-        ));
-    }
+    events.write(ProcessPlayerJoin(trigger.target()));
 }
 
 fn process_player_join(
@@ -116,6 +75,7 @@ fn process_player_join(
             // &EntityFlags,
         ),
     >,
+    commands: ParallelCommands<'_, '_>,
 ) {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
@@ -374,6 +334,23 @@ fn process_player_join(
 
         bundle.unicast(connection_id).unwrap();
 
+        let position = **position;
+        commands.command_scope(move |mut commands| {
+            commands.entity(entity_id).insert((
+                MovementTracking {
+                    received_movement_packets: 0,
+                    last_tick_flying: false,
+                    last_tick_position: position,
+                    fall_start_y: position.y,
+                    server_velocity: DVec3::ZERO,
+                    sprinting: false,
+                    was_on_ground: false,
+                },
+                PendingTeleportation::new(position),
+                packet_state::Play(()),
+            ));
+        });
+
         info!("{name} joined the world");
     });
 }
@@ -493,6 +470,6 @@ impl Plugin for PlayerJoinPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ProcessPlayerJoin>();
         app.add_observer(add_process_player_join);
-        app.add_systems(FixedUpdate, (initialize_players, process_player_join));
+        app.add_systems(FixedUpdate, process_player_join);
     }
 }

@@ -17,6 +17,7 @@ use valence_protocol::{
 };
 
 use crate::{
+    InitializePlayerPosition,
     command_channel::CommandChannel,
     egress::sync_chunks::ChunkSendQueue,
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
@@ -196,28 +197,34 @@ pub fn process_login_hello(
             Some(PlayerSkin::EMPTY)
         };
 
-        let mut entity = commands.entity(sender);
+        let username = username.to_string();
+        commands.queue(move |world: &mut World| {
+            let mut entity = world.entity_mut(sender);
 
-        // TODO: The more specific components (such as ChunkSendQueue) should be added in a
-        // separate system
-        entity.remove::<packet_state::Login>().insert((
-            Name::new(username.to_string()),
-            ActiveAnimation::NONE,
-            AiTargetable,
-            ImmuneStatus::default(),
-            Uuid::from(uuid),
-            ChunkPosition::null(),
-            ChunkSendQueue::default(),
-            Yaw::default(),
-            Pitch::default(),
-            Velocity::default(),
-            Xp::default(),
-            EntityKind::Player,
-            packet_state::Play(()),
-        ));
-        if let Some(skin) = skin {
-            entity.insert(skin);
-        }
+            // TODO: The more specific components (such as ChunkSendQueue) should be added in a
+            // separate system
+            entity.remove::<packet_state::Login>().insert((
+                Name::new(username.to_string()),
+                ActiveAnimation::NONE,
+                AiTargetable,
+                ImmuneStatus::default(),
+                Uuid::from(uuid),
+                ChunkPosition::null(),
+                ChunkSendQueue::default(),
+                Yaw::default(),
+                Pitch::default(),
+                Velocity::default(),
+                Xp::default(),
+                EntityKind::Player,
+            ));
+
+            world.trigger(InitializePlayerPosition(sender));
+
+            if let Some(skin) = skin {
+                let mut entity = world.entity_mut(sender);
+                entity.insert(skin);
+            }
+        });
 
         compose
             .io_buf()
