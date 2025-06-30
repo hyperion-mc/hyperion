@@ -552,12 +552,13 @@ fn initialize_player(
     connection_id_query: Query<'_, '_, &ConnectionId>,
     mut commands: Commands<'_, '_>,
 ) {
-    commands
-        .entity(trigger.target())
-        .insert(EntitySize::default())
-        .insert(Flight::default())
-        .insert(FlyingSpeed::default())
-        .insert(hyperion_inventory::CursorItem::default());
+    commands.entity(trigger.target()).insert((
+        ConfirmBlockSequences::default(),
+        EntitySize::default(),
+        Flight::default(),
+        FlyingSpeed::default(),
+        hyperion_inventory::CursorItem::default(),
+    ));
 
     let Ok(name) = name_query.get(trigger.target()) else {
         error!("failed to initialize player: missing Name component");
