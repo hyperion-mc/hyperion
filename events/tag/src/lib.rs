@@ -15,7 +15,7 @@ use hyperion_proxy_module::SetProxyAddress;
 use tracing::error;
 
 use crate::{
-    module::{
+    plugin::{
         attack::AttackPlugin, block::BlockPlugin, bow::BowPlugin, chat::ChatPlugin,
         damage::DamagePlugin, level::LevelPlugin, regeneration::RegenerationPlugin,
         spawn::SpawnPlugin, stats::StatsPlugin, vanish::VanishPlugin,
@@ -24,7 +24,7 @@ use crate::{
 };
 
 mod command;
-mod module;
+mod plugin;
 mod skin;
 
 #[derive(Resource, Default, Deref, DerefMut)]

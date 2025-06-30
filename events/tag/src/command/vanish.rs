@@ -4,7 +4,7 @@ use hyperion::net::{Compose, ConnectionId};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use tracing::error;
 
-use crate::module::vanish::Vanished;
+use crate::plugin::vanish::Vanished;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "vanish")]
