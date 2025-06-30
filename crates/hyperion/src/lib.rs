@@ -25,7 +25,6 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(thread_local)]
 
-pub const NUM_THREADS: usize = 1;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
 use std::{alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, sync::Arc, time::Duration};
@@ -161,7 +160,6 @@ impl Plugin for HyperionCore {
         // Errors are ignored because they will only occur when the thread pool is initialized
         // twice, which may occur in tests that add the `HyperionCore` plugin to different apps
         let _result = rayon::ThreadPoolBuilder::new()
-            .num_threads(NUM_THREADS)
             .spawn_handler(|thread| {
                 std::thread::Builder::new()
                     .stack_size(1024 * 1024)
