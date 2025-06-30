@@ -150,29 +150,5 @@ impl Plugin for EgressPlugin {
             SyncChunksPlugin,
             EntityStateSyncPlugin,
         ));
-
-        // let pipeline = world
-        //     .entity()
-        //     .add::<flecs::pipeline::Phase>()
-        //     .depends_on::<flecs::pipeline::OnStore>();
-
-        //         app.add_plugins((
-        //             StatsPlugin,
-        //             PlayerJoinPlugin,
-        //             SyncChunksPlugin,
-        //             EntityStateSyncPlugin,
-        //         ));
-
-        //         system!(
-        //             "clear_bump",
-        //             world,
-        //             &mut Compose($),
-        //         )
-        //         .kind(pipeline)
-        //         .each(move |compose| {
-        //             let span = info_span!("clear_bump");
-        //             let _enter = span.enter();
-        //             compose.clear_bump();
-        //         });
     }
 }

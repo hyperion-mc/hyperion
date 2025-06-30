@@ -29,7 +29,6 @@ pub fn player_join_world(_: Trigger<'_, OnAdd, packet_state::Play>, compose: Res
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-// TODO: Is this ran when entity is despawned?
 pub fn player_leave_world(_: Trigger<'_, OnRemove, packet_state::Play>, compose: Res<'_, Compose>) {
     compose
         .global()

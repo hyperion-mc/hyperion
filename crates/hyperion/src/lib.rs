@@ -36,7 +36,6 @@ pub use glam;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
-// use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
 use storage::{LocalDb, SkinHandler};
 use tracing::{info, warn};
 pub use uuid;
@@ -61,11 +60,7 @@ use crate::{
     ingress::IngressPlugin,
     net::{Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder, proxy::init_proxy_comms},
     runtime::AsyncRuntime,
-    // runtime::Tasks,
-    simulation::{
-        IgnMap, /* EgressComm, EntitySize, PacketState, Pitch, Player, Yaw, packet::HandlerRegistry, */
-        SimPlugin, StreamLookup, blocks::Blocks,
-    },
+    simulation::{IgnMap, SimPlugin, StreamLookup, blocks::Blocks},
     spatial::SpatialPlugin,
     util::mojang::{ApiProvider, MojangClient},
 };
@@ -221,12 +216,6 @@ impl Plugin for HyperionCore {
             IoBuf::default(),
         ));
         app.insert_resource(CraftingRegistry::default());
-        // app.insert_resource(Comms::default());
-        //
-        // let events = Events::initialize(app);
-        // app.insert_resource(events);
-        //
-        // app.insert_resource(runtime);
         app.insert_resource(StreamLookup::default());
 
         app.add_plugins((

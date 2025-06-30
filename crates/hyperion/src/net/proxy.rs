@@ -73,10 +73,7 @@ async fn handle_proxy_messages(
                     let player = world
                         .spawn((
                             ConnectionId::new(stream),
-                            // hyperion_inventory::PlayerInventory::default(),
-                            // ConfirmBlockSequences::default(),
                             packet_state::Handshake(()),
-                            // ActiveAnimation::NONE,
                             PacketDecoder::default(),
                             receiver,
                         ))
