@@ -14,6 +14,7 @@ use hyperion::{
 };
 
 #[test]
+#[ignore = "this test takes a SUPER long time to run due to https://github.com/hyperion-mc/hyperion/issues/909"]
 fn test_get_first_collision() {
     /// Function to spawn arrows at different angles
     fn spawn_arrow(world: &mut World, position: Vec3, direction: Vec3, owner: Owner) -> Entity {
