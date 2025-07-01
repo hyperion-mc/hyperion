@@ -352,13 +352,13 @@ fn handle_respawn(
 }
 
 fn update_kill_counts(
-    query: Query<'_, '_, (&KillCount, &ConnectionId)>,
+    query: Query<'_, '_, (&KillCount, &ConnectionId), Changed<KillCount>>,
     kill_count_uuid: Res<'_, KillCountUuid>,
     compose: Res<'_, Compose>,
 ) {
     const MAX_KILLS: usize = 10;
 
-    for (kill_count, &connection_id) in query {
+    query.par_iter().for_each(|(kill_count, &connection_id)| {
         let kills = kill_count.kill_count;
         let title = format_compact!("{kills} kills");
         let title = hyperion_text::Text::new(&title);
@@ -376,7 +376,7 @@ fn update_kill_counts(
         };
 
         compose.unicast(&pkt, connection_id).unwrap();
-    }
+    });
 }
 
 #[allow(clippy::cast_possible_truncation)]
