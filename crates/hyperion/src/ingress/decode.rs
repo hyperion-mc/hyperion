@@ -6,7 +6,7 @@
               casing"
 )]
 
-use bevy::prelude::*;
+use bevy::{ecs::batching::BatchingStrategy, prelude::*};
 use paste::paste;
 use tracing::error;
 use valence_protocol::Packet as _;
@@ -130,7 +130,10 @@ hyperion_packet_macros::for_each_state! {
 
             // Fill buffers
             let scope = tracing::info_span!("fill_buffers").entered();
-            query.par_iter_mut().for_each(|(sender, &connection_id, decoder, receiver)| {
+            query.par_iter_mut().batching_strategy(BatchingStrategy {
+                batch_size_limits: 1..128,
+                batches_per_thread: 1,
+            }).for_each(|(sender, &connection_id, decoder, receiver)| {
                 let receiver = receiver.into_inner();
                 let mut decompressor = decompressor.0.get_or_default().borrow_mut();
 
