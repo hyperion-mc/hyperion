@@ -42,6 +42,7 @@ memmap2 = { workspace = true }
 more-asserts = { workspace = true }
 ndarray = { workspace = true }
 once_cell = { workspace = true }
+packet-channel = { workspace = true }
 parking_lot = { workspace = true }
 paste = { workspace = true }
 rayon = { workspace = true }
@@ -76,7 +77,6 @@ approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
 hyperion-genmap = { workspace = true }
-proptest = { workspace = true }
 serial_test = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }

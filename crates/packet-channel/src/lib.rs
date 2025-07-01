@@ -1,3 +1,6 @@
+#![feature(let_chains)]
+#![feature(sync_unsafe_cell)]
+
 use std::{
     cell::SyncUnsafeCell,
     mem::{MaybeUninit, size_of},

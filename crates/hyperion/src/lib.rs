@@ -8,7 +8,6 @@
 #![feature(core_io_borrowed_buf)]
 #![feature(maybe_uninit_slice)]
 #![feature(duration_millis_float)]
-#![feature(sync_unsafe_cell)]
 #![feature(iter_array_chunks)]
 #![feature(assert_matches)]
 #![feature(try_trait_v2)]

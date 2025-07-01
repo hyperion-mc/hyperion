@@ -3626,9 +3626,9 @@ dependencies = [
  "ndarray",
  "once_cell",
  "ordered-float 5.0.0",
+ "packet-channel",
  "parking_lot",
  "paste",
- "proptest",
  "rayon",
  "reqwest",
  "rkyv",
@@ -5148,6 +5148,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22ec719bbf3b2a81c109a4e20b1f129b5566b7dce654bc3872f6a05abf82b2c4"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "packet-channel"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "bevy",
+ "more-asserts",
+ "proptest",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]

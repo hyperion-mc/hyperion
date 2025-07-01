@@ -2,11 +2,10 @@ use anyhow::{Context, ensure};
 use bevy::prelude::*;
 use bytes::{Bytes, BytesMut};
 use itertools::Either;
+use packet_channel::RawPacket;
 use valence_protocol::{
     CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
 };
-
-use crate::net::packet_channel::RawPacket;
 
 /// A buffer for saving bytes that are not yet decoded.
 #[derive(Default, Component)]

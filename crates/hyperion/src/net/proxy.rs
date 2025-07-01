@@ -12,7 +12,7 @@ use tracing::{error, info, warn};
 use crate::{
     ConnectionId, PacketDecoder,
     command_channel::CommandChannel,
-    net::{Compose, packet_channel},
+    net::Compose,
     runtime::AsyncRuntime,
     simulation::{EgressComm, StreamLookup, packet_state},
 };

@@ -3,7 +3,7 @@ use std::{
     mem::size_of,
 };
 
-use hyperion::net::packet_channel::{self, SendError};
+use packet_channel::SendError;
 use proptest::prelude::*;
 use valence_protocol::{Encode, MAX_PACKET_SIZE, VarInt};
 

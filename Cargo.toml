@@ -39,6 +39,7 @@ members = [
     'crates/hyperion-stats',
     'crates/hyperion-text',
     'crates/hyperion-utils',
+    'crates/packet-channel',
     'crates/simd-utils',
     'events/tag',
     'tools/packet-inspector',
@@ -206,6 +207,9 @@ path = 'crates/hyperion-text'
 
 [workspace.dependencies.hyperion-utils]
 path = 'crates/hyperion-utils'
+
+[workspace.dependencies.packet-channel]
+path = 'crates/packet-channel'
 
 [workspace.dependencies.indexmap]
 features = ['rayon']

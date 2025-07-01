@@ -12,7 +12,7 @@ use tracing::error;
 use valence_protocol::Packet as _;
 
 use crate::{
-    net::{Compose, ConnectionId, PacketDecoder, decoder::BorrowedPacketFrame, packet_channel},
+    net::{Compose, ConnectionId, PacketDecoder, decoder::BorrowedPacketFrame},
     simulation::{packet::Packet, packet_state},
 };
 
