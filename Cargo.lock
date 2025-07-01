@@ -5156,6 +5156,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "bevy",
+ "divan",
  "more-asserts",
  "proptest",
  "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
