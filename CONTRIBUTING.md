@@ -18,10 +18,6 @@ Essential tools to enhance your development workflow:
   - Debug and analyze Minecraft protocol packets
   - Essential for protocol-related development
 
-### Debugging
-- **[flecs.dev/explorer](https://flecs.dev/explorer)**
-  - View entities in the Entity Component System (ECS)
-
 ### Profiling
 - **[Tracy Profiler](https://github.com/wolfpld/tracy)**
   - Advanced performance profiling

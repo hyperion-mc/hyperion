@@ -19,14 +19,14 @@ approach differs from traditional Minecraft servers that modify vanilla implemen
 
 ### Entity Component System (ECS)
 
-Hyperion utilizes [Flecs](https://github.com/SanderMertens/flecs), an Entity Component System, as its core architecture:
+Hyperion utilizes [Bevy ECS](https://bevy.org/), an Entity Component System, as its core architecture:
 
 - Entities are organized in a table-like structure
     - Rows represent individual entities
     - Columns represent components (e.g., health, position)
 - Systems process entities through efficient iterations
 - Components can be dynamically added (e.g., LastAttacked component for combat)
-- For a more accurate representation of an ECS, see the [ECS FAQ](https://github.com/SanderMertens/ecs-faq)
+- For a more accurate representation of an ECS, see the [Unofficial Bevy Cheat Book](https://bevy-cheatbook.github.io/programming/ecs-intro.html)
 
 ### Performance Optimization
 
@@ -90,7 +90,7 @@ vanilla mechanics can be completely customized to create unique game modes and e
 
 Developers interested in using Hyperion should familiarize themselves with:
 
-- Entity Component Systems (particularly Flecs)
+- Entity Component Systems (particularly Bevy)
 - Minecraft networking protocols
 - Parallel processing concepts
 - Plugin development principles
