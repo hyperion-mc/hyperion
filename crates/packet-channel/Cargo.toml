@@ -1,0 +1,24 @@
+[[bench]]
+harness = false
+name = "packet_channel"
+
+[dependencies]
+arc-swap = { workspace = true }
+bevy = { workspace = true }
+more-asserts = { workspace = true }
+valence_protocol = { workspace = true }
+
+[dev-dependencies]
+divan = {workspace = true}
+proptest = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+authors = ["TestingPlant"]
+edition.workspace = true
+name = "packet-channel"
+publish = false
+readme = "README.md"
+version.workspace = true

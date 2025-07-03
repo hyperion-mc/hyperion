@@ -1,17 +1,18 @@
 [dependencies]
-flecs_ecs = {workspace = true}
-anyhow = {workspace = true}
-directories = {workspace = true}
-sha2 = {workspace = true}
-hex = {workspace = true}
-hyperion-packet-macros = {workspace = true}
-tracing = {workspace = true}
-reqwest = {workspace = true}
-flate2 = {workspace = true}
-tar = {workspace = true}
-tokio-util = {workspace = true}
-tokio = {workspace = true}
-futures-util = {workspace = true}
+anyhow = { workspace = true }
+bevy = { workspace = true }
+bytemuck = { workspace = true }
+directories = { workspace = true }
+flate2 = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hyperion-packet-macros = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
 valence_protocol = { workspace = true }
 
 [lints]

@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-use directories::ProjectDirs;
-use flecs_ecs::core::{World, WorldGet};
+use bevy::prelude::*;
 use futures_util::stream::StreamExt;
 use sha2::Digest;
 use tar::Archive;
@@ -15,15 +14,7 @@ pub fn cached_save<U: reqwest::IntoUrl + 'static>(
     world: &World,
     url: U,
 ) -> impl Future<Output = anyhow::Result<PathBuf>> + 'static {
-    let project_dirs = world
-        .get::<&AppId>(
-            |AppId {
-                 qualifier,
-                 organization,
-                 application,
-             }| { ProjectDirs::from(qualifier, organization, application) },
-        )
-        .expect("failed to get AppId");
+    let project_dirs = world.resource::<AppId>();
 
     let cache = project_dirs.cache_dir();
 

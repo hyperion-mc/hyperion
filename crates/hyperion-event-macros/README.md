@@ -1,1 +1,0 @@
-# hyperion-event-macros

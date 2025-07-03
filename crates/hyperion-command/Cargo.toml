@@ -7,11 +7,13 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-flecs_ecs = { workspace = true }
+bevy = { workspace = true }
+derive_more = { workspace = true }
 hyperion = { workspace = true }
 hyperion-utils = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
+valence_bytes = { workspace = true }
 
 [lints]
 workspace = true

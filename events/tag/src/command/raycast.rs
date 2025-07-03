@@ -1,13 +1,13 @@
+use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{
     glam::Vec3,
-    simulation::{Pitch, Position, Yaw, entity_kind::EntityKind},
-    spatial::get_first_collision,
+    simulation::{EntitySize, Pitch, Position, Yaw, blocks::Blocks, entity_kind::EntityKind},
+    spatial::{SpatialIndex, get_first_collision},
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use rayon::iter::Either;
-use tracing::debug;
+use tracing::{debug, error};
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "raycast")]
@@ -42,37 +42,49 @@ pub fn get_direction_from_rotation(yaw: f32, pitch: f32) -> Vec3 {
 }
 
 impl MinecraftCommand for RaycastCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
+    type State = SystemState<(
+        Query<'static, 'static, (&'static Position, &'static Yaw, &'static Pitch)>,
+        Query<'static, 'static, (&'static Position, &'static EntitySize)>,
+        Query<'static, 'static, (&'static Position, &'static EntityKind)>,
+        Res<'static, SpatialIndex>,
+        Res<'static, Blocks>,
+    )>;
+
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
         const EYE_HEIGHT: f32 = 1.62;
         const DISTANCE: f32 = 10.0;
 
-        let world = system.world();
+        let (position_query, spatial_query, target_query, index, blocks) = state.get(world);
 
-        let ray =
-            caller
-                .entity_view(world)
-                .get::<(&Position, &Yaw, &Pitch)>(|(position, yaw, pitch)| {
-                    let center = **position;
+        let (caller_position, caller_yaw, caller_pitch) = match position_query.get(caller) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("raycast command failed: query failed: {e}");
+                return;
+            }
+        };
 
-                    let eye = center + Vec3::new(0.0, EYE_HEIGHT, 0.0);
-                    let direction = get_direction_from_rotation(**yaw, **pitch);
+        let eye = **caller_position + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+        let direction = get_direction_from_rotation(**caller_yaw, **caller_pitch);
 
-                    geometry::ray::Ray::new(eye, direction) * DISTANCE
-                });
+        let ray = geometry::ray::Ray::new(eye, direction) * DISTANCE;
 
         debug!("ray = {ray:?}");
 
-        let result = get_first_collision(ray, &world, Some(caller));
+        let result = get_first_collision(ray, &index, &blocks, spatial_query, Some(caller));
 
         match result {
             Some(Either::Left(entity)) => {
-                entity
-                    .entity_view(world)
-                    .get::<(&Position, &EntityKind)>(|(position, kind)| {
-                        let position = **position;
-                        debug!("kind: {kind:?}");
-                        debug!("position: {position:?}");
-                    });
+                let (position, kind) = match target_query.get(entity) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("raycast command failed: query failed: {e}");
+                        return;
+                    }
+                };
+
+                debug!("kind: {kind:?}");
+                debug!("position: {position:?}");
             }
             Some(Either::Right(ray_collision)) => debug!("ray_collision: {ray_collision:?}"),
             None => debug!("no collision found"),

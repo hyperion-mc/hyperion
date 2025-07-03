@@ -1,72 +1,56 @@
-use flecs_ecs::{
-    core::World,
-    macros::Component,
-    prelude::{Entity, Module},
-};
-
 mod cached_save;
-mod lifetime;
+pub mod iterator;
+pub mod prev;
+use std::path::PathBuf;
+
+use bevy::{
+    ecs::system::{SystemParam, SystemState},
+    prelude::*,
+};
 pub use cached_save::cached_save;
-pub use lifetime::*;
+pub use prev::{Prev, track_prev};
 
-pub trait EntityExt {
+pub trait EntityExt: Sized {
     fn minecraft_id(&self) -> i32;
-
-    fn from_minecraft_id(id: i32) -> Self;
+    fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self>;
 }
 
 impl EntityExt for Entity {
     fn minecraft_id(&self) -> i32 {
-        let raw = self.0;
-        // Convert entity id into two u32s
-        let most_significant = (raw >> 32) as u32;
-
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "we are getting the least significant bits, we expect truncation"
-        )]
-        let least_significant = raw as u32;
-
-        // Ensure most_significant >> 4 does not overlap with least_significant
-        // and that least_significant AND most_significant is 0
-        // this is the "thread" space which allows for 2^6 = 64 threads
-        debug_assert_eq!(
-            most_significant >> 6,
-            0,
-            "Entity ID is too large for Minecraft"
-        );
-
-        debug_assert!(
-            least_significant < (1 << 26),
-            "Entity ID is too large for Minecraft (must fit in 2^26)"
-        );
-
-        // Combine them into a single i32
-        let result = (most_significant << 26) | least_significant;
-
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "we do not care about sign changes, we expect wrap"
-        )]
-        let result = result as i32;
-
-        result
+        let index = self.index();
+        bytemuck::cast(index)
     }
 
-    fn from_minecraft_id(id: i32) -> Self {
-        #[expect(clippy::cast_sign_loss, reason = "we do not care about sign changes.")]
-        let id = id as u32;
+    fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self> {
+        let id: u32 = bytemuck::cast(id);
 
-        let least_significant = id & ((1 << 26) - 1);
-        let most_significant = (id >> 26) & 0x3F;
-
-        let raw = (u64::from(most_significant) << 32) | u64::from(least_significant);
-        Self(raw)
+        // TODO: According to the docs, this should check if the returned entity is freed
+        world
+            .entities()
+            .resolve_from_id(id)
+            .ok_or_else(|| anyhow::anyhow!("minecraft id is invalid"))
     }
 }
 
+pub trait ApplyWorld {
+    fn apply(&mut self, world: &mut World);
+}
+
+impl<Param> ApplyWorld for SystemState<Param>
+where
+    Param: SystemParam + 'static,
+{
+    fn apply(&mut self, world: &mut World) {
+        self.apply(world);
+    }
+}
+
+impl ApplyWorld for () {
+    fn apply(&mut self, _: &mut World) {}
+}
+
 /// Represents application identification information used for caching and other system-level operations
-#[derive(Component)]
+#[derive(Resource)]
 pub struct AppId {
     /// The qualifier/category of the application (e.g. "com", "org", "hyperion")
     pub qualifier: String,
@@ -76,17 +60,43 @@ pub struct AppId {
     pub application: String,
 }
 
-#[derive(Component)]
-pub struct HyperionUtilsModule;
+impl AppId {
+    #[must_use]
+    pub fn cache_dir(&self) -> PathBuf {
+        let project_dirs = directories::ProjectDirs::from(
+            self.qualifier.as_str(),
+            self.organization.as_str(),
+            self.application.as_str(),
+        )
+        .unwrap();
+        project_dirs.cache_dir().to_path_buf()
+    }
+}
 
-impl Module for HyperionUtilsModule {
-    fn module(world: &World) {
-        world.component::<AppId>();
+pub struct HyperionUtilsPlugin;
 
-        world.set(AppId {
+impl Plugin for HyperionUtilsPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(AppId {
             qualifier: "github".to_string(),
             organization: "hyperion-mc".to_string(),
             application: "generic".to_string(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entity_id() {
+        let mut world = World::new();
+        let entity_id = world.spawn_empty().id();
+        let minecraft_id = entity_id.minecraft_id();
+        assert_eq!(
+            Entity::from_minecraft_id(minecraft_id, &world).unwrap(),
+            entity_id
+        );
     }
 }

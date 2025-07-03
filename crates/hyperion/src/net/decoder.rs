@@ -1,90 +1,35 @@
-use std::{
-    cell::Cell,
-    ops::{Index, RangeFull},
-};
-
-use anyhow::{Context, bail, ensure};
-use bytes::Buf;
-use flecs_ecs::macros::Component;
+use anyhow::{Context, ensure};
+use bevy::prelude::*;
+use bytes::{Bytes, BytesMut};
+use itertools::Either;
+use packet_channel::RawPacket;
 use valence_protocol::{
-    CompressionThreshold, Decode, MAX_PACKET_SIZE, Packet, VarInt, var_int::VarIntDecodeError,
+    CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
 };
-
-#[derive(Default)]
-struct RefBytesMut {
-    cursor: Cell<usize>,
-    inner: Vec<u8>,
-}
-
-impl RefBytesMut {
-    pub fn advance(&self, amount: usize) {
-        let on = self.cursor.get();
-        self.cursor.set(on + amount);
-    }
-
-    pub fn split_to(&self, len: usize) -> &[u8] {
-        let before = self.cursor.get();
-        let after = before + len;
-        self.cursor.set(after);
-
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "this is probably fine? todo: verify"
-        )]
-        &self.inner[before..after]
-    }
-}
-
-unsafe impl Sync for RefBytesMut {}
-unsafe impl Send for RefBytesMut {}
-
-impl Index<RangeFull> for RefBytesMut {
-    type Output = [u8];
-
-    fn index(&self, _: RangeFull) -> &Self::Output {
-        let on = self.cursor.get();
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "this is probably fine? todo: verify"
-        )]
-        &self.inner[on..]
-    }
-}
 
 /// A buffer for saving bytes that are not yet decoded.
 #[derive(Default, Component)]
 pub struct PacketDecoder {
-    buf: RefBytesMut,
-    threshold: Cell<CompressionThreshold>,
+    threshold: CompressionThreshold,
 }
 
-unsafe impl Send for PacketDecoder {}
-unsafe impl Sync for PacketDecoder {}
-
-#[derive(Copy, Clone)]
-pub struct BorrowedPacketFrame<'a> {
+#[derive(Clone)]
+pub struct BorrowedPacketFrame {
     /// The ID of the decoded packet.
     pub id: i32,
-    /// The contents of the packet after the leading [`VarInt`] ID.
-    pub body: &'a [u8],
+    /// The contents of the packet after the leading [`VarInt`] ID. This stores either a [`Bytes`]
+    /// or [`RawPacket`] because [`Bytes::from_owner`] has some performance penalty and requires an
+    /// allocation to store metadata.
+    pub body: Either<Bytes, RawPacket>,
 }
 
-impl std::fmt::Debug for BorrowedPacketFrame<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BorrowedPacketFrame")
-            .field("id", &format!("0x{:x}", self.id))
-            .field("body", &bytes::Bytes::copy_from_slice(self.body))
-            .finish()
-    }
-}
-
-impl<'a> BorrowedPacketFrame<'a> {
+impl BorrowedPacketFrame {
     /// Attempts to decode this packet as type `P`. An error is returned if the
     /// packet ID does not match, the body of the packet failed to decode, or
     /// some input was missed.
-    pub fn decode<P>(&self) -> anyhow::Result<P>
+    pub fn decode<P>(self) -> anyhow::Result<P>
     where
-        P: Packet + Decode<'a>,
+        P: Packet + DecodeBytes,
     {
         ensure!(
             P::ID == self.id,
@@ -94,56 +39,50 @@ impl<'a> BorrowedPacketFrame<'a> {
             self.id
         );
 
-        let mut r = self.body;
+        let pkt = match self.body {
+            Either::Left(mut bytes) => {
+                let pkt = P::decode_bytes(&mut bytes)?;
 
-        let pkt = P::decode(&mut r)?;
+                ensure!(
+                    bytes.is_empty(),
+                    "missed {} bytes while decoding '{}'",
+                    bytes.len(),
+                    P::NAME
+                );
 
-        ensure!(
-            r.is_empty(),
-            "missed {} bytes while decoding '{}'",
-            r.len(),
-            P::NAME
-        );
+                pkt
+            }
+            Either::Right(packet) => {
+                let initial_len = packet.len();
+                let (pkt, bytes_read) = P::decode_from_owned(packet)?;
+
+                ensure!(
+                    bytes_read == initial_len,
+                    "missed {} bytes while decoding '{}'",
+                    initial_len - bytes_read,
+                    P::NAME
+                );
+
+                pkt
+            }
+        };
 
         Ok(pkt)
     }
 }
 
 impl PacketDecoder {
-    /// Tries to get the next packet from the buffer.
-    /// If a new packet is found, the buffer will be truncated by the length of the packet.
-    pub fn try_next_packet<'b>(
-        &'b self,
-        bump: &'b bumpalo::Bump,
-    ) -> anyhow::Result<Option<BorrowedPacketFrame<'b>>> {
-        let mut r = &self.buf[..];
-
-        let packet_len = match VarInt::decode_partial(&mut r) {
-            Ok(len) => len,
-            Err(VarIntDecodeError::Incomplete) => return Ok(None),
-            Err(VarIntDecodeError::TooLarge) => bail!("malformed packet length VarInt"),
-        };
-
-        ensure!(
-            (0..=MAX_PACKET_SIZE).contains(&packet_len),
-            "packet length of {packet_len} is out of bounds"
-        );
-
-        #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-        if r.len() < packet_len as usize {
-            // Not enough data arrived yet.
-            return Ok(None);
-        }
-
-        let packet_len_len = VarInt(packet_len).written_size();
-
+    pub fn try_next_packet(
+        &self,
+        decompressor: &mut libdeflater::Decompressor,
+        mut raw_packet: RawPacket,
+    ) -> anyhow::Result<BorrowedPacketFrame> {
+        let mut raw_packet_slice: &[u8] = &raw_packet;
         let mut data;
 
         #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-        if self.threshold.get().0 >= 0 {
-            r = &r[..packet_len as usize];
-
-            let data_len = VarInt::decode(&mut r)?.0;
+        if self.threshold.0 >= 0 {
+            let data_len = VarInt::decode(&mut raw_packet_slice)?.0;
 
             ensure!(
                 (0..MAX_PACKET_SIZE).contains(&data_len),
@@ -153,100 +92,73 @@ impl PacketDecoder {
             // Is this packet compressed?
             if data_len > 0 {
                 ensure!(
-                    data_len > self.threshold.get().0,
+                    data_len > self.threshold.0,
                     "decompressed packet length of {data_len} is <= the compression threshold of \
                      {}",
-                    self.threshold.get().0
+                    self.threshold.0
                 );
 
-                // todo(perf): make uninit memory ...  MaybeUninit
-                let decompression_buf: &mut [u8] = bump.alloc_slice_fill_default(data_len as usize);
+                // todo(perf): find a decompression library which accepts &[MaybeUninit<u8>] to
+                // avoid cost of initializing the data
+                let mut decompression_buf = BytesMut::zeroed(usize::try_from(data_len)?);
 
-                let written_len = {
-                    // todo: does it make sense to cache ever?
-                    let mut decompressor = libdeflater::Decompressor::new();
-
-                    decompressor.zlib_decompress(r, decompression_buf)?
-                };
+                let written_len =
+                    decompressor.zlib_decompress(raw_packet_slice, &mut decompression_buf)?;
 
                 debug_assert_eq!(
                     written_len, data_len as usize,
                     "{written_len} != {data_len}"
                 );
 
-                let total_packet_len = VarInt(packet_len).written_size() + packet_len as usize;
-
-                self.buf.advance(total_packet_len);
-
-                data = &*decompression_buf;
+                data = Either::Left(decompression_buf.freeze());
             } else {
                 debug_assert_eq!(data_len, 0, "{data_len} != 0");
 
                 ensure!(
-                    r.len() <= self.threshold.get().0 as usize,
+                    raw_packet_slice.len() <= self.threshold.0 as usize,
                     "uncompressed packet length of {} exceeds compression threshold of {}",
-                    r.len(),
-                    self.threshold.get().0
+                    raw_packet_slice.len(),
+                    self.threshold.0
                 );
 
-                let remaining_len = r.len();
-
-                self.buf.advance(packet_len_len + 1);
-
-                data = self.buf.split_to(remaining_len);
+                // Remove the initial VarInt from raw_packet
+                let bytes_read = raw_packet.len() - raw_packet_slice.len();
+                raw_packet.remove_front(bytes_read);
+                data = Either::Right(raw_packet);
             }
         } else {
-            self.buf.advance(packet_len_len);
-            data = self.buf.split_to(packet_len as usize);
+            data = Either::Right(raw_packet);
         }
 
         // Decode the leading packet ID.
-        r = data;
-        let packet_id = VarInt::decode(&mut r)
-            .context("failed to decode packet ID")?
-            .0;
+        let packet_id = match &mut data {
+            Either::Left(bytes) => {
+                VarInt::decode_bytes(bytes)
+                    .context("failed to decode packet ID")?
+                    .0
+            }
+            Either::Right(packet) => {
+                let (VarInt(id), bytes_read) =
+                    VarInt::decode_and_len(packet).context("failed to decode packet ID")?;
+                packet.remove_front(bytes_read);
+                id
+            }
+        };
 
-        data.advance(data.len() - r.len());
-
-        let def_static: Box<_> = data.iter().copied().collect();
-        let def_static = Box::leak(def_static);
-
-        Ok(Some(BorrowedPacketFrame {
+        Ok(BorrowedPacketFrame {
             id: packet_id,
-            body: def_static,
-        }))
-    }
-
-    pub fn shift_excess(&mut self) {
-        let read_position = self.buf.cursor.get();
-
-        if read_position == 0 {
-            return;
-        }
-
-        let excess_len = self.buf.inner.len() - read_position;
-
-        self.buf.inner.copy_within(read_position.., 0);
-        self.buf.inner.resize_with(excess_len, || unsafe {
-            core::hint::unreachable_unchecked()
-        });
-
-        self.buf.cursor.set(0);
+            body: data,
+        })
     }
 
     /// Get the compression threshold.
     #[must_use]
-    pub fn compression(&self) -> CompressionThreshold {
-        self.threshold.get()
+    pub const fn compression(&self) -> CompressionThreshold {
+        self.threshold
     }
 
     /// Sets the compression threshold.
-    pub fn set_compression(&self, threshold: CompressionThreshold) {
-        self.threshold.set(threshold);
-    }
-
-    /// Queues a slice of bytes into the buffer.
-    pub fn queue_slice(&mut self, bytes: &[u8]) {
-        self.buf.inner.extend_from_slice(bytes);
+    pub const fn set_compression(&mut self, threshold: CompressionThreshold) {
+        self.threshold = threshold;
     }
 }

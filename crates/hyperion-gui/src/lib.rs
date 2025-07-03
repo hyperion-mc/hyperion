@@ -1,19 +1,13 @@
 use std::collections::HashMap;
 
-use flecs_ecs::{
-    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider},
-    macros::Component,
-};
+use bevy::prelude::*;
 use hyperion::{
-    simulation::{
-        Spawn, Uuid, entity_kind::EntityKind, handlers::PacketSwitchQuery, packet::HandlerRegistry,
-    },
+    simulation::{Uuid, entity_kind::EntityKind},
     valence_protocol::packets::play::{
-        ClickSlotC2s, click_slot_c2s::ClickMode, close_screen_s2c::CloseScreenS2c,
+        click_slot_c2s::ClickMode, close_screen_s2c::CloseScreenS2c,
     },
 };
-use hyperion_inventory::{Inventory, InventoryState, OpenInventory};
-use hyperion_utils::LifetimeHandle;
+use hyperion_inventory::{Inventory, OpenInventory};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,19 +36,15 @@ pub struct Gui {
 
 impl Gui {
     #[must_use]
-    pub fn new(inventory: Inventory, world: &World, id: u64) -> Self {
+    pub fn new(inventory: Inventory, world: &mut World, id: u64) -> Self {
         let uuid = Uuid::new_v4();
 
         let entity = world
-            .entity()
-            .add_enum(EntityKind::BlockDisplay)
-            .set(uuid)
-            .set(inventory);
-
-        entity.enqueue(Spawn);
+            .spawn((EntityKind::BlockDisplay, uuid, inventory))
+            .id();
 
         Self {
-            entity: *entity,
+            entity,
             items: HashMap::new(),
             id,
         }
@@ -64,45 +54,20 @@ impl Gui {
         self.items.insert(slot, on_click);
     }
 
-    pub fn init(&mut self, world: &World) {
-        world.get::<&mut HandlerRegistry>(|registry| {
-            let items = self.items.clone();
-            registry.add_handler(Box::new(
-                move |event: &ClickSlotC2s<'_>,
-                      _: &dyn LifetimeHandle<'_>,
-                      query: &mut PacketSwitchQuery<'_>| {
-                    let system = query.system;
-                    let world = system.world();
-                    let button = event.mode;
-                    query
-                        .id
-                        .entity_view(world)
-                        .get::<&InventoryState>(|inv_state| {
-                            if event.window_id != inv_state.window_id() {
-                                return;
-                            }
-
-                            let Ok(slot) = usize::try_from(event.slot_idx) else {
-                                return;
-                            };
-                            let Some(item) = items.get(&slot) else {
-                                return;
-                            };
-
-                            item(query.id, button);
-                        });
-
-                    Ok(())
-                },
-            ));
-        });
+    pub fn init(&mut self, _world: &mut World) {
+        todo!()
     }
 
-    pub fn open(&self, system: EntityView<'_>, player: Entity) {
-        let world = system.world();
-        player
-            .entity_view(world)
-            .set(OpenInventory::new(self.entity));
+    pub fn open(&self, world: &mut World, player: Entity) {
+        world
+            .entity_mut(player)
+            .insert(OpenInventory::new(self.entity));
+    }
+
+    pub fn open_deferred(&self, commands: &mut Commands<'_, '_>, player: Entity) {
+        commands
+            .entity(player)
+            .insert(OpenInventory::new(self.entity));
     }
 
     pub fn handle_close(&mut self, _player: Entity, _close_packet: CloseScreenS2c) {

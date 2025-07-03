@@ -1,10 +1,11 @@
+use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider, id};
 use hyperion::{
     net::{Compose, ConnectionId, DataBundle, agnostic},
     simulation::Flight,
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
+use tracing::error;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "fly")]
@@ -12,29 +13,38 @@ use hyperion_clap::{CommandPermission, MinecraftCommand};
 pub struct FlyCommand;
 
 impl MinecraftCommand for FlyCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
-        let world = system.world();
-        world.get::<&Compose>(|compose| {
-            caller
-                .entity_view(world)
-                .get::<(&mut Flight, &ConnectionId)>(|(flight, stream)| {
-                    flight.allow = !flight.allow;
-                    flight.is_flying = flight.allow && flight.is_flying;
-                    caller.entity_view(world).modified(id::<Flight>());
+    type State = SystemState<(
+        Res<'static, Compose>,
+        Query<'static, 'static, (&'static ConnectionId, &'static Flight)>,
+        Commands<'static, 'static>,
+    )>;
 
-                    let allow_flight = flight.allow;
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let (compose, query, mut commands) = state.get(world);
 
-                    let chat_packet = if allow_flight {
-                        agnostic::chat("§aFlying enabled")
-                    } else {
-                        agnostic::chat("§cFlying disabled")
-                    };
+        let (&connection_id, &(mut flight)) = match query.get(caller) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("fly command failed: query failed: {e}");
+                return;
+            }
+        };
 
-                    let mut bundle = DataBundle::new(compose, system);
-                    bundle.add_packet(&chat_packet).unwrap();
+        flight.allow = !flight.allow;
+        flight.is_flying = flight.allow && flight.is_flying;
 
-                    bundle.unicast(*stream).unwrap();
-                });
-        });
+        let allow_flight = flight.allow;
+
+        let chat_packet = if allow_flight {
+            agnostic::chat("§aFlying enabled")
+        } else {
+            agnostic::chat("§cFlying disabled")
+        };
+
+        let mut bundle = DataBundle::new(&compose);
+        bundle.add_packet(&chat_packet).unwrap();
+        bundle.unicast(connection_id).unwrap();
+
+        commands.entity(caller).insert(flight);
     }
 }

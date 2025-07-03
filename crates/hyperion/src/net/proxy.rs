@@ -1,27 +1,24 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{io::Cursor, net::SocketAddr, process::Command, sync::Arc};
+use std::{io::Cursor, net::SocketAddr, process::Command};
 
+use bevy::prelude::*;
 use bytes::{Buf, BytesMut};
-use dashmap::DashMap;
-use flecs_ecs::macros::Component;
 use hyperion_proto::ArchivedProxyToServerMessage;
-use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
 
-use crate::{runtime::AsyncRuntime, simulation::EgressComm};
+use crate::{
+    ConnectionId, PacketDecoder,
+    command_channel::CommandChannel,
+    net::Compose,
+    runtime::AsyncRuntime,
+    simulation::{EgressComm, StreamLookup, packet_state},
+};
 
-/// This is used
-#[derive(Default)]
-pub struct ReceiveStateInner {
-    /// All players who have recently connected to the server.
-    pub player_connect: Mutex<Vec<u64>>,
-    /// All players who have recently disconnected from the server.
-    pub player_disconnect: Mutex<Vec<u64>>,
-    /// A map of stream ids to the corresponding [`BytesMut`] buffers. This represents data from the client to the server.
-    pub packets: DashMap<u64, BytesMut>,
-}
+// TODO: Determine a better default
+const DEFAULT_FRAGMENT_SIZE: usize = 4096;
 
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     let output = if cfg!(target_os = "windows") {
@@ -42,10 +39,111 @@ fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     Ok(pid)
 }
 
+async fn handle_proxy_messages(
+    read: tokio::net::tcp::OwnedReadHalf,
+    command_channel: CommandChannel,
+) {
+    let mut reader = ProxyReader::new(read);
+    let mut player_packet_sender: FxHashMap<u64, packet_channel::Sender> = FxHashMap::default();
+
+    loop {
+        let buffer = match reader.next_server_packet_buffer().await {
+            Ok(message) => message,
+            Err(err) => {
+                error!("failed to process packet {err:?}");
+                return;
+            }
+        };
+
+        let result = unsafe { rkyv::access_unchecked::<ArchivedProxyToServerMessage<'_>>(&buffer) };
+
+        match result {
+            ArchivedProxyToServerMessage::PlayerConnect(message) => {
+                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+
+                let (sender, receiver) = packet_channel::channel(DEFAULT_FRAGMENT_SIZE);
+                if player_packet_sender.insert(stream, sender).is_some() {
+                    error!(
+                        "PlayerConnect: player with same stream id already exists in \
+                         player_packet_sender"
+                    );
+                }
+
+                command_channel.push(move |world: &mut World| {
+                    let player = world
+                        .spawn((
+                            ConnectionId::new(stream),
+                            packet_state::Handshake(()),
+                            PacketDecoder::default(),
+                            receiver,
+                        ))
+                        .id();
+                    world
+                        .get_resource_mut::<StreamLookup>()
+                        .expect("StreamLookup resource should exist")
+                        .insert(stream, player);
+                });
+            }
+            ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
+                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+
+                if player_packet_sender.remove(&stream).is_none() {
+                    error!(
+                        "PlayerDisconnect: no player with stream id exists in player_packet_sender"
+                    );
+                }
+
+                command_channel.push(move |world: &mut World| {
+                    let player = world
+                        .get_resource_mut::<StreamLookup>()
+                        .expect("StreamLookup resource should exist")
+                        .remove(&stream)
+                        .expect("player from PlayerDisconnect must exist in the stream lookup map");
+
+                    world.despawn(player);
+                });
+            }
+            ArchivedProxyToServerMessage::PlayerPackets(message) => {
+                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+
+                let Some(sender) = player_packet_sender.get_mut(&stream) else {
+                    error!(
+                        "PlayerPackets: no player with stream id exists in player_packet_sender"
+                    );
+                    return;
+                };
+
+                if let Err(e) = sender.send(&message.data) {
+                    use packet_channel::SendError;
+                    let needs_shutdown = match e {
+                        SendError::ZeroLengthPacket => {
+                            warn!("A player sent an illegal zero-length packet, disconnecting");
+                            true
+                        }
+                        SendError::TooLargePacket => {
+                            warn!("A player sent a packet that is too large, disconnecting");
+                            true
+                        }
+                        SendError::AlreadyClosed => false,
+                    };
+                    if needs_shutdown {
+                        command_channel.push(move |world: &mut World| {
+                            let compose = world
+                                .get_resource::<Compose>()
+                                .expect("Compose resource should exist");
+                            compose.io_buf().shutdown(ConnectionId::new(stream));
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn inner(
     socket: SocketAddr,
     mut server_to_proxy: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
-    shared: Arc<ReceiveStateInner>,
+    command_channel: CommandChannel,
 ) {
     let listener = match tokio::net::TcpListener::bind(socket).await {
         Ok(listener) => listener,
@@ -84,8 +182,6 @@ async fn inner(
 
                 info!("Proxy connection established on {addr}");
 
-                let shared = shared.clone();
-
                 let (read, mut write) = socket.into_split();
 
                 let proxy_writer_task = tokio::spawn(async move {
@@ -101,44 +197,8 @@ async fn inner(
                     server_to_proxy
                 });
 
-                tokio::spawn(async move {
-                    let mut reader = ProxyReader::new(read);
-
-                    loop {
-                        let buffer = match reader.next_server_packet_buffer().await {
-                            Ok(message) => message,
-                            Err(err) => {
-                                error!("failed to process packet {err:?}");
-                                return;
-                            }
-                        };
-
-                        let result = unsafe {
-                            rkyv::access_unchecked::<ArchivedProxyToServerMessage<'_>>(&buffer)
-                        };
-
-                        match result {
-                            ArchivedProxyToServerMessage::PlayerConnect(message) => {
-                                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
-
-                                shared.player_connect.lock().push(stream);
-                            }
-                            ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
-                                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
-                                shared.player_disconnect.lock().push(stream);
-                            }
-                            ArchivedProxyToServerMessage::PlayerPackets(message) => {
-                                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
-
-                                shared
-                                    .packets
-                                    .entry(stream)
-                                    .or_default()
-                                    .extend_from_slice(&message.data);
-                            }
-                        }
-                    }
-                });
+                let command_channel = command_channel.clone();
+                tokio::spawn(handle_proxy_messages(read, command_channel));
 
                 // todo: handle player disconnects on proxy shut down
                 // Ideally, we should design for there being multiple proxies,
@@ -150,21 +210,16 @@ async fn inner(
     );
 }
 
-/// A wrapper around [`ReceiveStateInner`]
-#[derive(Component)]
-pub struct ReceiveState(pub Arc<ReceiveStateInner>);
-
 /// Initializes proxy communications.
 #[must_use]
-pub fn init_proxy_comms(tasks: &AsyncRuntime, socket: SocketAddr) -> (ReceiveState, EgressComm) {
+pub fn init_proxy_comms(
+    runtime: &AsyncRuntime,
+    command_channel: CommandChannel,
+    socket: SocketAddr,
+) -> EgressComm {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    let shared = Arc::new(ReceiveStateInner::default());
-
-    tasks.block_on(async {
-        inner(socket, rx, shared.clone()).await;
-    });
-
-    (ReceiveState(shared), EgressComm::from(tx))
+    runtime.spawn(inner(socket, rx, command_channel));
+    EgressComm::from(tx)
 }
 
 #[derive(Debug)]

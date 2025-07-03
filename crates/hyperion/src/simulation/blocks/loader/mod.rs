@@ -9,7 +9,7 @@ use itertools::Itertools;
 use libdeflater::{CompressionLvl, Compressor};
 use parse::ColumnData;
 use rustc_hash::FxHashSet;
-use tracing::{debug, warn};
+use tracing::{trace, warn};
 use valence_generated::block::BlockState;
 use valence_nbt::{List, compound};
 use valence_protocol::{ChunkPos, CompressionThreshold, FixedArray, packets::play};
@@ -158,7 +158,7 @@ impl ChunkLoader {
                 .unique()
                 .count();
 
-            debug!("{NERD_ROCKET} loaded chunk {position} with {unique_blocks} unique blocks");
+            trace!("{NERD_ROCKET} loaded chunk {position} with {unique_blocks} unique blocks");
 
             tx_load_chunks.send(loaded_chunk).unwrap();
         });
@@ -302,7 +302,7 @@ fn encode_chunk_packet(
         heightmaps: Cow::Owned(compound! {
             "MOTION_BLOCKING" => List::Long(map),
         }),
-        blocks_and_biomes: &section_bytes,
+        blocks_and_biomes: (&*section_bytes).into(),
         block_entities: Cow::Borrowed(&[]),
 
         sky_light_mask: Cow::Borrowed(&sky_light_data),

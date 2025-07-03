@@ -2,33 +2,30 @@
 harness = false
 name = "set"
 
-[[bench]]
-harness = false
-name = "atomic"
-
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 base64 = { workspace = true }
 bitfield-struct = { workspace = true }
 bitvec = { workspace = true }
-bvh-region = { workspace = true }
+boxcar = { workspace = true }
 bumpalo = { workspace = true }
+bvh-region = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
 bytes = { workspace = true }
 colored = { workspace = true }
 derive_more = { workspace = true }
 enumset = { workspace = true }
+bevy.workspace = true
 fastrand = { workspace = true }
 flate2 = { workspace = true, features = ["zlib-ng"] }
-flecs_ecs = { workspace = true }
 geometry = { workspace = true }
 glam = { workspace = true, features = ["serde"] }
 heapless = { workspace = true }
 heed = { workspace = true }
 humantime = { workspace = true }
 hyperion-crafting = { workspace = true }
-hyperion-event-macros = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-nerd-font = { workspace = true }
 hyperion-packet-macros = { workspace = true }
@@ -45,8 +42,9 @@ memmap2 = { workspace = true }
 more-asserts = { workspace = true }
 ndarray = { workspace = true }
 once_cell = { workspace = true }
-ouroboros = { workspace = true }
+packet-channel = { workspace = true }
 parking_lot = { workspace = true }
+paste = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rkyv = { workspace = true }
@@ -56,14 +54,15 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 simd-utils = { workspace = true }
-system-order = { workspace = true }
 thiserror = { workspace = true }
+thread_local = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-tracy = { workspace = true }
 uuid = { workspace = true }
 valence_anvil = { workspace = true }
+valence_bytes = { workspace = true }
 valence_generated = { workspace = true }
 valence_ident = { workspace = true }
 valence_nbt = { workspace = true }
@@ -72,13 +71,13 @@ valence_registry = { workspace = true }
 valence_server = { workspace = true }
 valence_text = { workspace = true }
 ordered-float = { workspace = true }
-dashmap = "6.1.0"
 
 [dev-dependencies]
 approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
 hyperion-genmap = { workspace = true }
+serial_test = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 

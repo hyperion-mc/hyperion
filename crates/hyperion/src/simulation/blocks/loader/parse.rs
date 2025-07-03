@@ -1,8 +1,9 @@
-use std::{borrow::Cow, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 use thiserror::Error;
 use tracing::warn;
 use valence_anvil::RegionError;
+use valence_bytes::Utf8Bytes;
 use valence_generated::block::{BlockKind, BlockState, PropName, PropValue};
 use valence_nbt::{Compound, List, Value};
 use valence_protocol::Ident;
@@ -63,7 +64,7 @@ pub enum ParseChunkError {
     #[error("missing block entity ident")]
     MissingBlockEntityIdent,
     #[error("invalid block entity ident of \"{0}\"")]
-    InvalidBlockEntityName(String),
+    InvalidBlockEntityName(Utf8Bytes),
     #[error("invalid block entity position")]
     InvalidBlockEntityPosition,
     #[error("missing block light")]
@@ -220,7 +221,7 @@ impl Chunk for ColumnData {
 #[expect(clippy::cast_sign_loss, clippy::cast_lossless, clippy::too_many_lines)]
 pub fn parse_chunk(
     mut nbt: Compound,
-    biome_map: &BTreeMap<Ident<String>, BiomeId>, // TODO: replace with biome registry arg.
+    biome_map: &BTreeMap<Ident, BiomeId>, // TODO: replace with biome registry arg.
 ) -> Result<ColumnData, ParseChunkError> {
     let Some(Value::List(List::Compound(nbt_sections))) = nbt.remove("sections") else {
         return Err(ParseChunkError::MissingSections);
@@ -397,12 +398,16 @@ pub fn parse_chunk(
         converted_biome_palette.clear();
 
         for biome_name in palette {
-            let Ok(ident) = Ident::<Cow<'_, str>>::new(biome_name) else {
+            if !Ident::is_valid(biome_name) {
                 return Err(ParseChunkError::BadBiomeName);
-            };
+            }
 
-            converted_biome_palette
-                .push(biome_map.get(ident.as_str()).copied().unwrap_or_default());
+            converted_biome_palette.push(
+                biome_map
+                    .get(biome_name.as_str())
+                    .copied()
+                    .unwrap_or_default(),
+            );
         }
 
         if converted_biome_palette.len() == 1 {

@@ -3,28 +3,22 @@
 use std::{
     cell::{Cell, RefCell},
     fmt::Debug,
+    sync::atomic::{AtomicU32, Ordering},
 };
 
-use bumpalo::Bump;
+use bevy::prelude::*;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
-use derive_more::Deref;
-use flecs_ecs::{
-    core::{EntityView, World, WorldProvider},
-    macros::Component,
-};
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
-use hyperion_utils::LifetimeTracker;
 use libdeflater::CompressionLvl;
 use rkyv::util::AlignedVec;
-use system_order::SystemOrder;
+use thread_local::ThreadLocal;
 
 use crate::{
-    Global, PacketBundle, Scratch, Scratches,
+    Global, PacketBundle, Scratch,
     net::encoder::{PacketEncoder, append_packet_without_compression},
-    storage::ThreadLocal,
 };
 
 pub mod agnostic;
@@ -42,23 +36,6 @@ pub const MAX_PACKET_SIZE: usize = valence_protocol::MAX_PACKET_SIZE as usize;
 /// The stringified name of the Minecraft version this library currently
 /// targets.
 pub const MINECRAFT_VERSION: &str = "1.20.1";
-
-/// Thread-local [`libdeflater::Compressor`] for encoding packets.
-#[derive(Component, Deref)]
-pub struct Compressors {
-    compressors: ThreadLocal<RefCell<libdeflater::Compressor>>,
-}
-
-impl Compressors {
-    #[must_use]
-    pub(crate) fn new(level: CompressionLvl) -> Self {
-        Self {
-            compressors: ThreadLocal::new_with(|_| {
-                RefCell::new(libdeflater::Compressor::new(level))
-            }),
-        }
-    }
-}
 
 /// A unique identifier for a client connection
 ///
@@ -102,38 +79,31 @@ impl ConnectionId {
 }
 
 /// A singleton that can be used to compose and encode packets.
-#[derive(Component)]
+#[derive(Resource)]
 pub struct Compose {
-    compressor: Compressors,
-    scratch: Scratches,
+    compression_lvl: CompressionLvl,
+    compressor: ThreadLocal<RefCell<libdeflater::Compressor>>,
+    scratch: ThreadLocal<RefCell<Scratch>>,
     global: Global,
     io_buf: IoBuf,
-    pub bump: ThreadLocal<Bump>,
-    pub bump_tracker: LifetimeTracker,
 }
 
 #[must_use]
-pub struct DataBundle<'a, 'b> {
+pub struct DataBundle<'a> {
     compose: &'a Compose,
-    system: EntityView<'b>,
     data: BytesMut,
 }
 
-impl<'a, 'b> DataBundle<'a, 'b> {
-    pub fn new(compose: &'a Compose, system: EntityView<'b>) -> Self {
+impl<'a> DataBundle<'a> {
+    pub fn new(compose: &'a Compose) -> Self {
         Self {
             compose,
-            system,
             data: BytesMut::new(),
         }
     }
 
     pub fn add_packet(&mut self, pkt: impl PacketBundle) -> anyhow::Result<()> {
-        let world = self.system.world();
-        let data = self
-            .compose
-            .io_buf
-            .encode_packet(pkt, self.compose, &world)?;
+        let data = self.compose.io_buf.encode_packet(pkt, self.compose)?;
         // todo: test to see if this ever actually unsplits
         self.data.unsplit(data);
         Ok(())
@@ -148,9 +118,7 @@ impl<'a, 'b> DataBundle<'a, 'b> {
             return Ok(());
         }
 
-        self.compose
-            .io_buf
-            .unicast_raw(&self.data, stream, self.system);
+        self.compose.io_buf.unicast_raw(&self.data, stream);
         Ok(())
     }
 
@@ -162,21 +130,20 @@ impl<'a, 'b> DataBundle<'a, 'b> {
 
         self.compose
             .io_buf
-            .broadcast_local_raw(&self.data, center, 0, self.system);
+            .broadcast_local_raw(&self.data, center, 0);
         Ok(())
     }
 }
 
 impl Compose {
     #[must_use]
-    pub fn new(compressor: Compressors, scratch: Scratches, global: Global, io_buf: IoBuf) -> Self {
+    pub const fn new(compression_lvl: CompressionLvl, global: Global, io_buf: IoBuf) -> Self {
         Self {
-            compressor,
-            scratch,
+            compression_lvl,
+            compressor: ThreadLocal::new(),
+            scratch: ThreadLocal::new(),
             global,
             io_buf,
-            bump: ThreadLocal::new_defaults(),
-            bump_tracker: LifetimeTracker::default(),
         }
     }
 
@@ -194,11 +161,7 @@ impl Compose {
     /// Broadcast globally to all players
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
-    pub const fn broadcast<'a, 'b, P>(
-        &'a self,
-        packet: P,
-        system: EntityView<'b>,
-    ) -> Broadcast<'a, 'b, P>
+    pub const fn broadcast<P>(&self, packet: P) -> Broadcast<'_, P>
     where
         P: PacketBundle,
     {
@@ -206,7 +169,6 @@ impl Compose {
             packet,
             compose: self,
             exclude: 0,
-            system,
         }
     }
 
@@ -224,12 +186,7 @@ impl Compose {
     /// Broadcast a packet within a certain region.
     ///
     /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
-    pub const fn broadcast_local<'a, 'b, P>(
-        &'a self,
-        packet: P,
-        center: I16Vec2,
-        system: EntityView<'b>,
-    ) -> BroadcastLocal<'a, 'b, P>
+    pub const fn broadcast_local<P>(&self, packet: P, center: I16Vec2) -> BroadcastLocal<'_, P>
     where
         P: PacketBundle,
     {
@@ -241,17 +198,11 @@ impl Compose {
                 x: center.x,
                 z: center.y,
             },
-            system,
         }
     }
 
     /// Send a packet to a single player.
-    pub fn unicast<P>(
-        &self,
-        packet: P,
-        stream_id: ConnectionId,
-        system: EntityView<'_>,
-    ) -> anyhow::Result<()>
+    pub fn unicast<P>(&self, packet: P, stream_id: ConnectionId) -> anyhow::Result<()>
     where
         P: PacketBundle,
     {
@@ -259,8 +210,6 @@ impl Compose {
             packet,
             stream_id,
             compose: self,
-            system,
-
             // todo: Should we have this true by default, or is there a better way?
             // Or a better word for no_compress, or should we just use negative field names?
             compress: true,
@@ -273,7 +222,6 @@ impl Compose {
         &self,
         packet: &P,
         stream_id: ConnectionId,
-        system: EntityView<'_>,
     ) -> anyhow::Result<()>
     where
         P: valence_protocol::Packet + valence_protocol::Encode,
@@ -283,7 +231,6 @@ impl Compose {
             stream_id,
             compose: self,
             compress: false,
-            system,
         }
         .send()
     }
@@ -297,21 +244,15 @@ impl Compose {
 
     /// Obtain a thread-local scratch buffer.
     #[must_use]
-    pub fn scratch(&self, world: &World) -> &RefCell<Scratch> {
-        self.scratch.get(world)
+    pub fn scratch(&self) -> &RefCell<Scratch> {
+        self.scratch.get_or_default()
     }
 
     /// Obtain a thread-local [`libdeflater::Compressor`]
     #[must_use]
-    pub fn compressor(&self, world: &World) -> &RefCell<libdeflater::Compressor> {
-        self.compressor.get(world)
-    }
-
-    pub fn clear_bump(&mut self) {
-        self.bump_tracker.assert_no_references();
-        for bump in &mut self.bump {
-            bump.reset();
-        }
+    pub fn compressor(&self) -> &RefCell<libdeflater::Compressor> {
+        self.compressor
+            .get_or(|| RefCell::new(libdeflater::Compressor::new(self.compression_lvl)))
     }
 }
 
@@ -323,41 +264,37 @@ pub struct IoBuf {
     // broadcast_buffer: ThreadLocal<RefCell<BytesMut>>,
     temp_buffer: ThreadLocal<RefCell<BytesMut>>,
     idx: ThreadLocal<Cell<u16>>,
+    // TODO: Consider replacing this with some sort of append-only vec
+    packet_number: AtomicU32,
 }
 
 impl IoBuf {
-    pub fn fetch_add_idx(&self, world: &World) -> u16 {
-        let cell = self.idx.get(world);
+    pub fn fetch_add_idx(&self) -> u16 {
+        let cell = self.idx.get_or_default();
         let result = cell.get();
         cell.set(result + 1);
         result
-    }
-
-    pub fn order_id(&self, system_order: SystemOrder, world: &World) -> u32 {
-        (u32::from(system_order.value()) << 16) | u32::from(self.fetch_add_idx(world))
     }
 }
 
 /// A broadcast builder
 #[must_use]
-pub struct Broadcast<'a, 'b, P> {
+pub struct Broadcast<'a, P> {
     packet: P,
     compose: &'a Compose,
     exclude: u64,
-    system: EntityView<'b>,
 }
 
 /// A unicast builder
 #[must_use]
-struct Unicast<'a, 'b, P> {
+struct Unicast<'a, P> {
     packet: P,
     stream_id: ConnectionId,
     compose: &'a Compose,
     compress: bool,
-    system: EntityView<'b>,
 }
 
-impl<P> Unicast<'_, '_, P>
+impl<P> Unicast<'_, P>
 where
     P: PacketBundle,
 {
@@ -367,27 +304,22 @@ where
             self.stream_id,
             self.compose,
             self.compress,
-            self.system,
         )
     }
 }
 
-impl<P> Broadcast<'_, '_, P> {
+impl<P> Broadcast<'_, P> {
     /// Send the packet to all players.
     pub fn send(self) -> anyhow::Result<()>
     where
         P: PacketBundle,
     {
-        let world = self.system.world();
-
         let bytes = self
             .compose
             .io_buf
-            .encode_packet(self.packet, self.compose, &world)?;
+            .encode_packet(self.packet, self.compose)?;
 
-        self.compose
-            .io_buf
-            .broadcast_raw(&bytes, self.exclude, self.system);
+        self.compose.io_buf.broadcast_raw(&bytes, self.exclude);
 
         Ok(())
     }
@@ -400,37 +332,33 @@ impl<P> Broadcast<'_, '_, P> {
             packet: self.packet,
             compose: self.compose,
             exclude,
-            system: self.system,
         }
     }
 }
 
 #[must_use]
 #[expect(missing_docs)]
-pub struct BroadcastLocal<'a, 'b, P> {
+pub struct BroadcastLocal<'a, P> {
     packet: P,
     compose: &'a Compose,
     center: ChunkPosition,
     exclude: u64,
-    system: EntityView<'b>,
 }
 
-impl<P> BroadcastLocal<'_, '_, P> {
+impl<P> BroadcastLocal<'_, P> {
     /// Send the packet
     pub fn send(self) -> anyhow::Result<()>
     where
         P: PacketBundle,
     {
-        let world = self.system.world();
-
         let bytes = self
             .compose
             .io_buf
-            .encode_packet(self.packet, self.compose, &world)?;
+            .encode_packet(self.packet, self.compose)?;
 
         self.compose
             .io_buf
-            .broadcast_local_raw(&bytes, self.center, self.exclude, self.system);
+            .broadcast_local_raw(&bytes, self.center, self.exclude);
 
         Ok(())
     }
@@ -444,7 +372,6 @@ impl<P> BroadcastLocal<'_, '_, P> {
             compose: self.compose,
             center: self.center,
             exclude,
-            system: self.system,
         }
     }
 }
@@ -457,6 +384,8 @@ impl IoBuf {
             elem.set(0);
         }
 
+        *self.packet_number.get_mut() = 0;
+
         self.buffer.iter_mut().map(|x| x.borrow_mut()).map(|mut x| {
             let res = Bytes::copy_from_slice(x.as_slice());
             x.clear();
@@ -464,22 +393,24 @@ impl IoBuf {
         })
     }
 
-    fn encode_packet<P>(
-        &self,
-        packet: P,
-        compose: &Compose,
-        world: &World,
-    ) -> anyhow::Result<BytesMut>
+    fn next_packet_number(&self) -> u32 {
+        // Relaxed ordering is allowed here. If a system wanted a packet to be sent before another
+        // packet, there should already be a happens-before relationship between the two packets
+        // which would allow the second packet to receive a higher packet number.
+        self.packet_number.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn encode_packet<P>(&self, packet: P, compose: &Compose) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
     {
-        let temp_buffer = self.temp_buffer.get(world);
+        let temp_buffer = self.temp_buffer.get_or_default();
         let temp_buffer = &mut *temp_buffer.borrow_mut();
 
-        let compressor = compose.compressor(world);
+        let compressor = compose.compressor();
         let mut compressor = compressor.borrow_mut();
 
-        let scratch = compose.scratch.get(world);
+        let scratch = compose.scratch();
         let mut scratch = scratch.borrow_mut();
 
         let result =
@@ -490,11 +421,11 @@ impl IoBuf {
         Ok(result)
     }
 
-    fn encode_packet_no_compression<P>(&self, packet: P, world: &World) -> anyhow::Result<BytesMut>
+    fn encode_packet_no_compression<P>(&self, packet: P) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
     {
-        let temp_buffer = self.temp_buffer.get(world);
+        let temp_buffer = self.temp_buffer.get_or_default();
         let temp_buffer = &mut *temp_buffer.borrow_mut();
 
         let result = append_packet_without_compression(packet, temp_buffer)?;
@@ -508,38 +439,27 @@ impl IoBuf {
         id: ConnectionId,
         compose: &Compose,
         compress: bool,
-        system: EntityView<'_>,
     ) -> anyhow::Result<()>
     where
         P: PacketBundle,
     {
-        let world = system.world();
-
         let bytes = if compress {
-            self.encode_packet(packet, compose, &world)?
+            self.encode_packet(packet, compose)?
         } else {
-            self.encode_packet_no_compression(packet, &world)?
+            self.encode_packet_no_compression(packet)?
         };
 
-        self.unicast_raw(&bytes, id, system);
+        self.unicast_raw(&bytes, id);
         Ok(())
     }
 
-    fn broadcast_local_raw(
-        &self,
-        data: &[u8],
-        center: impl Into<ChunkPosition>,
-        exclude: u64,
-        system: EntityView<'_>,
-    ) {
+    fn broadcast_local_raw(&self, data: &[u8], center: impl Into<ChunkPosition>, exclude: u64) {
         let center = center.into();
-        let world = system.world();
-        let system_order = SystemOrder::of(system);
 
-        let buffer = self.buffer.get(&world);
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
-        let order = u32::from(system_order.value()) << 16;
+        let order = self.next_packet_number();
 
         let to_send = hyperion_proto::BroadcastLocal {
             data,
@@ -560,14 +480,11 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64, system: EntityView<'_>) {
-        let world = system.world();
-        let buffer = self.buffer.get(&world);
+    pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
-        let system_order = SystemOrder::of(system);
-
-        let order = u32::from(system_order.value()) << 16;
+        let order = self.next_packet_number();
 
         let to_send = hyperion_proto::BroadcastGlobal {
             data,
@@ -590,14 +507,11 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId, system: EntityView<'_>) {
-        let world = system.world();
-        let system_order = SystemOrder::of(system);
-
-        let buffer = self.buffer.get(&world);
+    pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
-        let order = self.order_id(system_order, &world);
+        let order = self.next_packet_number();
 
         let to_send = hyperion_proto::Unicast {
             data,
@@ -617,8 +531,8 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId, world: &World) {
-        let buffer = self.buffer.get(world);
+    pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let to_send = hyperion_proto::SetReceiveBroadcasts {
@@ -637,8 +551,8 @@ impl IoBuf {
         buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
     }
 
-    pub fn shutdown(&self, stream: ConnectionId, world: &World) {
-        let buffer = self.buffer.get(world);
+    pub fn shutdown(&self, stream: ConnectionId) {
+        let buffer = self.buffer.get_or_default();
         let buffer = &mut *buffer.borrow_mut();
 
         let to_send = hyperion_proto::Shutdown {

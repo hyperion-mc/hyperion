@@ -1,19 +1,18 @@
 use std::net::SocketAddr;
 
-use flecs_ecs::{core::World, prelude::*};
+use bevy::prelude::*;
 use hyperion::runtime::AsyncRuntime;
 use tokio::net::TcpListener;
 
-#[derive(Component)]
-pub struct HyperionProxyModule;
+pub struct HyperionProxyPlugin;
 
-#[derive(Component)]
-pub struct ProxyAddress {
+#[derive(Event)]
+pub struct SetProxyAddress {
     pub proxy: String,
     pub server: String,
 }
 
-impl Default for ProxyAddress {
+impl Default for SetProxyAddress {
     fn default() -> Self {
         Self {
             proxy: "0.0.0.0:25565".to_string(),
@@ -22,41 +21,27 @@ impl Default for ProxyAddress {
     }
 }
 
-impl Module for HyperionProxyModule {
-    fn module(world: &World) {
-        world.import::<hyperion::HyperionCore>();
-        world.component::<ProxyAddress>();
-
-        proxy_address_observer(world);
+impl Plugin for HyperionProxyPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_event::<SetProxyAddress>();
+        app.add_observer(update_proxy_address);
     }
 }
 
-fn proxy_address_observer(world: &World) {
-    let mut query = world.observer_named::<flecs::OnSet, (
-        &ProxyAddress, // (0)
-        &AsyncRuntime, // (1)
-    )>("proxy_address");
+fn update_proxy_address(trigger: Trigger<'_, SetProxyAddress>, runtime: Res<'_, AsyncRuntime>) {
+    let proxy = trigger.proxy.clone();
+    let server = trigger.server.clone();
 
-    #[rustfmt::skip]
-    query
-        .term_at(0).singleton()
-        .term_at(1).filter().singleton();
+    runtime.spawn(async move {
+        let listener = TcpListener::bind(&proxy).await.unwrap();
+        tracing::info!("Listening on {proxy}");
 
-    query.each(|(addresses, runtime)| {
-        let proxy = addresses.proxy.clone();
-        let server = addresses.server.clone();
+        let server: SocketAddr = tokio::net::lookup_host(&server)
+            .await
+            .unwrap()
+            .next()
+            .unwrap();
 
-        runtime.spawn(async move {
-            let listener = TcpListener::bind(&proxy).await.unwrap();
-            tracing::info!("Listening on {proxy}");
-
-            let server: SocketAddr = tokio::net::lookup_host(&server)
-                .await
-                .unwrap()
-                .next()
-                .unwrap();
-
-            hyperion_proxy::run_proxy(listener, server).await.unwrap();
-        });
+        hyperion_proxy::run_proxy(listener, server).await.unwrap();
     });
 }

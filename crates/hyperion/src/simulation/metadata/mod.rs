@@ -1,18 +1,11 @@
 use std::fmt::Debug;
 
-use flecs_ecs::{
-    addons::Meta,
-    core::{
-        ComponentId, Entity, EntityView, IdOperations, SystemAPI, World, WorldProvider, flecs, id,
-    },
-    macros::Component,
-};
+use bevy::prelude::*;
+use hyperion_utils::{Prev, track_prev};
+use tracing::error;
 use valence_protocol::{Encode, VarInt};
 
-use crate::{
-    Prev,
-    simulation::metadata::entity::{EntityFlags, Pose},
-};
+use crate::simulation::metadata::entity::{EntityFlags, Pose};
 
 pub mod block_display;
 pub mod display;
@@ -20,105 +13,79 @@ pub mod entity;
 pub mod living_entity;
 pub mod player;
 
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct MetadataPrefabs {
-    pub entity_base: Entity,
+/// Set up a system to track metadata changes
+fn component_and_track<T>(app: &mut App)
+where
+    T: Component + Copy + PartialEq + Metadata + Default + Debug,
+{
+    track_prev::<T>(app);
 
-    pub display_base: Entity,
-    pub block_display_base: Entity,
-
-    pub living_entity_base: Entity,
-    pub player_base: Entity,
+    // TODO: This will silently ignore changes to the metadata between this system's execution and
+    // the time that Prev is updated. There should be a warning for this.
+    app.add_systems(
+        FixedPostUpdate,
+        |mut query: Query<'_, '_, (&Prev<T>, &T, &mut MetadataChanges)>| {
+            for (prev, current, mut metadata_changes) in &mut query {
+                if **prev != *current {
+                    metadata_changes.encode(*current);
+                }
+            }
+        },
+    );
 }
 
-fn component_and_track<T>(world: &World) -> fn(&mut EntityView<'_>)
-where
-    T: ComponentId + Copy + PartialEq + Metadata + Default + flecs_ecs::core::DataComponent + Debug,
-    <T as ComponentId>::UnderlyingType: Meta<<T as ComponentId>::UnderlyingType>,
-{
-    world.component::<T>().meta();
-    let type_name = core::any::type_name::<T>();
-
-    let system_name = format!("exchange_{type_name}").leak();
-
-    world
-        .system_named::<(
-            &mut (Prev, T),       //            (0)
-            &mut T,               //                  (1)
-            &mut MetadataChanges, //     (2)
-        )>(system_name)
-        .kind(id::<flecs::pipeline::OnUpdate>())
-        .each(|(prev, current, metadata_changes)| {
-            if prev != current {
-                metadata_changes.encode(*current);
-            }
-            *prev = *current;
-        });
-
-    let register = |view: &mut EntityView<'_>| {
-        view.set_pair::<Prev, _>(T::default()).set(T::default());
+fn initialize_entity(
+    trigger: Trigger<'_, OnInsert, EntityKind>,
+    query: Query<'_, '_, &EntityKind>,
+    mut commands: Commands<'_, '_>,
+) {
+    let kind = match query.get(trigger.target()) {
+        Ok(kind) => *kind,
+        Err(e) => {
+            error!("failed to initialize entity: query failed: {e}");
+            return;
+        }
     };
 
-    register
-}
+    let mut entity = commands.entity(trigger.target());
 
-trait EntityViewExt {
-    fn component_and_track<T>(self) -> Self
-    where
-        T: ComponentId
-            + Copy
-            + PartialEq
-            + Metadata
-            + Default
-            + flecs_ecs::core::DataComponent
-            + Debug,
-        <T as ComponentId>::UnderlyingType: Meta<<T as ComponentId>::UnderlyingType>;
-}
+    entity.insert((
+        MetadataChanges::default(),
+        EntityFlags::default(),
+        Pose::default(),
+        entity::default_components(),
+    ));
 
-impl EntityViewExt for EntityView<'_> {
-    fn component_and_track<T>(mut self) -> Self
-    where
-        T: ComponentId
-            + Copy
-            + PartialEq
-            + Metadata
-            + Default
-            + flecs_ecs::core::DataComponent
-            + Debug,
-        <T as ComponentId>::UnderlyingType: Meta<<T as ComponentId>::UnderlyingType>,
-    {
-        let world = self.world();
-        // todo: how this possible exclusive mut
-        component_and_track::<T>(&world)(&mut self);
-        self
+    match kind {
+        EntityKind::BlockDisplay => {
+            entity.insert((
+                display::default_components(),
+                block_display::default_components(),
+            ));
+        }
+        EntityKind::Player => {
+            entity.insert((
+                living_entity::default_components(),
+                player::default_components(),
+            ));
+        }
+        _ => {}
     }
 }
 
-#[must_use]
-pub fn register_prefabs(world: &World) -> MetadataPrefabs {
-    world.component::<MetadataChanges>();
+pub struct MetadataPlugin;
 
-    let entity_base = entity::register_prefab(world, None)
-        .add(id::<MetadataChanges>())
-        .component_and_track::<EntityFlags>()
-        .component_and_track::<Pose>()
-        .id();
+impl Plugin for MetadataPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(initialize_entity);
+        component_and_track::<EntityFlags>(app);
+        component_and_track::<Pose>(app);
 
-    let display_base = display::register_prefab(world, Some(entity_base)).id();
-    let block_display_base = block_display::register_prefab(world, Some(display_base)).id();
-
-    let living_entity_base = living_entity::register_prefab(world, Some(entity_base)).id();
-    let player_base = player::register_prefab(world, Some(living_entity_base))
-        // .add(id::<Player>())
-        .add_enum(EntityKind::Player)
-        .id();
-
-    MetadataPrefabs {
-        entity_base,
-        display_base,
-        block_display_base,
-        living_entity_base,
-        player_base,
+        entity::register(app);
+        display::register(app);
+        block_display::register(app);
+        living_entity::register(app);
+        player::register(app);
     }
 }
 
@@ -131,11 +98,6 @@ use crate::simulation::metadata::r#type::MetadataType;
 ///
 /// Tracks updates within a gametick for the metadata
 pub struct MetadataChanges(Vec<u8>);
-
-unsafe impl Send for MetadataChanges {}
-
-// technically not Sync but I mean do we really care? todo: Indra
-unsafe impl Sync for MetadataChanges {}
 
 mod status;
 
@@ -161,7 +123,6 @@ macro_rules! define_metadata_component {
             Debug
         )]
         #[allow(clippy::derive_partial_eq_without_eq)]
-        #[meta]
         pub struct $name {
             value: $type,
         }
@@ -189,20 +150,6 @@ macro_rules! define_metadata_component {
 }
 
 #[macro_export]
-macro_rules! register_component_ids {
-    ($world:expr, $entity:ident, $($name:ident),* $(,)?) => {
-        {
-            $(
-                let reg = $crate::simulation::metadata::component_and_track::<$name>($world);
-                reg(&mut $entity);
-            )*
-
-            $entity
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! define_and_register_components {
     {
         $(
@@ -214,20 +161,18 @@ macro_rules! define_and_register_components {
             $crate::define_metadata_component!($index, $name -> $type);
         )*
 
-        // Create the registration function
+        pub fn register(app: &mut App) {
+            $(
+                $crate::simulation::metadata::component_and_track::<$name>(app);
+            )*
+        }
+
         #[must_use]
-        pub fn register_prefab(world: &World, entity_base: Option<Entity>) -> EntityView<'_> {
-            // todo: add name
-            let mut entity = world.prefab();
-
-            if let Some(entity_base) = entity_base {
-                entity = entity.is_a(entity_base);
-            }
-
-            $crate::register_component_ids!(
-                world,
-                entity,
-                $($name),*
+        pub fn default_components() -> impl bevy::ecs::bundle::Bundle {
+            (
+                $(
+                    $name::default(),
+                )*
             )
         }
     };

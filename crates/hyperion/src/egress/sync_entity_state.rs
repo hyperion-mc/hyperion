@@ -1,207 +1,148 @@
-use std::fmt::Debug;
-
-use flecs_ecs::prelude::*;
+use bevy::{ecs::batching::BatchingStrategy, prelude::*};
 use glam::{IVec3, Vec3};
-use hyperion_utils::EntityExt;
+use hyperion_utils::{EntityExt, Prev, track_prev};
 use itertools::Either;
+use tracing::error;
+use valence_bytes::CowBytes;
 use valence_protocol::{
     ByteAngle, RawBytes, VarInt,
     packets::play::{self},
 };
 
 use crate::{
-    Prev,
+    Blocks,
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
-        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
+        EntitySize, Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position,
+        Velocity, Xp, Yaw,
         animation::ActiveAnimation,
-        blocks::Blocks,
-        entity_kind::EntityKind,
-        event::{self, HitGroundEvent},
+        event,
+        event::HitGroundEvent,
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
-    spatial::get_first_collision,
-    storage::Events,
+    spatial::{SpatialIndex, get_first_collision},
 };
 
-#[derive(Component)]
-pub struct EntityStateSyncModule;
+pub struct EntityStateSyncPlugin;
 
-fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
-    let post_store = world
-        .entity_named("post_store")
-        .add(id::<flecs::pipeline::Phase>())
-        .depends_on(id::<flecs::pipeline::OnStore>());
+fn entity_xp_sync(
+    compose: Res<'_, Compose>,
+    query: Query<'_, '_, (&ConnectionId, &Prev<Xp>, &Xp)>,
+) {
+    for (&connection_id, prev_xp, current) in query.iter() {
+        if **prev_xp != *current {
+            let visual = current.get_visual();
 
-    // we include names so that if we call this multiple times, we don't get multiple observers/systems
-    let component_name = std::any::type_name::<T>();
+            let packet = play::ExperienceBarUpdateS2c {
+                bar: visual.prop,
+                level: VarInt(i32::from(visual.level)),
+                total_xp: VarInt::default(),
+            };
 
-    // get the last stuff after ::
-    let component_name = component_name.split("::").last().unwrap();
-    let component_name = component_name.to_lowercase();
-
-    let observer_name = format!("init_prev_{component_name}");
-    let system_name = format!("track_prev_{component_name}");
-
-    world
-        .observer_named::<flecs::OnSet, &T>(&observer_name)
-        .without((id::<Prev>(), id::<T>())) // we have not set Prev yet
-        .each_entity(|entity, value| {
-            entity.set_pair::<Prev, T>(*value);
-        });
-
-    world
-        .system_named::<(&mut (Prev, T), &T)>(system_name.as_str())
-        .kind(post_store)
-        .each(|(prev, value)| {
-            *prev = *value;
-        });
+            compose.unicast(&packet, connection_id).unwrap();
+        }
+    }
 }
 
-impl Module for EntityStateSyncModule {
-    fn module(world: &World) {
-        world
-            .system_named::<(
-                &Compose,        // (0)
-                &ConnectionId,   // (1)
-                &mut (Prev, Xp), // (2)
-                &mut Xp,         // (3)
-            )>("entity_xp_sync")
-            .term_at(0u32)
-            .singleton()
-            .kind(id::<flecs::pipeline::OnStore>())
-            .each_iter(|table, idx, (compose, net, prev_xp, current)| {
-                const {
-                    assert!(size_of::<Xp>() == size_of::<u16>());
-                    assert!(align_of::<Xp>() == align_of::<u16>());
-                }
-                let system = table.system();
+fn entity_metadata_sync(
+    compose: Res<'_, Compose>,
+    mut query: Query<'_, '_, (Entity, &Position, &mut MetadataChanges)>,
+) {
+    for (entity_id, position, mut metadata_changes) in &mut query {
+        let metadata = get_and_clear_metadata(&mut metadata_changes);
 
-                if prev_xp != current {
-                    let visual = current.get_visual();
+        if let Some(view) = metadata {
+            let pkt = play::EntityTrackerUpdateS2c {
+                entity_id: VarInt(entity_id.minecraft_id()),
+                tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+            };
+            compose
+                .broadcast_local(&pkt, position.to_chunk())
+                .send()
+                .unwrap();
+        }
+    }
+}
 
-                    let packet = play::ExperienceBarUpdateS2c {
-                        bar: visual.prop,
-                        level: VarInt(i32::from(visual.level)),
-                        total_xp: VarInt::default(),
-                    };
+fn active_animation_sync(
+    compose: Res<'_, Compose>,
+    mut query: Query<'_, '_, (Entity, &Position, &ConnectionId, &mut ActiveAnimation)>,
+) {
+    for (entity, position, &connection_id, mut animation) in &mut query {
+        let entity_id = VarInt(entity.minecraft_id());
 
-                    let entity = table.entity(idx).expect("idx must be in bounds");
-                    entity.modified(id::<Xp>());
+        let chunk_pos = position.to_chunk();
 
-                    compose.unicast(&packet, *net, system).unwrap();
-                }
+        for pkt in animation.packets(entity_id) {
+            compose
+                .broadcast_local(&pkt, chunk_pos)
+                .exclude(Some(connection_id))
+                .send()
+                .unwrap();
+        }
 
-                *prev_xp = *current;
-            });
+        animation.clear();
+    }
+}
 
-        system!("entity_metadata_sync", world, &Compose($), &mut MetadataChanges)
-            .kind(id::<flecs::pipeline::OnStore>())
-            .each_iter(move |it, row, (compose, metadata_changes)| {
-                let system = it.system();
-                let entity = it.entity(row).expect("row must be in bounds");
-                let entity_id = VarInt(entity.minecraft_id());
-
-                let metadata = get_and_clear_metadata(metadata_changes);
-
-                if let Some(view) = metadata {
-                    let pkt = play::EntityTrackerUpdateS2c {
-                        entity_id,
-                        tracked_values: RawBytes(&view),
-                    };
-                    if entity.has(id::<Position>()) {
-                        entity.get::<&Position>(|position| {
-                            compose
-                                .broadcast_local(&pkt, position.to_chunk(), system)
-                                .send()
-                                .unwrap();
-                        });
-                        return;
-                    }
-                    // Should never be reached but who knows
-                    compose.broadcast(&pkt, system).send().unwrap();
-                }
-            });
-
-        system!(
-        "active_animation_sync",
-        world,
-        &Position,
-        &Compose($),
-        ?&ConnectionId,
-        &mut ActiveAnimation,
-        )
-        .kind(id::<flecs::pipeline::OnStore>())
-        .each_iter(
-            move |it, row, (position, compose, connection_id, animation)| {
-                let io = connection_id.copied();
-
-                let entity = it.entity(row).expect("row must be in bounds");
-                let system = it.system();
-
-                let entity_id = VarInt(entity.minecraft_id());
-
-                let chunk_pos = position.to_chunk();
-
-                for pkt in animation.packets(entity_id) {
-                    compose
-                        .broadcast_local(&pkt, chunk_pos, system)
-                        .exclude(io)
-                        .send()
-                        .unwrap();
-                }
-
-                animation.clear();
-            },
-        );
-
-        // What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
-        // IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs
-        system!(
-            "sync_player_entity",
-            world,
-            &Compose($),
-            &mut Events($),
-            &mut (Prev, Yaw),
-            &mut (Prev, Pitch),
-            &mut Position,
+/// What ever you do DO NOT!!! I REPEAT DO NOT SET VELOCITY ANYWHERE
+/// IF YOU WANT TO APPLY VELOCITY SEND 1 VELOCITY PAKCET WHEN NEEDED LOOK in events/tag/src/module/attack.rs
+fn sync_player_entity(
+    compose: Res<'_, Compose>,
+    blocks: Res<'_, Blocks>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            Entity,
+            &Prev<Yaw>,
+            &Prev<Pitch>,
+            &Position,
             &mut Velocity,
             &Yaw,
             &Pitch,
-            ?&mut PendingTeleportation,
+            Option<&mut PendingTeleportation>,
             &mut MovementTracking,
             &Flight,
-        )
-        .kind(id::<flecs::pipeline::PreStore>())
-        .each_iter(
-            |it,
-             row,
-             (
-                compose,
-                events,
+        ),
+    >,
+    mut event_writer: EventWriter<'_, HitGroundEvent>,
+    commands: ParallelCommands<'_, '_>,
+) {
+    let events = boxcar::Vec::new();
+    query
+        .par_iter_mut()
+        .batching_strategy(BatchingStrategy {
+            batch_size_limits: 1..128,
+            batches_per_thread: 1,
+        })
+        .for_each(
+            |(
+                entity,
                 prev_yaw,
                 prev_pitch,
                 position,
-                velocity,
+                mut velocity,
                 yaw,
                 pitch,
                 pending_teleport,
-                tracking,
+                mut tracking,
                 flight,
             )| {
-                let world = it.system().world();
-                let system = it.system();
-                let entity = it.entity(row).expect("row must be in bounds");
                 let entity_id = VarInt(entity.minecraft_id());
 
-                if let Some(pending_teleport) = pending_teleport {
+                if let Some(mut pending_teleport) = pending_teleport {
                     if pending_teleport.ttl == 0 {
-                        entity.set::<PendingTeleportation>(PendingTeleportation::new(
-                            pending_teleport.destination,
-                        ));
+                        // This needs to trigger OnInsert, so pending_teleport cannot be modified directly
+                        commands.command_scope(|mut commands| {
+                            commands
+                                .entity(entity)
+                                .insert(PendingTeleportation::new(pending_teleport.destination));
+                        });
+                    } else {
+                        pending_teleport.ttl -= 1;
                     }
-                    pending_teleport.ttl -= 1;
                 } else {
                     let chunk_pos = position.to_chunk();
 
@@ -209,10 +150,10 @@ impl Module for EntityStateSyncModule {
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
                     let changed_position = **position != tracking.last_tick_position;
 
-                    let look_changed = (**yaw - **prev_yaw).abs() >= 0.01
-                        || (**pitch - **prev_pitch).abs() >= 0.01;
+                    let look_changed = (**yaw - ***prev_yaw).abs() >= 0.01
+                        || (**pitch - ***prev_pitch).abs() >= 0.01;
 
-                    let mut bundle = DataBundle::new(compose, system);
+                    let mut bundle = DataBundle::new(&compose);
 
                     // Maximum number of movement packets allowed during 1 tick is 5
                     if tracking.received_movement_packets > 5 {
@@ -224,75 +165,59 @@ impl Module for EntityStateSyncModule {
                         - tracking.server_velocity.length_squared()
                         > 100f64 * f64::from(tracking.received_movement_packets)
                     {
-                        entity.set(PendingTeleportation::new(tracking.last_tick_position));
+                        commands.command_scope(|mut commands| {
+                            commands
+                                .entity(entity)
+                                .insert(PendingTeleportation::new(tracking.last_tick_position));
+                        });
                         tracking.received_movement_packets = 0;
                         return;
                     }
 
-                    world.get::<&mut Blocks>(|blocks| {
-                        let grounded = is_grounded(position, blocks);
-                        tracking.was_on_ground = grounded;
-                        if grounded
-                            && !tracking.last_tick_flying
-                            && tracking.fall_start_y - position.y > 3.
-                        {
-                            let event = HitGroundEvent {
-                                client: *entity,
-                                fall_distance: tracking.fall_start_y - position.y,
-                            };
-                            events.push(event, &world);
-                            tracking.fall_start_y = position.y;
-                        }
+                    let grounded = is_grounded(position, &blocks);
+                    tracking.was_on_ground = grounded;
+                    if grounded
+                        && !tracking.last_tick_flying
+                        && tracking.fall_start_y - position.y > 3.
+                    {
+                        let event = HitGroundEvent {
+                            client: entity,
+                            fall_distance: tracking.fall_start_y - position.y,
+                        };
+                        events.push(event);
+                        tracking.fall_start_y = position.y;
+                    }
 
-                        if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
-                            tracking.fall_start_y = position.y;
-                        }
+                    if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
+                        tracking.fall_start_y = position.y;
+                    }
 
-                        if changed_position && !needs_teleport && look_changed {
-                            let packet = play::RotateAndMoveRelativeS2c {
+                    if changed_position && !needs_teleport && look_changed {
+                        let packet = play::RotateAndMoveRelativeS2c {
+                            entity_id,
+                            #[allow(clippy::cast_possible_truncation)]
+                            delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                            yaw: ByteAngle::from_degrees(**yaw),
+                            pitch: ByteAngle::from_degrees(**pitch),
+                            on_ground: grounded,
+                        };
+
+                        bundle.add_packet(&packet).unwrap();
+                    } else {
+                        if changed_position && !needs_teleport {
+                            let packet = play::MoveRelativeS2c {
                                 entity_id,
                                 #[allow(clippy::cast_possible_truncation)]
                                 delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
                                 on_ground: grounded,
-                            };
-
-                            bundle.add_packet(&packet).unwrap();
-                        } else {
-                            if changed_position && !needs_teleport {
-                                let packet = play::MoveRelativeS2c {
-                                    entity_id,
-                                    #[allow(clippy::cast_possible_truncation)]
-                                    delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                    on_ground: grounded,
-                                };
-
-                                bundle.add_packet(&packet).unwrap();
-                            }
-
-                            if look_changed {
-                                let packet = play::RotateS2c {
-                                    entity_id,
-                                    yaw: ByteAngle::from_degrees(**yaw),
-                                    pitch: ByteAngle::from_degrees(**pitch),
-                                    on_ground: grounded,
-                                };
-
-                                bundle.add_packet(&packet).unwrap();
-                            }
-                            let packet = play::EntitySetHeadYawS2c {
-                                entity_id,
-                                head_yaw: ByteAngle::from_degrees(**yaw),
                             };
 
                             bundle.add_packet(&packet).unwrap();
                         }
 
-                        if needs_teleport {
-                            let packet = play::EntityPositionS2c {
+                        if look_changed {
+                            let packet = play::RotateS2c {
                                 entity_id,
-                                position: position.as_dvec3(),
                                 yaw: ByteAngle::from_degrees(**yaw),
                                 pitch: ByteAngle::from_degrees(**pitch),
                                 on_ground: grounded,
@@ -300,7 +225,25 @@ impl Module for EntityStateSyncModule {
 
                             bundle.add_packet(&packet).unwrap();
                         }
-                    });
+                        let packet = play::EntitySetHeadYawS2c {
+                            entity_id,
+                            head_yaw: ByteAngle::from_degrees(**yaw),
+                        };
+
+                        bundle.add_packet(&packet).unwrap();
+                    }
+
+                    if needs_teleport {
+                        let packet = play::EntityPositionS2c {
+                            entity_id,
+                            position: position.as_dvec3(),
+                            yaw: ByteAngle::from_degrees(**yaw),
+                            pitch: ByteAngle::from_degrees(**pitch),
+                            on_ground: grounded,
+                        };
+
+                        bundle.add_packet(&packet).unwrap();
+                    }
 
                     if velocity.0 != Vec3::ZERO {
                         let packet = play::EntityVelocityUpdateS2c {
@@ -321,20 +264,17 @@ impl Module for EntityStateSyncModule {
 
                 let mut friction = 0.91;
 
+                #[allow(clippy::cast_possible_truncation)]
                 if tracking.was_on_ground {
                     tracking.server_velocity.y = 0.;
-                    #[allow(clippy::cast_possible_truncation)]
-                    world.get::<&mut Blocks>(|blocks| {
-                        let block_x = position.x as i32;
-                        let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
-                        let block_z = position.z as i32;
+                    let block_x = position.x as i32;
+                    let block_y = (position.y.ceil() - 1.0) as i32; // Check the block directly below
+                    let block_z = position.z as i32;
 
-                        if let Some(state) = blocks.get_block(IVec3::new(block_x, block_y, block_z))
-                        {
-                            let kind = state.to_kind();
-                            friction = f64::from(0.91 * kind.slipperiness() * kind.speed_factor());
-                        }
-                    });
+                    if let Some(state) = blocks.get_block(IVec3::new(block_x, block_y, block_z)) {
+                        let kind = state.to_kind();
+                        friction = f64::from(0.91 * kind.slipperiness() * kind.speed_factor());
+                    }
                 }
 
                 tracking.server_velocity.x *= friction * 0.98;
@@ -355,82 +295,104 @@ impl Module for EntityStateSyncModule {
             },
         );
 
-        system!(
-            "update_projectile_positions",
-            world,
-            &mut Position,
-            &mut Velocity,
-            &Owner,
-            ?&ConnectionId
-        )
-        .kind(id::<flecs::pipeline::OnUpdate>())
-        .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (position, velocity, owner, connection_id)| {
-            if let Some(_connection_id) = connection_id {
-                return;
+    event_writer.write_batch(events);
+}
+
+fn update_projectile_positions(
+    arrow_query: Query<'_, '_, (Entity, &Owner)>,
+    mut query_set: ParamSet<
+        '_,
+        '_,
+        (
+            Query<'_, '_, (&mut Position, &mut Velocity)>,
+            Query<'_, '_, (&Position, &EntitySize)>,
+        ),
+    >,
+    mut projectile_block_writer: EventWriter<'_, event::ProjectileBlockEvent>,
+    mut projectile_entity_writer: EventWriter<'_, event::ProjectileEntityEvent>,
+    index: Res<'_, SpatialIndex>,
+    blocks: Res<'_, Blocks>,
+) {
+    for (arrow_entity, owner) in arrow_query.iter() {
+        let pv_query = query_set.p0();
+        let (position, velocity) = match pv_query.get(arrow_entity) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("failed to update projectile positions: query failed: {e}");
+                continue;
             }
+        };
 
-            let system = it.system();
-            let world = system.world();
-            let arrow_entity = it.entity(row).expect("row must be in bounds");
+        if velocity.0 == Vec3::ZERO {
+            continue;
+        }
 
-            if velocity.0 != Vec3::ZERO {
-                let center = **position;
+        let center = **position;
 
-                // getting max distance
-                let distance = velocity.0.length();
+        // getting max distance
+        let distance = velocity.0.length();
 
-                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
+        let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
-                let Some(collision) = get_first_collision(ray, &world, Some(owner.entity)) else {
-                    // Drag (0.99 / 20.0)
-                    // 1.0 - (0.99 / 20.0) * 0.05
-                    velocity.0 *= 0.997_525;
-
-                    // Gravity (20 MPSS)
-                    velocity.0.y -= 0.05;
-
-                    // Terminal Velocity max (100.0)
-                    velocity.0 = velocity.0.clamp_length_max(100.0);
-
-                    position.x += velocity.0.x;
-                    position.y += velocity.0.y;
-                    position.z += velocity.0.z;
-                    return;
+        match get_first_collision(ray, &index, &blocks, query_set.p1(), Some(owner.entity)) {
+            Some(Either::Left(entity)) => {
+                // send event
+                projectile_entity_writer.write(event::ProjectileEntityEvent {
+                    client: entity,
+                    projectile: arrow_entity,
+                });
+            }
+            Some(Either::Right(collision)) => {
+                // send event
+                projectile_block_writer.write(event::ProjectileBlockEvent {
+                    collision,
+                    projectile: arrow_entity,
+                });
+            }
+            None => {
+                let mut pv_query = query_set.p0();
+                let (mut position, mut velocity) = match pv_query.get_mut(arrow_entity) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("failed to update projectile positions: query failed: {e}");
+                        continue;
+                    }
                 };
 
-                match collision {
-                    Either::Left(entity) => {
-                        let entity = entity.entity_view(world);
-                        // send event
-                        world.get::<&mut Events>(|events| {
-                            events.push(
-                                event::ProjectileEntityEvent {
-                                    client: *entity,
-                                    projectile: *arrow_entity,
-                                },
-                                &world,
-                            );
-                        });
-                    }
-                    Either::Right(collision) => {
-                        // send event
-                        world.get::<&mut Events>(|events| {
-                            events.push(
-                                event::ProjectileBlockEvent {
-                                    collision,
-                                    projectile: *arrow_entity,
-                                },
-                                &world,
-                            );
-                        });
-                    }
-                }
-            }
-        });
+                // Drag (0.99 / 20.0)
+                // 1.0 - (0.99 / 20.0) * 0.05
+                velocity.0 *= 0.997_525;
 
-        track_previous::<Position>(world);
-        track_previous::<Yaw>(world);
-        track_previous::<Pitch>(world);
+                // Gravity (20 MPSS)
+                velocity.0.y -= 0.05;
+
+                // Terminal Velocity max (100.0)
+                velocity.0 = velocity.0.clamp_length_max(100.0);
+
+                position.x += velocity.0.x;
+                position.y += velocity.0.y;
+                position.z += velocity.0.z;
+            }
+        }
+    }
+}
+
+impl Plugin for EntityStateSyncPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            FixedPostUpdate,
+            (
+                entity_xp_sync,
+                entity_metadata_sync,
+                active_animation_sync,
+                sync_player_entity,
+                update_projectile_positions,
+            ),
+        );
+
+        track_prev::<Xp>(app);
+        track_prev::<Position>(app);
+        track_prev::<Yaw>(app);
+        track_prev::<Pitch>(app);
     }
 }

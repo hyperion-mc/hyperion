@@ -1,8 +1,9 @@
+use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldGet, WorldProvider, id};
 use hyperion::net::{Compose, ConnectionId, agnostic};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use hyperion_rank_tree::{Class, Team};
+use tracing::error;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "class")]
@@ -12,36 +13,39 @@ pub struct ClassCommand {
     team: Team,
 }
 impl MinecraftCommand for ClassCommand {
-    fn execute(self, system: EntityView<'_>, caller: Entity) {
+    type State = SystemState<(
+        Res<'static, Compose>,
+        Query<'static, 'static, (&'static ConnectionId, &'static Team, &'static Class)>,
+        Commands<'static, 'static>,
+    )>;
+
+    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+        let (compose, query, mut commands) = state.get(world);
         let class_param = self.class;
         let team_param = self.team;
 
-        let world = system.world();
+        let (&connection_id, team, class) = match query.get(caller) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("class command failed: query failed: {e}");
+                return;
+            }
+        };
 
-        world.get::<&Compose>(|compose| {
-            let caller = caller.entity_view(world);
-            caller.get::<(&ConnectionId, &mut Team, &mut Class)>(|(stream, team, class)| {
-                if *team == team_param && *class == class_param {
-                    let chat_pkt = agnostic::chat("§cYou’re already using this class!");
+        if *team == team_param && *class == class_param {
+            let chat_pkt = agnostic::chat("§cYou’re already using this class!");
 
-                    compose.unicast(&chat_pkt, *stream, system).unwrap();
-                    return;
-                }
+            compose.unicast(&chat_pkt, connection_id).unwrap();
+            return;
+        }
 
-                if *team != team_param {
-                    *team = team_param;
-                    caller.modified(id::<Team>());
-                }
+        commands
+            .entity(caller)
+            .insert(team_param)
+            .insert(class_param);
 
-                if *class != class_param {
-                    *class = class_param;
-                    caller.modified(id::<Class>());
-                }
-
-                let msg = format!("Setting rank to {class:?}");
-                let chat = agnostic::chat(msg);
-                compose.unicast(&chat, *stream, system).unwrap();
-            });
-        });
+        let msg = format!("Setting rank to {class_param:?}");
+        let chat = agnostic::chat(msg);
+        compose.unicast(&chat, connection_id).unwrap();
     }
 }

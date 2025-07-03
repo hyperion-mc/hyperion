@@ -1,8 +1,7 @@
-use flecs_ecs::{core::ComponentOrPairId, macros::Component};
+use bevy::prelude::*;
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
-#[meta]
 pub enum EntityKind {
     Allay = 0,
     AreaEffectCloud = 1,

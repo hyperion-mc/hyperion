@@ -1,135 +1,124 @@
+use bevy::prelude::*;
 use hyperion::{
-    flecs_ecs::{
-        self,
-        core::{id, EntityViewGet, World, WorldGet},
-        macros::Component,
-        prelude::Module,
-    },
-    net::{ConnectionId, DataBundle},
-    protocol::{
-        game_mode::OptGameMode,
-        packets::play::{self, PlayerAbilitiesS2c},
-        BlockPos, ByteAngle, GlobalPos, VarInt,
-    },
-    server::{abilities::PlayerAbilitiesFlags, ident, GameMode},
+    ingress,
+    net::{Compose, DataBundle},
     simulation::{
-        event::{ClientStatusCommand, ClientStatusEvent},
-        handlers::PacketSwitchQuery,
         metadata::{entity::Pose, living_entity::Health},
-        packet::HandlerRegistry,
+        packet::play,
         Flight, FlyingSpeed, Pitch, Position, Uuid, Xp, Yaw,
     },
 };
-use hyperion_utils::{EntityExt, LifetimeHandle};
+use tracing::error;
+use valence_protocol::{
+    game_mode::OptGameMode,
+    packets::play::{
+        player_abilities_s2c::{PlayerAbilitiesFlags, PlayerAbilitiesS2c},
+        ClientStatusC2s, ExperienceBarUpdateS2c, HealthUpdateS2c, PlayerRespawnS2c, PlayerSpawnS2c,
+    },
+    BlockPos, ByteAngle, GlobalPos, VarInt,
+};
+use valence_server::{ident, GameMode};
 
-#[derive(Component)]
-pub struct RespawnModule;
+fn handle_respawn(
+    mut packets: EventReader<'_, '_, play::ClientStatus>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &mut Health,
+            &mut Pose,
+            &Uuid,
+            &Position,
+            &Yaw,
+            &Pitch,
+            &Xp,
+            &Flight,
+            &FlyingSpeed,
+        ),
+    >,
+    compose: Res<'_, Compose>,
+) {
+    for packet in packets.read() {
+        if !matches!(**packet, ClientStatusC2s::PerformRespawn) {
+            continue;
+        }
 
-impl Module for RespawnModule {
-    fn module(world: &World) {
-        world.get::<&mut HandlerRegistry>(|registry| {
-            registry.add_handler(Box::new(
-                |event: &ClientStatusEvent,
-                 _: &dyn LifetimeHandle<'_>,
-                 query: &mut PacketSwitchQuery<'_>| {
-                    if event.status == ClientStatusCommand::RequestStats {
-                        return Ok(());
-                    }
+        let (mut health, mut pose, uuid, position, yaw, pitch, xp, flight, flying_speed) =
+            match query.get_mut(packet.sender()) {
+                Ok(data) => data,
+                Err(e) => {
+                    error!("failed to handle respawn: query failed: {e}");
+                    continue;
+                }
+            };
 
-                    let client = event.client.entity_view(query.world);
+        health.heal(20.);
 
-                    client.get::<(
-                        &ConnectionId,
-                        &mut Health,
-                        &mut Pose,
-                        &Uuid,
-                        &Position,
-                        &Yaw,
-                        &Pitch,
-                        &Xp,
-                        &Flight,
-                        &FlyingSpeed,
-                    )>(
-                        |(
-                            connection,
-                            health,
-                            pose,
-                            uuid,
-                            position,
-                            yaw,
-                            pitch,
-                            xp,
-                            flight,
-                            flying_speed,
-                        )| {
-                            health.heal(20.);
+        *pose = Pose::Standing;
 
-                            *pose = Pose::Standing;
-                            client.modified(id::<Pose>()); // this is so observers detect the change
+        let pkt_health = HealthUpdateS2c {
+            health: health.abs(),
+            food: VarInt(20),
+            food_saturation: 5.0,
+        };
 
-                            let pkt_health = play::HealthUpdateS2c {
-                                health: health.abs(),
-                                food: VarInt(20),
-                                food_saturation: 5.0,
-                            };
+        let pkt_respawn = PlayerRespawnS2c {
+            dimension_type_name: ident!("minecraft:overworld"),
+            dimension_name: ident!("minecraft:overworld"),
+            hashed_seed: 0,
+            game_mode: GameMode::Survival,
+            previous_game_mode: OptGameMode::default(),
+            is_debug: false,
+            is_flat: false,
+            copy_metadata: false,
+            last_death_location: Option::from(GlobalPos {
+                dimension_name: ident!("minecraft:overworld"),
+                position: BlockPos::from(position.as_dvec3()),
+            }),
+            portal_cooldown: VarInt::default(),
+        };
 
-                            let pkt_respawn = play::PlayerRespawnS2c {
-                                dimension_type_name: ident!("minecraft:overworld").into(),
-                                dimension_name: ident!("minecraft:overworld").into(),
-                                hashed_seed: 0,
-                                game_mode: GameMode::Survival,
-                                previous_game_mode: OptGameMode::default(),
-                                is_debug: false,
-                                is_flat: false,
-                                copy_metadata: false,
-                                last_death_location: Option::from(GlobalPos {
-                                    dimension_name: ident!("minecraft:overworld").into(),
-                                    position: BlockPos::from(position.as_dvec3()),
-                                }),
-                                portal_cooldown: VarInt::default(),
-                            };
+        let pkt_xp = ExperienceBarUpdateS2c {
+            bar: xp.get_visual().prop,
+            level: VarInt(i32::from(xp.get_visual().level)),
+            total_xp: VarInt::default(),
+        };
 
-                            let pkt_xp = play::ExperienceBarUpdateS2c {
-                                bar: xp.get_visual().prop,
-                                level: VarInt(i32::from(xp.get_visual().level)),
-                                total_xp: VarInt::default(),
-                            };
+        let pkt_abilities = PlayerAbilitiesS2c {
+            flags: PlayerAbilitiesFlags::default()
+                .with_flying(flight.is_flying)
+                .with_allow_flying(flight.allow),
+            flying_speed: flying_speed.speed,
+            fov_modifier: 0.0,
+        };
 
-                            let pkt_abilities = PlayerAbilitiesS2c {
-                                flags: PlayerAbilitiesFlags::default()
-                                    .with_flying(flight.is_flying)
-                                    .with_allow_flying(flight.allow),
-                                flying_speed: flying_speed.speed,
-                                fov_modifier: 0.0,
-                            };
+        let mut bundle = DataBundle::new(&compose);
+        bundle.add_packet(&pkt_health).unwrap();
+        bundle.add_packet(&pkt_respawn).unwrap();
+        bundle.add_packet(&pkt_xp).unwrap();
+        bundle.add_packet(&pkt_abilities).unwrap();
+        bundle.unicast(packet.connection_id()).unwrap();
 
-                            let pkt_add_player = play::PlayerSpawnS2c {
-                                entity_id: VarInt(client.minecraft_id()),
-                                player_uuid: uuid.0,
-                                position: position.as_dvec3(),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                            };
+        let pkt_add_player = PlayerSpawnS2c {
+            entity_id: VarInt(packet.minecraft_id()),
+            player_uuid: uuid.0,
+            position: position.as_dvec3(),
+            yaw: ByteAngle::from_degrees(**yaw),
+            pitch: ByteAngle::from_degrees(**pitch),
+        };
 
-                            let mut bundle = DataBundle::new(query.compose, query.system);
-                            bundle.add_packet(&pkt_health).unwrap();
-                            bundle.add_packet(&pkt_respawn).unwrap();
-                            bundle.add_packet(&pkt_xp).unwrap();
-                            bundle.add_packet(&pkt_abilities).unwrap();
+        compose
+            .broadcast(&pkt_add_player)
+            .exclude(packet.connection_id())
+            .send()
+            .unwrap();
+    }
+}
 
-                            bundle.unicast(*connection).unwrap();
-                            query
-                                .compose
-                                .broadcast(&pkt_add_player, query.system)
-                                .exclude(*connection)
-                                .send()
-                                .unwrap();
-                        },
-                    );
+pub struct RespawnPlugin;
 
-                    Ok(())
-                },
-            ));
-        });
+impl Plugin for RespawnPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(FixedUpdate, handle_respawn.after(ingress::decode::play));
     }
 }

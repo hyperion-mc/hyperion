@@ -1,8 +1,7 @@
-use flecs_ecs::{
-    core::{Entity, EntityViewGet, IdOperations, World},
-    macros::Component,
-};
-use tracing::warn;
+use bevy::prelude::*;
+use derive_more::Deref;
+use tracing::{error, warn};
+use valence_bytes::Utf8Bytes;
 pub use valence_protocol::packets::play::command_tree_s2c::Parser;
 use valence_protocol::{
     VarInt,
@@ -15,12 +14,8 @@ pub struct Command {
     has_permission: fn(world: &World, caller: Entity) -> bool,
 }
 
-pub(crate) static ROOT_COMMAND: once_cell::sync::OnceCell<Entity> =
-    once_cell::sync::OnceCell::new();
-
-pub fn get_root_command_entity() -> Entity {
-    *ROOT_COMMAND.get().unwrap()
-}
+#[derive(Resource, Deref)]
+pub struct RootCommand(Entity);
 
 impl Command {
     pub const ROOT: Self = Self {
@@ -30,7 +25,7 @@ impl Command {
 
     #[must_use]
     pub fn literal(
-        name: impl Into<String>,
+        name: impl Into<Utf8Bytes>,
         has_permission: fn(world: &World, caller: Entity) -> bool,
     ) -> Self {
         let name = name.into();
@@ -41,7 +36,7 @@ impl Command {
     }
 
     #[must_use]
-    pub fn argument(name: impl Into<String>, parser: Parser) -> Self {
+    pub fn argument(name: impl Into<Utf8Bytes>, parser: Parser) -> Self {
         let name = name.into();
         Self {
             data: NodeData::Argument {
@@ -60,7 +55,6 @@ const MAX_DEPTH: usize = 64;
 
 pub fn get_command_packet(
     world: &World,
-    root: Entity,
     player_opt: Option<Entity>,
 ) -> valence_protocol::packets::play::CommandTreeS2c {
     struct StackElement {
@@ -69,12 +63,14 @@ pub fn get_command_packet(
         entity: Entity,
     }
 
+    let root = world.resource::<RootCommand>();
+
     let mut commands = Vec::new();
 
     let mut stack = vec![StackElement {
         depth: 0,
         ptr: 0,
-        entity: root,
+        entity: **root,
     }];
 
     commands.push(Node {
@@ -95,33 +91,40 @@ pub fn get_command_packet(
             break;
         }
 
-        world.entity_from_id(entity).each_child(|child| {
-            child.get::<&Command>(|command| {
-                if let Some(player) = player_opt
-                    && !(command.has_permission)(world, player)
-                {
-                    return;
-                }
+        let Some(children) = world.entity(entity).get::<Children>() else {
+            continue;
+        };
 
-                let ptr = commands.len();
+        for &child in children {
+            let Some(command) = world.entity(child).get::<Command>() else {
+                error!("child is missing Command component");
+                continue;
+            };
 
-                commands.push(Node {
-                    data: command.data.clone(),
-                    executable: true,
-                    children: Vec::new(),
-                    redirect_node: None,
-                });
+            if let Some(player) = player_opt
+                && !(command.has_permission)(world, player)
+            {
+                continue;
+            }
 
-                let node = &mut commands[parent_ptr];
-                node.children.push(i32::try_from(ptr).unwrap().into());
+            let ptr = commands.len();
 
-                stack.push(StackElement {
-                    depth: depth + 1,
-                    ptr,
-                    entity: child.id(),
-                });
+            commands.push(Node {
+                data: command.data.clone(),
+                executable: true,
+                children: Vec::new(),
+                redirect_node: None,
             });
-        });
+
+            let node = &mut commands[parent_ptr];
+            node.children.push(i32::try_from(ptr).unwrap().into());
+
+            stack.push(StackElement {
+                depth: depth + 1,
+                ptr,
+                entity: child,
+            });
+        }
     }
 
     valence_protocol::packets::play::CommandTreeS2c {
@@ -129,19 +132,29 @@ pub fn get_command_packet(
         root_index: VarInt(0),
     }
 }
+
+pub struct CommandPlugin;
+
+impl Plugin for CommandPlugin {
+    fn build(&self, app: &mut App) {
+        let root_command = app.world_mut().spawn(Command::ROOT).id();
+        app.insert_resource(RootCommand(root_command));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use flecs_ecs::prelude::*;
+    use bevy::prelude::*;
 
-    use super::*;
+    use super::{Command as HyperionCommand, *};
 
     #[test]
     fn test_empty_command_tree() {
-        let world = World::new();
-        world.component::<Command>();
-        let root = world.entity();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let world = app.world_mut();
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 1);
         assert_eq!(packet.root_index, VarInt(0));
@@ -151,94 +164,100 @@ mod tests {
 
     #[test]
     fn test_single_command() {
-        let world = World::new();
-        world.component::<Command>();
-        let root = world.entity();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        world
-            .entity()
-            .set(Command {
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
+
+        world.spawn((
+            HyperionCommand {
                 data: NodeData::Literal {
-                    name: "test".to_string(),
+                    name: "test".into(),
                 },
                 has_permission: |_: _, _: _| true,
-            })
-            .child_of(root);
+            },
+            ChildOf(root_command),
+        ));
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 2);
         assert_eq!(packet.root_index, VarInt(0));
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "test".to_string(),
+            name: "test".into(),
         });
     }
 
     #[test]
     fn test_nested_commands() {
-        let world = World::new();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        world.component::<Command>();
-
-        let root = world.entity();
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
 
         let parent = world
-            .entity()
-            .set(Command {
+            .spawn((
+                HyperionCommand {
+                    data: NodeData::Literal {
+                        name: "parent".into(),
+                    },
+                    has_permission: |_: _, _: _| true,
+                },
+                ChildOf(root_command),
+            ))
+            .id();
+
+        let _child = world.spawn((
+            HyperionCommand {
                 data: NodeData::Literal {
-                    name: "parent".to_string(),
+                    name: "child".into(),
                 },
                 has_permission: |_: _, _: _| true,
-            })
-            .child_of(root);
+            },
+            ChildOf(parent),
+        ));
 
-        let _child = world
-            .entity()
-            .set(Command {
-                data: NodeData::Literal {
-                    name: "child".to_string(),
-                },
-                has_permission: |_: _, _: _| true,
-            })
-            .child_of(parent);
-
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), 3);
         assert_eq!(packet.root_index, VarInt(0));
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].children, vec![VarInt(2)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "parent".to_string(),
+            name: "parent".into(),
         });
         assert_eq!(packet.commands[2].data, NodeData::Literal {
-            name: "child".to_string(),
+            name: "child".into(),
         });
     }
 
     #[test]
     fn test_max_depth() {
-        let world = World::new();
-        world.component::<Command>();
+        let mut app = App::new();
+        app.add_plugins(CommandPlugin);
 
-        let root = world.entity();
+        let world = app.world_mut();
+        let root_command = **world.resource::<RootCommand>();
 
-        let mut parent = root;
+        let mut parent = root_command;
         for i in 0..=MAX_DEPTH {
-            let child = world
-                .entity()
-                .set(Command {
-                    data: NodeData::Literal {
-                        name: format!("command_{i}"),
+            parent = world
+                .spawn((
+                    HyperionCommand {
+                        data: NodeData::Literal {
+                            name: format!("command_{i}").into(),
+                        },
+                        has_permission: |_: _, _: _| true,
                     },
-                    has_permission: |_: _, _: _| true,
-                })
-                .child_of(parent);
-            parent = child;
+                    ChildOf(parent),
+                ))
+                .id();
         }
 
-        let packet = get_command_packet(&world, root.id(), None);
+        let packet = get_command_packet(world, None);
 
         assert_eq!(packet.commands.len(), MAX_DEPTH + 1);
     }

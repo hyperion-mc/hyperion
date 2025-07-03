@@ -4,10 +4,11 @@ use std::{
     time::Duration,
 };
 
-use flecs_ecs::macros::Component;
+use bevy::prelude::*;
 use libdeflater::CompressionLvl;
 use valence_protocol::CompressionThreshold;
 
+pub mod command_channel;
 pub mod config;
 pub mod runtime;
 pub mod util;

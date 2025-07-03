@@ -1,20 +1,17 @@
+mod storage;
+
+use bevy::{ecs::world::OnDespawn, prelude::*};
 use clap::ValueEnum;
-use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, WorldGet, id},
-    macros::{Component, observer},
-    prelude::{Module, flecs},
-};
 use hyperion::{
     net::{Compose, ConnectionId},
-    simulation::{Player, Uuid, command::get_command_packet},
+    simulation::{Uuid, command::get_command_packet},
     storage::LocalDb,
 };
 use num_derive::{FromPrimitive, ToPrimitive};
+use storage::PermissionStorage;
+use tracing::error;
 
-#[derive(Component)]
-pub struct PermissionModule;
-
-mod storage;
+pub struct PermissionPlugin;
 
 #[derive(
     Default,
@@ -39,43 +36,56 @@ pub enum Group {
 
 // todo:
 
-impl Module for PermissionModule {
-    fn module(world: &World) {
-        world.component::<Group>();
-        world.component::<storage::PermissionStorage>();
+fn load_permissions(
+    trigger: Trigger<'_, OnAdd, Uuid>,
+    query: Query<'_, '_, &Uuid, With<ConnectionId>>,
+    permissions: Res<'_, PermissionStorage>,
+    mut commands: Commands<'_, '_>,
+) {
+    let Ok(uuid) = query.get(trigger.target()) else {
+        return;
+    };
 
-        world.get::<&LocalDb>(|db| {
-            let storage = storage::PermissionStorage::new(db).unwrap();
-            world.set(storage);
-        });
+    let group = permissions.get(**uuid);
+    commands.entity(trigger.target()).insert(group);
+}
 
-        observer!(world, flecs::OnSet, &Uuid, &storage::PermissionStorage($))
-            .with(id::<Player>())
-            .each_entity(|entity, (uuid, permissions)| {
-                let group = permissions.get(**uuid);
-                entity.set(group);
-            });
+fn store_permissions(
+    trigger: Trigger<'_, OnDespawn, Group>,
+    query: Query<'_, '_, (&Uuid, &Group)>,
+    permissions: Res<'_, PermissionStorage>,
+) {
+    let (uuid, group) = match query.get(trigger.target()) {
+        Ok(data) => data,
+        Err(e) => {
+            error!("failed to store permissions: query failed: {e}");
+            return;
+        }
+    };
 
-        observer!(world, flecs::OnRemove, &Uuid, &Group, &storage::PermissionStorage($))
-            .with(id::<Player>())
-            .each(|(uuid, group, permissions)| {
-                permissions.set(**uuid, *group).unwrap();
-            });
+    permissions.set(**uuid, *group).unwrap();
+}
 
-        observer!(world, flecs::OnSet, &Group).each_iter(|it, row, _group| {
-            let system = it.system();
-            let world = it.world();
-            let entity = it.entity(row).expect("row must be in bounds");
+fn initialize_commands(
+    trigger: Trigger<'_, OnInsert, Group>,
+    query: Query<'_, '_, &ConnectionId>,
+    compose: Res<'_, Compose>,
+    world: &World,
+) {
+    let cmd_pkt = get_command_packet(world, Some(trigger.target()));
+    let Ok(&connection_id) = query.get(trigger.target()) else {
+        error!("failed to initialize commands: player is missing ConnectionId");
+        return;
+    };
+    compose.unicast(&cmd_pkt, connection_id).unwrap();
+}
 
-            let root_command = hyperion::simulation::command::get_root_command_entity();
-
-            let cmd_pkt = get_command_packet(&world, root_command, Some(*entity));
-
-            entity.get::<&ConnectionId>(|stream| {
-                world.get::<&Compose>(|compose| {
-                    compose.unicast(&cmd_pkt, *stream, system).unwrap();
-                });
-            });
-        });
+impl Plugin for PermissionPlugin {
+    fn build(&self, app: &mut App) {
+        let storage = storage::PermissionStorage::new(app.world().resource::<LocalDb>()).unwrap();
+        app.insert_resource(storage);
+        app.add_observer(load_permissions);
+        app.add_observer(store_permissions);
+        app.add_observer(initialize_commands);
     }
 }

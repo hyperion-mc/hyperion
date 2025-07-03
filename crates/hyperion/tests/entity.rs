@@ -4,64 +4,72 @@
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use flecs_ecs::{
-    core::{EntityViewGet, World, id},
-    macros::Component,
-    prelude::Module,
-};
+use bevy::{app::FixedMain, prelude::*};
 use hyperion::{
+    HyperionCore,
     simulation::{Owner, Position, Uuid, Velocity, entity_kind::EntityKind},
-    spatial::SpatialModule,
 };
+use serial_test::serial;
 
-#[derive(Component)]
-struct TestModule;
+#[test]
+#[serial]
+#[ignore = "this test takes a SUPER long time to run due to https://github.com/hyperion-mc/hyperion/issues/909"]
+fn arrow() {
+    let mut app = App::new();
+    app.add_plugins(HyperionCore);
 
-impl Module for TestModule {
-    fn module(world: &World) {
-        world.import::<hyperion::HyperionCore>();
-        world.import::<SpatialModule>();
-    }
+    let world = app.world_mut();
+    let owner = world.spawn_empty().id();
+    let mut arrow = world.spawn(EntityKind::Arrow);
+    let arrow_id = arrow.id();
+    let arrow_uuid = arrow
+        .get::<Uuid>()
+        .expect("All entities should automatically be given a UUID");
+
+    assert_ne!(
+        arrow_uuid.0,
+        uuid::Uuid::nil(),
+        "The UUID should not be nil"
+    );
+
+    arrow.insert((
+        Velocity::new(0.0, 1.0, 0.0),
+        Position::new(0.0, 20.0, 0.0),
+        Owner::new(owner),
+    ));
+
+    FixedMain::run_fixed_main(world);
+
+    // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525
+    assert_eq!(
+        *world.entity(arrow_id).get::<Position>().unwrap(),
+        Position::new(0.0, 20.947_525, 0.0)
+    );
+
+    FixedMain::run_fixed_main(world);
+
+    // gravity! drag! this is what was returned from the test but I am unsure if it actually
+    // what we should be getting
+    // todo: make a bunch more tests and compare to the vanilla velocity and positions
+    assert_eq!(
+        *world.entity(arrow_id).get::<Position>().unwrap(),
+        Position::new(0.0, 21.842_705, 0.0)
+    );
 }
 
 #[test]
-#[ignore = "this test takes a SUPER long time to run; unsure why"]
-fn arrow() {
-    let world = World::new();
-    world.import::<TestModule>();
+#[serial]
+fn with_uuid() {
+    let mut app = App::new();
+    app.add_plugins(HyperionCore);
 
-    let arrow = world.entity().add_enum(EntityKind::Arrow);
-    let owner = world.entity();
+    let world = app.world_mut();
+    let uuid = Uuid::new_v4();
+    let arrow = world.spawn((uuid, EntityKind::Arrow));
+    let arrow_uuid = *arrow.get::<Uuid>().unwrap();
 
-    assert!(
-        arrow.has(id::<Uuid>()),
-        "All entities should automatically be given a UUID."
+    assert_eq!(
+        arrow_uuid, uuid,
+        "The entity UUID should not be overwritten with a randomly generated UUID"
     );
-
-    arrow.get::<&Uuid>(|uuid| {
-        assert_ne!(uuid.0, uuid::Uuid::nil(), "The UUID should not be nil.");
-    });
-
-    arrow
-        .set(Velocity::new(0.0, 1.0, 0.0))
-        .set(Position::new(0.0, 20.0, 0.0))
-        .set(Owner::new(*owner));
-
-    println!("arrow = {arrow:?}");
-
-    world.progress();
-
-    arrow.get::<&Position>(|position| {
-        // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525
-        assert_eq!(*position, Position::new(0.0, 20.947_525, 0.0));
-    });
-
-    world.progress();
-
-    arrow.get::<&Position>(|position| {
-        // gravity! drag! this is what was returned from the test but I am unsure if it actually
-        // what we should be getting
-        // todo: make a bunch more tests and compare to the vanilla velocity and positions
-        assert_eq!(*position, Position::new(0.0, 21.842_705, 0.0));
-    });
 }

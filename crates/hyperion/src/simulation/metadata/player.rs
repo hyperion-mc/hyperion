@@ -15,7 +15,7 @@
 // 19	NBT (16)	Left shoulder entity data (for occupying parrot)	Empty
 // 20	NBT (16)	Right shoulder entity data (for occupying parrot)	Empty
 
-use flecs_ecs::prelude::*;
+use bevy::prelude::*;
 use valence_protocol::VarInt;
 
 use super::Metadata;

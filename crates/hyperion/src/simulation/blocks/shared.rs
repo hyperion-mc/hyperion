@@ -10,7 +10,7 @@ use super::manager::RegionManager;
 /// Inner state of the [`MinecraftWorld`] component.
 pub struct WorldShared {
     pub regions: RegionManager,
-    pub biome_to_id: BTreeMap<Ident<String>, BiomeId>,
+    pub biome_to_id: BTreeMap<Ident, BiomeId>,
 }
 
 impl WorldShared {
@@ -21,10 +21,7 @@ impl WorldShared {
     ) -> anyhow::Result<Self> {
         let regions = RegionManager::new(runtime, path).context("failed to get anvil data")?;
 
-        let biome_to_id = biomes
-            .iter()
-            .map(|(id, name, _)| (name.to_string_ident(), id))
-            .collect();
+        let biome_to_id = biomes.iter().map(|(id, name, _)| (name, id)).collect();
 
         Ok(Self {
             regions,
