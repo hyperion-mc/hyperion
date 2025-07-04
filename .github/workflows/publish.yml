@@ -9,14 +9,11 @@ jobs:
   build:
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        arch: [amd64]
         include:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
-          - arch: arm64
-            platform: linux/arm64
-            runner: arm-hooray
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -93,7 +90,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository }}/hyperion-proxy:latest
             ghcr.io/${{ github.repository }}/hyperion-proxy:${{ github.sha }}
@@ -103,7 +100,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: |
             ghcr.io/${{ github.repository }}/tag:latest
             ghcr.io/${{ github.repository }}/tag:${{ github.sha }}
