@@ -5,10 +5,10 @@
 [![Issues](https://img.shields.io/github/issues/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/andrewgazelka/hyperion)](https://github.com/andrewgazelka/hyperion/commits)
 
-Hyperion is a **Minecraft game engine** that can have 170,000+ players in one world. Our pilot event hopes to break the PvP Guinness World
+Hyperion is a **Minecraft game engine** that can have 10,000+ players in one world. Our pilot event hopes to break the PvP Guinness World
 Record of ([8825 by
 EVE Online](https://www.guinnessworldrecords.com/world-records/105603-largest-videogame-pvp-battle)). The
-architecture is ECS-driven using [Flecs Rust](https://github.com/Indra-db/Flecs-Rust).
+architecture is ECS-driven using [Bevy](https://bevy.org/).
 
 > [!NOTE]  
 > You can join the test server in 1.20.1 at `hyperion-test.duckdns.org`
@@ -63,13 +63,6 @@ https://github.com/user-attachments/assets/64a4a8c7-f375-4821-a1c7-0efc69c1ae0b
 - Commit hash `faac9117` run with `just release`
 - Bot Launch Command: `just bots {number}`
 
-**Note on Performance:**
-The system's computational costs are primarily fixed due to thread synchronization overhead. Each game tick contains
-several $O(1)$ synchronization points, meaning these operations maintain constant time complexity regardless of player
-count. This architecture explains why performance remains relatively stable even as player count increases
-significantly - the thread synchronization overhead dominates the performance profile rather than player-specific
-computations.
-
 The bulk of player-specific processing occurs in our proxy layer, which handles tasks like regional multicasting and can
 be horizontally scaled to maintain performance as player count grows.
 
@@ -83,7 +76,7 @@ be horizontally scaled to maintain performance as player count grows.
 flowchart TB
     subgraph GameServer["Game Server (↕️ Scaled)"]
         direction TB
-        subgraph FlecsMT["Flecs Multi-threaded ECS"]
+        subgraph BevyMT["Bevy Multi-threaded ECS"]
             direction LR
             IngressSys["Ingress System"] --> |"1 Game Tick (50ms)"| CoreSys["Core Systems (Game Engine)"] --> GameSys["Game Systems (Event Logic)"] --> EgressSys["Egress System"]
         end
@@ -138,7 +131,7 @@ flowchart TB
     classDef async fill:#e7e7e7,stroke:#333,stroke-width:2px
     
     class GameServer server
-    class FlecsMT ecs
+    class BevyMT ecs
     class IngressSys,CoreSys,GameSys,EgressSys system
     class Proxy1,Proxy2,ProxyN proxy
     class Velocity1,Velocity2,VelocityN auth
@@ -203,7 +196,7 @@ docker compose up --build
 
 **Language:** Rust  
 **Goal:** Game engine for massive events  
-**Structure:** flecs ECS
+**Structure:** Bevy ECS
 
 **Platform Details:**
 - Version: Minecraft 1.20.1
