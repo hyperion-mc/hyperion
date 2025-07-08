@@ -7,13 +7,17 @@ use glam::IVec3;
 use hyperion::{
     BlockKind, ingress,
     net::{
-        Compose, ConnectionId, agnostic,
+        Compose, ConnectionId, DataBundle, agnostic,
         packets::{BossBarAction, BossBarS2c},
     },
     runtime::AsyncRuntime,
     simulation::{
-        PendingTeleportation, Position, Velocity, Yaw, blocks::Blocks, event,
-        metadata::living_entity::Health, packet::play, packet_state,
+        Flight, FlyingSpeed, Pitch, Position, TeleportEvent, Velocity, Xp, Yaw,
+        blocks::Blocks,
+        event,
+        metadata::{entity::Pose, living_entity::Health},
+        packet::play,
+        packet_state,
     },
     uuid::Uuid,
 };
@@ -22,12 +26,16 @@ use hyperion_rank_tree::Team;
 use hyperion_utils::{EntityExt, Prev};
 use tracing::error;
 use valence_protocol::{
-    ItemKind, ItemStack, Particle, VarInt, ident,
+    BlockPos, ByteAngle, GameMode, GlobalPos, ItemKind, ItemStack, Particle, VarInt,
+    game_mode::OptGameMode,
+    ident,
     math::{DVec3, Vec3},
     packets::play::{
-        DamageTiltS2c, DeathMessageS2c, EntityDamageS2c, GameMessageS2c, ParticleS2c,
+        DamageTiltS2c, DeathMessageS2c, EntityDamageS2c, ExperienceBarUpdateS2c, GameMessageS2c,
+        ParticleS2c, PlayerRespawnS2c, PlayerSpawnS2c,
         boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
         client_status_c2s::ClientStatusC2s,
+        player_abilities_s2c::{PlayerAbilitiesFlags, PlayerAbilitiesS2c},
         player_interact_entity_c2s::EntityInteraction,
     },
     text::IntoText,
@@ -310,24 +318,59 @@ fn handle_attacks(
 
 fn handle_respawn(
     mut packets: EventReader<'_, '_, play::ClientStatus>,
-    query: Query<'_, '_, &Team>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &hyperion::simulation::Uuid,
+            &Xp,
+            &Flight,
+            &FlyingSpeed,
+            &Team,
+            &Position,
+            &Yaw,
+            &Pitch,
+            &mut Health,
+            &mut Pose,
+        ),
+    >,
     candidates_query: Query<'_, '_, (Entity, &Position, &Team)>,
     mut blocks: ResMut<'_, Blocks>,
     runtime: Res<'_, AsyncRuntime>,
-    mut commands: Commands<'_, '_>,
+    compose: Res<'_, Compose>,
+    mut teleport_writer: EventWriter<'_, TeleportEvent>,
 ) {
     for packet in packets.read() {
         if !matches!(**packet, ClientStatusC2s::PerformRespawn) {
             continue;
         }
 
-        let team = match query.get(packet.sender()) {
+        let (
+            uuid,
+            xp,
+            flight,
+            flying_speed,
+            team,
+            last_death_location,
+            yaw,
+            pitch,
+            mut health,
+            mut pose,
+        ) = match query.get_mut(packet.sender()) {
             Ok(team) => team,
             Err(e) => {
                 error!("handle respawn failed: query failed: {e}");
                 continue;
             }
         };
+
+        if !health.is_dead() {
+            continue;
+        }
+
+        health.heal(20.);
+
+        *pose = Pose::Standing;
 
         let pos_vec = candidates_query
             .iter()
@@ -345,9 +388,61 @@ fn handle_respawn(
             find_spawn_position(&mut blocks, &runtime, &avoid_blocks())
         };
 
-        commands
-            .entity(packet.sender())
-            .insert(PendingTeleportation::new(respawn_pos));
+        teleport_writer.write(TeleportEvent {
+            player: packet.sender(),
+            destination: respawn_pos,
+            reset_velocity: true,
+        });
+
+        let pkt_respawn = PlayerRespawnS2c {
+            dimension_type_name: ident!("minecraft:overworld"),
+            dimension_name: ident!("minecraft:overworld"),
+            hashed_seed: 0,
+            game_mode: GameMode::Survival,
+            previous_game_mode: OptGameMode::default(),
+            is_debug: false,
+            is_flat: false,
+            copy_metadata: false,
+            last_death_location: Option::from(GlobalPos {
+                dimension_name: ident!("minecraft:overworld"),
+                position: BlockPos::from(last_death_location.as_dvec3()),
+            }),
+            portal_cooldown: VarInt::default(),
+        };
+
+        let pkt_xp = ExperienceBarUpdateS2c {
+            bar: xp.get_visual().prop,
+            level: VarInt(i32::from(xp.get_visual().level)),
+            total_xp: VarInt::default(),
+        };
+
+        let pkt_abilities = PlayerAbilitiesS2c {
+            flags: PlayerAbilitiesFlags::default()
+                .with_flying(flight.is_flying)
+                .with_allow_flying(flight.allow),
+            flying_speed: flying_speed.speed,
+            fov_modifier: 0.0,
+        };
+
+        let mut bundle = DataBundle::new(&compose);
+        bundle.add_packet(&pkt_respawn).unwrap();
+        bundle.add_packet(&pkt_xp).unwrap();
+        bundle.add_packet(&pkt_abilities).unwrap();
+        bundle.unicast(packet.connection_id()).unwrap();
+
+        let pkt_add_player = PlayerSpawnS2c {
+            entity_id: VarInt(packet.minecraft_id()),
+            player_uuid: uuid.0,
+            position: respawn_pos.as_dvec3(),
+            yaw: ByteAngle::from_degrees(**yaw),
+            pitch: ByteAngle::from_degrees(**pitch),
+        };
+
+        compose
+            .broadcast(&pkt_add_player)
+            .exclude(packet.connection_id())
+            .send()
+            .unwrap();
     }
 }
 

@@ -14,10 +14,11 @@ use crate::{
     net::{Compose, ConnectionId, DataBundle},
     simulation::{
         EntitySize, Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position,
-        Velocity, Xp, Yaw,
+        TeleportEvent, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         event,
         event::HitGroundEvent,
+        handle_teleports,
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
     },
@@ -102,15 +103,16 @@ fn sync_player_entity(
             &mut Velocity,
             &Yaw,
             &Pitch,
-            Option<&mut PendingTeleportation>,
+            &mut PendingTeleportation,
             &mut MovementTracking,
             &Flight,
         ),
     >,
-    mut event_writer: EventWriter<'_, HitGroundEvent>,
-    commands: ParallelCommands<'_, '_>,
+    mut hit_ground_writer: EventWriter<'_, HitGroundEvent>,
+    mut teleport_writer: EventWriter<'_, TeleportEvent>,
 ) {
-    let events = boxcar::Vec::new();
+    let hit_ground_events = boxcar::Vec::new();
+    let teleport_events = boxcar::Vec::new();
     query
         .par_iter_mut()
         .batching_strategy(BatchingStrategy {
@@ -126,117 +128,100 @@ fn sync_player_entity(
                 mut velocity,
                 yaw,
                 pitch,
-                pending_teleport,
+                mut pending_teleport,
                 mut tracking,
                 flight,
             )| {
                 let entity_id = VarInt(entity.minecraft_id());
 
-                if let Some(mut pending_teleport) = pending_teleport {
+                if !pending_teleport.confirmed {
                     if pending_teleport.ttl == 0 {
-                        // This needs to trigger OnInsert, so pending_teleport cannot be modified directly
-                        commands.command_scope(|mut commands| {
-                            commands
-                                .entity(entity)
-                                .insert(PendingTeleportation::new(pending_teleport.destination));
+                        // Resend the teleport. The player is teleported to their current position
+                        // in case the server updated their position while pending teleport
+                        // confirmation from the client
+                        teleport_events.push(TeleportEvent {
+                            player: entity,
+                            destination: **position,
+                            reset_velocity: false,
                         });
                     } else {
                         pending_teleport.ttl -= 1;
                     }
-                } else {
-                    let chunk_pos = position.to_chunk();
+                }
 
-                    let position_delta = **position - tracking.last_tick_position;
-                    let needs_teleport = position_delta.abs().max_element() >= 8.0;
-                    let changed_position = **position != tracking.last_tick_position;
+                let chunk_pos = position.to_chunk();
 
-                    let look_changed = (**yaw - ***prev_yaw).abs() >= 0.01
-                        || (**pitch - ***prev_pitch).abs() >= 0.01;
+                let position_delta = **position - tracking.last_tick_position;
+                let needs_teleport = position_delta.abs().max_element() >= 8.0;
+                let changed_position = **position != tracking.last_tick_position;
 
-                    let mut bundle = DataBundle::new(&compose);
+                let look_changed =
+                    (**yaw - ***prev_yaw).abs() >= 0.01 || (**pitch - ***prev_pitch).abs() >= 0.01;
 
-                    // Maximum number of movement packets allowed during 1 tick is 5
-                    if tracking.received_movement_packets > 5 {
-                        tracking.received_movement_packets = 1;
-                    }
+                let mut bundle = DataBundle::new(&compose);
 
-                    // Replace 100 by 300 if fall flying (aka elytra)
-                    if f64::from(position_delta.length_squared())
+                // Maximum number of movement packets allowed during 1 tick is 5
+                if tracking.received_movement_packets > 5 {
+                    tracking.received_movement_packets = 1;
+                }
+
+                // Replace 100 by 300 if fall flying (aka elytra)
+                if !tracking.skip_next_check
+                    && f64::from(position_delta.length_squared())
                         - tracking.server_velocity.length_squared()
                         > 100f64 * f64::from(tracking.received_movement_packets)
-                    {
-                        commands.command_scope(|mut commands| {
-                            commands
-                                .entity(entity)
-                                .insert(PendingTeleportation::new(tracking.last_tick_position));
-                        });
-                        tracking.received_movement_packets = 0;
-                        return;
-                    }
+                {
+                    teleport_events.push(TeleportEvent {
+                        player: entity,
+                        destination: tracking.last_tick_position,
+                        reset_velocity: false,
+                    });
+                    tracking.received_movement_packets = 0;
+                    return;
+                }
 
-                    let grounded = is_grounded(position, &blocks);
-                    tracking.was_on_ground = grounded;
-                    if grounded
-                        && !tracking.last_tick_flying
-                        && tracking.fall_start_y - position.y > 3.
-                    {
-                        let event = HitGroundEvent {
-                            client: entity,
-                            fall_distance: tracking.fall_start_y - position.y,
-                        };
-                        events.push(event);
-                        tracking.fall_start_y = position.y;
-                    }
+                let grounded = is_grounded(position, &blocks);
+                tracking.was_on_ground = grounded;
+                if grounded && !tracking.last_tick_flying && tracking.fall_start_y - position.y > 3.
+                {
+                    let event = HitGroundEvent {
+                        client: entity,
+                        fall_distance: tracking.fall_start_y - position.y,
+                    };
+                    hit_ground_events.push(event);
+                    tracking.fall_start_y = position.y;
+                }
 
-                    if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
-                        tracking.fall_start_y = position.y;
-                    }
+                if (tracking.last_tick_flying && flight.allow) || position_delta.y >= 0. {
+                    tracking.fall_start_y = position.y;
+                }
 
-                    if changed_position && !needs_teleport && look_changed {
-                        let packet = play::RotateAndMoveRelativeS2c {
+                if changed_position && !needs_teleport && look_changed {
+                    let packet = play::RotateAndMoveRelativeS2c {
+                        entity_id,
+                        #[allow(clippy::cast_possible_truncation)]
+                        delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                        yaw: ByteAngle::from_degrees(**yaw),
+                        pitch: ByteAngle::from_degrees(**pitch),
+                        on_ground: grounded,
+                    };
+
+                    bundle.add_packet(&packet).unwrap();
+                } else {
+                    if changed_position && !needs_teleport {
+                        let packet = play::MoveRelativeS2c {
                             entity_id,
                             #[allow(clippy::cast_possible_truncation)]
                             delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                            yaw: ByteAngle::from_degrees(**yaw),
-                            pitch: ByteAngle::from_degrees(**pitch),
                             on_ground: grounded,
-                        };
-
-                        bundle.add_packet(&packet).unwrap();
-                    } else {
-                        if changed_position && !needs_teleport {
-                            let packet = play::MoveRelativeS2c {
-                                entity_id,
-                                #[allow(clippy::cast_possible_truncation)]
-                                delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                on_ground: grounded,
-                            };
-
-                            bundle.add_packet(&packet).unwrap();
-                        }
-
-                        if look_changed {
-                            let packet = play::RotateS2c {
-                                entity_id,
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                                on_ground: grounded,
-                            };
-
-                            bundle.add_packet(&packet).unwrap();
-                        }
-                        let packet = play::EntitySetHeadYawS2c {
-                            entity_id,
-                            head_yaw: ByteAngle::from_degrees(**yaw),
                         };
 
                         bundle.add_packet(&packet).unwrap();
                     }
 
-                    if needs_teleport {
-                        let packet = play::EntityPositionS2c {
+                    if look_changed {
+                        let packet = play::RotateS2c {
                             entity_id,
-                            position: position.as_dvec3(),
                             yaw: ByteAngle::from_degrees(**yaw),
                             pitch: ByteAngle::from_degrees(**pitch),
                             on_ground: grounded,
@@ -244,20 +229,39 @@ fn sync_player_entity(
 
                         bundle.add_packet(&packet).unwrap();
                     }
+                    let packet = play::EntitySetHeadYawS2c {
+                        entity_id,
+                        head_yaw: ByteAngle::from_degrees(**yaw),
+                    };
 
-                    if velocity.0 != Vec3::ZERO {
-                        let packet = play::EntityVelocityUpdateS2c {
-                            entity_id,
-                            velocity: velocity.to_packet_units(),
-                        };
-
-                        bundle.add_packet(&packet).unwrap();
-                        velocity.0 = Vec3::ZERO;
-                    }
-
-                    bundle.broadcast_local(chunk_pos).unwrap();
+                    bundle.add_packet(&packet).unwrap();
                 }
 
+                if needs_teleport {
+                    let packet = play::EntityPositionS2c {
+                        entity_id,
+                        position: position.as_dvec3(),
+                        yaw: ByteAngle::from_degrees(**yaw),
+                        pitch: ByteAngle::from_degrees(**pitch),
+                        on_ground: grounded,
+                    };
+
+                    bundle.add_packet(&packet).unwrap();
+                }
+
+                if velocity.0 != Vec3::ZERO {
+                    let packet = play::EntityVelocityUpdateS2c {
+                        entity_id,
+                        velocity: velocity.to_packet_units(),
+                    };
+
+                    bundle.add_packet(&packet).unwrap();
+                    velocity.0 = Vec3::ZERO;
+                }
+
+                bundle.broadcast_local(chunk_pos).unwrap();
+
+                tracking.skip_next_check = false;
                 tracking.received_movement_packets = 0;
                 tracking.last_tick_position = **position;
                 tracking.last_tick_flying = flight.is_flying;
@@ -295,7 +299,8 @@ fn sync_player_entity(
             },
         );
 
-    event_writer.write_batch(events);
+    hit_ground_writer.write_batch(hit_ground_events);
+    teleport_writer.write_batch(teleport_events);
 }
 
 fn update_projectile_positions(
@@ -385,7 +390,7 @@ impl Plugin for EntityStateSyncPlugin {
                 entity_xp_sync,
                 entity_metadata_sync,
                 active_animation_sync,
-                sync_player_entity,
+                sync_player_entity.after(handle_teleports),
                 update_projectile_positions,
             ),
         );
