@@ -20,7 +20,7 @@ use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, Pitch, packet_state};
+use crate::simulation::{MovementTracking, Pitch, TeleportEvent, packet_state};
 
 mod list;
 pub use list::*;
@@ -29,9 +29,7 @@ use crate::{
     config::Config,
     egress::metadata::show_all,
     net::{Compose, ConnectionId, DataBundle},
-    simulation::{
-        PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
-    },
+    simulation::{Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw},
 };
 
 #[derive(Event)]
@@ -345,10 +343,15 @@ fn process_player_join(
                     server_velocity: DVec3::ZERO,
                     sprinting: false,
                     was_on_ground: false,
+                    skip_next_check: false,
                 },
-                PendingTeleportation::new(position),
                 packet_state::Play(()),
             ));
+            commands.send_event(TeleportEvent {
+                player: entity_id,
+                destination: position,
+                reset_velocity: false,
+            });
         });
 
         info!("{name} joined the world");
