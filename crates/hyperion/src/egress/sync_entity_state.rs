@@ -47,9 +47,9 @@ fn entity_xp_sync(
 
 fn entity_metadata_sync(
     compose: Res<'_, Compose>,
-    mut query: Query<'_, '_, (Entity, &Position, &mut MetadataChanges)>,
+    mut query: Query<'_, '_, (Entity, &mut MetadataChanges)>,
 ) {
-    for (entity_id, position, mut metadata_changes) in &mut query {
+    for (entity_id, mut metadata_changes) in &mut query {
         let metadata = get_and_clear_metadata(&mut metadata_changes);
 
         if let Some(view) = metadata {
@@ -58,7 +58,7 @@ fn entity_metadata_sync(
                 tracked_values: RawBytes(CowBytes::Borrowed(&view)),
             };
             compose
-                .broadcast_local(&pkt, position.to_chunk())
+                .broadcast_channel(&pkt, entity_id.into())
                 .send()
                 .unwrap();
         }
@@ -67,16 +67,14 @@ fn entity_metadata_sync(
 
 fn active_animation_sync(
     compose: Res<'_, Compose>,
-    mut query: Query<'_, '_, (Entity, &Position, &ConnectionId, &mut ActiveAnimation)>,
+    mut query: Query<'_, '_, (Entity, &ConnectionId, &mut ActiveAnimation)>,
 ) {
-    for (entity, position, &connection_id, mut animation) in &mut query {
+    for (entity, &connection_id, mut animation) in &mut query {
         let entity_id = VarInt(entity.minecraft_id());
-
-        let chunk_pos = position.to_chunk();
 
         for pkt in animation.packets(entity_id) {
             compose
-                .broadcast_local(&pkt, chunk_pos)
+                .broadcast_channel(&pkt, entity.into())
                 .exclude(Some(connection_id))
                 .send()
                 .unwrap();
@@ -144,8 +142,6 @@ fn sync_player_entity(
                         pending_teleport.ttl -= 1;
                     }
                 } else {
-                    let chunk_pos = position.to_chunk();
-
                     let position_delta = **position - tracking.last_tick_position;
                     let needs_teleport = position_delta.abs().max_element() >= 8.0;
                     let changed_position = **position != tracking.last_tick_position;
@@ -255,7 +251,7 @@ fn sync_player_entity(
                         velocity.0 = Vec3::ZERO;
                     }
 
-                    bundle.broadcast_local(chunk_pos).unwrap();
+                    bundle.broadcast_channel(entity.into()).unwrap();
                 }
 
                 tracking.received_movement_packets = 0;

@@ -83,7 +83,6 @@ fn setup_logging() {
         .with_line_number(false)
         .with_target(false)
         .with_env_filter(EnvFilter::from_default_env())
-        .with_max_level(tracing::Level::INFO)
         .init();
 }
 

@@ -20,7 +20,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use colored::Colorize;
-use hyperion_proto::{ArchivedServerToProxyMessage, ChunkPosition};
+use hyperion_proto::ArchivedServerToProxyMessage;
 use rustc_hash::FxBuildHasher;
 use tokio::{
     io::{AsyncReadExt, BufReader},
@@ -146,11 +146,7 @@ async fn connect_to_server_and_run_proxy(
     let player_registry: &'static papaya::HashMap<u64, PlayerHandle, FxBuildHasher> =
         Box::leak(Box::new(player_registry));
 
-    let player_positions = papaya::HashMap::default();
-    let player_positions: &'static papaya::HashMap<u64, ChunkPosition, FxBuildHasher> =
-        Box::leak(Box::new(player_positions));
-
-    let egress = Egress::new(player_registry, player_positions);
+    let egress = Egress::new(player_registry, server_sender.clone());
 
     let egress = BufferedEgress::new(egress);
 
@@ -217,7 +213,6 @@ async fn connect_to_server_and_run_proxy(
             rx,
             server_sender.clone(),
             player_registry,
-            player_positions,
         );
 
         player_id_on += 1;

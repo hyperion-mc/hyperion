@@ -5,10 +5,10 @@ use bevy::prelude::*;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use valence_bytes::{CowBytes, CowUtf8Bytes, Utf8Bytes};
 use valence_protocol::{
-    ByteAngle, GameMode, Ident, PacketEncoder, RawBytes, VarInt, Velocity,
+    GameMode, Ident, PacketEncoder, RawBytes, VarInt,
     game_mode::OptGameMode,
     ident,
     packets::play::{
@@ -17,18 +17,16 @@ use valence_protocol::{
     },
 };
 use valence_registry::{BiomeRegistry, RegistryCodec};
-use valence_server::entity::EntityKind;
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, Pitch, packet_state};
+use crate::simulation::{MovementTracking, packet_state};
 
 mod list;
 pub use list::*;
 
 use crate::{
     config::Config,
-    egress::metadata::show_all,
-    net::{Compose, ConnectionId, DataBundle},
+    net::{Channel, Compose, ConnectionId, DataBundle},
     simulation::{
         PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
     },
@@ -49,32 +47,8 @@ fn process_player_join(
     compose: Res<'_, Compose>,
     crafting_registry: Res<'_, CraftingRegistry>,
     config: Res<'_, Config>,
-    target_query: Query<
-        '_,
-        '_,
-        (
-            &Uuid,
-            &Name,
-            &ConnectionId,
-            &Position,
-            &Yaw,
-            &Pitch,
-            &PlayerSkin,
-        ),
-    >,
-    others_query: Query<
-        '_,
-        '_,
-        (
-            Entity,
-            &Uuid,
-            &Name,
-            &Position,
-            &Yaw,
-            &Pitch,
-            // &EntityFlags,
-        ),
-    >,
+    target_query: Query<'_, '_, (&Uuid, &Name, &ConnectionId, &Position, &Yaw, &PlayerSkin)>,
+    others_query: Query<'_, '_, (Entity, &Uuid, &Name)>,
     commands: ParallelCommands<'_, '_>,
 ) {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
@@ -87,14 +61,13 @@ fn process_player_join(
         let entity_id = event.0;
         let id = entity_id.minecraft_id();
 
-        let (uuid, name, &connection_id, position, yaw, pitch, skin) =
-            match target_query.get(entity_id) {
-                Ok(components) => components,
-                Err(e) => {
-                    error!("player_join_world failed: {e}");
-                    return;
-                }
-            };
+        let (uuid, name, &connection_id, position, yaw, skin) = match target_query.get(entity_id) {
+            Ok(components) => components,
+            Err(e) => {
+                error!("player_join_world failed: {e}");
+                return;
+            }
+        };
 
         let registry_codec = registry_codec_raw();
         let codec = RegistryCodec::default();
@@ -182,12 +155,10 @@ fn process_player_join(
         // Subtracts one to exclude current player
         let others_len = others_query.iter().len() - 1;
         let mut entries = Vec::with_capacity(others_len);
-        let mut spawn_packets = Vec::with_capacity(others_len);
-        let mut show_all_packets = Vec::with_capacity(others_len);
         let mut all_player_names = Vec::with_capacity(others_len);
 
         let scope = tracing::info_span!("collect_others").entered();
-        for (current_entity, uuid, name, position, yaw, pitch) in others_query {
+        for (current_entity, uuid, name) in others_query {
             if entity_id == current_entity {
                 continue;
             }
@@ -206,18 +177,6 @@ fn process_player_join(
 
             entries.push(entry);
             all_player_names.push(name.to_string());
-
-            // Spawn the current entity for the player that is joining
-            let pkt = play::PlayerSpawnS2c {
-                entity_id: VarInt(current_entity.minecraft_id()),
-                player_uuid: uuid.0,
-                position: position.as_dvec3(),
-                yaw: ByteAngle::from_degrees(**yaw),
-                pitch: ByteAngle::from_degrees(**pitch),
-            };
-
-            spawn_packets.push(pkt);
-            show_all_packets.push(show_all(current_entity.minecraft_id()));
         }
         scope.exit();
 
@@ -240,22 +199,6 @@ fn process_player_join(
                     entries: Cow::Owned(entries),
                 })
                 .unwrap();
-        }
-
-        {
-            let _scope = tracing::info_span!("unicasting_spawn").entered();
-
-            for spawn in &spawn_packets {
-                bundle.add_packet(spawn).unwrap();
-            }
-        }
-
-        {
-            let _scope = tracing::info_span!("unicasting_show_all").entered();
-
-            for show_all in &show_all_packets {
-                bundle.add_packet(show_all).unwrap();
-            }
         }
 
         let PlayerSkin {
@@ -288,7 +231,6 @@ fn process_player_join(
             entries: Cow::Borrowed(singleton_entry),
         };
 
-        // todo: fix broadcasting on first tick; and this duplication can be removed!
         compose.broadcast(&pkt).send().unwrap();
         bundle.add_packet(&pkt).unwrap();
 
@@ -305,24 +247,6 @@ fn process_player_join(
             .send()
             .unwrap();
 
-        let current_entity_id = VarInt(entity_id.minecraft_id());
-
-        let spawn_player = play::PlayerSpawnS2c {
-            entity_id: current_entity_id,
-            player_uuid: **uuid,
-            position: position.as_dvec3(),
-            yaw: ByteAngle::from_degrees(**yaw),
-            pitch: ByteAngle::from_degrees(**pitch),
-        };
-        compose
-            .broadcast(&spawn_player)
-            .exclude(connection_id)
-            .send()
-            .unwrap();
-
-        let show_all = show_all(entity_id.minecraft_id());
-        compose.broadcast(&show_all).send().unwrap();
-
         bundle
             .add_packet(&play::TeamS2c {
                 team_name: Utf8Bytes::from_static("no_tag").into(),
@@ -334,9 +258,12 @@ fn process_player_join(
 
         bundle.unicast(connection_id).unwrap();
 
+        compose.io_buf().set_receive_broadcasts(connection_id);
+
         let position = **position;
         commands.command_scope(move |mut commands| {
             commands.entity(entity_id).insert((
+                Channel,
                 MovementTracking {
                     received_movement_packets: 0,
                     last_tick_flying: false,
@@ -435,32 +362,6 @@ fn generate_cached_packet_bytes(
         .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
-}
-
-#[tracing::instrument(skip_all)]
-pub fn spawn_entity_packet(
-    id: Entity,
-    kind: EntityKind,
-    uuid: Uuid,
-    yaw: &Yaw,
-    pitch: &Pitch,
-    position: &Position,
-) -> play::EntitySpawnS2c {
-    info!("spawning entity");
-
-    let entity_id = VarInt(id.minecraft_id());
-
-    play::EntitySpawnS2c {
-        entity_id,
-        object_uuid: *uuid,
-        kind: VarInt(kind.get()),
-        position: position.as_dvec3(),
-        yaw: ByteAngle::from_degrees(**yaw),
-        pitch: ByteAngle::from_degrees(**pitch),
-        head_yaw: ByteAngle::from_degrees(**yaw), // todo: unsure if this is correct
-        data: VarInt::default(),
-        velocity: Velocity([0; 3]),
-    }
 }
 
 #[derive(Component)]

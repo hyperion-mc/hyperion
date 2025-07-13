@@ -21,7 +21,7 @@ use super::event;
 use crate::{
     ingress,
     net::{Compose, ConnectionId, DataBundle},
-    simulation::{Position, packet, packet_state},
+    simulation::{packet, packet_state},
 };
 
 pub struct InventoryPlugin;
@@ -147,7 +147,6 @@ fn update_player_inventory(
         (
             Entity,
             &InventoryState,
-            &Position,
             &CursorItem,
             Option<&OpenInventory>,
             &ConnectionId,
@@ -155,7 +154,7 @@ fn update_player_inventory(
     >,
     mut inventory_query: Query<'_, '_, &mut Inventory>,
 ) {
-    for (entity, inv_state, position, cursor_item, open_inventory, &stream_id) in player_query {
+    for (entity, inv_state, cursor_item, open_inventory, &stream_id) in player_query {
         let mut inventory;
         let open_inv;
         if let Some(open_inventory) = open_inventory {
@@ -221,7 +220,7 @@ fn update_player_inventory(
             });
 
             compose
-                .broadcast_local(packet, position.to_chunk())
+                .broadcast_channel(packet, entity.into())
                 .exclude(stream_id)
                 .send()
                 .unwrap();

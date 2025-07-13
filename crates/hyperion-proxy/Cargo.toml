@@ -1,4 +1,5 @@
 [dependencies]
+arrayvec = { workspace = true }
 colored = { workspace = true }
 kanal = { workspace = true }
 papaya = { workspace = true }

@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 
 use bevy::prelude::*;
-use hyperion::{HyperionCore, SetEndpoint, simulation::packet_state, spatial::Spatial};
+use hyperion::{Endpoint, HyperionCore, simulation::packet_state, spatial::Spatial};
 use hyperion_proxy_module::SetProxyAddress;
 use valence_text::IntoText;
 
@@ -140,8 +140,8 @@ impl Plugin for BedwarsPlugin {
 pub fn init_game(address: SocketAddr) -> anyhow::Result<()> {
     let mut app = App::new();
 
+    app.insert_resource(Endpoint::from(address));
     app.add_plugins((HyperionCore, BedwarsPlugin));
-    app.world_mut().trigger(SetEndpoint::from(address));
     app.world_mut().trigger(SetProxyAddress {
         server: address.to_string(),
         ..SetProxyAddress::default()

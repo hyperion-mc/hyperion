@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use bevy::prelude::*;
 use derive_more::with_trait::Add;
-use glam::IVec3;
 use hyperion::{
     BlockKind, ingress,
     net::{Compose, ConnectionId, agnostic},

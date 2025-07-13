@@ -3,7 +3,6 @@
 use std::{
     cell::{Cell, RefCell},
     fmt::Debug,
-    sync::atomic::{AtomicU32, Ordering},
 };
 
 use bevy::prelude::*;
@@ -12,13 +11,14 @@ use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
+use hyperion_utils::EntityExt;
 use libdeflater::CompressionLvl;
-use rkyv::util::AlignedVec;
 use thread_local::ThreadLocal;
 
 use crate::{
     Global, PacketBundle, Scratch,
     net::encoder::{PacketEncoder, append_packet_without_compression},
+    simulation::EgressComm,
 };
 
 pub mod agnostic;
@@ -78,6 +78,41 @@ impl ConnectionId {
     }
 }
 
+/// A component marking an entity as a packet channel.
+#[derive(Component, Copy, Clone, Debug)]
+pub struct Channel;
+
+/// A unique identifier for a channel. The server is responsible for managing channel IDs.
+#[derive(Component, Copy, Clone, Debug)]
+pub struct ChannelId {
+    /// The underlying unique identifier for this channel.
+    channel_id: u32,
+}
+
+impl ChannelId {
+    /// Creates a new channel ID with the specified stream identifier.
+    #[must_use]
+    pub const fn new(channel_id: u32) -> Self {
+        Self { channel_id }
+    }
+
+    /// Returns the underlying channel identifier.
+    ///
+    /// This method is primarily used by internal networking code to interact
+    /// with the proxy layer. Most application code should work with the
+    /// `ChannelId` type directly rather than the raw ID.
+    #[must_use]
+    pub const fn inner(self) -> u32 {
+        self.channel_id
+    }
+}
+
+impl From<Entity> for ChannelId {
+    fn from(entity: Entity) -> Self {
+        Self::new(entity.id())
+    }
+}
+
 /// A singleton that can be used to compose and encode packets.
 #[derive(Resource)]
 pub struct Compose {
@@ -131,6 +166,19 @@ impl<'a> DataBundle<'a> {
         self.compose
             .io_buf
             .broadcast_local_raw(&self.data, center, 0);
+        Ok(())
+    }
+
+    // todo: use builder pattern for excluding
+    pub fn broadcast_channel(&self, channel: ChannelId) -> anyhow::Result<()> {
+        if self.data.is_empty() {
+            return Ok(());
+        }
+
+        self.compose
+            .io_buf
+            .broadcast_channel_raw(&self.data, channel, 0);
+
         Ok(())
     }
 }
@@ -201,6 +249,23 @@ impl Compose {
         }
     }
 
+    /// Broadcast a packet in a channel.
+    pub const fn broadcast_channel<P>(
+        &self,
+        packet: P,
+        channel: ChannelId,
+    ) -> BroadcastChannel<'_, P>
+    where
+        P: PacketBundle,
+    {
+        BroadcastChannel {
+            packet,
+            compose: self,
+            exclude: 0,
+            channel,
+        }
+    }
+
     /// Send a packet to a single player.
     pub fn unicast<P>(&self, packet: P, stream_id: ConnectionId) -> anyhow::Result<()>
     where
@@ -259,13 +324,11 @@ impl Compose {
 /// This is useful for the ECS, so we can use Single<&mut Broadcast> instead of having to use a marker struct
 #[derive(Component, Default)]
 pub struct IoBuf {
-    buffer: ThreadLocal<RefCell<AlignedVec>>,
     // system_on: ThreadLocal<Cell<u32>>,
     // broadcast_buffer: ThreadLocal<RefCell<BytesMut>>,
     temp_buffer: ThreadLocal<RefCell<BytesMut>>,
     idx: ThreadLocal<Cell<u16>>,
-    // TODO: Consider replacing this with some sort of append-only vec
-    packet_number: AtomicU32,
+    egress_comms: Vec<EgressComm>,
 }
 
 impl IoBuf {
@@ -274,6 +337,10 @@ impl IoBuf {
         let result = cell.get();
         cell.set(result + 1);
         result
+    }
+
+    pub(crate) fn add_egress_comm(&mut self, egress_comm: EgressComm) {
+        self.egress_comms.push(egress_comm);
     }
 }
 
@@ -376,31 +443,43 @@ impl<P> BroadcastLocal<'_, P> {
     }
 }
 
+#[must_use]
+#[expect(missing_docs)]
+pub struct BroadcastChannel<'a, P> {
+    packet: P,
+    compose: &'a Compose,
+    exclude: u64,
+    channel: ChannelId,
+}
+
+impl<P> BroadcastChannel<'_, P> {
+    /// Send the packet
+    pub fn send(self) -> anyhow::Result<()>
+    where
+        P: PacketBundle,
+    {
+        let bytes = self
+            .compose
+            .io_buf
+            .encode_packet(self.packet, self.compose)?;
+
+        self.compose
+            .io_buf
+            .broadcast_channel_raw(&bytes, self.channel, self.exclude);
+
+        Ok(())
+    }
+
+    /// Exclude a certain player from the broadcast. This can only be called once.
+    pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
+        let exclude = exclude.into();
+        let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
+        Self { exclude, ..self }
+    }
+}
+
 impl IoBuf {
-    /// Returns an iterator over the result of splitting the buffer into packets with [`BytesMut::split`].
-    pub fn reset_and_split(&mut self) -> impl Iterator<Item = Bytes> + '_ {
-        // reset idx
-        for elem in &mut self.idx {
-            elem.set(0);
-        }
-
-        *self.packet_number.get_mut() = 0;
-
-        self.buffer.iter_mut().map(|x| x.borrow_mut()).map(|mut x| {
-            let res = Bytes::copy_from_slice(x.as_slice());
-            x.clear();
-            res
-        })
-    }
-
-    fn next_packet_number(&self) -> u32 {
-        // Relaxed ordering is allowed here. If a system wanted a packet to be sent before another
-        // packet, there should already be a happens-before relationship between the two packets
-        // which would allow the second packet to receive a higher packet number.
-        self.packet_number.fetch_add(1, Ordering::Relaxed)
-    }
-
-    fn encode_packet<P>(&self, packet: P, compose: &Compose) -> anyhow::Result<BytesMut>
+    pub fn encode_packet<P>(&self, packet: P, compose: &Compose) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
     {
@@ -421,7 +500,7 @@ impl IoBuf {
         Ok(result)
     }
 
-    fn encode_packet_no_compression<P>(&self, packet: P) -> anyhow::Result<BytesMut>
+    pub fn encode_packet_no_compression<P>(&self, packet: P) -> anyhow::Result<BytesMut>
     where
         P: PacketBundle,
     {
@@ -453,121 +532,107 @@ impl IoBuf {
         Ok(())
     }
 
+    pub(crate) fn add_proxy_message(&self, message: &ServerToProxyMessage<'_>) {
+        let mut buffer = Vec::<u8>::new();
+
+        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
+
+        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(message, &mut buffer).unwrap();
+
+        let packet_len = u64::try_from(buffer.len() - size_of::<u64>()).unwrap();
+        buffer[0..8].copy_from_slice(&packet_len.to_be_bytes());
+
+        let buffer = Bytes::from_owner(buffer);
+
+        for egress_comm in &self.egress_comms {
+            egress_comm.tx.send(buffer.clone()).unwrap();
+        }
+    }
+
     fn broadcast_local_raw(&self, data: &[u8], center: impl Into<ChunkPosition>, exclude: u64) {
         let center = center.into();
 
-        let buffer = self.buffer.get_or_default();
-        let buffer = &mut *buffer.borrow_mut();
+        self.add_proxy_message(&ServerToProxyMessage::BroadcastLocal(
+            hyperion_proto::BroadcastLocal {
+                data,
+                center,
+                exclude,
+            },
+        ));
+    }
 
-        let order = self.next_packet_number();
-
-        let to_send = hyperion_proto::BroadcastLocal {
-            data,
-            center,
-            exclude,
-            order,
-        };
-
-        let to_send = ServerToProxyMessage::BroadcastLocal(to_send);
-
-        let len = buffer.len();
-        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
-
-        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
-
-        let new_len = buffer.len();
-        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
-        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+    fn broadcast_channel_raw(&self, data: &[u8], channel: ChannelId, exclude: u64) {
+        self.add_proxy_message(&ServerToProxyMessage::BroadcastChannel(
+            hyperion_proto::BroadcastChannel {
+                channel_id: channel.inner(),
+                data,
+                exclude,
+            },
+        ));
     }
 
     pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64) {
-        let buffer = self.buffer.get_or_default();
-        let buffer = &mut *buffer.borrow_mut();
-
-        let order = self.next_packet_number();
-
-        let to_send = hyperion_proto::BroadcastGlobal {
-            data,
-            // todo: Right now, we are using `to_vec`.
-            // We want to probably allow encoding without allocation in the future.
-            // Fortunately, `to_vec` will not require any allocation if the buffer is empty.
-            exclude,
-            order,
-        };
-
-        let to_send = ServerToProxyMessage::BroadcastGlobal(to_send);
-
-        let len = buffer.len();
-        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
-
-        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
-
-        let new_len = buffer.len();
-        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
-        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+        self.add_proxy_message(&ServerToProxyMessage::BroadcastGlobal(
+            hyperion_proto::BroadcastGlobal {
+                data,
+                // todo: Right now, we are using `to_vec`.
+                // We want to probably allow encoding without allocation in the future.
+                // Fortunately, `to_vec` will not require any allocation if the buffer is empty.
+                exclude,
+            },
+        ));
     }
 
     pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId) {
-        let buffer = self.buffer.get_or_default();
-        let buffer = &mut *buffer.borrow_mut();
-
-        let order = self.next_packet_number();
-
-        let to_send = hyperion_proto::Unicast {
+        self.add_proxy_message(&ServerToProxyMessage::Unicast(hyperion_proto::Unicast {
             data,
             stream: stream.stream_id,
-            order,
-        };
-
-        let to_send = ServerToProxyMessage::Unicast(to_send);
-
-        let len = buffer.len();
-        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
-
-        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
-
-        let new_len = buffer.len();
-        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
-        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+        }));
     }
 
     pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId) {
-        let buffer = self.buffer.get_or_default();
-        let buffer = &mut *buffer.borrow_mut();
+        self.add_proxy_message(&ServerToProxyMessage::SetReceiveBroadcasts(
+            hyperion_proto::SetReceiveBroadcasts {
+                stream: stream.stream_id,
+            },
+        ));
+    }
 
-        let to_send = hyperion_proto::SetReceiveBroadcasts {
-            stream: stream.stream_id,
-        };
+    pub(crate) fn add_channel(&self, channel: ChannelId, unsubscribe_packets: &[u8]) {
+        self.add_proxy_message(&ServerToProxyMessage::AddChannel(
+            hyperion_proto::AddChannel {
+                channel_id: channel.inner(),
+                unsubscribe_packets,
+            },
+        ));
+    }
 
-        let to_send = ServerToProxyMessage::SetReceiveBroadcasts(to_send);
+    pub(crate) fn send_subscribe_channel_packets(
+        &self,
+        channel: ChannelId,
+        packets: &[u8],
+        exclude: Option<ConnectionId>,
+    ) {
+        self.add_proxy_message(&ServerToProxyMessage::SubscribeChannelPackets(
+            hyperion_proto::SubscribeChannelPackets {
+                channel_id: channel.inner(),
+                exclude: exclude.map_or(0, |connection_id| connection_id.stream_id),
+                data: packets,
+            },
+        ));
+    }
 
-        let len = buffer.len();
-        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
-
-        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
-
-        let new_len = buffer.len();
-        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
-        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+    pub(crate) fn remove_channel(&self, channel: ChannelId) {
+        self.add_proxy_message(&ServerToProxyMessage::RemoveChannel(
+            hyperion_proto::RemoveChannel {
+                channel_id: channel.inner(),
+            },
+        ));
     }
 
     pub fn shutdown(&self, stream: ConnectionId) {
-        let buffer = self.buffer.get_or_default();
-        let buffer = &mut *buffer.borrow_mut();
-
-        let to_send = hyperion_proto::Shutdown {
+        self.add_proxy_message(&ServerToProxyMessage::Shutdown(hyperion_proto::Shutdown {
             stream: stream.stream_id,
-        };
-
-        let to_send = ServerToProxyMessage::Shutdown(to_send);
-
-        let len = buffer.len();
-        buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
-
-        rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&to_send, &mut *buffer).unwrap();
-
-        let new_len = buffer.len();
-        let packet_len = u64::try_from(new_len - len - size_of::<u64>()).unwrap();
-        buffer[len..(len + 8)].copy_from_slice(&packet_len.to_be_bytes());
+        }));
     }
 }

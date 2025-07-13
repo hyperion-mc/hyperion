@@ -144,26 +144,21 @@ flowchart TB
 sequenceDiagram
     participant P as Player
     participant PH as Proxy Handler
-    participant SB as Server Buffer
-    participant R as Reorderer
     participant B as Broadcast System
     participant S as Game Server
 
-    Note over P,S: Player → Server Flow (Direct)
+    Note over P,S: Player → Server Flow
     P->>PH: Player Packet
     PH->>S: Forward Immediately
-    
-    Note over P,S: Server → Player Flow (Buffered)
-    S->>SB: Server Packets
-    SB-->>SB: Accumulate Packets
-    S->>SB: Flush Signal
-    SB->>R: Batch Transfer
-    R-->>R: Reorder by Packet ID
-    R->>B: Ordered Packets
-    
+
+    Note over P,S: Server → Player Flow
+    S->>B: Server Packets
+
     Note over B: Broadcasting Decision
     alt Local Broadcast
         B->>P: Send to nearby players (BVH)
+    else Channel Broadcast
+        B->>P: Send to subscribed players
     else Global Broadcast
         B->>P: Send to all players
     else Unicast

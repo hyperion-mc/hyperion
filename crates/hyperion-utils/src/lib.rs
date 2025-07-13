@@ -11,24 +11,32 @@ pub use cached_save::cached_save;
 pub use prev::{Prev, track_prev};
 
 pub trait EntityExt: Sized {
+    fn id(&self) -> u32;
+    fn from_id(id: u32, world: &World) -> anyhow::Result<Self>;
+
     fn minecraft_id(&self) -> i32;
     fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self>;
 }
 
 impl EntityExt for Entity {
-    fn minecraft_id(&self) -> i32 {
-        let index = self.index();
-        bytemuck::cast(index)
+    fn id(&self) -> u32 {
+        self.index()
     }
 
-    fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self> {
-        let id: u32 = bytemuck::cast(id);
-
+    fn from_id(id: u32, world: &World) -> anyhow::Result<Self> {
         // TODO: According to the docs, this should check if the returned entity is freed
         world
             .entities()
             .resolve_from_id(id)
             .ok_or_else(|| anyhow::anyhow!("minecraft id is invalid"))
+    }
+
+    fn minecraft_id(&self) -> i32 {
+        bytemuck::cast(self.id())
+    }
+
+    fn from_minecraft_id(id: i32, world: &World) -> anyhow::Result<Self> {
+        Self::from_id(bytemuck::cast(id), world)
     }
 }
 

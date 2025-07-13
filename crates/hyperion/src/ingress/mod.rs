@@ -153,7 +153,7 @@ pub fn process_login_hello(
 
         let uuid = profile_id.unwrap_or_else(|| offline_uuid(username));
         let uuid_s = format!("{uuid:?}").dimmed();
-        info!("Starting login: {username} {uuid_s}");
+        info!("Starting login: {sender:?} {username} {uuid_s}");
 
         let pkt = LoginSuccessS2c {
             uuid,
@@ -225,10 +225,6 @@ pub fn process_login_hello(
                 entity.insert(skin);
             }
         });
-
-        compose
-            .io_buf()
-            .set_receive_broadcasts(packet.connection_id());
     }
 }
 

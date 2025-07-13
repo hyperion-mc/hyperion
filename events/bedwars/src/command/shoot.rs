@@ -2,7 +2,8 @@ use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
 use hyperion::{
     glam::Vec3,
-    simulation::{Pitch, Position, SpawnEvent, Uuid, Velocity, Yaw, entity_kind::EntityKind},
+    net::Channel,
+    simulation::{Pitch, Position, Uuid, Velocity, Yaw, entity_kind::EntityKind},
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use tracing::{debug, error};
@@ -57,20 +58,14 @@ impl MinecraftCommand for ShootCommand {
         let entity_id = Uuid::new_v4();
 
         // Create arrow entity with velocity
-        let entity = commands
-            .spawn((
-                EntityKind::Arrow,
-                entity_id,
-                Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z),
-                Velocity::new(velocity.x, velocity.y, velocity.z),
-                Yaw::new(**yaw),
-                Pitch::new(**pitch),
-            ))
-            .id();
-
-        commands.queue(move |world: &mut World| {
-            let mut events = world.resource_mut::<Events<SpawnEvent>>();
-            events.send(SpawnEvent(entity));
-        });
+        commands.spawn((
+            EntityKind::Arrow,
+            entity_id,
+            Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z),
+            Velocity::new(velocity.x, velocity.y, velocity.z),
+            Yaw::new(**yaw),
+            Pitch::new(**pitch),
+            Channel,
+        ));
     }
 }
