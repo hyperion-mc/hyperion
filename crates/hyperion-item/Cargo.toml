@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bevy = { workspace = true }
-bytemuck = "1.23.0"
+bytemuck = "1.23.1"
 valence_protocol = { workspace = true }
 hyperion = { workspace = true }
 hyperion-inventory = { workspace = true }
