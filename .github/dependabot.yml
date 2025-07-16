@@ -3,15 +3,6 @@
 
 version: 2
 updates:
-  - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 15
-    groups:
-      all-cargo-dependencies:
-        patterns:
-          - "*"
   - package-ecosystem: "gradle"
     directory: "/extractor/"
     schedule:
