@@ -178,7 +178,13 @@ async fn inner(
                 let (socket, _) = listener.accept().await.unwrap();
                 socket.set_nodelay(true).unwrap();
 
-                let addr = socket.peer_addr().unwrap();
+                let addr = match socket.peer_addr() {
+                    Ok(addr) => addr,
+                    Err(e) => {
+                        error!("failed to accept proxy connection: peer addr failed: {e}");
+                        continue;
+                    }
+                };
 
                 info!("Proxy connection established on {addr}");
 
