@@ -1,9 +1,8 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{io::Cursor, net::SocketAddr, process::Command};
+use std::{net::SocketAddr, process::Command};
 
 use bevy::prelude::*;
-use bytes::{Buf, BytesMut};
 use hyperion_proto::ArchivedProxyToServerMessage;
 use rustc_hash::FxHashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -50,12 +49,24 @@ async fn handle_proxy_messages(
         let buffer = match reader.next_server_packet_buffer().await {
             Ok(message) => message,
             Err(err) => {
-                error!("failed to process packet {err:?}");
+                match err.downcast::<std::io::Error>() {
+                    Ok(io_err) => match io_err.kind() {
+                        std::io::ErrorKind::UnexpectedEof => {
+                            warn!("proxy closed proxy to server connection");
+                        }
+                        kind => {
+                            error!("closing proxy connection due to an i/o error: {kind}");
+                        }
+                    },
+                    Err(err) => {
+                        error!("closing proxy connection due to an unexpected error: {err:?}");
+                    }
+                }
                 return;
             }
         };
 
-        let result = unsafe { rkyv::access_unchecked::<ArchivedProxyToServerMessage<'_>>(&buffer) };
+        let result = unsafe { rkyv::access_unchecked::<ArchivedProxyToServerMessage<'_>>(buffer) };
 
         match result {
             ArchivedProxyToServerMessage::PlayerConnect(message) => {
@@ -225,43 +236,31 @@ pub fn init_proxy_comms(
 #[derive(Debug)]
 struct ProxyReader {
     server_read: tokio::net::tcp::OwnedReadHalf,
-    buffer: BytesMut,
+    buffer: Vec<u8>,
 }
 
 impl ProxyReader {
     pub fn new(server_read: tokio::net::tcp::OwnedReadHalf) -> Self {
         Self {
             server_read,
-            buffer: BytesMut::with_capacity(1024 * 1024),
+            buffer: vec![0; 1024 * 1024],
         }
     }
 
     // #[instrument]
-    pub async fn next_server_packet_buffer(&mut self) -> anyhow::Result<BytesMut> {
-        let len = loop {
-            if !self.buffer.is_empty() {
-                let mut cursor = Cursor::new(&self.buffer);
+    pub async fn next_server_packet_buffer(&mut self) -> anyhow::Result<&[u8]> {
+        let mut len = [0u8; 8];
+        self.server_read.read_exact(&mut len).await?;
+        let len = u64::from_be_bytes(len);
+        let len = usize::try_from(len)?;
 
-                // todo: handle invalid varint
-                if let Ok(len) =
-                    byteorder::ReadBytesExt::read_u64::<byteorder::BigEndian>(&mut cursor)
-                {
-                    self.buffer.advance(usize::try_from(cursor.position())?);
-                    break usize::try_from(len)?;
-                }
-            }
-
-            self.server_read.read_buf(&mut self.buffer).await?;
-        };
-
-        // todo: this needed?
-        self.buffer.reserve(len);
-
-        while self.buffer.len() < len {
-            self.server_read.read_buf(&mut self.buffer).await?;
+        if len > self.buffer.len() {
+            self.buffer.resize(len, 0);
         }
 
-        let buffer = self.buffer.split_to(len);
+        let buffer = &mut self.buffer[..len];
+
+        self.server_read.read_exact(buffer).await?;
 
         Ok(buffer)
     }
