@@ -38,6 +38,7 @@ impl Ray {
     }
 
     #[must_use]
+    #[inline]
     pub fn new(origin: Vec3, direction: Vec3) -> Self {
         let inv_direction = direction.map(f32::recip).map(nan_as_inf);
 
@@ -62,6 +63,7 @@ impl Ray {
 
     /// Efficiently traverse through grid cells that the ray intersects using the Amanatides and Woo algorithm.
     /// Returns an iterator over the grid cells ([`IVec3`]) that the ray passes through.
+    #[inline]
     pub fn voxel_traversal(&self, bounds_min: IVec3, bounds_max: IVec3) -> VoxelTraversal {
         let current_pos = self.origin.as_ivec3();
 
