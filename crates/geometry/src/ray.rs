@@ -40,7 +40,7 @@ impl Ray {
     #[must_use]
     #[inline]
     pub fn new(origin: Vec3, direction: Vec3) -> Self {
-        let inv_direction = direction.map(f32::recip).map(nan_as_inf);
+        let inv_direction = direction.map(f32::recip);
 
         Self {
             origin,
