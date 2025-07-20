@@ -2,6 +2,10 @@ use std::ops::Mul;
 
 use glam::{IVec3, Vec3};
 
+const fn nan_as_inf(value: f32) -> f32 {
+    if value.is_nan() { f32::INFINITY } else { value }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Ray {
     origin: Vec3,
@@ -34,8 +38,9 @@ impl Ray {
     }
 
     #[must_use]
+    #[inline]
     pub fn new(origin: Vec3, direction: Vec3) -> Self {
-        let inv_direction = Vec3::new(1.0 / direction.x, 1.0 / direction.y, 1.0 / direction.z);
+        let inv_direction = direction.map(f32::recip).map(nan_as_inf);
 
         Self {
             origin,
@@ -58,6 +63,7 @@ impl Ray {
 
     /// Efficiently traverse through grid cells that the ray intersects using the Amanatides and Woo algorithm.
     /// Returns an iterator over the grid cells ([`IVec3`]) that the ray passes through.
+    #[inline]
     pub fn voxel_traversal(&self, bounds_min: IVec3, bounds_max: IVec3) -> VoxelTraversal {
         let current_pos = self.origin.as_ivec3();
 
@@ -88,17 +94,8 @@ impl Ray {
         );
 
         // Calculate t_max and t_delta using precomputed inv_direction
-        let t_max = Vec3::new(
-            next_boundary.x * self.inv_direction.x.abs(),
-            next_boundary.y * self.inv_direction.y.abs(),
-            next_boundary.z * self.inv_direction.z.abs(),
-        );
-
-        let t_delta = Vec3::new(
-            self.inv_direction.x.abs(),
-            self.inv_direction.y.abs(),
-            self.inv_direction.z.abs(),
-        );
+        let t_max = (next_boundary * self.inv_direction.abs()).map(nan_as_inf);
+        let t_delta = self.inv_direction.abs();
 
         VoxelTraversal {
             current_pos,
@@ -157,5 +154,38 @@ impl Iterator for VoxelTraversal {
         }
 
         Some(current)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+
+    use super::*;
+
+    #[test]
+    fn test_traverse_axis_aligned_ray() {
+        static DIRECTIONS: [IVec3; 6] = [
+            IVec3::new(-1, 0, 0),
+            IVec3::new(1, 0, 0),
+            IVec3::new(0, -1, 0),
+            IVec3::new(0, 1, 0),
+            IVec3::new(0, 0, -1),
+            IVec3::new(0, 0, 1),
+        ];
+
+        static ORIGIN: IVec3 = IVec3::new(-1, 0, 1);
+
+        for direction in DIRECTIONS {
+            let ray = Ray::new(ORIGIN.as_vec3(), direction.as_vec3());
+            let voxels = ray
+                .voxel_traversal(IVec3::MIN, IVec3::MAX)
+                .take(10)
+                .collect::<Vec<_>>();
+            assert_eq!(voxels[0], ORIGIN);
+            for (a, b) in voxels.iter().tuple_windows() {
+                assert_eq!(b - a, direction);
+            }
+        }
     }
 }

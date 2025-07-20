@@ -13,7 +13,6 @@ use serial_test::serial;
 
 #[test]
 #[serial]
-#[ignore = "this test takes a SUPER long time to run due to https://github.com/hyperion-mc/hyperion/issues/909"]
 fn arrow() {
     let mut app = App::new();
     app.add_plugins(HyperionCore);

@@ -3044,6 +3044,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "glam 0.29.3",
+ "itertools 0.14.0",
  "ordered-float 5.0.0",
  "rand 0.9.1",
  "serde",

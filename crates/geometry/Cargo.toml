@@ -13,6 +13,7 @@ ordered-float = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
+itertools = { workspace = true }
 rand = { workspace = true }
 tango-bench = { workspace = true }
 
