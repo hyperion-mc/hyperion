@@ -5,7 +5,6 @@ use hyperion::{
     simulation::{Position, packet, packet_state},
     valence_protocol::{packets::play, text::IntoText},
 };
-use hyperion_rank_tree::Team;
 use tracing::error;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 3; // 3 seconds
@@ -28,12 +27,12 @@ pub fn initialize_cooldown(
 pub fn handle_chat_messages(
     mut packets: EventReader<'_, '_, packet::play::ChatMessage>,
     compose: Res<'_, Compose>,
-    mut query: Query<'_, '_, (&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>,
+    mut query: Query<'_, '_, (&Name, &Position, &mut ChatCooldown, &ConnectionId)>,
 ) {
     let current_tick = compose.global().tick;
 
     for packet in packets.read() {
-        let (name, position, mut cooldown, io, team) = match query.get_mut(packet.sender()) {
+        let (name, position, mut cooldown, io) = match query.get_mut(packet.sender()) {
             Ok(data) => data,
             Err(e) => {
                 error!("could not process chat message: query failed: {e}");
@@ -61,14 +60,8 @@ pub fn handle_chat_messages(
 
         cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
 
-        let color_prefix = match team {
-            Team::Blue => "§9",
-            Team::Green => "§a",
-            Team::Red => "§c",
-            Team::Yellow => "§e",
-        };
-
-        let chat = format!("§8<{color_prefix}{name}§8>§r {}", &packet.message).into_cow_text();
+        // TODO: Add color prefix
+        let chat = format!("§8<{name}§8>§r {}", &packet.message).into_cow_text();
         let packet = play::GameMessageS2c {
             chat,
             overlay: false,

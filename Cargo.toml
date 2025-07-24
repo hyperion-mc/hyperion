@@ -33,8 +33,6 @@ members = [
     'crates/hyperion-proto',
     'crates/hyperion-proxy',
     'crates/hyperion-proxy-module',
-    'crates/hyperion-rank-tree',
-    'crates/hyperion-respawn',
     'crates/hyperion-scheduled',
     'crates/hyperion-stats',
     'crates/hyperion-text',
@@ -195,9 +193,6 @@ path = 'crates/hyperion-permission'
 
 [workspace.dependencies.hyperion-proto]
 path = 'crates/hyperion-proto'
-
-[workspace.dependencies.hyperion-rank-tree]
-path = 'crates/hyperion-rank-tree'
 
 [workspace.dependencies.hyperion-scheduled]
 path = 'crates/hyperion-scheduled'
