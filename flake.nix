@@ -67,7 +67,7 @@
               (pkgs.runCommand "hyperion-bins" { } ''
                 mkdir -p $out/bin
                 cp ${hyperion}/bin/hyperion-proxy $out/bin/
-                cp ${hyperion}/bin/tag $out/bin/
+                cp ${hyperion}/bin/bedwars $out/bin/
               '')
               pkgs.cacert # Required for SSL/TLS
             ];
@@ -88,15 +88,15 @@
             };
           };
 
-          # Docker image for tag
-          tag-image = pkgs.dockerTools.buildLayeredImage {
-            name = "tag";
+          # Docker image for bedwars
+          bedwars-image = pkgs.dockerTools.buildLayeredImage {
+            name = "bedwars";
             tag = "latest";
             maxLayers = 5;
             contents = [ minimalEnv ];
 
             config = {
-              Cmd = [ "/bin/tag" "--ip" "0.0.0.0" "--port" "35565" ];
+              Cmd = [ "/bin/bedwars" "--ip" "0.0.0.0" "--port" "35565" ];
               ExposedPorts = {
                 "35565/tcp" = { };
               };
@@ -112,7 +112,7 @@
           packages = {
             default = hyperion;
             docker-hyperion-proxy = hyperion-proxy-image;
-            docker-tag = tag-image;
+            docker-bedwars = bedwars-image;
           };
         };
     in

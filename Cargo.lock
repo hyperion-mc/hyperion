@@ -631,6 +631,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bedwars"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "clap",
+ "compact_str",
+ "derive_more 2.0.1",
+ "dotenvy",
+ "envy",
+ "fastrand 2.3.0",
+ "geometry",
+ "glam 0.29.3",
+ "hyperion",
+ "hyperion-clap",
+ "hyperion-genmap",
+ "hyperion-gui",
+ "hyperion-inventory",
+ "hyperion-item",
+ "hyperion-permission",
+ "hyperion-proxy-module",
+ "hyperion-rank-tree",
+ "hyperion-respawn",
+ "hyperion-scheduled",
+ "hyperion-text",
+ "hyperion-utils",
+ "rayon",
+ "roaring",
+ "rustc-hash 2.1.1",
+ "serde",
+ "tap",
+ "tikv-jemallocator",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "valence_bytes",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_server",
+]
+
+[[package]]
 name = "bevy"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6705,47 +6746,6 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
-]
-
-[[package]]
-name = "tag"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy",
- "clap",
- "compact_str",
- "derive_more 2.0.1",
- "dotenvy",
- "envy",
- "fastrand 2.3.0",
- "geometry",
- "glam 0.29.3",
- "hyperion",
- "hyperion-clap",
- "hyperion-genmap",
- "hyperion-gui",
- "hyperion-inventory",
- "hyperion-item",
- "hyperion-permission",
- "hyperion-proxy-module",
- "hyperion-rank-tree",
- "hyperion-respawn",
- "hyperion-scheduled",
- "hyperion-text",
- "hyperion-utils",
- "rayon",
- "roaring",
- "rustc-hash 2.1.1",
- "serde",
- "tap",
- "tikv-jemallocator",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "valence_bytes",
- "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
- "valence_server",
 ]
 
 [[package]]

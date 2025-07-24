@@ -43,7 +43,7 @@ workspace = true
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
-name = "tag"
+name = "bedwars"
 publish = false
 readme = "README.md"
 version.workspace = true

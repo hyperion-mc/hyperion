@@ -107,9 +107,9 @@ fn follow_closest_player(
 }
 
 #[derive(Component)]
-pub struct TagPlugin;
+pub struct BedwarsPlugin;
 
-impl Plugin for TagPlugin {
+impl Plugin for BedwarsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(OreVeins::default());
         app.add_plugins((
@@ -144,7 +144,7 @@ impl Plugin for TagPlugin {
 pub fn init_game(address: SocketAddr) -> anyhow::Result<()> {
     let mut app = App::new();
 
-    app.add_plugins((HyperionCore, TagPlugin));
+    app.add_plugins((HyperionCore, BedwarsPlugin));
     app.world_mut().trigger(SetEndpoint::from(address));
     app.world_mut().trigger(SetProxyAddress {
         server: address.to_string(),

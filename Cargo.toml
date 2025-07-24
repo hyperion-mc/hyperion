@@ -41,7 +41,7 @@ members = [
     'crates/hyperion-utils',
     'crates/packet-channel',
     'crates/simd-utils',
-    'events/tag',
+    'events/bedwars',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
@@ -307,8 +307,8 @@ git = 'https://github.com/TestingPlant/valence'
 branch = 'feat-bytes'
 git = 'https://github.com/TestingPlant/valence'
 
-[workspace.dependencies.tag]
-path = "events/tag"
+[workspace.dependencies.bedwars]
+path = "events/bedwars"
 
 [workspace.dependencies.rust-mc-bot]
 path = "tools/rust-mc-bot"

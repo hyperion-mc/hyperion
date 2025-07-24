@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
+use bedwars::init_game;
 use clap::Parser;
 use serde::Deserialize;
-use tag::init_game;
 use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
 // use tracing_tracy::TracyLayer;
 
@@ -54,7 +54,7 @@ fn main() {
     setup_logging();
 
     // Try to load config from environment variables
-    let args = match envy::prefixed("TAG_").from_env::<Args>() {
+    let args = match envy::prefixed("BEDWARS_").from_env::<Args>() {
         Ok(args) => {
             tracing::info!("Loaded configuration from environment variables");
             args

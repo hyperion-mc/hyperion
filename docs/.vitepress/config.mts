@@ -19,7 +19,7 @@ const config = defineConfig({
         nav: [
             { text: 'Home', link: '/' },
             { text: 'Architecture', link: '/architecture/introduction' },
-            { text: 'Tag', link: '/tag/introduction' },
+            { text: 'Tag', link: '/bedwars/introduction' },
         ],
 
         sidebar: [
@@ -34,7 +34,7 @@ const config = defineConfig({
             {
                 text: 'Tag',
                 items: [
-                    { text: '10,000 Player PvP', link: '/tag/introduction' },
+                    { text: '10,000 Player PvP', link: '/bedwars/introduction' },
                 ]
             }
         ],

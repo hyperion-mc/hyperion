@@ -12,17 +12,17 @@ services:
     environment:
       - RUST_LOG=info
       - HYPERION_PROXY_PROXY_ADDR=0.0.0.0:25565
-      - HYPERION_PROXY_SERVER=tag:35565
+      - HYPERION_PROXY_SERVER=bedwars:35565
     networks:
       - proxy-network
     depends_on:
-      - tag
-  tag:
-    image: ghcr.io/hyperion-mc/hyperion/tag:latest
+      - bedwars
+  bedwars:
+    image: ghcr.io/hyperion-mc/hyperion/bedwars:latest
     build:
       context: .
       dockerfile: Dockerfile
-      target: tag
+      target: bedwars
     ports:
       - "27750:27750"
     expose:
@@ -31,8 +31,8 @@ services:
     restart: "no"
     environment:
       - RUST_LOG=info
-      - TAG_IP=0.0.0.0
-      - TAG_PORT=35565
+      - BEDWARS_IP=0.0.0.0
+      - BEDWARS_PORT=35565
     networks:
       - proxy-network
   rust-mc-bot:
