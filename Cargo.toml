@@ -34,7 +34,6 @@ members = [
     'crates/hyperion-proxy',
     'crates/hyperion-proxy-module',
     'crates/hyperion-rank-tree',
-    'crates/hyperion-respawn',
     'crates/hyperion-scheduled',
     'crates/hyperion-stats',
     'crates/hyperion-text',
@@ -227,9 +226,6 @@ version = '0.3.6'
 features = ['rustls-tls', 'stream']
 version = '0.12.12'
 
-[workspace.dependencies.hyperion-respawn]
-path = 'crates/hyperion-respawn'
-
 [workspace.dependencies.roaring]
 features = ['simd']
 version = '0.10.12'
@@ -322,6 +318,7 @@ missing_panics_doc = 'allow'
 module_name_repetitions = 'allow'
 print_stdout = 'deny'
 single_match_else = 'allow'
+struct_excessive_bools = 'allow'
 too_long_first_doc_paragraph = 'allow'
 too_many_lines = 'allow'
 needless_pass_by_value = 'allow'

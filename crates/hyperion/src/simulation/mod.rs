@@ -491,20 +491,43 @@ impl Velocity {
     }
 }
 
-#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
+#[derive(Event, Debug, Copy, Clone, PartialEq)]
+pub struct TeleportEvent {
+    pub player: Entity,
+    pub destination: Vec3,
+    pub reset_velocity: bool,
+}
+
+/// Component used to mark a pending teleportation. To teleport a player, send [`TeleportEvent`]
+/// instead of modifying this directly.
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct PendingTeleportation {
     pub teleport_id: i32,
     pub destination: Vec3,
     pub ttl: u8,
+
+    /// Whether this pending teleportation has been confirmed by the client
+    pub confirmed: bool,
 }
 
 impl PendingTeleportation {
     #[must_use]
-    pub fn new(destination: Vec3) -> Self {
+    fn new(destination: Vec3) -> Self {
         Self {
             teleport_id: fastrand::i32(..),
             destination,
             ttl: 20,
+            confirmed: false,
+        }
+    }
+
+    #[must_use]
+    const fn none() -> Self {
+        Self {
+            teleport_id: 0,
+            destination: Vec3::ZERO,
+            ttl: 0,
+            confirmed: true,
         }
     }
 }
@@ -536,6 +559,7 @@ pub struct MovementTracking {
     pub server_velocity: DVec3,
     pub sprinting: bool,
     pub was_on_ground: bool,
+    pub skip_next_check: bool,
 }
 
 #[derive(Component, Default, Debug, Copy, Clone)]
@@ -557,6 +581,7 @@ fn initialize_player(
         EntitySize::default(),
         Flight::default(),
         FlyingSpeed::default(),
+        PendingTeleportation::none(),
         hyperion_inventory::CursorItem::default(),
     ));
 
@@ -638,28 +663,63 @@ fn initialize_uuid(trigger: Trigger<'_, OnAdd, EntityKind>, mut commands: Comman
     });
 }
 
-fn send_pending_teleportation(
-    trigger: Trigger<'_, OnInsert, PendingTeleportation>,
-    query: Query<'_, '_, (&PendingTeleportation, &Yaw, &Pitch, &ConnectionId)>,
+pub fn handle_teleports(
+    mut reader: EventReader<'_, '_, TeleportEvent>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &mut PendingTeleportation,
+            &mut Position,
+            &mut Velocity,
+            &mut MovementTracking,
+            &Yaw,
+            &Pitch,
+            &ConnectionId,
+        ),
+    >,
     compose: Res<'_, Compose>,
 ) {
-    let (pending_teleportation, yaw, pitch, &connection) = match query.get(trigger.target()) {
-        Ok(data) => data,
-        Err(e) => {
-            error!("failed to send pending teleportation: query failed: {e}");
-            return;
+    for event in reader.read() {
+        let (
+            mut pending_teleportation,
+            mut position,
+            mut velocity,
+            mut tracking,
+            yaw,
+            pitch,
+            &connection,
+        ) = match query.get_mut(event.player) {
+            Ok(data) => data,
+            Err(e) => {
+                error!("failed to handle teleport: query failed: {e}");
+                return;
+            }
+        };
+
+        *pending_teleportation = PendingTeleportation::new(event.destination);
+
+        let pkt = play::PlayerPositionLookS2c {
+            position: pending_teleportation.destination.as_dvec3(),
+            yaw: **yaw,
+            pitch: **pitch,
+            flags: PlayerPositionLookFlags::default(),
+            teleport_id: VarInt(pending_teleportation.teleport_id),
+        };
+
+        compose.unicast(&pkt, connection).unwrap();
+
+        // Perform teleportation
+        **position = pending_teleportation.destination;
+        tracking.received_movement_packets = 0;
+        tracking.skip_next_check = true;
+
+        if event.reset_velocity {
+            tracking.fall_start_y = position.y;
+            tracking.server_velocity = DVec3::ZERO;
+            velocity.0 = Vec3::ZERO;
         }
-    };
-
-    let pkt = play::PlayerPositionLookS2c {
-        position: pending_teleportation.destination.as_dvec3(),
-        yaw: **yaw,
-        pitch: **pitch,
-        flags: PlayerPositionLookFlags::default(),
-        teleport_id: VarInt(pending_teleportation.teleport_id),
-    };
-
-    compose.unicast(&pkt, connection).unwrap();
+    }
 }
 
 fn spawn_entities(
@@ -739,7 +799,6 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_player);
         app.add_observer(remove_player);
-        app.add_observer(send_pending_teleportation);
         app.add_observer(update_flight);
         app.add_observer(initialize_uuid);
 
@@ -750,9 +809,10 @@ impl Plugin for SimPlugin {
             InventoryPlugin,
             MetadataPlugin,
         ));
-        app.add_systems(FixedUpdate, spawn_entities);
+        app.add_systems(FixedUpdate, (handle_teleports, spawn_entities));
 
         app.add_event::<SpawnEvent>();
+        app.add_event::<TeleportEvent>();
         app.add_event::<event::ItemDropEvent>();
         app.add_event::<event::ItemInteract>();
         app.add_event::<event::SetSkin>();
