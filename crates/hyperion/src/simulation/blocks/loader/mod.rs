@@ -12,7 +12,10 @@ use rustc_hash::FxHashSet;
 use tracing::{trace, warn};
 use valence_generated::block::BlockState;
 use valence_nbt::{List, compound};
-use valence_protocol::{ChunkPos, CompressionThreshold, FixedArray, packets::play};
+use valence_protocol::{
+    ChunkPos, CompressionThreshold, FixedArray,
+    packets::play::chunk_data_s2c::{ChunkDataBlockEntity, ChunkDataS2c},
+};
 use valence_registry::RegistryIdx;
 use valence_server::layer::chunk::{BiomeContainer, Chunk, bit_width};
 
@@ -295,7 +298,36 @@ fn encode_chunk_packet(
     let sky_light_data = sky_light_mask.into_data();
     let block_light_data = block_light_mask.into_data();
 
-    let pkt = play::ChunkDataS2c {
+    let block_entities = chunk
+        .block_entities
+        .iter()
+        .map(|(idx, data)| {
+            pub const START_Y: i16 = -64;
+
+            // Decode the coordinates relative to the chunk
+            let x = idx % 16;
+            let y = idx / 16 / 16;
+            let z = (idx / 16) % 16;
+
+            // Get the block entity kind
+            let kind = chunk.block_state(x, y, z).block_entity_kind().unwrap();
+
+            let absolute_y = i16::try_from(y).unwrap() + START_Y;
+
+            // Pack x and z coordinate into one integer
+            #[expect(clippy::cast_possible_truncation, reason = "this cannot truncate")]
+            let packed_xz = ((x * 16) | z) as i8;
+
+            ChunkDataBlockEntity {
+                packed_xz,
+                y: absolute_y,
+                kind,
+                data: Cow::Borrowed(data),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let pkt = ChunkDataS2c {
         pos: ChunkPos::new(location.x, location.y),
 
         // todo: I think this is for rain and snow???
@@ -303,7 +335,7 @@ fn encode_chunk_packet(
             "MOTION_BLOCKING" => List::Long(map),
         }),
         blocks_and_biomes: (&*section_bytes).into(),
-        block_entities: Cow::Borrowed(&[]),
+        block_entities: Cow::Borrowed(&block_entities),
 
         sky_light_mask: Cow::Borrowed(&sky_light_data),
         block_light_mask: Cow::Borrowed(&block_light_data),
