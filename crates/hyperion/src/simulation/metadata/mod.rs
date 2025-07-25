@@ -10,13 +10,14 @@ use crate::simulation::metadata::entity::{EntityFlags, Pose};
 pub mod block_display;
 pub mod display;
 pub mod entity;
+pub mod item;
 pub mod living_entity;
 pub mod player;
 
 /// Set up a system to track metadata changes
 fn component_and_track<T>(app: &mut App)
 where
-    T: Component + Copy + PartialEq + Metadata + Default + Debug,
+    T: Component + Clone + PartialEq + Metadata + Default + Debug,
 {
     track_prev::<T>(app);
 
@@ -27,7 +28,7 @@ where
         |mut query: Query<'_, '_, (&Prev<T>, &T, &mut MetadataChanges)>| {
             for (prev, current, mut metadata_changes) in &mut query {
                 if **prev != *current {
-                    metadata_changes.encode(*current);
+                    metadata_changes.encode(current.clone());
                 }
             }
         },
@@ -69,6 +70,9 @@ fn initialize_entity(
                 player::default_components(),
             ));
         }
+        EntityKind::Item => {
+            entity.insert(item::default_components());
+        }
         _ => {}
     }
 }
@@ -84,6 +88,7 @@ impl Plugin for MetadataPlugin {
         entity::register(app);
         display::register(app);
         block_display::register(app);
+        item::register(app);
         living_entity::register(app);
         player::register(app);
     }
@@ -114,7 +119,6 @@ macro_rules! define_metadata_component {
     ($index:literal, $name:ident -> $type:ty) => {
         #[derive(
             Component,
-            Copy,
             Clone,
             PartialEq,
             derive_more::Deref,

@@ -32,7 +32,7 @@
 //! | 29 | Quaternion | (Float, Float, Float, Float) | x, y, z, w |
 
 use valence_generated::block::BlockState;
-use valence_protocol::VarInt;
+use valence_protocol::{ItemStack, VarInt};
 
 use crate::simulation::metadata::entity::Pose;
 
@@ -55,6 +55,7 @@ impl_metadata_type! {
     0 => u8,
     1 => VarInt,
     3 => f32,
+    7 => ItemStack,
     8 => bool,
     14 => BlockState,
     20 => Pose,
