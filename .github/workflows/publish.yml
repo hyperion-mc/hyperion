@@ -41,10 +41,10 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "HYPERION_PROXY_TAGS=ghcr.io/${{ github.repository }}/hyperion-proxy:pr-${{ github.event.pull_request.number }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
-            echo "TAG_TAGS=ghcr.io/${{ github.repository }}/tag:pr-${{ github.event.pull_request.number }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+            echo "BEDWARS_TAGS=ghcr.io/${{ github.repository }}/bedwars:pr-${{ github.event.pull_request.number }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
           else
             echo "HYPERION_PROXY_TAGS=ghcr.io/${{ github.repository }}/hyperion-proxy:latest-${{ matrix.arch }},ghcr.io/${{ github.repository }}/hyperion-proxy:${{ github.sha }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
-            echo "TAG_TAGS=ghcr.io/${{ github.repository }}/tag:latest-${{ matrix.arch }},ghcr.io/${{ github.repository }}/tag:${{ github.sha }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
+            echo "BEDWARS_TAGS=ghcr.io/${{ github.repository }}/bedwars:latest-${{ matrix.arch }},ghcr.io/${{ github.repository }}/bedwars:${{ github.sha }}-${{ matrix.arch }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push hyperion-proxy
@@ -58,16 +58,16 @@ jobs:
           cache-to: type=gha,mode=max
           tags: ${{ steps.docker-tags.outputs.HYPERION_PROXY_TAGS }}
 
-      - name: Build and push tag
+      - name: Build and push bedwars
         uses: docker/build-push-action@v5
         with:
           context: .
-          target: tag
+          target: bedwars
           platforms: ${{ matrix.platform }}
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: ${{ steps.docker-tags.outputs.TAG_TAGS }}
+          tags: ${{ steps.docker-tags.outputs.BEDWARS_TAGS }}
 
   manifest:
     needs: build
@@ -96,15 +96,15 @@ jobs:
             ghcr.io/${{ github.repository }}/hyperion-proxy:${{ github.sha }}
           outputs: type=image,name=ghcr.io/${{ github.repository }}/hyperion-proxy
 
-      - name: Create and push manifest for tag
+      - name: Create and push manifest for bedwars
         uses: docker/build-push-action@v5
         with:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository }}/tag:latest
-            ghcr.io/${{ github.repository }}/tag:${{ github.sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository }}/tag
+            ghcr.io/${{ github.repository }}/bedwars:latest
+            ghcr.io/${{ github.repository }}/bedwars:${{ github.sha }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }}/bedwars
 
       - name: Update test server
         env:

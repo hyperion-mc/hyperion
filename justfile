@@ -51,8 +51,8 @@ fmt:
 proxy:
     ulimit -Sn {{fds}} && cargo run --profile release-full --bin hyperion-proxy -- --server "127.0.0.1:35565" "0.0.0.0:25565"
 
-tag-full:
-    cargo run --bin tag --profile release-full
+bedwars-full:
+    cargo run --bin bedwars --profile release-full
 
 # cargo machete
 unused-deps:
@@ -63,39 +63,39 @@ deny:
     cargo deny check
 
 # Watch and rebuild release version
-watch-tag:
+watch-bedwars:
     RUN_MODE="release-{{arch}}" cargo watch \
         --postpone \
         --no-vcs-ignores \
         -w {{project_root}}/.trigger-release \
-        -s './target/release/tag'
+        -s './target/release/bedwars'
 
 
 # Watch Hyperion changes and rebuild
 watch:
     cargo watch \
         -w '{{project_root}}/crates/hyperion' \
-        -w '{{project_root}}/events/tag' \
-        -s 'cargo check -p tag && cargo build --release -p tag' \
+        -w '{{project_root}}/events/bedwars' \
+        -s 'cargo check -p bedwars && cargo build --release -p bedwars' \
         -s 'touch {{project_root}}/.trigger-release'
 
 # run in debug mode with tracy; auto-restarts on changes
 debug:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 3
-    RUST_BACKTRACE=full RUN_MODE=debug-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-debug -s './target/debug/tag'
+    RUST_BACKTRACE=full RUN_MODE=debug-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-debug -s './target/debug/bedwars'
     RUST_BACKTRACE=full ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy -- --server "127.0.0.1:35565" "0.0.0.0:25565"
-    cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/tag' -s 'cargo check -p tag && cargo build -p tag' -s 'touch {{project_root}}/.trigger-debug'
+    cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/bedwars' -s 'cargo check -p bedwars && cargo build -p bedwars' -s 'touch {{project_root}}/.trigger-debug'
 
 # run in release mode with tracy; auto-restarts on changes
 release:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 3
-    RUN_MODE=release-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-release -s './target/release/tag'
+    RUN_MODE=release-{{arch}} cargo watch --postpone --no-vcs-ignores -w {{project_root}}/.trigger-release -s './target/release/bedwars'
     ulimit -Sn {{fds}} && cargo run --profile release-full --bin hyperion-proxy -- --server "127.0.0.1:35565" "0.0.0.0:25565"
-    cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/tag' -s 'cargo check -p tag && cargo build --release -p tag' -s 'touch {{project_root}}/.trigger-release'
+    cargo watch -w '{{project_root}}/crates/hyperion' -w '{{project_root}}/events/bedwars' -s 'cargo check -p bedwars && cargo build --release -p bedwars' -s 'touch {{project_root}}/.trigger-release'
 
 release-full:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs 2
-    RUN_MODE=release-f-{{arch}} cargo run --profile release-full -p tag'
+    RUN_MODE=release-f-{{arch}} cargo run --profile release-full -p bedwars'
         ulimit -Sn {{fds}} && cargo run --bin hyperion-proxy --profile release-full
 
 # run a given number of bots to connect to hyperion

@@ -82,7 +82,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo build --profile release-full --frozen --workspace && \
     mkdir -p /app/build && \
     cp target/release-full/hyperion-proxy /app/build/ && \
-    cp target/release-full/tag /app/build/ && \
+    cp target/release-full/bedwars /app/build/ && \
     cp target/release-full/rust-mc-bot /app/build/
 
 # Runtime base image
@@ -105,15 +105,15 @@ ENV HYPERION_PROXY_PROXY_ADDR="0.0.0.0:25565" \
     HYPERION_PROXY_SERVER="127.0.0.1:35565"
 ENTRYPOINT ["/hyperion-proxy"]
 
-FROM runtime-base AS tag
-COPY --from=build-release /app/build/tag /
+FROM runtime-base AS bedwars
+COPY --from=build-release /app/build/bedwars /
 LABEL org.opencontainers.image.source="https://github.com/andrewgazelka/hyperion" \
-    org.opencontainers.image.description="Hyperion Tag Event" \
+    org.opencontainers.image.description="Hyperion Bedwars Event" \
     org.opencontainers.image.version="0.1.0"
-ENV TAG_IP="0.0.0.0" \
-    TAG_PORT="35565"
+ENV BEDWARS_IP="0.0.0.0" \
+    BEDWARS_PORT="35565"
 EXPOSE 35565
-ENTRYPOINT ["/tag"]
+ENTRYPOINT ["/bedwars"]
 
 FROM runtime-base AS rust-mc-bot
 COPY --from=build-release /app/build/rust-mc-bot /

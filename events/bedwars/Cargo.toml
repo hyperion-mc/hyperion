@@ -17,8 +17,6 @@ hyperion-inventory = { workspace = true }
 hyperion-item = { workspace = true }
 hyperion-permission = { workspace = true }
 hyperion-proxy-module = { workspace = true }
-hyperion-rank-tree = { workspace = true }
-hyperion-respawn = { workspace = true }
 hyperion-scheduled = { workspace = true }
 hyperion-text = { workspace = true }
 hyperion-utils = { workspace = true }
@@ -33,6 +31,7 @@ uuid = { workspace = true }
 valence_bytes = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
+valence_text = { workspace = true }
 
 [dev-dependencies]
 tracing = { workspace = true, features = ["release_max_level_info"] }
@@ -43,7 +42,7 @@ workspace = true
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
-name = "tag"
+name = "bedwars"
 publish = false
 readme = "README.md"
 version.workspace = true
