@@ -3,9 +3,14 @@ use hyperion::{
     ingress,
     net::{Compose, ConnectionId},
     simulation::{Position, packet, packet_state},
-    valence_protocol::{packets::play, text::IntoText},
+    valence_protocol::{
+        packets::play,
+        text::{Color, IntoText, Text},
+    },
 };
 use tracing::error;
+
+use crate::Team;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 3; // 3 seconds
 const CHAT_COOLDOWN_TICKS: i64 = CHAT_COOLDOWN_SECONDS * 20; // Convert seconds to ticks
@@ -27,12 +32,12 @@ pub fn initialize_cooldown(
 pub fn handle_chat_messages(
     mut packets: EventReader<'_, '_, packet::play::ChatMessage>,
     compose: Res<'_, Compose>,
-    mut query: Query<'_, '_, (&Name, &Position, &mut ChatCooldown, &ConnectionId)>,
+    mut query: Query<'_, '_, (&Name, &Position, &mut ChatCooldown, &ConnectionId, &Team)>,
 ) {
     let current_tick = compose.global().tick;
 
     for packet in packets.read() {
-        let (name, position, mut cooldown, io) = match query.get_mut(packet.sender()) {
+        let (name, position, mut cooldown, io, team) = match query.get_mut(packet.sender()) {
             Ok(data) => data,
             Err(e) => {
                 error!("could not process chat message: query failed: {e}");
@@ -60,10 +65,13 @@ pub fn handle_chat_messages(
 
         cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
 
-        // TODO: Add color prefix
-        let chat = format!("§8<{name}§8>§r {}", &packet.message).into_cow_text();
+        let chat = Text::default()
+            + "<".color(Color::DARK_GRAY)
+            + name.as_str().to_owned().color(*team)
+            + "> ".color(Color::DARK_GRAY)
+            + (**packet.message).to_owned();
         let packet = play::GameMessageS2c {
-            chat,
+            chat: chat.into(),
             overlay: false,
         };
 
