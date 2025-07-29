@@ -34,8 +34,14 @@ impl Plugin for InventoryPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                (handle_update_selected_slot, handle_click_slot).after(ingress::decode::play),
+                (
+                    handle_close_window,
+                    handle_update_selected_slot,
+                    handle_click_slot,
+                )
+                    .after(ingress::decode::play),
                 update_player_inventory
+                    .after(handle_close_window)
                     .after(handle_update_selected_slot)
                     .after(handle_click_slot),
             ),
@@ -281,6 +287,15 @@ fn update_player_inventory_inner<'a>(
         });
 
         compose.unicast(packet, stream_id).unwrap();
+    }
+}
+
+fn handle_close_window(
+    mut packets: EventReader<'_, '_, packet::play::CloseHandledScreen>,
+    mut commands: Commands<'_, '_>,
+) {
+    for packet in packets.read() {
+        commands.entity(packet.sender()).remove::<OpenInventory>();
     }
 }
 
