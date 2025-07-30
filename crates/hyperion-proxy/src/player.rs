@@ -129,6 +129,12 @@ pub fn initiate_player_connection(
                 packet_writer.enqueue_packet(outgoing_packet);
             }
         }
+
+        // Ensure that the client receives any final packets, especially a disconnect message
+        // packet if present, when the connection is shut down.
+        if let Err(e) = packet_writer.flush_pending_packets().await {
+            warn!("Error flushing packets to player: {e:?}");
+        }
     });
 
     tokio::task::spawn(async move {
