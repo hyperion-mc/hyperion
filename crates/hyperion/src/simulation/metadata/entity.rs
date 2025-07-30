@@ -15,6 +15,7 @@
 
 use bevy::prelude::*;
 use valence_protocol::{Encode, VarInt};
+use valence_text::Text;
 
 use crate::{define_and_register_components, simulation::Metadata};
 
@@ -24,7 +25,7 @@ pub use flags::EntityFlags;
 // Example usage:
 define_and_register_components! {
     1, AirSupply -> VarInt,
-    // 2, CustomName -> Option<TextComponent>,
+    2, CustomName -> Option<Text>,
     3, CustomNameVisible -> bool,
     4, Silent -> bool,
     5, NoGravity -> bool,
@@ -34,6 +35,12 @@ define_and_register_components! {
 impl Default for AirSupply {
     fn default() -> Self {
         Self::new(VarInt(300))
+    }
+}
+
+impl Default for CustomName {
+    fn default() -> Self {
+        Self::new(None)
     }
 }
 

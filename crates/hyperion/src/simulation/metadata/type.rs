@@ -33,6 +33,7 @@
 
 use valence_generated::block::BlockState;
 use valence_protocol::{ItemStack, VarInt};
+use valence_text::Text;
 
 use crate::simulation::metadata::entity::Pose;
 
@@ -55,6 +56,8 @@ impl_metadata_type! {
     0 => u8,
     1 => VarInt,
     3 => f32,
+    5 => Text,
+    6 => Option<Text>,
     7 => ItemStack,
     8 => bool,
     14 => BlockState,
