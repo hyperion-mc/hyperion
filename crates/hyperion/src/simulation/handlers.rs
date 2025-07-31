@@ -21,11 +21,11 @@ use crate::{
     net::{Compose, ConnectionId},
     simulation::{
         Aabb, ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation,
-        Pitch, Position, Yaw, aabb,
+        Pitch, Position, TeleportEvent, Yaw, aabb,
         animation::{self, ActiveAnimation},
         block_bounds,
         blocks::Blocks,
-        event,
+        event, handle_teleports,
         metadata::{entity::Pose, living_entity::HandStates},
         packet::{OrderedPacketRef, play},
     },
@@ -38,7 +38,7 @@ use crate::{
               functions would add complexity because most parameters will still need to be passed \
               manually."
 )]
-fn position_and_look_updates(
+pub fn position_and_look_updates(
     mut full_reader: EventReader<'_, '_, play::Full>,
     mut position_reader: EventReader<'_, '_, play::PositionAndOnGround>,
     mut look_reader: EventReader<'_, '_, play::LookAndOnGround>,
@@ -47,15 +47,24 @@ fn position_and_look_updates(
         '_,
         '_,
         (
-            Query<'_, '_, (&EntitySize, &mut MovementTracking, &mut Position, &Yaw)>,
+            Query<
+                '_,
+                '_,
+                (
+                    &PendingTeleportation,
+                    &EntitySize,
+                    &mut MovementTracking,
+                    &mut Position,
+                    &Yaw,
+                ),
+            >,
             Query<'_, '_, (&mut Yaw, &mut Pitch)>,
-            Query<'_, '_, &mut Position>,
+            Query<'_, '_, &mut PendingTeleportation>,
         ),
     >,
-    teleport_query: Query<'_, '_, &PendingTeleportation>,
+    mut teleport_writer: EventWriter<'_, TeleportEvent>,
     blocks: Res<'_, Blocks>,
     compose: Res<'_, Compose>,
-    mut commands: Commands<'_, '_>,
 ) {
     let mut full_reader = full_reader.read().map(OrderedPacketRef::from).peekable();
     let mut position_reader = position_reader
@@ -80,9 +89,9 @@ fn position_and_look_updates(
                     packet.sender(),
                     packet.connection_id(),
                     queries.p0(),
+                    &mut teleport_writer,
                     blocks,
                     compose,
-                    &mut commands,
                     packet.position.as_vec3(),
                     packet.on_ground,
                 );
@@ -104,9 +113,9 @@ fn position_and_look_updates(
                     packet.sender(),
                     packet.connection_id(),
                     queries.p0(),
+                    &mut teleport_writer,
                     blocks,
                     compose,
-                    &mut commands,
                     packet.position.as_vec3(),
                     packet.on_ground,
                 );
@@ -125,11 +134,19 @@ fn position_and_look_updates(
                 pitch.pitch = packet.pitch;
             },
             packet in teleport_reader => {
-                let client = packet.sender();
-                let Ok(pending_teleport) = teleport_query.get(client) else {
-                    warn!("failed to confirm teleportation: client is not pending teleportation, so there is nothing to confirm");
-                    continue;
+                let mut query = queries.p2();
+                let mut pending_teleport = match query.get_mut(packet.sender()) {
+                    Ok(pending_teleport) => pending_teleport,
+                    Err(e) => {
+                        error!("failed to confirm teleportation: query failed: {e}");
+                        continue;
+                    }
                 };
+
+                if pending_teleport.confirmed {
+                    warn!("failed to confirm teleportation: client is not pending teleportation or the teleport has already been confirmed, so there is nothing to confirm");
+                    continue;
+                }
 
                 let pending_teleport_id = pending_teleport.teleport_id;
 
@@ -142,40 +159,7 @@ fn position_and_look_updates(
                     continue;
                 }
 
-                let mut query = queries.p2();
-                let mut position  = match query.get_mut(client) {
-                    Ok(position) => position,
-                    Err(e) => {
-                        error!("failed to confirm teleportation: query failed: {e}");
-                        continue;
-                    }
-                };
-
-                **position = pending_teleport.destination;
-
-                commands.queue(move |world: &mut World| {
-                    let Ok(mut entity) = world.get_entity_mut(client) else {
-                        error!("failed to confirm teleportation: client entity has despawned");
-                        return;
-                    };
-
-                    let Some(pending_teleport) = entity.get::<PendingTeleportation>() else {
-                        error!(
-                            "failed to confirm teleportation: client is missing PendingTeleportation \
-                             component"
-                        );
-                        return;
-                    };
-
-                    if pending_teleport.teleport_id != pending_teleport_id {
-                        // A new pending teleport must have started between the time that this
-                        // command was queued and the time that this command was ran. Therefore,
-                        // this should not remove the PendingTeleportation component.
-                        return;
-                    }
-
-                    entity.remove::<PendingTeleportation>();
-                });
+                pending_teleport.confirmed = true;
             }
         };
         if result.is_none() {
@@ -187,20 +171,36 @@ fn position_and_look_updates(
 fn change_position_or_correct_client(
     client: Entity,
     connection_id: ConnectionId,
-    mut query: Query<'_, '_, (&EntitySize, &mut MovementTracking, &mut Position, &Yaw)>,
+    mut query: Query<
+        '_,
+        '_,
+        (
+            &PendingTeleportation,
+            &EntitySize,
+            &mut MovementTracking,
+            &mut Position,
+            &Yaw,
+        ),
+    >,
+    teleport_writer: &mut EventWriter<'_, TeleportEvent>,
     blocks: &Blocks,
     compose: &Compose,
-    commands: &mut Commands<'_, '_>,
     proposed: Vec3,
     on_ground: bool,
 ) {
-    let (&size, mut tracking, mut pose, yaw) = match query.get_mut(client) {
+    let (teleport, &size, mut tracking, mut pose, yaw) = match query.get_mut(client) {
         Ok(data) => data,
         Err(e) => {
             error!("change_position_or_correct_client failed: query failed: {e}");
             return;
         }
     };
+
+    if !teleport.confirmed {
+        // The client does not yet know that it has been teleported, so any position change packets
+        // are not useful
+        return;
+    }
 
     if let Err(e) = try_change_position(proposed, &pose, size, blocks) {
         // Send error message to player
@@ -214,9 +214,11 @@ fn change_position_or_correct_client(
             warn!("Failed to send error message to player: {e}");
         }
 
-        commands
-            .entity(client)
-            .insert(PendingTeleportation::new(pose.position));
+        teleport_writer.write(TeleportEvent {
+            player: client,
+            destination: pose.position,
+            reset_velocity: false,
+        });
     }
 
     tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
@@ -623,7 +625,7 @@ impl Plugin for HandlersPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                position_and_look_updates,
+                position_and_look_updates.before(handle_teleports),
                 hand_swing,
                 player_action,
                 client_command,
