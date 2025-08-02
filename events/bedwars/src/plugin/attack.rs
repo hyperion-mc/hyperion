@@ -1,24 +1,18 @@
 use std::borrow::Cow;
 
 use bevy::prelude::*;
-use compact_str::format_compact;
 use derive_more::with_trait::Add;
 use glam::IVec3;
 use hyperion::{
     BlockKind, ingress,
-    net::{
-        Compose, ConnectionId, agnostic,
-        packets::{BossBarAction, BossBarS2c},
-    },
+    net::{Compose, ConnectionId, agnostic},
     runtime::AsyncRuntime,
     simulation::{
         PendingTeleportation, Position, Velocity, Yaw, blocks::Blocks, event,
         metadata::living_entity::Health, packet::play, packet_state,
     },
-    uuid::Uuid,
 };
 use hyperion_inventory::PlayerInventory;
-use hyperion_rank_tree::Team;
 use hyperion_utils::{EntityExt, Prev};
 use tracing::error;
 use valence_protocol::{
@@ -26,14 +20,13 @@ use valence_protocol::{
     math::{DVec3, Vec3},
     packets::play::{
         DamageTiltS2c, DeathMessageS2c, EntityDamageS2c, GameMessageS2c, ParticleS2c,
-        boss_bar_s2c::{BossBarColor, BossBarDivision, BossBarFlags},
-        client_status_c2s::ClientStatusC2s,
-        player_interact_entity_c2s::EntityInteraction,
+        client_status_c2s::ClientStatusC2s, player_interact_entity_c2s::EntityInteraction,
     },
     text::IntoText,
 };
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
+use crate::Team;
 
 pub struct AttackPlugin;
 
@@ -50,14 +43,6 @@ pub struct CombatStats {
     pub damage: f32,
     pub protection: f32,
 }
-
-#[derive(Component, Default, Copy, Clone, Debug)]
-pub struct KillCount {
-    pub kill_count: u32,
-}
-
-#[derive(Resource)]
-struct KillCountUuid(Uuid);
 
 /// Checks if the entity is immune to attacks and updates the immunity timer if it is
 ///
@@ -93,11 +78,9 @@ fn initialize_player(
     trigger: Trigger<'_, OnAdd, packet_state::Play>,
     mut commands: Commands<'_, '_>,
 ) {
-    commands.entity(trigger.target()).insert((
-        ImmuneUntil::default(),
-        CombatStats::default(),
-        KillCount::default(),
-    ));
+    commands
+        .entity(trigger.target())
+        .insert((ImmuneUntil::default(), CombatStats::default()));
 }
 
 fn handle_melee_attacks(
@@ -172,7 +155,7 @@ fn handle_melee_attacks(
 fn handle_attacks(
     mut events: EventReader<'_, '_, event::AttackEntity>,
     compose: Res<'_, Compose>,
-    mut origin_query: Query<'_, '_, (&Team, &Name, &ConnectionId, &mut KillCount)>,
+    mut origin_query: Query<'_, '_, (&Team, &Name, &ConnectionId)>,
     mut target_query: Query<
         '_,
         '_,
@@ -194,7 +177,7 @@ fn handle_attacks(
             continue;
         }
 
-        let (origin_team, origin_name, &origin_connection, mut origin_kill_count) =
+        let (origin_team, origin_name, &origin_connection) =
             match origin_query.get_mut(event.origin) {
                 Ok(data) => data,
                 Err(e) => {
@@ -280,8 +263,6 @@ fn handle_attacks(
             compose
                 .unicast(&pkt_death_screen, target_connection)
                 .unwrap();
-
-            origin_kill_count.kill_count += 1;
         } else {
             // Calculate velocity change based on attack direction
             let knockback_xz = 8.0;
@@ -351,51 +332,19 @@ fn handle_respawn(
     }
 }
 
-fn update_kill_counts(
-    query: Query<'_, '_, (&KillCount, &ConnectionId), Changed<KillCount>>,
-    kill_count_uuid: Res<'_, KillCountUuid>,
-    compose: Res<'_, Compose>,
-) {
-    const MAX_KILLS: usize = 10;
-
-    query.par_iter().for_each(|(kill_count, &connection_id)| {
-        let kills = kill_count.kill_count;
-        let title = format_compact!("{kills} kills");
-        let title = hyperion_text::Text::new(&title);
-        let health = (kill_count.kill_count as f32 / MAX_KILLS as f32).min(1.0);
-
-        let pkt = BossBarS2c {
-            id: kill_count_uuid.0,
-            action: BossBarAction::Add {
-                title,
-                health,
-                color: BossBarColor::Red,
-                division: BossBarDivision::NoDivision,
-                flags: BossBarFlags::default(),
-            },
-        };
-
-        compose.unicast(&pkt, connection_id).unwrap();
-    });
-}
-
 #[allow(clippy::cast_possible_truncation)]
 impl Plugin for AttackPlugin {
     #[allow(clippy::excessive_nesting)]
     #[allow(clippy::cast_sign_loss)]
     fn build(&self, app: &mut App) {
         app.add_observer(initialize_player);
-        app.insert_resource(KillCountUuid(Uuid::new_v4()));
         app.add_systems(
             FixedUpdate,
             (
-                (
-                    (handle_melee_attacks, handle_attacks).chain(),
-                    handle_respawn,
-                )
-                    .after(ingress::decode::play),
-                update_kill_counts,
-            ),
+                (handle_melee_attacks, handle_attacks).chain(),
+                handle_respawn,
+            )
+                .after(ingress::decode::play),
         );
     }
 }

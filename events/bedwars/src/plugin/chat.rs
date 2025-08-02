@@ -3,10 +3,14 @@ use hyperion::{
     ingress,
     net::{Compose, ConnectionId},
     simulation::{Position, packet, packet_state},
-    valence_protocol::{packets::play, text::IntoText},
+    valence_protocol::{
+        packets::play,
+        text::{Color, IntoText, Text},
+    },
 };
-use hyperion_rank_tree::Team;
 use tracing::error;
+
+use crate::Team;
 
 const CHAT_COOLDOWN_SECONDS: i64 = 3; // 3 seconds
 const CHAT_COOLDOWN_TICKS: i64 = CHAT_COOLDOWN_SECONDS * 20; // Convert seconds to ticks
@@ -61,16 +65,13 @@ pub fn handle_chat_messages(
 
         cooldown.expires = current_tick + CHAT_COOLDOWN_TICKS;
 
-        let color_prefix = match team {
-            Team::Blue => "§9",
-            Team::Green => "§a",
-            Team::Red => "§c",
-            Team::Yellow => "§e",
-        };
-
-        let chat = format!("§8<{color_prefix}{name}§8>§r {}", &packet.message).into_cow_text();
+        let chat = Text::default()
+            + "<".color(Color::DARK_GRAY)
+            + name.as_str().to_owned().color(*team)
+            + "> ".color(Color::DARK_GRAY)
+            + (**packet.message).to_owned();
         let packet = play::GameMessageS2c {
-            chat,
+            chat: chat.into(),
             overlay: false,
         };
 
