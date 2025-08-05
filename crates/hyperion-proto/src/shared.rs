@@ -23,3 +23,9 @@ impl From<I16Vec2> for ChunkPosition {
         }
     }
 }
+
+impl From<ChunkPosition> for I16Vec2 {
+    fn from(value: ChunkPosition) -> Self {
+        Self::new(value.x, value.z)
+    }
+}

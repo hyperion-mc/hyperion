@@ -4,9 +4,9 @@ use bevy::prelude::*;
 use hyperion::{
     ItemKind, ItemStack,
     glam::Vec3,
-    net::Compose,
+    net::Channel,
     simulation::{
-        Owner, Pitch, Position, SpawnEvent, Uuid, Velocity, Yaw,
+        Owner, Pitch, Position, Uuid, Velocity, Yaw,
         entity_kind::EntityKind,
         event, get_direction_from_rotation,
         metadata::living_entity::{ArrowsInEntity, HandStates},
@@ -14,9 +14,8 @@ use hyperion::{
     },
 };
 use hyperion_inventory::PlayerInventory;
-use hyperion_utils::EntityExt;
 use tracing::{debug, error};
-use valence_protocol::{VarInt, ident, packets::play};
+use valence_protocol::ident;
 
 #[derive(Component)]
 pub struct LastFireTime {
@@ -114,7 +113,6 @@ fn handle_bow_release(
             &mut BowCharging,
         ),
     >,
-    mut spawn_writer: EventWriter<'_, SpawnEvent>,
     mut commands: Commands<'_, '_>,
 ) {
     for event in events.read() {
@@ -182,27 +180,23 @@ fn handle_bow_release(
 
         debug!("Arrow spawn position: {:?}", spawn_pos);
 
-        let id = commands
-            .spawn((
-                Uuid::new_v4(),
-                Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z),
-                Velocity::new(velocity.x, velocity.y, velocity.z),
-                Pitch::new(**pitch),
-                Yaw::new(**yaw),
-                Owner::new(event.from),
-                EntityKind::Arrow,
-            ))
-            .id();
-
-        spawn_writer.write(SpawnEvent(id));
+        commands.spawn((
+            Uuid::new_v4(),
+            Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z),
+            Velocity::new(velocity.x, velocity.y, velocity.z),
+            Pitch::new(**pitch),
+            Yaw::new(**yaw),
+            Owner::new(event.from),
+            EntityKind::Arrow,
+            Channel,
+        ));
     }
 }
 
 fn arrow_entity_hit(
     mut events: EventReader<'_, '_, event::ProjectileEntityEvent>,
-    compose: Res<'_, Compose>,
     arrow_query: Query<'_, '_, (&Velocity, &Owner)>,
-    mut player_query: Query<'_, '_, (&Position, &mut ArrowsInEntity)>,
+    mut player_query: Query<'_, '_, &mut ArrowsInEntity>,
     mut commands: Commands<'_, '_>,
     mut writer: EventWriter<'_, event::AttackEntity>,
 ) {
@@ -215,7 +209,7 @@ fn arrow_entity_hit(
             }
         };
 
-        let (position, mut arrows) = match player_query.get_mut(event.client) {
+        let mut arrows = match player_query.get_mut(event.client) {
             Ok(data) => data,
             Err(e) => {
                 tracing::error!("arrow entity hit failed: player query failed: {e}");
@@ -224,19 +218,12 @@ fn arrow_entity_hit(
         };
 
         let damage = velocity.0.length() * 2.0;
-        let chunk_pos = position.to_chunk();
 
         if damage == 0.0 && owner.entity == event.client {
             continue;
         }
 
         arrows.0 += 1;
-
-        let packet = play::EntitiesDestroyS2c {
-            entity_ids: vec![VarInt(event.projectile.minecraft_id())].into(),
-        };
-
-        compose.broadcast_local(&packet, chunk_pos).send().unwrap();
 
         commands.entity(event.projectile).despawn();
 

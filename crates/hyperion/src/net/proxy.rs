@@ -4,6 +4,7 @@ use std::{net::SocketAddr, process::Command};
 
 use bevy::prelude::*;
 use hyperion_proto::ArchivedProxyToServerMessage;
+use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{error, info, warn};
@@ -13,7 +14,7 @@ use crate::{
     command_channel::CommandChannel,
     net::Compose,
     runtime::AsyncRuntime,
-    simulation::{EgressComm, StreamLookup, packet_state},
+    simulation::{EgressComm, RequestSubscribeChannelPackets, StreamLookup, packet_state},
 };
 
 // TODO: Determine a better default
@@ -146,6 +147,38 @@ async fn handle_proxy_messages(
                         });
                     }
                 }
+            }
+            ArchivedProxyToServerMessage::RequestSubscribeChannelPackets(message) => {
+                let channels =
+                    match rkyv::deserialize::<Box<[u32]>, rkyv::rancor::Error>(&message.channels) {
+                        Ok(channels) => channels,
+                        Err(e) => {
+                            error!(
+                                "RequestSubscribeChannelPackets: failed to deserialize channels: \
+                                 {e}"
+                            );
+                            continue;
+                        }
+                    };
+
+                command_channel.push(move |world: &mut World| {
+                    // TODO: Is it possible to avoid this second allocation?
+                    let channels = channels
+                        .into_iter()
+                        .filter_map(|channel_id| match Entity::from_id(channel_id, world) {
+                            Ok(channel) => Some(RequestSubscribeChannelPackets(channel)),
+                            Err(e) => {
+                                error!(
+                                    "RequestSubscribeChannelPackets: channel id is invalid: {e}"
+                                );
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    let mut events = world.resource_mut::<Events<RequestSubscribeChannelPackets>>();
+                    events.send_batch(channels);
+                });
             }
         }
     }

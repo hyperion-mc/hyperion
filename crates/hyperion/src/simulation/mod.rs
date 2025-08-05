@@ -8,12 +8,11 @@ use bytemuck::{Pod, Zeroable};
 use derive_more::{Add, Constructor, Deref, DerefMut, Display, From, Sub};
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Vec3};
-use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use valence_protocol::{
-    ByteAngle, VarInt,
+    VarInt,
     packets::play::{
         self,
         player_abilities_s2c::{PlayerAbilitiesFlags, PlayerAbilitiesS2c},
@@ -24,7 +23,7 @@ use valence_text::IntoText;
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle},
+    net::{Compose, ConnectionId},
     simulation::{
         command::CommandPlugin,
         entity_kind::EntityKind,
@@ -63,7 +62,7 @@ pub struct PlayerUuidLookup {
 /// Communicates with the proxy server.
 #[derive(Resource, Deref, DerefMut, From)]
 pub struct EgressComm {
-    tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
+    pub(crate) tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }
 
 #[derive(Resource, Deref, DerefMut, From, Debug, Default)]
@@ -662,57 +661,6 @@ fn send_pending_teleportation(
     compose.unicast(&pkt, connection).unwrap();
 }
 
-fn spawn_entities(
-    mut reader: EventReader<'_, '_, SpawnEvent>,
-    compose: Res<'_, Compose>,
-    query: Query<'_, '_, (&Uuid, &Position, &Pitch, &Yaw, &Velocity, &EntityKind)>,
-) {
-    for event in reader.read() {
-        let entity = event.0;
-        let (uuid, position, pitch, yaw, velocity, &kind) = match query.get(entity) {
-            Ok(data) => data,
-            Err(e) => {
-                error!(
-                    "spawn entity failed: query failed (likely because entity is missing one or \
-                     more required components): {e}"
-                );
-                continue;
-            }
-        };
-
-        let minecraft_id = entity.minecraft_id();
-
-        let mut bundle = DataBundle::new(&compose);
-
-        let kind = kind as i32;
-
-        let velocity = velocity.to_packet_units();
-
-        let packet = play::EntitySpawnS2c {
-            entity_id: VarInt(minecraft_id),
-            object_uuid: uuid.0,
-            kind: VarInt(kind),
-            position: position.as_dvec3(),
-            pitch: ByteAngle::from_degrees(**pitch),
-            yaw: ByteAngle::from_degrees(**yaw),
-            head_yaw: ByteAngle::from_degrees(0.0), // todo:
-            data: VarInt::default(),                // todo:
-            velocity,
-        };
-
-        bundle.add_packet(&packet).unwrap();
-
-        let packet = play::EntityVelocityUpdateS2c {
-            entity_id: VarInt(minecraft_id),
-            velocity,
-        };
-
-        bundle.add_packet(&packet).unwrap();
-
-        bundle.broadcast_local(position.to_chunk()).unwrap();
-    }
-}
-
 fn update_flight(
     trigger: Trigger<'_, OnInsert, (FlyingSpeed, Flight)>,
     compose: Res<'_, Compose>,
@@ -750,9 +698,8 @@ impl Plugin for SimPlugin {
             InventoryPlugin,
             MetadataPlugin,
         ));
-        app.add_systems(FixedUpdate, spawn_entities);
 
-        app.add_event::<SpawnEvent>();
+        app.add_event::<RequestSubscribeChannelPackets>();
         app.add_event::<event::ItemDropEvent>();
         app.add_event::<event::ItemInteract>();
         app.add_event::<event::SetSkin>();
@@ -775,15 +722,10 @@ impl Plugin for SimPlugin {
     }
 }
 
-/// Event used to spawn a non-player entity. The entity must have the following components:
-/// - [`Uuid`]
-/// - [`Position`]
-/// - [`Pitch`]
-/// - [`Yaw`]
-/// - [`Velocity`]
-/// - [`EntityKind`]
+/// Event sent when the proxy requests packets to send to a player who has subscribed to a channel.
+/// This event stores the channel entity.
 #[derive(Event)]
-pub struct SpawnEvent(pub Entity);
+pub struct RequestSubscribeChannelPackets(pub Entity);
 
 #[derive(Component)]
 pub struct Visible;

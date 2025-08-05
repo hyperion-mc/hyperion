@@ -30,8 +30,15 @@ pub enum PlayerDisconnectReason<'a> {
 }
 
 #[derive(Archive, Deserialize, Serialize, Clone, PartialEq, Debug)]
+pub struct RequestSubscribeChannelPackets<'a> {
+    #[rkyv(with = InlineAsBox)]
+    pub channels: &'a [u32],
+}
+
+#[derive(Archive, Deserialize, Serialize, Clone, PartialEq, Debug)]
 pub enum ProxyToServerMessage<'a> {
     PlayerConnect(PlayerConnect),
     PlayerDisconnect(PlayerDisconnect<'a>),
     PlayerPackets(PlayerPackets<'a>),
+    RequestSubscribeChannelPackets(RequestSubscribeChannelPackets<'a>),
 }

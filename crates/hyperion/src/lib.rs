@@ -122,10 +122,10 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     Ok(())
 }
 
-#[derive(Event, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SetEndpoint(SocketAddr);
+#[derive(Resource, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Endpoint(SocketAddr);
 
-impl From<SocketAddr> for SetEndpoint {
+impl From<SocketAddr> for Endpoint {
     fn from(value: SocketAddr) -> Self {
         const DEFAULT_MINECRAFT_PORT: u16 = 25565;
         let port = value.port();
@@ -204,25 +204,30 @@ impl Plugin for HyperionCore {
         app.insert_resource(skins);
         app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
         app.insert_resource(Blocks::empty(&runtime));
-        app.insert_resource(runtime);
-        app.add_event::<SetEndpoint>();
         app.add_event::<InitializePlayerPosition>();
-        app.add_observer(set_server_endpoint);
 
         let global = Global::new(shared.clone());
 
-        app.insert_resource(Compose::new(
-            shared.compression_level,
-            global,
-            IoBuf::default(),
-        ));
+        let mut compose = Compose::new(shared.compression_level, global, IoBuf::default());
+
+        app.add_plugins(CommandChannelPlugin);
+
+        if let Some(address) = app.world().get_resource::<Endpoint>() {
+            let command_channel = app.world().resource::<CommandChannel>();
+            let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address.0);
+            compose.io_buf_mut().add_egress_comm(egress_comm);
+        } else {
+            warn!("Endpoint was not set while loading HyperionCore");
+        }
+
+        app.insert_resource(compose);
+        app.insert_resource(runtime);
         app.insert_resource(CraftingRegistry::default());
         app.insert_resource(StreamLookup::default());
 
         app.add_plugins((
             bevy::time::TimePlugin,
             bevy::app::ScheduleRunnerPlugin::run_loop(Duration::from_millis(10)),
-            CommandChannelPlugin,
             IngressPlugin,
             EgressPlugin,
             SimPlugin,
@@ -234,17 +239,6 @@ impl Plugin for HyperionCore {
         // Minecraft is 20 TPS
         app.insert_resource(Time::<Fixed>::from_hz(20.0));
     }
-}
-
-fn set_server_endpoint(
-    event: Trigger<'_, SetEndpoint>,
-    runtime: Res<'_, runtime::AsyncRuntime>,
-    command_channel: Res<'_, CommandChannel>,
-    mut commands: Commands<'_, '_>,
-) {
-    let address = event.0;
-    let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address);
-    commands.insert_resource(egress_comm);
 }
 
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].

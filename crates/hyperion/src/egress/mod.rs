@@ -1,52 +1,29 @@
 use bevy::prelude::*;
-use byteorder::WriteBytesExt;
-use hyperion_proto::{Flush, ServerToProxyMessage, UpdatePlayerChunkPositions};
-use rkyv::util::AlignedVec;
+use hyperion_proto::{ServerToProxyMessage, UpdatePlayerPositions};
 use tracing::error;
 use valence_protocol::{VarInt, packets::play::PlayerActionResponseS2c};
 
 use crate::{
     Blocks,
     net::{Compose, ConnectionId},
-    simulation::{ChunkPosition, EgressComm},
+    simulation::Position,
 };
+mod channel;
 pub mod metadata;
 pub mod player_join;
 mod stats;
 pub mod sync_chunks;
 mod sync_entity_state;
 
+use channel::ChannelPlugin;
 use player_join::PlayerJoinPlugin;
 use stats::StatsPlugin;
 use sync_chunks::SyncChunksPlugin;
 use sync_entity_state::EntityStateSyncPlugin;
 
-#[derive(Resource)]
-struct EncodedFlush(bytes::Bytes);
-
-fn send_egress(
-    mut compose: ResMut<'_, Compose>,
-    egress: Res<'_, EgressComm>,
-    flush: Res<'_, EncodedFlush>,
-) {
-    let io = compose.io_buf_mut();
-    for bytes in io.reset_and_split() {
-        if bytes.is_empty() {
-            continue;
-        }
-        if let Err(e) = egress.send(bytes) {
-            error!("failed to send egress: {e}");
-        }
-    }
-
-    if let Err(e) = egress.send(flush.0.clone()) {
-        error!("failed to send flush: {e}");
-    }
-}
-
 fn send_chunk_positions(
-    egress: Res<'_, EgressComm>,
-    query: Query<'_, '_, (&ConnectionId, &ChunkPosition)>,
+    compose: Res<'_, Compose>,
+    query: Query<'_, '_, (&ConnectionId, &Position)>,
 ) {
     let count = query.iter().count();
     let mut stream = Vec::with_capacity(count);
@@ -54,34 +31,14 @@ fn send_chunk_positions(
 
     for (io, pos) in query.iter() {
         stream.push(io.inner());
-
-        let position = hyperion_proto::ChunkPosition {
-            x: pos.position.x,
-            z: pos.position.y,
-        };
-
-        positions.push(position);
+        positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
     }
 
-    let packet = UpdatePlayerChunkPositions { stream, positions };
+    let packet = UpdatePlayerPositions { stream, positions };
 
-    let chunk_positions = ServerToProxyMessage::UpdatePlayerChunkPositions(packet);
+    let chunk_positions = ServerToProxyMessage::UpdatePlayerPositions(packet);
 
-    let mut v: AlignedVec = AlignedVec::new();
-    // length
-    v.write_u64::<byteorder::BigEndian>(0).unwrap();
-
-    rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&chunk_positions, &mut v).unwrap();
-
-    let len = u64::try_from(v.len() - size_of::<u64>()).unwrap();
-    v[0..8].copy_from_slice(&len.to_be_bytes());
-
-    let v = v.into_boxed_slice();
-    let bytes = bytes::Bytes::from(v);
-
-    if let Err(e) = egress.send(bytes) {
-        error!("failed to send egress: {e}");
-    }
+    compose.io_buf().add_proxy_message(&chunk_positions);
 }
 
 fn broadcast_chunk_deltas(
@@ -123,32 +80,13 @@ pub struct EgressPlugin;
 
 impl Plugin for EgressPlugin {
     fn build(&self, app: &mut App) {
-        let flush = {
-            let flush = ServerToProxyMessage::Flush(Flush);
-
-            let mut v: AlignedVec = AlignedVec::new();
-            // length
-            v.write_u64::<byteorder::BigEndian>(0).unwrap();
-
-            rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(&flush, &mut v).unwrap();
-
-            let len = u64::try_from(v.len() - size_of::<u64>()).unwrap();
-            v[0..8].copy_from_slice(&len.to_be_bytes());
-
-            let s = Box::leak(v.into_boxed_slice());
-            bytes::Bytes::from_static(s)
-        };
-
-        app.insert_resource(EncodedFlush(flush));
-        app.add_systems(
-            PostUpdate,
-            (send_egress, send_chunk_positions, broadcast_chunk_deltas),
-        );
+        app.add_systems(PostUpdate, (send_chunk_positions, broadcast_chunk_deltas));
         app.add_plugins((
             PlayerJoinPlugin,
             StatsPlugin,
             SyncChunksPlugin,
             EntityStateSyncPlugin,
+            ChannelPlugin,
         ));
     }
 }

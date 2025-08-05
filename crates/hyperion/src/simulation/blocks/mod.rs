@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bytes::Bytes;
 use chunk::Column;
 use derive_more::Constructor;
-use geometry::ray::Ray;
+use geometry::{aabb::Aabb, ray::Ray};
 use glam::{I16Vec2, IVec2, IVec3, Vec3};
 use indexmap::IndexMap;
 use loader::{ChunkLoaderHandle, launch_loader};
@@ -126,9 +126,7 @@ impl Blocks {
                 // Check collision with block shapes
                 let collision = block
                     .collision_shapes()
-                    .map(|shape| {
-                        geometry::aabb::Aabb::new(shape.min().as_vec3(), shape.max().as_vec3())
-                    })
+                    .map(|shape| Aabb::new(shape.min().as_vec3(), shape.max().as_vec3()))
                     .map(|shape| shape + origin)
                     .filter_map(|shape| shape.intersect_ray(&ray))
                     .min();

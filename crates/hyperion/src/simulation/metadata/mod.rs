@@ -179,6 +179,14 @@ macro_rules! define_and_register_components {
                 )*
             )
         }
+
+        pub fn encode_non_default_components(entity: EntityRef<'_>, metadata: &mut $crate::simulation::metadata::MetadataChanges) {
+            $(
+                if let Some(component) = entity.get::<$name>() {
+                    metadata.encode_if_not_default(component.clone());
+                }
+            )*
+        }
     };
 }
 
@@ -186,6 +194,14 @@ impl MetadataChanges {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    fn encode_if_not_default<M: Metadata + Default + PartialEq>(&mut self, metadata: M) {
+        if metadata == M::default() {
+            return;
+        }
+
+        self.encode(metadata);
     }
 
     pub fn encode<M: Metadata>(&mut self, metadata: M) {
@@ -197,6 +213,37 @@ impl MetadataChanges {
 
         let r#type = metadata.to_type();
         r#type.encode(&mut self.0).unwrap();
+    }
+
+    pub fn encode_non_default_components(&mut self, entity: EntityRef<'_>) {
+        let kind = entity
+            .get::<EntityKind>()
+            .expect("entity must have EntityKind component");
+
+        if let Some(component) = entity.get::<EntityFlags>() {
+            self.encode_if_not_default(*component);
+        }
+
+        if let Some(component) = entity.get::<Pose>() {
+            self.encode_if_not_default(*component);
+        }
+
+        entity::encode_non_default_components(entity, self);
+
+        match kind {
+            EntityKind::BlockDisplay => {
+                display::encode_non_default_components(entity, self);
+                block_display::encode_non_default_components(entity, self);
+            }
+            EntityKind::Player => {
+                living_entity::encode_non_default_components(entity, self);
+                player::encode_non_default_components(entity, self);
+            }
+            EntityKind::Item => {
+                item::encode_non_default_components(entity, self);
+            }
+            _ => {}
+        }
     }
 }
 
