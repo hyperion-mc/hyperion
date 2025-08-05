@@ -211,10 +211,14 @@ impl Plugin for HyperionCore {
         let mut compose = Compose::new(shared.compression_level, global, IoBuf::default());
 
         app.add_plugins(CommandChannelPlugin);
-        let address = app.world().resource::<Endpoint>();
-        let command_channel = app.world().resource::<CommandChannel>();
-        let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address.0);
-        compose.io_buf_mut().add_egress_comm(egress_comm);
+
+        if let Some(address) = app.world().get_resource::<Endpoint>() {
+            let command_channel = app.world().resource::<CommandChannel>();
+            let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address.0);
+            compose.io_buf_mut().add_egress_comm(egress_comm);
+        } else {
+            warn!("Endpoint was not set while loading HyperionCore");
+        }
 
         app.insert_resource(compose);
         app.insert_resource(runtime);
