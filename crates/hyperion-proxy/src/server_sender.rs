@@ -1,6 +1,7 @@
 use std::io::IoSlice;
 
 use rkyv::util::AlignedVec;
+use tokio::io::AsyncWrite;
 use tracing::{Instrument, trace_span, warn};
 
 use crate::util::AsyncWriteVectoredExt;
@@ -9,7 +10,7 @@ pub type ServerSender = kanal::AsyncSender<AlignedVec>;
 
 // todo: probably makes sense for caller to encode bytes
 #[must_use]
-pub fn launch_server_writer(mut write: tokio::net::tcp::OwnedWriteHalf) -> ServerSender {
+pub fn launch_server_writer(mut write: impl AsyncWrite + Unpin + Send + 'static) -> ServerSender {
     let (tx, rx) = kanal::bounded_async::<AlignedVec>(32_768);
 
     tokio::spawn(

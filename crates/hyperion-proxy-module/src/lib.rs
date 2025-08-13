@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::Path};
 
 use bevy::prelude::*;
 use hyperion::runtime::AsyncRuntime;
@@ -36,12 +36,21 @@ fn update_proxy_address(trigger: Trigger<'_, SetProxyAddress>, runtime: Res<'_, 
         let listener = TcpListener::bind(&proxy).await.unwrap();
         tracing::info!("Listening on {proxy}");
 
-        let server: SocketAddr = tokio::net::lookup_host(&server)
+        let addr: SocketAddr = tokio::net::lookup_host(&server)
             .await
             .unwrap()
             .next()
             .unwrap();
 
-        hyperion_proxy::run_proxy(listener, server).await.unwrap();
+        hyperion_proxy::run_proxy(
+            listener,
+            addr,
+            server.clone(),
+            Path::new("root_ca.crt"),
+            Path::new("proxy.crt"),
+            Path::new("proxy_private_key.pem"),
+        )
+        .await
+        .unwrap();
     });
 }
