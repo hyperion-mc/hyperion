@@ -143,7 +143,7 @@ impl Crypto {
         cert_path: &Path,
         key_path: &Path,
     ) -> Result<Self, rustls_pki_types::pem::Error> {
-        Ok(Crypto {
+        Ok(Self {
             root_ca_cert: CertificateDer::from_pem_file(root_ca_cert_path)?,
             cert: CertificateDer::from_pem_file(cert_path)?,
             key: PrivateKeyDer::from_pem_file(key_path)?,
