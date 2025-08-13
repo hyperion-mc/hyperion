@@ -181,7 +181,8 @@ On a production environment, the game server and each proxy should run on separa
 
 The connection between the game server and the proxies are encrypted through mTLS to ensure that the connection is secure and authenticate the proxies.
 
-**Security warning:** All private keys must be stored securely, and it is strongly recommended to generate the private keys on the server that will use them instead of transferring them over the Internet. Malicious proxies that have access to a private key can circumvent player authentication and can cause the game server to exhibit undefined behavior which can potentially lead to arbitrary code execution on the game server. If any private key has been compromised, redo this section to create new keys.
+> [!WARNING]
+> All private keys must be stored securely, and it is strongly recommended to generate the private keys on the server that will use them instead of transferring them over the Internet. Malicious proxies that have access to a private key can circumvent player authentication and can cause the game server to exhibit undefined behavior which can potentially lead to arbitrary code execution on the game server. If any private key has been compromised, redo this section to create new keys.
 
 #### Create a private certificate authority (CA)
 
