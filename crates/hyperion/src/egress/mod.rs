@@ -1,11 +1,13 @@
 use bevy::prelude::*;
-use hyperion_proto::{ServerToProxyMessage, UpdatePlayerPositions};
 use tracing::error;
 use valence_protocol::{VarInt, packets::play::PlayerActionResponseS2c};
 
 use crate::{
     Blocks,
-    net::{Compose, ConnectionId},
+    net::{
+        Compose, ConnectionId,
+        intermediate::{IntermediateServerToProxyMessage, UpdatePlayerPositions},
+    },
     simulation::Position,
 };
 mod channel;
@@ -29,14 +31,14 @@ fn send_chunk_positions(
     let mut stream = Vec::with_capacity(count);
     let mut positions = Vec::with_capacity(count);
 
-    for (io, pos) in query.iter() {
-        stream.push(io.inner());
+    for (&io, pos) in query.iter() {
+        stream.push(io);
         positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
     }
 
     let packet = UpdatePlayerPositions { stream, positions };
 
-    let chunk_positions = ServerToProxyMessage::UpdatePlayerPositions(packet);
+    let chunk_positions = IntermediateServerToProxyMessage::UpdatePlayerPositions(packet);
 
     compose.io_buf().add_proxy_message(&chunk_positions);
 }
