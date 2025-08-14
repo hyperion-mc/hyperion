@@ -26,6 +26,18 @@ struct Params {
     #[clap(short, long, default_value = "127.0.0.1:35565")]
     #[serde(default = "default_server")]
     server: String,
+
+    /// The file path to the root certificate authority certificate
+    #[clap(long)]
+    root_ca_cert: PathBuf,
+
+    /// The file path to the proxy certificate
+    #[clap(long)]
+    cert: PathBuf,
+
+    /// The file path to the proxy private key
+    #[clap(long)]
+    private_key: PathBuf,
 }
 
 fn default_proxy_addr() -> String {
@@ -128,14 +140,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ProxyAddress::Tcp(addr) => {
                 let listener = TcpListener::bind(addr).await.unwrap();
                 let socket = NoDelayTcpListener { listener };
-                run_proxy(socket, server_addr).await.unwrap();
+                run_proxy(
+                    socket,
+                    server_addr,
+                    params.server,
+                    &params.root_ca_cert,
+                    &params.cert,
+                    &params.private_key,
+                )
+                .await
+                .unwrap();
             }
             #[cfg(unix)]
             ProxyAddress::Unix(path) => {
                 // remove file if already exists
                 let _unused = tokio::fs::remove_file(path).await;
                 let listener = UnixListener::bind(path).unwrap();
-                run_proxy(listener, server_addr).await.unwrap();
+                run_proxy(
+                    listener,
+                    server_addr,
+                    "localhost:0".to_string(),
+                    &params.root_ca_cert,
+                    &params.cert,
+                    &params.private_key,
+                )
+                .await
+                .unwrap();
             }
         }
     });

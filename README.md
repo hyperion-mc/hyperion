@@ -169,6 +169,66 @@ sequenceDiagram
 
 ## Running
 
+### Network topology
+
+Hyperion uses one game server which runs all game-related code (e.g. physics, game events). One or more proxies can connect to the game server. Players connect to one of the proxies.
+
+For development and testing purposes, it is okay to run one game server and one proxy on the same server. When generating keys, you will need to change the key and certificate file names used below to avoid file name conflicts.
+
+On a production environment, the game server and each proxy should run on separate servers for performance.
+
+### Generating keys and certificates
+
+The connection between the game server and the proxies are encrypted through mTLS to ensure that the connection is secure and authenticate the proxies.
+
+> [!WARNING]
+> All private keys must be stored securely, and it is strongly recommended to generate the private keys on the server that will use them instead of transferring them over the Internet. Malicious proxies that have access to a private key can circumvent player authentication and can cause the game server to exhibit undefined behavior which can potentially lead to arbitrary code execution on the game server. If any private key has been compromised, redo this section to create new keys.
+
+#### Create a private certificate authority (CA)
+
+A server should be picked to store the certificate authority keys and will be referred to as the cetificate authority server. Since the game server and all proxies are considered to be trusted, any of these servers may be used for this purpose.
+
+On the certificate authority server, generate a key and certificate by running:
+
+```bash
+openssl req -new -nodes -newkey rsa:4096 -keyout root_ca.pem -x509 -out root_ca.crt -days 365
+```
+
+OpenSSL will ask for information when running the command. All fields can be left empty.
+
+The `-days` field specifies when the certificate will expire. It will expire in 365 days in the above command, but this can be modified as needed.
+
+`root_ca.crt` is the root CA cert and should be copied to the game server and all proxy servers. When running the game server or the proxy, make sure to pass `--root-ca-cert root_ca.crt` as a command line flag.
+
+#### Generate server keys and certificates
+
+Follow these instructions for the game server and each proxy server. The server will be referred to as the target server.
+
+On the target server, run:
+
+```bash
+openssl req -nodes -newkey rsa:4096 -keyout server_private_key.pem -out server.csr
+```
+
+OpenSSL will ask for information when running the command. All fields can be left empty.
+
+Afterwards, transfer `server.csr` to the certificate authority server. On the certificate authority server, run:
+
+```bash
+openssl x509 -req -in server.csr -CA root_ca.crt -CAkey root_ca.pem -CAcreateserial -out server.crt -days 365 -sha256 -extfile <(printf "subjectAltName=DNS:example.com,IP:127.0.0.1")
+```
+
+Replace `example.com` with the target server's domain name and replace `127.0.0.1` with the IP address that will be used by other servers to connect to the target server.
+If the IP or domain provided is incorrect, connections will fail with the error "invalid peer certificate: certificate not valid for name ...".
+
+The `-days` field specifies when the certificate will expire. It will expire in 365 days in the above command, but this can be modified as needed.
+
+Then, transfer `server.crt` to the target server.
+
+`server.csr` and `server.crt` on the certificate authority server and `server.csr` on the target server are no longer needed and may be deleted.
+
+`server.crt` is the target server's certificate and `server_private_key.pem` is the target server's private key. When running the game server or the proxy, make sure to pass `--cert server.crt --private-key server_private_key.pem` as a command line flag.
+
 ### Without cloning
 
 ```bash

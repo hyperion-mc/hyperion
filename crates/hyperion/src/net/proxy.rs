@@ -1,16 +1,21 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{net::SocketAddr, process::Command};
+use std::{net::SocketAddr, process::Command, sync::Arc};
 
 use bevy::prelude::*;
 use hyperion_proto::ArchivedProxyToServerMessage;
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use rustls::{
+    RootCertStore,
+    server::{ServerConfig, WebPkiClientVerifier},
+};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio_rustls::TlsAcceptor;
 use tracing::{error, info, warn};
 
 use crate::{
-    ConnectionId, PacketDecoder,
+    ConnectionId, Crypto, PacketDecoder,
     command_channel::CommandChannel,
     net::Compose,
     runtime::AsyncRuntime,
@@ -39,10 +44,7 @@ fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     Ok(pid)
 }
 
-async fn handle_proxy_messages(
-    read: tokio::net::tcp::OwnedReadHalf,
-    command_channel: CommandChannel,
-) {
+async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: CommandChannel) {
     let mut reader = ProxyReader::new(read);
     let mut player_packet_sender: FxHashMap<u64, packet_channel::Sender> = FxHashMap::default();
 
@@ -186,6 +188,7 @@ async fn handle_proxy_messages(
 
 async fn inner(
     socket: SocketAddr,
+    crypto: Crypto,
     mut server_to_proxy: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
     command_channel: CommandChannel,
 ) {
@@ -216,10 +219,30 @@ async fn inner(
         Err(e) => panic!("Failed to bind to address {socket}: {e}"),
     };
 
+    let root_cert_store = Arc::new(RootCertStore {
+        roots: vec![
+            webpki::anchor_from_trusted_cert(&crypto.root_ca_cert)
+                .unwrap()
+                .to_owned(),
+        ],
+    });
+
+    let config = ServerConfig::builder()
+        .with_client_cert_verifier(
+            WebPkiClientVerifier::builder(root_cert_store)
+                .build()
+                .unwrap(),
+        )
+        .with_single_cert(vec![crypto.cert, crypto.root_ca_cert], crypto.key)
+        .unwrap();
+
+    let acceptor = TlsAcceptor::from(Arc::new(config));
+
     tokio::spawn(
         async move {
             loop {
                 let (socket, _) = listener.accept().await.unwrap();
+
                 socket.set_nodelay(true).unwrap();
 
                 let addr = match socket.peer_addr() {
@@ -230,9 +253,21 @@ async fn inner(
                     }
                 };
 
+                let command_channel = command_channel.clone();
+
+                let stream = match acceptor.accept(socket).await {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        error!(
+                            "failed to accept proxy connection from {addr}: tls accept failed: {e}"
+                        );
+                        continue;
+                    }
+                };
+
                 info!("Proxy connection established on {addr}");
 
-                let (read, mut write) = socket.into_split();
+                let (read, mut write) = tokio::io::split(stream);
 
                 let proxy_writer_task = tokio::spawn(async move {
                     while let Some(bytes) = server_to_proxy.recv().await {
@@ -266,20 +301,24 @@ pub fn init_proxy_comms(
     runtime: &AsyncRuntime,
     command_channel: CommandChannel,
     socket: SocketAddr,
+    crypto: Crypto,
 ) -> EgressComm {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    runtime.spawn(inner(socket, rx, command_channel));
+    runtime.spawn(inner(socket, crypto, rx, command_channel));
     EgressComm::from(tx)
 }
 
 #[derive(Debug)]
-struct ProxyReader {
-    server_read: tokio::net::tcp::OwnedReadHalf,
+struct ProxyReader<R> {
+    server_read: R,
     buffer: Vec<u8>,
 }
 
-impl ProxyReader {
-    pub fn new(server_read: tokio::net::tcp::OwnedReadHalf) -> Self {
+impl<R> ProxyReader<R>
+where
+    R: AsyncRead + Unpin,
+{
+    pub fn new(server_read: R) -> Self {
         Self {
             server_read,
             buffer: vec![0; 1024 * 1024],

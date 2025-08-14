@@ -16,16 +16,19 @@
     clippy::future_not_send
 )]
 
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Path, sync::Arc};
 
 use anyhow::Context;
 use colored::Colorize;
 use hyperion_proto::ArchivedServerToProxyMessage;
 use rustc_hash::FxBuildHasher;
+use rustls::{RootCertStore, client::ClientConfig};
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, ServerName, pem::PemObject};
 use tokio::{
-    io::{AsyncReadExt, BufReader},
+    io::{AsyncRead, AsyncReadExt, BufReader},
     net::{TcpStream, ToSocketAddrs},
 };
+use tokio_rustls::TlsConnector;
 use tokio_util::net::Listener;
 use tracing::{Instrument, debug, error, info, info_span, instrument, trace, warn};
 
@@ -70,7 +73,43 @@ enum ShutdownType {
 pub async fn run_proxy(
     mut listener: impl HyperionListener,
     server_addr: impl ToSocketAddrs + Debug + Clone,
+    mut server_name: String,
+    root_ca_cert_path: &Path,
+    proxy_cert_path: &Path,
+    proxy_private_key_path: &Path,
 ) -> anyhow::Result<()> {
+    // Remove port
+    let Some(port_index) = server_name.rfind(':') else {
+        anyhow::bail!("server name is missing port");
+    };
+    server_name.truncate(port_index);
+
+    let server_name = ServerName::try_from(server_name).context("failed to parse server name")?;
+
+    let root_ca_cert = CertificateDer::from_pem_file(root_ca_cert_path)
+        .context("failed to load root certificate authority certificate")?;
+    let proxy_cert = CertificateDer::from_pem_file(proxy_cert_path)
+        .context("failed to load proxy certificate")?;
+
+    let root_cert_store = Arc::new(RootCertStore {
+        roots: vec![
+            webpki::anchor_from_trusted_cert(&root_ca_cert)
+                .context("failed to create trust anchor")?
+                .to_owned(),
+        ],
+    });
+
+    let cert_chain = vec![proxy_cert, root_ca_cert];
+    let key_der = PrivateKeyDer::from_pem_file(proxy_private_key_path)
+        .context("failed to load proxy private key")?;
+
+    let config = Arc::new(
+        ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_client_auth_cert(cert_chain, key_der)
+            .context("failed to create tls client config")?,
+    );
+
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(None);
 
     #[cfg(unix)]
@@ -121,7 +160,7 @@ pub async fn run_proxy(
                 let server_socket = connect(server_addr.clone()).await;
                 server_socket.set_nodelay(true).unwrap();
 
-                if let Err(e) = connect_to_server_and_run_proxy(&mut listener, server_socket, shutdown_rx.clone(), shutdown_tx.clone()).await {
+                if let Err(e) = connect_to_server_and_run_proxy(&mut listener, server_socket, server_name.clone(), config.clone(), shutdown_rx.clone(), shutdown_tx.clone()).await {
                     error!("Error connecting to server: {e:?}");
                 }
 
@@ -135,11 +174,20 @@ pub async fn run_proxy(
 async fn connect_to_server_and_run_proxy(
     listener: &mut impl HyperionListener,
     server_socket: TcpStream,
+    server_name: ServerName<'static>,
+    config: Arc<ClientConfig>,
     shutdown_rx: tokio::sync::watch::Receiver<Option<ShutdownType>>,
     shutdown_tx: tokio::sync::watch::Sender<Option<ShutdownType>>,
 ) -> anyhow::Result<()> {
     info!("🔗 Connected to server, accepting connections");
-    let (server_read, server_write) = server_socket.into_split();
+
+    let connector = TlsConnector::from(config);
+    let server_stream = connector
+        .connect(server_name, server_socket)
+        .await
+        .context("failed to connect to game server")?;
+
+    let (server_read, server_write) = tokio::io::split(server_stream);
     let server_sender = launch_server_writer(server_write);
 
     let player_registry = papaya::HashMap::default();
@@ -219,23 +267,23 @@ async fn connect_to_server_and_run_proxy(
     }
 }
 
-struct IngressHandler {
-    server_read: BufReader<tokio::net::tcp::OwnedReadHalf>,
+struct IngressHandler<R> {
+    server_read: BufReader<R>,
     buffer: Vec<u8>,
     egress: BufferedEgress,
 }
 
-impl Debug for IngressHandler {
+impl<R> Debug for IngressHandler<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServerReader").finish()
     }
 }
 
-impl IngressHandler {
-    pub fn new(
-        server_read: BufReader<tokio::net::tcp::OwnedReadHalf>,
-        egress: BufferedEgress,
-    ) -> Self {
+impl<R> IngressHandler<R>
+where
+    R: AsyncRead + Unpin,
+{
+    pub fn new(server_read: BufReader<R>, egress: BufferedEgress) -> Self {
         Self {
             server_read,
             egress,

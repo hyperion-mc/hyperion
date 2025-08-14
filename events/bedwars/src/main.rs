@@ -1,7 +1,8 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
 
 use bedwars::init_game;
 use clap::Parser;
+use hyperion::Crypto;
 use serde::Deserialize;
 use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
 // use tracing_tracy::TracyLayer;
@@ -22,6 +23,18 @@ struct Args {
     #[clap(short, long, default_value = "35565")]
     #[serde(default = "default_port")]
     port: u16,
+
+    /// The file path to the root certificate authority's certificate
+    #[clap(long)]
+    root_ca_cert: PathBuf,
+
+    /// The file path to the game server's certificate
+    #[clap(long)]
+    cert: PathBuf,
+
+    /// The file path to the game server's private key
+    #[clap(long)]
+    private_key: PathBuf,
 }
 
 fn default_ip() -> String {
@@ -70,6 +83,7 @@ fn main() {
 
     let address = format!("{ip}:{port}", ip = args.ip, port = args.port);
     let address = address.parse::<SocketAddr>().unwrap();
+    let crypto = Crypto::new(&args.root_ca_cert, &args.cert, &args.private_key).unwrap();
 
-    init_game(address).unwrap();
+    init_game(address, crypto).unwrap();
 }

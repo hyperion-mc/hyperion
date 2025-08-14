@@ -50,6 +50,9 @@ reqwest = { workspace = true }
 rkyv = { workspace = true }
 roaring = { workspace = true, features = ["simd"] }
 rustc-hash = { workspace = true }
+rustls = { workspace = true }
+rustls-pki-types = { workspace = true }
+rustls-webpki = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -57,6 +60,7 @@ simd-utils = { workspace = true }
 thiserror = { workspace = true }
 thread_local = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-rustls = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-tracy = { workspace = true }

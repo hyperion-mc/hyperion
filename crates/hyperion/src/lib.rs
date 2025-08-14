@@ -26,7 +26,9 @@
 
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
-use std::{alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration,
+};
 
 use bevy::prelude::*;
 use egress::EgressPlugin;
@@ -34,6 +36,7 @@ pub use glam;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use storage::{LocalDb, SkinHandler};
 use tracing::{info, warn};
 pub use uuid;
@@ -120,6 +123,42 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     }
 
     Ok(())
+}
+
+#[derive(Resource)]
+pub struct Crypto {
+    /// The root certificate authority's certificate
+    pub root_ca_cert: CertificateDer<'static>,
+
+    /// The game server's certificate
+    pub cert: CertificateDer<'static>,
+
+    /// The game server's private key
+    pub key: PrivateKeyDer<'static>,
+}
+
+impl Crypto {
+    pub fn new(
+        root_ca_cert_path: &Path,
+        cert_path: &Path,
+        key_path: &Path,
+    ) -> Result<Self, rustls_pki_types::pem::Error> {
+        Ok(Self {
+            root_ca_cert: CertificateDer::from_pem_file(root_ca_cert_path)?,
+            cert: CertificateDer::from_pem_file(cert_path)?,
+            key: PrivateKeyDer::from_pem_file(key_path)?,
+        })
+    }
+}
+
+impl Clone for Crypto {
+    fn clone(&self) -> Self {
+        Self {
+            root_ca_cert: self.root_ca_cert.clone(),
+            cert: self.cert.clone(),
+            key: self.key.clone_key(),
+        }
+    }
 }
 
 #[derive(Resource, Debug, Clone, PartialEq, Eq, Hash)]
@@ -213,8 +252,10 @@ impl Plugin for HyperionCore {
         app.add_plugins(CommandChannelPlugin);
 
         if let Some(address) = app.world().get_resource::<Endpoint>() {
+            let crypto = app.world().resource::<Crypto>();
             let command_channel = app.world().resource::<CommandChannel>();
-            let egress_comm = init_proxy_comms(&runtime, command_channel.clone(), address.0);
+            let egress_comm =
+                init_proxy_comms(&runtime, command_channel.clone(), address.0, crypto.clone());
             compose.io_buf_mut().add_egress_comm(egress_comm);
         } else {
             warn!("Endpoint was not set while loading HyperionCore");

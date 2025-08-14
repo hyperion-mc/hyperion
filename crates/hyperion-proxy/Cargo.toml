@@ -5,7 +5,11 @@ kanal = { workspace = true }
 papaya = { workspace = true }
 rkyv = { workspace = true }
 rustc-hash = { workspace = true }
+rustls = { workspace = true }
+rustls-pki-types = { workspace = true }
+rustls-webpki = { workspace = true }
 tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-rustls = { workspace = true }
 tokio-util = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
 bvh = { workspace = true }
