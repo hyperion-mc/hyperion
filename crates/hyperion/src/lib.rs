@@ -247,21 +247,21 @@ impl Plugin for HyperionCore {
 
         let global = Global::new(shared.clone());
 
-        let mut compose = Compose::new(shared.compression_level, global, IoBuf::default());
-
         app.add_plugins(CommandChannelPlugin);
 
         if let Some(address) = app.world().get_resource::<Endpoint>() {
             let crypto = app.world().resource::<Crypto>();
             let command_channel = app.world().resource::<CommandChannel>();
-            let egress_comm =
-                init_proxy_comms(&runtime, command_channel.clone(), address.0, crypto.clone());
-            compose.io_buf_mut().add_egress_comm(egress_comm);
+            init_proxy_comms(&runtime, command_channel.clone(), address.0, crypto.clone());
         } else {
             warn!("Endpoint was not set while loading HyperionCore");
         }
 
-        app.insert_resource(compose);
+        app.insert_resource(Compose::new(
+            shared.compression_level,
+            global,
+            IoBuf::default(),
+        ));
         app.insert_resource(runtime);
         app.insert_resource(CraftingRegistry::default());
         app.insert_resource(StreamLookup::default());

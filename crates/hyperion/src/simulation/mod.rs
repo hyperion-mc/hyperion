@@ -60,7 +60,7 @@ pub struct PlayerUuidLookup {
 }
 
 /// Communicates with the proxy server.
-#[derive(Resource, Deref, DerefMut, From)]
+#[derive(Clone, Deref, DerefMut, From)]
 pub struct EgressComm {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }

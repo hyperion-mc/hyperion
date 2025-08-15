@@ -13,17 +13,23 @@ use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
 use hyperion_utils::EntityExt;
 use libdeflater::CompressionLvl;
+use rustc_hash::FxHashMap;
 use thread_local::ThreadLocal;
+use tracing::error;
 
 use crate::{
     Global, PacketBundle, Scratch,
-    net::encoder::{PacketEncoder, append_packet_without_compression},
+    net::{
+        encoder::{PacketEncoder, append_packet_without_compression},
+        intermediate::IntermediateServerToProxyMessage,
+    },
     simulation::EgressComm,
 };
 
 pub mod agnostic;
 pub mod decoder;
 pub mod encoder;
+pub mod intermediate;
 pub mod packets;
 pub mod proxy;
 
@@ -37,6 +43,33 @@ pub const MAX_PACKET_SIZE: usize = valence_protocol::MAX_PACKET_SIZE as usize;
 /// targets.
 pub const MINECRAFT_VERSION: &str = "1.20.1";
 
+/// A unique identifier for a proxy to game server connection
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ProxyId {
+    /// The underlying unique identifier for the proxy connection.
+    /// This value is guaranteed to be unique among all active connections.
+    proxy_id: u64,
+}
+
+impl ProxyId {
+    /// Creates a new proxy ID with the specified proxy identifier.
+    ///
+    /// This is an internal API used by the proxy management system.
+    #[must_use]
+    pub const fn new(proxy_id: u64) -> Self {
+        Self { proxy_id }
+    }
+
+    /// Returns the underlying proxy identifier.
+    ///
+    /// This method is primarily used by internal networking code to interact
+    /// with the proxy layer. Most application code should not need this.
+    #[must_use]
+    pub const fn inner(self) -> u64 {
+        self.proxy_id
+    }
+}
+
 /// A unique identifier for a client connection
 ///
 /// Each `ConnectionId` represents an active network connection between the server and a client,
@@ -49,11 +82,14 @@ pub const MINECRAFT_VERSION: &str = "1.20.1";
 ///
 /// Note: Connection IDs are managed internally by the networking system and should be obtained
 /// through the appropriate connection establishment handlers rather than created directly.
-#[derive(Component, Copy, Clone, Debug)]
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConnectionId {
     /// The underlying unique identifier for this connection.
     /// This value is guaranteed to be unique among all active connections.
     stream_id: u64,
+
+    /// The proxy which this player connection is connected to
+    proxy_id: ProxyId,
 }
 
 impl ConnectionId {
@@ -63,8 +99,20 @@ impl ConnectionId {
     /// External code should obtain connection IDs through the appropriate
     /// connection handlers.
     #[must_use]
-    pub const fn new(stream_id: u64) -> Self {
-        Self { stream_id }
+    pub const fn new(stream_id: u64, proxy_id: ProxyId) -> Self {
+        Self {
+            stream_id,
+            proxy_id,
+        }
+    }
+
+    /// Returns the proxy which this player connection is connected to.
+    ///
+    /// This method is primarily used by internal networking code.
+    /// Most application code should not need this.
+    #[must_use]
+    pub const fn proxy_id(self) -> ProxyId {
+        self.proxy_id
     }
 
     /// Returns the underlying stream identifier.
@@ -165,7 +213,7 @@ impl<'a> DataBundle<'a> {
 
         self.compose
             .io_buf
-            .broadcast_local_raw(&self.data, center, 0);
+            .broadcast_local_raw(&self.data, center, None);
         Ok(())
     }
 
@@ -177,7 +225,7 @@ impl<'a> DataBundle<'a> {
 
         self.compose
             .io_buf
-            .broadcast_channel_raw(&self.data, channel, 0);
+            .broadcast_channel_raw(&self.data, channel, None);
 
         Ok(())
     }
@@ -216,7 +264,7 @@ impl Compose {
         Broadcast {
             packet,
             compose: self,
-            exclude: 0,
+            exclude: None,
         }
     }
 
@@ -241,7 +289,7 @@ impl Compose {
         BroadcastLocal {
             packet,
             compose: self,
-            exclude: 0,
+            exclude: None,
             center: ChunkPosition {
                 x: center.x,
                 z: center.y,
@@ -261,7 +309,7 @@ impl Compose {
         BroadcastChannel {
             packet,
             compose: self,
-            exclude: 0,
+            exclude: None,
             channel,
         }
     }
@@ -328,7 +376,7 @@ pub struct IoBuf {
     // broadcast_buffer: ThreadLocal<RefCell<BytesMut>>,
     temp_buffer: ThreadLocal<RefCell<BytesMut>>,
     idx: ThreadLocal<Cell<u16>>,
-    egress_comms: Vec<EgressComm>,
+    egress_comms: FxHashMap<ProxyId, EgressComm>,
 }
 
 impl IoBuf {
@@ -339,8 +387,16 @@ impl IoBuf {
         result
     }
 
-    pub(crate) fn add_egress_comm(&mut self, egress_comm: EgressComm) {
-        self.egress_comms.push(egress_comm);
+    pub(crate) fn add_proxy(&mut self, proxy_id: ProxyId, egress_comm: EgressComm) {
+        let already_exists = self.egress_comms.insert(proxy_id, egress_comm).is_some();
+
+        if already_exists {
+            error!("added multiple proxies with the same proxy id {proxy_id:?}");
+        }
+    }
+
+    pub(crate) fn remove_proxy(&mut self, proxy_id: ProxyId) -> Option<EgressComm> {
+        self.egress_comms.remove(&proxy_id)
     }
 }
 
@@ -349,7 +405,7 @@ impl IoBuf {
 pub struct Broadcast<'a, P> {
     packet: P,
     compose: &'a Compose,
-    exclude: u64,
+    exclude: Option<ConnectionId>,
 }
 
 /// A unicast builder
@@ -394,7 +450,6 @@ impl<P> Broadcast<'_, P> {
     /// Exclude a certain player from the broadcast. This can only be called once.
     pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
         let exclude = exclude.into();
-        let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
         Broadcast {
             packet: self.packet,
             compose: self.compose,
@@ -409,7 +464,7 @@ pub struct BroadcastLocal<'a, P> {
     packet: P,
     compose: &'a Compose,
     center: ChunkPosition,
-    exclude: u64,
+    exclude: Option<ConnectionId>,
 }
 
 impl<P> BroadcastLocal<'_, P> {
@@ -433,7 +488,6 @@ impl<P> BroadcastLocal<'_, P> {
     /// Exclude a certain player from the broadcast. This can only be called once.
     pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
         let exclude = exclude.into();
-        let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
         BroadcastLocal {
             packet: self.packet,
             compose: self.compose,
@@ -448,7 +502,7 @@ impl<P> BroadcastLocal<'_, P> {
 pub struct BroadcastChannel<'a, P> {
     packet: P,
     compose: &'a Compose,
-    exclude: u64,
+    exclude: Option<ConnectionId>,
     channel: ChannelId,
 }
 
@@ -473,7 +527,6 @@ impl<P> BroadcastChannel<'_, P> {
     /// Exclude a certain player from the broadcast. This can only be called once.
     pub fn exclude(self, exclude: impl Into<Option<ConnectionId>>) -> Self {
         let exclude = exclude.into();
-        let exclude = exclude.map(|id| id.stream_id).unwrap_or_default();
         Self { exclude, ..self }
     }
 }
@@ -532,7 +585,7 @@ impl IoBuf {
         Ok(())
     }
 
-    pub(crate) fn add_proxy_message(&self, message: &ServerToProxyMessage<'_>) {
+    pub(crate) fn encode_proxy_message(message: &ServerToProxyMessage<'_>) -> Bytes {
         let mut buffer = Vec::<u8>::new();
 
         buffer.write_u64::<byteorder::BigEndian>(0x00).unwrap();
@@ -542,28 +595,61 @@ impl IoBuf {
         let packet_len = u64::try_from(buffer.len() - size_of::<u64>()).unwrap();
         buffer[0..8].copy_from_slice(&packet_len.to_be_bytes());
 
-        let buffer = Bytes::from_owner(buffer);
+        Bytes::from_owner(buffer)
+    }
 
-        for egress_comm in &self.egress_comms {
-            egress_comm.tx.send(buffer.clone()).unwrap();
+    pub(crate) fn add_proxy_message(&self, message: &IntermediateServerToProxyMessage<'_>) {
+        if message.affected_by_proxy() {
+            // Encode the message for each proxy before sending it
+            for (&proxy_id, egress_comm) in &self.egress_comms {
+                let Some(message) = message.transform_for_proxy(proxy_id) else {
+                    continue;
+                };
+
+                egress_comm
+                    .tx
+                    .send(Self::encode_proxy_message(&message))
+                    .unwrap();
+            }
+        } else {
+            // Encode the message once and then send it to each proxy. This uses a placeholder
+            // proxy id.
+            let Some(message) = message.transform_for_proxy(ProxyId::new(0)) else {
+                return;
+            };
+
+            let buffer = Self::encode_proxy_message(&message);
+            for egress_comm in self.egress_comms.values() {
+                egress_comm.tx.send(buffer.clone()).unwrap();
+            }
         }
     }
 
-    fn broadcast_local_raw(&self, data: &[u8], center: impl Into<ChunkPosition>, exclude: u64) {
+    fn broadcast_local_raw(
+        &self,
+        data: &[u8],
+        center: impl Into<ChunkPosition>,
+        exclude: Option<ConnectionId>,
+    ) {
         let center = center.into();
 
-        self.add_proxy_message(&ServerToProxyMessage::BroadcastLocal(
-            hyperion_proto::BroadcastLocal {
-                data,
+        self.add_proxy_message(&IntermediateServerToProxyMessage::BroadcastLocal(
+            intermediate::BroadcastLocal {
                 center,
                 exclude,
+                data,
             },
         ));
     }
 
-    fn broadcast_channel_raw(&self, data: &[u8], channel: ChannelId, exclude: u64) {
-        self.add_proxy_message(&ServerToProxyMessage::BroadcastChannel(
-            hyperion_proto::BroadcastChannel {
+    fn broadcast_channel_raw(
+        &self,
+        data: &[u8],
+        channel: ChannelId,
+        exclude: Option<ConnectionId>,
+    ) {
+        self.add_proxy_message(&IntermediateServerToProxyMessage::BroadcastChannel(
+            intermediate::BroadcastChannel {
                 channel_id: channel.inner(),
                 data,
                 exclude,
@@ -571,36 +657,27 @@ impl IoBuf {
         ));
     }
 
-    pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: u64) {
-        self.add_proxy_message(&ServerToProxyMessage::BroadcastGlobal(
-            hyperion_proto::BroadcastGlobal {
-                data,
-                // todo: Right now, we are using `to_vec`.
-                // We want to probably allow encoding without allocation in the future.
-                // Fortunately, `to_vec` will not require any allocation if the buffer is empty.
-                exclude,
-            },
+    pub(crate) fn broadcast_raw(&self, data: &[u8], exclude: Option<ConnectionId>) {
+        self.add_proxy_message(&IntermediateServerToProxyMessage::BroadcastGlobal(
+            intermediate::BroadcastGlobal { exclude, data },
         ));
     }
 
     pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId) {
-        self.add_proxy_message(&ServerToProxyMessage::Unicast(hyperion_proto::Unicast {
-            data,
-            stream: stream.stream_id,
-        }));
+        self.add_proxy_message(&IntermediateServerToProxyMessage::Unicast(
+            intermediate::Unicast { stream, data },
+        ));
     }
 
     pub(crate) fn set_receive_broadcasts(&self, stream: ConnectionId) {
-        self.add_proxy_message(&ServerToProxyMessage::SetReceiveBroadcasts(
-            hyperion_proto::SetReceiveBroadcasts {
-                stream: stream.stream_id,
-            },
+        self.add_proxy_message(&IntermediateServerToProxyMessage::SetReceiveBroadcasts(
+            intermediate::SetReceiveBroadcasts { stream },
         ));
     }
 
     pub(crate) fn add_channel(&self, channel: ChannelId, unsubscribe_packets: &[u8]) {
-        self.add_proxy_message(&ServerToProxyMessage::AddChannel(
-            hyperion_proto::AddChannel {
+        self.add_proxy_message(&IntermediateServerToProxyMessage::AddChannel(
+            intermediate::AddChannel {
                 channel_id: channel.inner(),
                 unsubscribe_packets,
             },
@@ -613,26 +690,26 @@ impl IoBuf {
         packets: &[u8],
         exclude: Option<ConnectionId>,
     ) {
-        self.add_proxy_message(&ServerToProxyMessage::SubscribeChannelPackets(
-            hyperion_proto::SubscribeChannelPackets {
+        self.add_proxy_message(&IntermediateServerToProxyMessage::SubscribeChannelPackets(
+            intermediate::SubscribeChannelPackets {
                 channel_id: channel.inner(),
-                exclude: exclude.map_or(0, |connection_id| connection_id.stream_id),
+                exclude,
                 data: packets,
             },
         ));
     }
 
     pub(crate) fn remove_channel(&self, channel: ChannelId) {
-        self.add_proxy_message(&ServerToProxyMessage::RemoveChannel(
-            hyperion_proto::RemoveChannel {
+        self.add_proxy_message(&IntermediateServerToProxyMessage::RemoveChannel(
+            intermediate::RemoveChannel {
                 channel_id: channel.inner(),
             },
         ));
     }
 
     pub fn shutdown(&self, stream: ConnectionId) {
-        self.add_proxy_message(&ServerToProxyMessage::Shutdown(hyperion_proto::Shutdown {
-            stream: stream.stream_id,
-        }));
+        self.add_proxy_message(&IntermediateServerToProxyMessage::Shutdown(
+            intermediate::Shutdown { stream },
+        ));
     }
 }

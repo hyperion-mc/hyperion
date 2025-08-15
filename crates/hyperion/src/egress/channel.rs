@@ -1,5 +1,5 @@
 use bevy::{ecs::world::OnDespawn, prelude::*};
-use hyperion_proto::{ServerToProxyMessage, UpdateChannelPosition, UpdateChannelPositions};
+use hyperion_proto::UpdateChannelPosition;
 use hyperion_utils::EntityExt;
 use tracing::error;
 use valence_bytes::CowBytes;
@@ -7,7 +7,10 @@ use valence_protocol::{ByteAngle, RawBytes, VarInt, packets::play};
 
 use crate::{
     egress::metadata::show_all,
-    net::{Channel, ChannelId, Compose, ConnectionId},
+    net::{
+        Channel, ChannelId, Compose, ConnectionId,
+        intermediate::{IntermediateServerToProxyMessage, UpdateChannelPositions},
+    },
     simulation::{
         Pitch, Position, RequestSubscribeChannelPackets, Uuid, Velocity, Yaw,
         entity_kind::EntityKind,
@@ -47,7 +50,7 @@ fn update_channel_positions(
 
     compose
         .io_buf()
-        .add_proxy_message(&ServerToProxyMessage::UpdateChannelPositions(
+        .add_proxy_message(&IntermediateServerToProxyMessage::UpdateChannelPositions(
             UpdateChannelPositions { updates: &updates },
         ));
 }

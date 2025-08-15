@@ -1,6 +1,13 @@
 //! Communication to a proxy which forwards packets to the players.
 
-use std::{net::SocketAddr, process::Command, sync::Arc};
+use std::{
+    net::SocketAddr,
+    process::Command,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use bevy::prelude::*;
 use hyperion_proto::ArchivedProxyToServerMessage;
@@ -13,11 +20,12 @@ use rustls::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::TlsAcceptor;
 use tracing::{error, info, warn};
+use valence_protocol::{VarInt, packets::play};
 
 use crate::{
     ConnectionId, Crypto, PacketDecoder,
     command_channel::CommandChannel,
-    net::Compose,
+    net::{Channel, ChannelId, Compose, IoBuf, ProxyId},
     runtime::AsyncRuntime,
     simulation::{EgressComm, RequestSubscribeChannelPackets, StreamLookup, packet_state},
 };
@@ -44,10 +52,15 @@ fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     Ok(pid)
 }
 
-async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: CommandChannel) {
+async fn handle_proxy_messages(
+    read: impl AsyncRead + Unpin,
+    command_channel: CommandChannel,
+    proxy_id: ProxyId,
+) {
     let mut reader = ProxyReader::new(read);
     let mut player_packet_sender: FxHashMap<u64, packet_channel::Sender> = FxHashMap::default();
 
+    // Process packets
     loop {
         let buffer = match reader.next_server_packet_buffer().await {
             Ok(message) => message,
@@ -65,7 +78,7 @@ async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: Co
                         error!("closing proxy connection due to an unexpected error: {err:?}");
                     }
                 }
-                return;
+                break;
             }
         };
 
@@ -86,7 +99,7 @@ async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: Co
                 command_channel.push(move |world: &mut World| {
                     let player = world
                         .spawn((
-                            ConnectionId::new(stream),
+                            ConnectionId::new(stream, proxy_id),
                             packet_state::Handshake(()),
                             PacketDecoder::default(),
                             receiver,
@@ -124,7 +137,7 @@ async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: Co
                     error!(
                         "PlayerPackets: no player with stream id exists in player_packet_sender"
                     );
-                    return;
+                    continue;
                 };
 
                 if let Err(e) = sender.send(&message.data) {
@@ -145,7 +158,9 @@ async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: Co
                             let compose = world
                                 .get_resource::<Compose>()
                                 .expect("Compose resource should exist");
-                            compose.io_buf().shutdown(ConnectionId::new(stream));
+                            compose
+                                .io_buf()
+                                .shutdown(ConnectionId::new(stream, proxy_id));
                         });
                     }
                 }
@@ -184,14 +199,22 @@ async fn handle_proxy_messages(read: impl AsyncRead + Unpin, command_channel: Co
             }
         }
     }
+
+    // Disconnect all players that were connected through this proxy
+    command_channel.push(move |world: &mut World| {
+        let mut query = world.query::<(Entity, &ConnectionId)>();
+        let players_to_remove = query
+            .iter(world)
+            .filter(|(_, connection_id)| connection_id.proxy_id() == proxy_id)
+            .map(|(entity, _)| entity)
+            .collect::<Vec<_>>();
+        for player in players_to_remove {
+            world.despawn(player);
+        }
+    });
 }
 
-async fn inner(
-    socket: SocketAddr,
-    crypto: Crypto,
-    mut server_to_proxy: tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
-    command_channel: CommandChannel,
-) {
+async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChannel) {
     let listener = match tokio::net::TcpListener::bind(socket).await {
         Ok(listener) => listener,
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
@@ -240,6 +263,8 @@ async fn inner(
 
     tokio::spawn(
         async move {
+            let next_proxy_id = Arc::new(AtomicU64::new(0));
+
             loop {
                 let (socket, _) = listener.accept().await.unwrap();
 
@@ -254,58 +279,105 @@ async fn inner(
                 };
 
                 let command_channel = command_channel.clone();
+                let next_proxy_id = next_proxy_id.clone();
+                let stream = acceptor.accept(socket);
 
-                let stream = match acceptor.accept(socket).await {
-                    Ok(stream) => stream,
-                    Err(e) => {
-                        error!(
-                            "failed to accept proxy connection from {addr}: tls accept failed: {e}"
-                        );
-                        continue;
-                    }
-                };
-
-                info!("Proxy connection established on {addr}");
-
-                let (read, mut write) = tokio::io::split(stream);
-
-                let proxy_writer_task = tokio::spawn(async move {
-                    while let Some(bytes) = server_to_proxy.recv().await {
-                        if write.write_all(&bytes).await.is_err() {
-                            error!("error writing to proxy");
-                            return server_to_proxy;
+                tokio::spawn(async move {
+                    let stream = match stream.await {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            error!(
+                                "failed to accept proxy connection from {addr}: tls accept \
+                                 failed: {e}"
+                            );
+                            return;
                         }
-                    }
+                    };
 
-                    warn!("proxy shut down");
+                    info!("Proxy connection established on {addr}");
 
-                    server_to_proxy
+                    let (read, mut write) = tokio::io::split(stream);
+
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                    let egress_comm = EgressComm::from(tx.clone());
+                    let proxy_id = ProxyId::new(next_proxy_id.fetch_add(1, Ordering::Relaxed));
+
+                    command_channel.push(move |world: &mut World| {
+                        let mut compose = world.resource_mut::<Compose>();
+                        compose.io_buf_mut().add_proxy(proxy_id, egress_comm);
+                    });
+
+                    let command_channel_clone = command_channel.clone();
+                    tokio::spawn(async move {
+                        // Send the bytes from the channel to the proxy
+                        while let Some(bytes) = rx.recv().await {
+                            if write.write_all(&bytes).await.is_err() {
+                                error!("error writing to proxy");
+                                break;
+                            }
+                        }
+
+                        warn!("proxy shut down");
+
+                        command_channel_clone.push(move |world: &mut World| {
+                            // Remove this channel from the compose egress comms list
+                            let mut compose = world.resource_mut::<Compose>();
+                            let removed = compose.io_buf_mut().remove_proxy(proxy_id).is_some();
+                            if !removed {
+                                error!("failed to remove proxy from compose egress comms");
+                            }
+
+                            // Explicitly close this receiver. This ensures that the channel isn't
+                            // closed before this, which would lead to an error on the sender side
+                            // of Compose.
+                            rx.close();
+                        });
+                    });
+
+                    command_channel.push(move |world: &mut World| {
+                        // Let the proxy know about all packet channels that exist at the moment
+
+                        let mut query = world.query_filtered::<Entity, With<Channel>>();
+                        let compose = world.resource::<Compose>();
+                        for channel in query.iter(world) {
+                            let packet = play::EntitiesDestroyS2c {
+                                entity_ids: vec![VarInt(channel.minecraft_id())].into(),
+                            };
+
+                            let packet_buf =
+                                compose.io_buf().encode_packet(&packet, compose).unwrap();
+
+                            tx.send(IoBuf::encode_proxy_message(
+                                &hyperion_proto::ServerToProxyMessage::AddChannel(
+                                    hyperion_proto::AddChannel {
+                                        channel_id: ChannelId::from(channel).inner(),
+                                        unsubscribe_packets: &packet_buf,
+                                    },
+                                ),
+                            ))
+                            .unwrap();
+                        }
+                    });
+
+                    tokio::spawn(handle_proxy_messages(
+                        read,
+                        command_channel.clone(),
+                        proxy_id,
+                    ));
                 });
-
-                let command_channel = command_channel.clone();
-                tokio::spawn(handle_proxy_messages(read, command_channel));
-
-                // todo: handle player disconnects on proxy shut down
-                // Ideally, we should design for there being multiple proxies,
-                // and all proxies should store all the players on them.
-                // Then we can disconnect all those players related to that proxy.
-                server_to_proxy = proxy_writer_task.await.unwrap();
             }
         }, // .instrument(info_span!("proxy reader")),
     );
 }
 
 /// Initializes proxy communications.
-#[must_use]
 pub fn init_proxy_comms(
     runtime: &AsyncRuntime,
     command_channel: CommandChannel,
     socket: SocketAddr,
     crypto: Crypto,
-) -> EgressComm {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    runtime.spawn(inner(socket, crypto, rx, command_channel));
-    EgressComm::from(tx)
+) {
+    runtime.spawn(inner(socket, crypto, command_channel));
 }
 
 #[derive(Debug)]
