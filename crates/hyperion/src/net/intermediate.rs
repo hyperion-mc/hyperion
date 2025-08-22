@@ -33,6 +33,7 @@ pub struct RemoveChannel {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SubscribeChannelPackets<'a> {
     pub channel_id: u32,
+    pub receiver: ProxyId,
     pub exclude: Option<ConnectionId>,
 
     pub data: &'a [u8],
@@ -152,8 +153,8 @@ impl IntermediateServerToProxyMessage<'_> {
                     channel_id: message.channel_id,
                 },
             )),
-            Self::SubscribeChannelPackets(message) => {
-                Some(ServerToProxyMessage::SubscribeChannelPackets(
+            Self::SubscribeChannelPackets(message) => (message.receiver == proxy_id).then(|| {
+                ServerToProxyMessage::SubscribeChannelPackets(
                     hyperion_proto::SubscribeChannelPackets {
                         channel_id: message.channel_id,
                         exclude: message
@@ -162,8 +163,8 @@ impl IntermediateServerToProxyMessage<'_> {
                             .unwrap_or_default(),
                         data: message.data,
                     },
-                ))
-            }
+                )
+            }),
             Self::BroadcastGlobal(message) => Some(ServerToProxyMessage::BroadcastGlobal(
                 hyperion_proto::BroadcastGlobal {
                     exclude: message

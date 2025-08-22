@@ -23,7 +23,7 @@ use valence_text::IntoText;
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId},
+    net::{Compose, ConnectionId, ProxyId},
     simulation::{
         command::CommandPlugin,
         entity_kind::EntityKind,
@@ -723,9 +723,11 @@ impl Plugin for SimPlugin {
 }
 
 /// Event sent when the proxy requests packets to send to a player who has subscribed to a channel.
-/// This event stores the channel entity.
 #[derive(Event)]
-pub struct RequestSubscribeChannelPackets(pub Entity);
+pub struct RequestSubscribeChannelPackets {
+    pub channel: Entity,
+    pub requester: ProxyId,
+}
 
 #[derive(Component)]
 pub struct Visible;

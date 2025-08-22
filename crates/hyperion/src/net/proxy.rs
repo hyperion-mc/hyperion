@@ -183,7 +183,10 @@ async fn handle_proxy_messages(
                     let channels = channels
                         .into_iter()
                         .filter_map(|channel_id| match Entity::from_id(channel_id, world) {
-                            Ok(channel) => Some(RequestSubscribeChannelPackets(channel)),
+                            Ok(channel) => Some(RequestSubscribeChannelPackets {
+                                channel,
+                                requester: proxy_id,
+                            }),
                             Err(e) => {
                                 error!(
                                     "RequestSubscribeChannelPackets: channel id is invalid: {e}"
