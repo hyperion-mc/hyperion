@@ -49,8 +49,8 @@ pub mod util;
 
 #[derive(Resource, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {
-    /// The UUID of all players
-    inner: FxHashMap<u64, Entity>,
+    /// The connection id of all players
+    inner: FxHashMap<ConnectionId, Entity>,
 }
 
 #[derive(Component, Default, Debug, Deref, DerefMut)]

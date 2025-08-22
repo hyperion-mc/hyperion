@@ -87,6 +87,7 @@ async fn handle_proxy_messages(
         match result {
             ArchivedProxyToServerMessage::PlayerConnect(message) => {
                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let connection_id = ConnectionId::new(stream, proxy_id);
 
                 let (sender, receiver) = packet_channel::channel(DEFAULT_FRAGMENT_SIZE);
                 if player_packet_sender.insert(stream, sender).is_some() {
@@ -105,14 +106,20 @@ async fn handle_proxy_messages(
                             receiver,
                         ))
                         .id();
-                    world
+                    let already_exists = world
                         .get_resource_mut::<StreamLookup>()
                         .expect("StreamLookup resource should exist")
-                        .insert(stream, player);
+                        .insert(connection_id, player)
+                        .is_some();
+
+                    if already_exists {
+                        error!("StreamLookup contains duplicate connection id");
+                    }
                 });
             }
             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let connection_id = ConnectionId::new(stream, proxy_id);
 
                 if player_packet_sender.remove(&stream).is_none() {
                     error!(
@@ -121,17 +128,21 @@ async fn handle_proxy_messages(
                 }
 
                 command_channel.push(move |world: &mut World| {
-                    let player = world
+                    let Some(player) = world
                         .get_resource_mut::<StreamLookup>()
                         .expect("StreamLookup resource should exist")
-                        .remove(&stream)
-                        .expect("player from PlayerDisconnect must exist in the stream lookup map");
+                        .remove(&connection_id)
+                    else {
+                        error!("player from PlayerDisconnect must exist in the stream lookup map");
+                        return;
+                    };
 
                     world.despawn(player);
                 });
             }
             ArchivedProxyToServerMessage::PlayerPackets(message) => {
                 let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let connection_id = ConnectionId::new(stream, proxy_id);
 
                 let Some(sender) = player_packet_sender.get_mut(&stream) else {
                     error!(
@@ -158,9 +169,7 @@ async fn handle_proxy_messages(
                             let compose = world
                                 .get_resource::<Compose>()
                                 .expect("Compose resource should exist");
-                            compose
-                                .io_buf()
-                                .shutdown(ConnectionId::new(stream, proxy_id));
+                            compose.io_buf().shutdown(connection_id);
                         });
                     }
                 }
