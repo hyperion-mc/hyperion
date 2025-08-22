@@ -3,9 +3,14 @@ use hyperion_proto::{ChunkPosition, ServerToProxyMessage, UpdateChannelPosition}
 use crate::net::{ConnectionId, ProxyId};
 
 #[derive(Clone, PartialEq)]
-pub struct UpdatePlayerPositions {
-    pub stream: Vec<ConnectionId>,
-    pub positions: Vec<ChunkPosition>,
+pub struct UpdatePlayerPosition {
+    pub stream: ConnectionId,
+    pub position: ChunkPosition,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct UpdatePlayerPositions<'a> {
+    pub updates: &'a [UpdatePlayerPosition],
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -75,7 +80,7 @@ pub struct Shutdown {
 
 #[derive(Clone, PartialEq)]
 pub enum IntermediateServerToProxyMessage<'a> {
-    UpdatePlayerPositions(UpdatePlayerPositions),
+    UpdatePlayerPositions(UpdatePlayerPositions<'a>),
     AddChannel(AddChannel<'a>),
     UpdateChannelPositions(UpdateChannelPositions<'a>),
     RemoveChannel(RemoveChannel),
@@ -116,13 +121,16 @@ impl IntermediateServerToProxyMessage<'_> {
             Self::UpdatePlayerPositions(message) => {
                 Some(ServerToProxyMessage::UpdatePlayerPositions(
                     hyperion_proto::UpdatePlayerPositions {
-                        stream: message
-                            .stream
+                        updates: message
+                            .updates
                             .iter()
-                            .copied()
-                            .filter_map(filter_map_connection_id)
+                            .filter_map(|update| {
+                                Some(hyperion_proto::UpdatePlayerPosition {
+                                    stream: filter_map_connection_id(update.stream)?,
+                                    position: update.position,
+                                })
+                            })
                             .collect::<Vec<_>>(),
-                        positions: message.positions.clone(),
                     },
                 ))
             }

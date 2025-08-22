@@ -5,7 +5,7 @@ use bytes::Bytes;
 use glam::I16Vec2;
 use hyperion_proto::ArchivedServerToProxyMessage;
 use rustc_hash::FxHashMap;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::egress::Egress;
 
@@ -74,18 +74,20 @@ impl BufferedEgress {
     pub fn handle_packet(&mut self, message: &ArchivedServerToProxyMessage<'_>) {
         match message {
             ArchivedServerToProxyMessage::UpdatePlayerPositions(packet) => {
-                let mut players = Vec::with_capacity(packet.stream.len());
+                let mut players = packet
+                    .updates
+                    .iter()
+                    .map(|update| {
+                        let Ok(stream) = rkyv::deserialize::<u64, !>(&update.stream);
+                        let Ok(position) = rkyv::deserialize::<_, !>(&update.position);
+                        let position = I16Vec2::from(position);
 
-                for (stream, position) in packet.stream.iter().zip(packet.positions.iter()) {
-                    let Ok(stream) = rkyv::deserialize::<u64, !>(stream);
-                    let Ok(position) = rkyv::deserialize::<_, !>(position);
-                    let position = I16Vec2::from(position);
-
-                    players.push(Player {
-                        stream,
-                        chunk_position: position,
-                    });
-                }
+                        Player {
+                            stream,
+                            chunk_position: position,
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
                 self.player_bvh = Bvh::build(&mut players, ());
             }
@@ -234,6 +236,13 @@ impl BufferedEgress {
                     error!("server sent SubscribeChannelPackets for a channel that does not exist");
                     return;
                 };
+
+                if channel.pending_connections.is_empty() {
+                    warn!(
+                        "server sent SubscribeChannelPackets but there are no pending subscribers"
+                    );
+                    return;
+                }
 
                 for &stream in &channel.pending_connections {
                     if stream == exclude {

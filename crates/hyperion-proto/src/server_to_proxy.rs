@@ -4,9 +4,15 @@ use crate::ChunkPosition;
 
 #[derive(Archive, Deserialize, Serialize, Clone, PartialEq)]
 #[rkyv(derive(Debug))]
+pub struct UpdatePlayerPosition {
+    pub stream: u64,
+    pub position: ChunkPosition,
+}
+
+#[derive(Archive, Deserialize, Serialize, Clone, PartialEq)]
+#[rkyv(derive(Debug))]
 pub struct UpdatePlayerPositions {
-    pub stream: Vec<u64>,
-    pub positions: Vec<ChunkPosition>,
+    pub updates: Vec<UpdatePlayerPosition>,
 }
 
 #[derive(Archive, Deserialize, Serialize, Clone, Copy, PartialEq)]
