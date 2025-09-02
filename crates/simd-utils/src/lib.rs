@@ -1,16 +1,22 @@
-#![feature(portable_simd)]
-#![feature(trusted_len)]
-#![feature(slice_as_chunks)]
-#![feature(pointer_is_aligned_to)]
+#![cfg_attr(feature = "nightly", feature(portable_simd))]
+#![cfg_attr(feature = "nightly", feature(trusted_len))]
+#![cfg_attr(feature = "nightly", feature(pointer_is_aligned_to))]
 
+#[cfg(feature = "nightly")]
 use core::simd;
+#[cfg(feature = "nightly")]
 use std::{
     iter::zip,
     simd::{LaneCount, Mask, MaskElement, Simd, SupportedLaneCount, cmp::SimdPartialEq},
 };
 
+#[cfg(not(feature = "nightly"))]
+use std::iter::zip;
+
+#[cfg(feature = "nightly")]
 use crate::one_bit_positions::OneBitPositionsExt;
 
+#[cfg(feature = "nightly")]
 mod one_bit_positions;
 
 /// Efficiently compares two slices and copies `current` into `prev`, calling `on_diff` for each difference found.
@@ -43,6 +49,7 @@ mod one_bit_positions;
 /// - `prev` and `current` must have the same length
 /// - Type `T` must support SIMD operations and comparisons
 /// - SIMD alignment must not exceed 64 bytes
+#[cfg(feature = "nightly")]
 pub fn copy_and_get_diff<T, const LANES: usize>(
     prev: &mut [T],
     current: &[T],
@@ -151,8 +158,21 @@ pub fn copy_and_get_diff<T, const LANES: usize>(
     }
 }
 
+/// Fallback implementation for stable Rust (non-SIMD)
+#[cfg(not(feature = "nightly"))]
+pub fn copy_and_get_diff<T, const LANES: usize>(
+    prev: &mut [T],
+    current: &[T],
+    on_diff: impl FnMut(usize, &T, &T),
+) where
+    T: Copy + PartialEq + std::fmt::Debug,
+{
+    copy_and_get_diff_scalar(0, prev, current, on_diff);
+}
+
 /// Scalar (non-SIMD) implementation of [`copy_and_get_diff`] for handling small sections
 /// or remainders that can't be processed with SIMD.
+
 fn copy_and_get_diff_scalar<T>(
     start_idx: usize,
     prev: &mut [T],

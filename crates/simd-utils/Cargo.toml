@@ -6,6 +6,10 @@ authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 readme = "README.md"
 publish = false
 
+[features]
+default = []
+nightly = []
+
 [dependencies]
 
 [dev-dependencies]

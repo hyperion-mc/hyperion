@@ -99,7 +99,11 @@ quote = '1.0.39'
 rand = "0.9.1"
 rayon = '1.10.0'
 rkyv = '0.8.8'
-rustls = { version = '0.23.31', default-features = false, features = ['logging', 'std', 'tls12'] }
+rustls = { version = '0.23.31', default-features = false, features = [
+    'logging',
+    'std',
+    'tls12',
+] }
 rustls-pki-types = '1.12.0'
 rustls-webpki = '0.103.4'
 serde = '1.0.217'
@@ -115,7 +119,10 @@ thread_local = '1.1.8'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
 tokio = '1.45.0'
-tokio-rustls = { version = '0.26.2', default-features = false, features = ['logging', 'tls12'] }
+tokio-rustls = { version = '0.26.2', default-features = false, features = [
+    'logging',
+    'tls12',
+] }
 toml = '0.8.14'
 tracing-appender = '0.2.3'
 uuid = '1.16.0'
@@ -143,7 +150,16 @@ features = ['derive']
 version = '4.5.38'
 
 [workspace.dependencies.derive_more]
-features = ['display', 'from', 'into', 'deref', 'deref_mut', 'debug', 'constructor', 'add']
+features = [
+    'display',
+    'from',
+    'into',
+    'deref',
+    'deref_mut',
+    'debug',
+    'constructor',
+    'add',
+]
 version = "2.0.1"
 
 [workspace.dependencies.divan]
@@ -230,11 +246,9 @@ version = '0.12.12'
 path = 'crates/hyperion-respawn'
 
 [workspace.dependencies.roaring]
-features = ['simd']
 version = '0.10.12'
 
 [workspace.dependencies.rustc-hash]
-features = ['nightly']
 version = '2.0.0'
 
 [workspace.dependencies.sha2]
