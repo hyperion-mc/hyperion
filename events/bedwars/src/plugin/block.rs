@@ -68,7 +68,7 @@ fn handle_placed_blocks(
             }
         };
 
-        if block.collision_shapes().is_empty() {
+        if block.collision_shapes().len() == 0 {
             blocks
                 .to_confirm
                 .push(EntityAndSequence::new(*from, *sequence));

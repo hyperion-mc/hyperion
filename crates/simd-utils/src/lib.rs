@@ -4,14 +4,13 @@
 
 #[cfg(feature = "nightly")]
 use core::simd;
+#[cfg(not(feature = "nightly"))]
+use std::iter::zip;
 #[cfg(feature = "nightly")]
 use std::{
     iter::zip,
     simd::{LaneCount, Mask, MaskElement, Simd, SupportedLaneCount, cmp::SimdPartialEq},
 };
-
-#[cfg(not(feature = "nightly"))]
-use std::iter::zip;
 
 #[cfg(feature = "nightly")]
 use crate::one_bit_positions::OneBitPositionsExt;
@@ -172,7 +171,6 @@ pub fn copy_and_get_diff<T, const LANES: usize>(
 
 /// Scalar (non-SIMD) implementation of [`copy_and_get_diff`] for handling small sections
 /// or remainders that can't be processed with SIMD.
-
 fn copy_and_get_diff_scalar<T>(
     start_idx: usize,
     prev: &mut [T],
@@ -196,17 +194,22 @@ fn copy_and_get_diff_scalar<T>(
 
 #[cfg(test)]
 mod tests {
-    const LANES: usize = 8;
-    const SIMD_U32_ALIGN: usize = std::mem::align_of::<Simd<u32, LANES>>();
-
     use std::fmt::Debug;
-
-    use aligned_vec::{AVec, RuntimeAlign};
-    use proptest::prelude::*;
 
     use super::*;
 
-    // Helper function to collect differences
+    const LANES: usize = 8;
+
+    #[cfg(feature = "nightly")]
+    const SIMD_U32_ALIGN: usize = std::mem::align_of::<Simd<u32, LANES>>();
+
+    #[cfg(feature = "nightly")]
+    use aligned_vec::{AVec, RuntimeAlign};
+    #[cfg(feature = "nightly")]
+    use proptest::prelude::*;
+
+    // Helper function to collect differences (SIMD version)
+    #[cfg(feature = "nightly")]
     fn collect_diffs<T>(prev_raw: &[T], current_raw: &[T]) -> Vec<(usize, T, T)>
     where
         Simd<T, LANES>: AsMut<[T; LANES]> + SimdPartialEq,
@@ -226,7 +229,24 @@ mod tests {
         diffs
     }
 
+    // Helper function to collect differences (non-SIMD version)
+    #[cfg(not(feature = "nightly"))]
+    fn collect_diffs<T>(prev_raw: &[T], current_raw: &[T]) -> Vec<(usize, T, T)>
+    where
+        T: Copy + PartialEq + Debug,
+    {
+        let mut prev = prev_raw.to_vec();
+        let current = current_raw;
+
+        let mut diffs = Vec::new();
+        copy_and_get_diff::<_, LANES>(&mut prev, current, |idx, prev, curr| {
+            diffs.push((idx, *prev, *curr));
+        });
+        diffs
+    }
+
     // Generate arrays of various sizes to test SIMD boundary conditions
+    #[cfg(feature = "nightly")]
     fn generate_array_strategy<T>(min_size: usize) -> impl Strategy<Value = Vec<T>>
     where
         T: simd::SimdElement + Arbitrary + 'static,
@@ -235,6 +255,7 @@ mod tests {
     }
 
     // Generate arrays of an exact size
+    #[cfg(feature = "nightly")]
     fn generate_exact_array_strategy<T>(size: usize) -> impl Strategy<Value = Vec<T>>
     where
         T: simd::SimdElement + Arbitrary + 'static,
@@ -245,12 +266,12 @@ mod tests {
     // Helper to verify that all differences are captured correctly
     fn verify_differences<T>(prev: &[T], current: &[T], diffs: &[(usize, T, T)])
     where
-        T: simd::SimdElement + PartialEq + Debug + Clone,
+        T: PartialEq + Debug + Clone,
     {
         let mut expected_diffs = Vec::new();
         for (idx, (p, c)) in zip(prev, current).enumerate() {
             if p != c {
-                expected_diffs.push((idx, *p, *c));
+                expected_diffs.push((idx, p.clone(), c.clone()));
             }
         }
         assert_eq!(
@@ -260,6 +281,22 @@ mod tests {
         );
     }
 
+    // Simple non-SIMD test for stable Rust
+    #[cfg(not(feature = "nightly"))]
+    #[test]
+    fn test_basic_functionality() {
+        let prev = vec![1u32, 2, 3, 4, 5];
+        let current = vec![1u32, 3, 3, 5, 5];
+
+        let diffs = collect_diffs(&prev, &current);
+        verify_differences(&prev, &current, &diffs);
+
+        // Verify that the expected differences were found
+        let expected_diffs = vec![(1, 2u32, 3u32), (3, 4u32, 5u32)];
+        assert_eq!(diffs, expected_diffs);
+    }
+
+    #[cfg(feature = "nightly")]
     proptest! {
         // Test with u32 arrays of various sizes
         #[test]

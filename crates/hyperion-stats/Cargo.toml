@@ -2,6 +2,10 @@
 harness = false
 name = "parallel_stats"
 
+[features]
+default = []
+nightly = []
+
 [dependencies]
 
 [dev-dependencies]

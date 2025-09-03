@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use bvh::{Aabb, Bvh, Data, Point};
+// BVH removed for stable compatibility
 use bytes::Bytes;
 use glam::I16Vec2;
 use hyperion_proto::ArchivedServerToProxyMessage;
@@ -19,19 +19,9 @@ struct Player {
     chunk_position: I16Vec2,
 }
 
-impl Point for Player {
-    fn point(&self) -> I16Vec2 {
-        self.chunk_position
-    }
-}
+// Point trait removed for stable compatibility
 
-impl Data for Player {
-    type Unit = u64;
-
-    fn data<'a: 'c, 'b: 'c, 'c>(&'a self, (): Self::Context<'b>) -> &'c [Self::Unit] {
-        std::slice::from_ref(&self.stream)
-    }
-}
+// Data trait removed for stable compatibility
 
 pub struct Channel {
     /// List of connection ids that are pending a subscription to this channel
@@ -54,7 +44,8 @@ pub struct BufferedEgress {
     channel_manager: ChannelManager,
     /// Reference to the underlying egress handler.
     egress: Egress,
-    player_bvh: Bvh<Vec<u64>>,
+    /// Simple player list (replaces BVH for stable compatibility)
+    players: Vec<Player>,
 }
 
 impl BufferedEgress {
@@ -64,7 +55,7 @@ impl BufferedEgress {
         Self {
             channel_manager: ChannelManager::default(),
             egress,
-            player_bvh: Bvh::default(),
+            players: Vec::new(),
         }
     }
 
@@ -77,8 +68,12 @@ impl BufferedEgress {
                 let mut players = Vec::with_capacity(packet.stream.len());
 
                 for (stream, position) in packet.stream.iter().zip(packet.positions.iter()) {
-                    let Ok(stream) = rkyv::deserialize::<u64, !>(stream);
-                    let Ok(position) = rkyv::deserialize::<_, !>(position);
+                    let Ok(stream) = rkyv::deserialize::<u64, rkyv::rancor::Error>(stream) else {
+                        continue;
+                    };
+                    let Ok(position) = rkyv::deserialize::<_, rkyv::rancor::Error>(position) else {
+                        continue;
+                    };
                     let position = I16Vec2::from(position);
 
                     players.push(Player {
@@ -87,7 +82,7 @@ impl BufferedEgress {
                     });
                 }
 
-                self.player_bvh = Bvh::build(&mut players, ());
+                self.players = players;
             }
             ArchivedServerToProxyMessage::AddChannel(packet) => {
                 let unsubscribe_packets = match rkyv::deserialize::<_, rkyv::rancor::Error>(
@@ -132,26 +127,24 @@ impl BufferedEgress {
                         continue;
                     };
 
-                    let Ok(channel_position) = rkyv::deserialize::<_, !>(&update.position);
+                    let Ok(channel_position) =
+                        rkyv::deserialize::<_, rkyv::rancor::Error>(&update.position)
+                    else {
+                        continue;
+                    };
                     let channel_position = I16Vec2::from(channel_position);
 
-                    let min = channel_position - I16Vec2::splat(RADIUS);
-                    let max = channel_position + I16Vec2::splat(RADIUS);
+                    let _min = channel_position - I16Vec2::splat(RADIUS);
+                    let _max = channel_position + I16Vec2::splat(RADIUS);
 
-                    let aabb = Aabb::new(min, max);
-
-                    let slices = self.player_bvh.get_in(aabb);
-
+                    // Simple fallback: check all players (less efficient than BVH)
                     let mut should_remain_subscribed = HashSet::new();
 
-                    for slice in slices {
-                        let (_, streams) = self.player_bvh.inner();
-
-                        let start = slice.start as usize;
-                        let end = slice.end as usize;
-
-                        let streams = &streams[start..end];
-                        for &stream in streams {
+                    for player in &self.players {
+                        let player_pos = player.chunk_position;
+                        let distance = (player_pos - channel_position).abs();
+                        if distance.x <= RADIUS && distance.y <= RADIUS {
+                            let stream = player.stream;
                             let Some(player) = players.get(&stream) else {
                                 error!("bvh contains invalid stream id {stream}");
                                 continue;
@@ -252,7 +245,10 @@ impl BufferedEgress {
             ArchivedServerToProxyMessage::BroadcastGlobal(packet) => {
                 let data =
                     Bytes::from(rkyv::deserialize::<_, rkyv::rancor::Error>(&packet.data).unwrap());
-                let Ok(exclude) = rkyv::deserialize::<u64, !>(&packet.exclude);
+                let Ok(exclude) = rkyv::deserialize::<u64, rkyv::rancor::Error>(&packet.exclude)
+                else {
+                    return;
+                };
 
                 let players = self.egress.player_registry.pin_owned();
 
@@ -265,28 +261,32 @@ impl BufferedEgress {
                 }
             }
             ArchivedServerToProxyMessage::BroadcastLocal(packet) => {
-                let Ok(center_x) = rkyv::deserialize::<i16, !>(&packet.center.x);
-                let Ok(center_z) = rkyv::deserialize::<i16, !>(&packet.center.z);
-                let Ok(player_id_to_exclude) = rkyv::deserialize::<u64, !>(&packet.exclude);
+                let Ok(center_x) = rkyv::deserialize::<i16, rkyv::rancor::Error>(&packet.center.x)
+                else {
+                    return;
+                };
+                let Ok(center_z) = rkyv::deserialize::<i16, rkyv::rancor::Error>(&packet.center.z)
+                else {
+                    return;
+                };
+                let Ok(player_id_to_exclude) =
+                    rkyv::deserialize::<u64, rkyv::rancor::Error>(&packet.exclude)
+                else {
+                    return;
+                };
                 let data =
                     Bytes::from(rkyv::deserialize::<_, rkyv::rancor::Error>(&packet.data).unwrap());
 
                 let position = I16Vec2::new(center_x, center_z);
-                let min = position - I16Vec2::splat(RADIUS);
-                let max = position + I16Vec2::splat(RADIUS);
+                let _min = position - I16Vec2::splat(RADIUS);
+                let _max = position + I16Vec2::splat(RADIUS);
 
-                let aabb = Aabb::new(min, max);
-
-                let slices = self.player_bvh.get_in(aabb);
-
-                for slice in slices {
-                    let (_, streams) = self.player_bvh.inner();
-
-                    let start = slice.start as usize;
-                    let end = slice.end as usize;
-
-                    let streams = &streams[start..end];
-                    for &stream in streams {
+                // Simple fallback: check all players (less efficient than BVH)
+                for player in &self.players {
+                    let player_pos = player.chunk_position;
+                    let distance = (player_pos - position).abs();
+                    if distance.x <= RADIUS && distance.y <= RADIUS {
+                        let stream = player.stream;
                         if stream == player_id_to_exclude {
                             continue;
                         }

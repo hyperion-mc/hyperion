@@ -1,8 +1,33 @@
-#![feature(let_chains)]
-#![feature(sync_unsafe_cell)]
+#![cfg_attr(feature = "nightly", feature(let_chains))]
+#![cfg_attr(feature = "nightly", feature(sync_unsafe_cell))]
+
+#[cfg(feature = "nightly")]
+use std::cell::SyncUnsafeCell;
+
+#[cfg(not(feature = "nightly"))]
+mod sync_unsafe_cell {
+    use std::cell::UnsafeCell;
+
+    /// A stable-compatible wrapper for `SyncUnsafeCell`
+    #[repr(transparent)]
+    pub struct SyncUnsafeCell<T>(UnsafeCell<T>);
+
+    impl<T> SyncUnsafeCell<T> {
+        #[allow(dead_code)]
+        pub const fn new(value: T) -> Self {
+            Self(UnsafeCell::new(value))
+        }
+
+        pub const fn get(&self) -> *mut T {
+            self.0.get()
+        }
+    }
+
+    // SAFETY: This is safe because we're only using this in the same way as SyncUnsafeCell
+    unsafe impl<T> Sync for SyncUnsafeCell<T> {}
+}
 
 use std::{
-    cell::SyncUnsafeCell,
     mem::{MaybeUninit, size_of},
     num::NonZeroU32,
     ops::{Deref, Range},
@@ -15,6 +40,8 @@ use std::{
 use arc_swap::ArcSwapOption;
 use bevy::prelude::*;
 use more_asserts::debug_assert_le;
+#[cfg(not(feature = "nightly"))]
+use sync_unsafe_cell::SyncUnsafeCell;
 use valence_protocol::MAX_PACKET_SIZE;
 
 /// Reference counted fragment. Fragments are a fixed-size block of data which may contain one or
@@ -417,7 +444,6 @@ impl RawPacket {
         Self { fragment, range }
     }
 
-    #[expect(clippy::missing_const_for_fn, reason = "false positive")]
     #[must_use]
     pub fn fragment_id(&self) -> usize {
         self.fragment.id

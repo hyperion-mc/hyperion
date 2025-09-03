@@ -1,8 +1,12 @@
+#[cfg(not(feature = "nightly"))]
+use std::io::Read;
+#[cfg(feature = "nightly")]
 use std::{
     alloc::Allocator,
     io::{BorrowedBuf, Read},
 };
 
+#[cfg(feature = "nightly")]
 #[allow(dead_code, reason = "this might be used in the future")]
 pub fn read_to_end<R: Read + ?Sized, A: Allocator>(
     r: &mut R,
@@ -39,6 +43,13 @@ pub fn read_to_end<R: Read + ?Sized, A: Allocator>(
             buf.set_len(new_len);
         }
     }
+}
+
+#[cfg(not(feature = "nightly"))]
+#[allow(dead_code, reason = "this might be used in the future")]
+pub fn read_to_end<R: Read + ?Sized>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<()> {
+    r.read_to_end(buf)?;
+    Ok(())
 }
 
 #[cfg(test)]

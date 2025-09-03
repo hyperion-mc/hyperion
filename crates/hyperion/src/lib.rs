@@ -1,34 +1,20 @@
 //! Hyperion
 
-#![feature(type_alias_impl_trait)]
-#![feature(io_error_more)]
-#![feature(trusted_len)]
-#![feature(allocator_api)]
-#![feature(read_buf)]
-#![feature(core_io_borrowed_buf)]
-#![feature(maybe_uninit_slice)]
-#![feature(duration_millis_float)]
-#![feature(iter_array_chunks)]
-#![feature(assert_matches)]
-#![feature(try_trait_v2)]
-#![feature(let_chains)]
-#![feature(ptr_metadata)]
-#![feature(stmt_expr_attributes)]
-#![feature(array_try_map)]
-#![feature(split_array)]
-#![feature(never_type)]
-#![feature(duration_constructors)]
-#![feature(array_chunks)]
-#![feature(portable_simd)]
-#![feature(trivial_bounds)]
-#![feature(pointer_is_aligned_to)]
-#![feature(thread_local)]
+#![cfg_attr(feature = "nightly", feature(allocator_api))]
+#![cfg_attr(feature = "nightly", feature(read_buf))]
+#![cfg_attr(feature = "nightly", feature(core_io_borrowed_buf))]
+#![cfg_attr(feature = "nightly", feature(maybe_uninit_slice))]
+#![cfg_attr(feature = "nightly", feature(iter_array_chunks))]
+#![cfg_attr(feature = "nightly", feature(let_chains))]
+#![cfg_attr(feature = "nightly", feature(never_type))]
+#![cfg_attr(feature = "nightly", feature(array_chunks))]
+#![cfg_attr(feature = "nightly", feature(portable_simd))]
 
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
-use std::{
-    alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration,
-};
+#[cfg(feature = "nightly")]
+use std::alloc::Allocator;
+use std::{fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
 use egress::EgressPlugin;
@@ -96,7 +82,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
         rlim_max: 0, // Initialize hard limit to 0
     };
 
-    if unsafe { getrlimit(RLIMIT_NOFILE, &mut limits) } == 0 {
+    if unsafe { getrlimit(RLIMIT_NOFILE, &raw mut limits) } == 0 {
         // Create a stack-allocated buffer...
 
         info!("current soft limit: {}", limits.rlim_cur);
@@ -117,7 +103,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
 
     info!("setting soft limit to: {}", limits.rlim_cur);
 
-    if unsafe { setrlimit(RLIMIT_NOFILE, &limits) } != 0 {
+    if unsafe { setrlimit(RLIMIT_NOFILE, &raw const limits) } != 0 {
         error!("Failed to set the file handle limits");
         return Err(std::io::Error::last_os_error());
     }
@@ -282,22 +268,38 @@ impl Plugin for HyperionCore {
     }
 }
 
+#[cfg(feature = "nightly")]
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
 #[derive(Debug)]
 pub struct Scratch<A: Allocator = std::alloc::Global> {
     inner: Box<[u8], A>,
 }
 
+#[cfg(not(feature = "nightly"))]
+/// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
+#[derive(Debug)]
+pub struct Scratch {
+    inner: Box<[u8]>,
+}
+
+#[cfg(feature = "nightly")]
 impl Default for Scratch<std::alloc::Global> {
     fn default() -> Self {
         std::alloc::Global.into()
     }
 }
 
+#[cfg(not(feature = "nightly"))]
+impl Default for Scratch {
+    fn default() -> Self {
+        Self {
+            inner: vec![0u8; MAX_PACKET_SIZE].into_boxed_slice(),
+        }
+    }
+}
+
 /// Nice for getting a buffer that can be used for intermediate work
 pub trait ScratchBuffer: sealed::Sealed + Debug {
-    /// The type of the allocator the [`Vec`] uses.
-    type Allocator: Allocator;
     /// Obtains a buffer that can be used for intermediate work. The contents are unspecified.
     fn obtain(&mut self) -> &mut [u8];
 }
@@ -306,16 +308,27 @@ mod sealed {
     pub trait Sealed {}
 }
 
+#[cfg(feature = "nightly")]
 impl<A: Allocator + Debug> sealed::Sealed for Scratch<A> {}
 
-impl<A: Allocator + Debug> ScratchBuffer for Scratch<A> {
-    type Allocator = A;
+#[cfg(not(feature = "nightly"))]
+impl sealed::Sealed for Scratch {}
 
+#[cfg(feature = "nightly")]
+impl<A: Allocator + Debug> ScratchBuffer for Scratch<A> {
     fn obtain(&mut self) -> &mut [u8] {
         &mut self.inner
     }
 }
 
+#[cfg(not(feature = "nightly"))]
+impl ScratchBuffer for Scratch {
+    fn obtain(&mut self) -> &mut [u8] {
+        &mut self.inner
+    }
+}
+
+#[cfg(feature = "nightly")]
 impl<A: Allocator> From<A> for Scratch<A> {
     fn from(allocator: A) -> Self {
         // A zeroed slice is allocated to avoid reading from uninitialized memory, which is UB.

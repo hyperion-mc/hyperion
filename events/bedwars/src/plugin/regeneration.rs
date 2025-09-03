@@ -30,7 +30,7 @@ fn regenerate(
     let current_tick = compose.global().tick;
 
     for (mut last_damaged, prev_health, mut health) in query {
-        if *health < **prev_health {
+        if **health < ***prev_health {
             last_damaged.tick = current_tick;
         }
 

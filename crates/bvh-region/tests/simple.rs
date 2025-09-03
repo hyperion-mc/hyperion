@@ -252,11 +252,12 @@ fn brute_force_closest_ray(elements: &[Aabb], ray: Ray) -> Option<(&Aabb, NotNan
     let mut closest_elem = None;
 
     for aabb in elements {
-        if let Some(t) = aabb.intersect_ray(&ray) {
-            if t < closest_t && t.into_inner() >= 0.0 {
-                closest_t = t;
-                closest_elem = Some(aabb);
-            }
+        if let Some(t) = aabb.intersect_ray(&ray)
+            && t < closest_t
+            && t.into_inner() >= 0.0
+        {
+            closest_t = t;
+            closest_elem = Some(aabb);
         }
     }
 

@@ -1,3 +1,4 @@
+#[cfg(feature = "nightly")]
 use std::simd::{Simd, cmp::SimdPartialEq};
 
 use crate::{Data, HALF_LEN, LEN};
@@ -24,6 +25,7 @@ impl Indirect {
         }
     }
 
+    #[cfg(feature = "nightly")]
     pub fn index_of(&self, data: Data) -> Option<u8> {
         // Create a SIMD vector filled with the search element
         let search_simd: Simd<u16, 16> = Simd::splat(data);
@@ -39,6 +41,17 @@ impl Indirect {
             reason = "idx is [0, 16) which is a valid u8"
         )]
         mask.first_set().map(|idx| idx as u8)
+    }
+
+    #[cfg(not(feature = "nightly"))]
+    pub fn index_of(&self, data: Data) -> Option<u8> {
+        // Fallback: linear search
+        for (idx, &palette_data) in self.palette.iter().enumerate() {
+            if palette_data == data {
+                return u8::try_from(idx).ok();
+            }
+        }
+        None
     }
 
     pub unsafe fn get_unchecked(&self, index: usize) -> Data {

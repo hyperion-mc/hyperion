@@ -1,4 +1,3 @@
-#![feature(assert_matches)]
 #![allow(
     clippy::print_stdout,
     reason = "the purpose of not having printing to stdout is so that tracing is used properly \

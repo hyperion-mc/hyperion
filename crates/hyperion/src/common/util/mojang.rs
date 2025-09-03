@@ -36,7 +36,7 @@ impl ApiProvider {
         username_base_url: "https://api.mojang.com/users/profiles/minecraft",
         uuid_base_url: "https://sessionserver.mojang.com/session/minecraft/profile",
         max_requests: 600,
-        interval: Duration::from_mins(10),
+        interval: Duration::from_secs(10 * 60),
     };
 
     fn username_url(&self, username: &str) -> String {

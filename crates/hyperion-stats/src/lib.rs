@@ -1,7 +1,8 @@
-#![feature(portable_simd)]
-#![feature(array_chunks)]
-#![feature(iter_array_chunks)]
+#![cfg_attr(feature = "nightly", feature(portable_simd))]
+#![cfg_attr(feature = "nightly", feature(array_chunks))]
+#![cfg_attr(feature = "nightly", feature(iter_array_chunks))]
 
+#[cfg(feature = "nightly")]
 use std::simd::{f64x4, num::SimdFloat};
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,7 @@ impl ParallelStats {
 
     /// Update multiple parallel running statistics with SIMD
     /// Each slice must be the same length as width
+    #[cfg(feature = "nightly")]
     pub fn update(&mut self, values: &[f64]) {
         assert_eq!(values.len(), self.width, "Input length must match width");
 
@@ -48,6 +50,18 @@ impl ParallelStats {
         }
     }
 
+    /// Update multiple parallel running statistics (stable fallback)
+    #[cfg(not(feature = "nightly"))]
+    pub fn update(&mut self, values: &[f64]) {
+        assert_eq!(values.len(), self.width, "Input length must match width");
+
+        // Fallback: process all elements with scalar operations
+        for (i, &value) in values.iter().enumerate() {
+            self.update_single(i, value);
+        }
+    }
+
+    #[cfg(feature = "nightly")]
     fn simd_update(&mut self, chunk_start: usize, chunk_end: usize, values: &[f64]) {
         let values_simd = f64x4::from_slice(values);
         let means_simd = f64x4::from_slice(&self.means[chunk_start..chunk_end]);

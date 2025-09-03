@@ -40,7 +40,7 @@ members = [
     'crates/packet-channel',
     'crates/simd-utils',
     'events/bedwars',
-    'tools/packet-inspector',
+    # 'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
 resolver = '2'
@@ -130,8 +130,6 @@ uuid = '1.16.0'
 [workspace.dependencies.hyperion-proxy-module]
 path = "crates/hyperion-proxy-module"
 
-[workspace.dependencies.bvh]
-git = 'https://github.com/TestingPlant/bvh-data'
 
 [workspace.dependencies.bvh-region]
 path = 'crates/bvh-region'
@@ -278,47 +276,47 @@ features = ['timer-fallback']
 version = '0.11.4'
 
 [workspace.dependencies.valence_anvil]
-branch = 'feat-bytes'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 features = ['parsing']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_build_utils]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_bytes]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_generated]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_ident]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_nbt]
-branch = 'feat-bytes'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 features = ['serde']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_protocol]
-branch = 'feat-bytes'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 features = ['compression']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_registry]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_server]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.valence_text]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+git = 'file:///Users/andrewgazelka/Projects/personal/hyperion/vendor/valence'
+rev = 'a1252ee'
 
 [workspace.dependencies.bedwars]
 path = "events/bedwars"

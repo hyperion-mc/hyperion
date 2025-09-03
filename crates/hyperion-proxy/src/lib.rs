@@ -1,9 +1,3 @@
-#![feature(maybe_uninit_slice)]
-#![feature(allocator_api)]
-#![feature(let_chains)]
-#![feature(never_type)]
-#![feature(stmt_expr_attributes)]
-#![feature(gen_blocks)]
 #![allow(
     clippy::redundant_pub_crate,
     clippy::cast_possible_truncation,
@@ -63,8 +57,8 @@ async fn connect(addr: impl ToSocketAddrs + Debug + Clone) -> TcpStream {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum ShutdownType {
+#[derive(Debug, PartialEq, Eq)]
+pub enum ShutdownType {
     Reconnect,
     Full,
 }
@@ -333,6 +327,6 @@ where
     }
 }
 
-trait HyperionListener: Listener<Io: Send, Addr: Debug> + 'static {}
+pub trait HyperionListener: Listener<Io: Send, Addr: Debug> + 'static {}
 
 impl<L: Listener<Io: Send, Addr: Debug> + 'static> HyperionListener for L {}

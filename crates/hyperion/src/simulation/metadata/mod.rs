@@ -131,15 +131,7 @@ macro_rules! define_metadata_component {
             value: $type,
         }
 
-        #[allow(warnings)]
-        impl PartialOrd for $name
-        where
-            $type: PartialOrd,
-        {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                self.value.partial_cmp(&other.value)
-            }
-        }
+        // PartialOrd implementation removed as it's not required and causes issues with types like Vec3, Quat, etc.
 
         impl Metadata for $name {
             type Type = $type;
@@ -192,7 +184,7 @@ macro_rules! define_and_register_components {
 
 impl MetadataChanges {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 

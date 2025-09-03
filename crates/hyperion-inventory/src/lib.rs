@@ -1,5 +1,5 @@
-#![feature(thread_local)]
-use std::{cell::Cell, cmp::min, num::Wrapping};
+// thread_local feature removed for stable compatibility
+use std::{cmp::min, num::Wrapping};
 
 use bevy::prelude::*;
 use derive_more::{Deref, DerefMut};
@@ -418,12 +418,10 @@ impl PlayerInventory {
             stack.item
         });
 
-        let result = registry
+        registry
             .get_result_2x2(items)
             .cloned()
-            .unwrap_or(ItemStack::EMPTY);
-
-        result
+            .unwrap_or(ItemStack::EMPTY)
     }
 
     #[must_use]
@@ -523,16 +521,19 @@ pub const OFFHAND_SLOT: u16 = 45;
 ///
 /// We are skipping 0 because it is reserved for the player's inventory.
 pub fn non_zero_window_id() -> u8 {
-    #[thread_local]
-    static ID: Cell<u8> = Cell::new(0);
+    // Use regular static with AtomicU8 instead of thread_local Cell for stable compatibility
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static ID: AtomicU8 = AtomicU8::new(0);
 
-    ID.set(ID.get().wrapping_add(1));
+    let current = ID.fetch_add(1, Ordering::Relaxed);
+    let next = current.wrapping_add(1);
 
-    if ID.get() == 0 {
-        ID.set(1);
+    if next == 0 {
+        ID.store(1, Ordering::Relaxed);
+        1
+    } else {
+        next
     }
-
-    ID.get()
 }
 
 pub trait ItemKindExt {
