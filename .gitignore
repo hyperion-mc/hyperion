@@ -26,11 +26,11 @@ perf.data
 # Misc
 /extractor/build
 /extractor/out
-vendor/
+# vendor/
 /extractor/classes
 /extractor/run
 /extractor/bin
 .trigger-release
 .trigger-debug
 .trigger
-valence/
+# valence/

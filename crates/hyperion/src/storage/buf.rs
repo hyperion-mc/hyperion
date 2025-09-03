@@ -24,8 +24,7 @@ unsafe impl Buf for bytes::BytesMut {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { cap.assume_init_mut() };
-        cap
+        unsafe { std::slice::from_raw_parts_mut(cap.as_mut_ptr().cast::<u8>(), cap.len()) }
     }
 
     fn advance(&mut self, len: usize) -> Self::Output {
@@ -42,8 +41,7 @@ unsafe impl Buf for Vec<u8> {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { cap.assume_init_mut() };
-        cap
+        unsafe { std::slice::from_raw_parts_mut(cap.as_mut_ptr().cast::<u8>(), cap.len()) }
     }
 
     fn advance(&mut self, len: usize) -> Self::Output {

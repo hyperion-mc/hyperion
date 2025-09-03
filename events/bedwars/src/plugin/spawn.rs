@@ -111,7 +111,7 @@ pub fn is_valid_spawn_block(
         return false;
     };
 
-    if ground.collision_shapes().is_empty() {
+    if ground.collision_shapes().len() == 0 {
         return false;
     }
 
@@ -122,7 +122,7 @@ pub fn is_valid_spawn_block(
     for displacement in DISPLACEMENTS {
         let above = pos + displacement;
         if let Some(block) = blocks.get_block(above) {
-            if !block.collision_shapes().is_empty() {
+            if block.collision_shapes().len() != 0 {
                 return false;
             }
 

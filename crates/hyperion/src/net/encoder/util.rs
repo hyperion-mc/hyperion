@@ -1,44 +1,9 @@
-use std::{
-    alloc::Allocator,
-    io::{BorrowedBuf, Read},
-};
+use std::io::Read;
 
 #[allow(dead_code, reason = "this might be used in the future")]
-pub fn read_to_end<R: Read + ?Sized, A: Allocator>(
-    r: &mut R,
-    buf: &mut Vec<u8, A>,
-) -> std::io::Result<()> {
-    const MIN_CAPACITY: usize = 64;
-
-    loop {
-        if buf.capacity() == buf.len() {
-            let to_reserve = buf.len().max(MIN_CAPACITY);
-
-            buf.reserve(to_reserve);
-        }
-
-        let spare = buf.spare_capacity_mut();
-        let mut read_buf: BorrowedBuf<'_> = spare.into();
-        let mut cursor = read_buf.unfilled();
-
-        r.read_buf(cursor.reborrow())?;
-
-        // let unfilled_but_initialized = cursor.init_ref().len();
-        let bytes_read = cursor.written();
-
-        if bytes_read == 0 {
-            return Ok(());
-        }
-
-        // store how much was initialized but not filled
-        // initialized = unfilled_but_initialized;
-
-        // SAFETY: BorrowedBuf's invariants mean this much memory is initialized.
-        unsafe {
-            let new_len = bytes_read + buf.len();
-            buf.set_len(new_len);
-        }
-    }
+pub fn read_to_end<R: Read + ?Sized>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<()> {
+    r.read_to_end(buf)?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Constructs for working with blocks.
 
-use std::{future::Future, ops::Try, path::Path, pin::Pin, sync::Arc};
+use std::{future::Future, path::Path, pin::Pin, sync::Arc};
 
 use anyhow::Context;
 use bevy::prelude::*;
@@ -256,10 +256,9 @@ impl Blocks {
 
     /// Returns all loaded blocks within the range from `start` to `end` (inclusive).
     #[expect(clippy::excessive_nesting)]
-    pub fn get_blocks<F, R>(&self, start: IVec3, end: IVec3, mut f: F) -> R
+    pub fn get_blocks<F>(&self, start: IVec3, end: IVec3, mut f: F) -> anyhow::Result<()>
     where
-        F: FnMut(IVec3, BlockState) -> R,
-        R: Try<Output = ()>,
+        F: FnMut(IVec3, BlockState) -> anyhow::Result<()>,
     {
         const START_Y: i32 = -64;
 
@@ -343,7 +342,7 @@ impl Blocks {
             }
         }
 
-        R::from_output(())
+        Ok(())
     }
 
     /// Get a block

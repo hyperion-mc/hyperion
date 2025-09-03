@@ -1,6 +1,3 @@
-#![feature(portable_simd)]
-#![feature(gen_blocks)]
-#![feature(coroutines)]
 #![allow(clippy::redundant_pub_crate, clippy::pedantic)]
 
 // https://www.haroldserrano.com/blog/visualizing-the-boundary-volume-hierarchy-collision-algorithm

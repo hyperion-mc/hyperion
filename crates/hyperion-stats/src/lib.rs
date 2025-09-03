@@ -1,8 +1,4 @@
-#![feature(portable_simd)]
-#![feature(array_chunks)]
-#![feature(iter_array_chunks)]
-
-use std::simd::{f64x4, num::SimdFloat};
+use wide::{CmpGt, CmpLt, f64x4};
 
 #[derive(Debug, Clone)]
 pub struct ParallelStats {
@@ -27,33 +23,61 @@ impl ParallelStats {
         }
     }
 
-    /// Update multiple parallel running statistics with SIMD
+    /// Update multiple parallel running statistics with SIMD when possible
     /// Each slice must be the same length as width
     pub fn update(&mut self, values: &[f64]) {
         assert_eq!(values.len(), self.width, "Input length must match width");
 
-        let mut chunks = (0..self.width).array_chunks::<4>();
+        let mut idx = 0;
 
-        // Process in SIMD chunks of 4 parallel stats
-        for indices in chunks.by_ref() {
-            let chunk_start = indices[0];
-            let chunk_end = indices.last().unwrap() + 1;
-            self.simd_update(chunk_start, chunk_end, &values[chunk_start..chunk_end]);
+        // Process in SIMD chunks of 4 parallel stats where possible
+        while idx + 4 <= self.width {
+            self.simd_update(idx, &values[idx..idx + 4]);
+            idx += 4;
         }
 
-        if let Some(remainder) = chunks.into_remainder() {
-            for i in remainder {
-                self.update_single(i, values[i]);
-            }
+        // Handle remaining elements with scalar operations
+        while idx < self.width {
+            self.update_single(idx, values[idx]);
+            idx += 1;
         }
     }
 
-    fn simd_update(&mut self, chunk_start: usize, chunk_end: usize, values: &[f64]) {
-        let values_simd = f64x4::from_slice(values);
-        let means_simd = f64x4::from_slice(&self.means[chunk_start..chunk_end]);
-        let m2s_simd = f64x4::from_slice(&self.m2s[chunk_start..chunk_end]);
-        let mins_simd = f64x4::from_slice(&self.mins[chunk_start..chunk_end]);
-        let maxs_simd = f64x4::from_slice(&self.maxs[chunk_start..chunk_end]);
+    fn simd_update(&mut self, chunk_start: usize, values: &[f64]) {
+        if values.len() != 4 {
+            // Fallback to scalar for incomplete chunks
+            for (i, &value) in values.iter().enumerate() {
+                self.update_single(chunk_start + i, value);
+            }
+            return;
+        }
+
+        let chunk_end = chunk_start + 4;
+        let values_simd = f64x4::new([values[0], values[1], values[2], values[3]]);
+        let means_simd = f64x4::new([
+            self.means[chunk_start],
+            self.means[chunk_start + 1],
+            self.means[chunk_start + 2],
+            self.means[chunk_start + 3],
+        ]);
+        let m2s_simd = f64x4::new([
+            self.m2s[chunk_start],
+            self.m2s[chunk_start + 1],
+            self.m2s[chunk_start + 2],
+            self.m2s[chunk_start + 3],
+        ]);
+        let mins_simd = f64x4::new([
+            self.mins[chunk_start],
+            self.mins[chunk_start + 1],
+            self.mins[chunk_start + 2],
+            self.mins[chunk_start + 3],
+        ]);
+        let maxs_simd = f64x4::new([
+            self.maxs[chunk_start],
+            self.maxs[chunk_start + 1],
+            self.maxs[chunk_start + 2],
+            self.maxs[chunk_start + 3],
+        ]);
         let counts_chunk = &mut self.counts[chunk_start..chunk_end];
 
         // Update counts
@@ -62,7 +86,7 @@ impl ParallelStats {
         }
 
         // Convert counts to f64x4 for SIMD division
-        let counts_f64 = f64x4::from_array([
+        let counts_f64 = f64x4::new([
             counts_chunk[0] as f64,
             counts_chunk[1] as f64,
             counts_chunk[2] as f64,
@@ -77,15 +101,24 @@ impl ParallelStats {
         let delta2 = values_simd - new_means;
         let new_m2s = m2s_simd + delta * delta2;
 
-        // Update mins and maxs
-        let new_mins = mins_simd.simd_min(values_simd);
-        let new_maxs = maxs_simd.simd_max(values_simd);
+        // Update mins and maxs using SIMD comparisons
+        let values_lt_mins = values_simd.cmp_lt(mins_simd);
+        let values_gt_maxs = values_simd.cmp_gt(maxs_simd);
+
+        // Blend the values based on comparisons
+        let new_mins = values_lt_mins.blend(values_simd, mins_simd);
+        let new_maxs = values_gt_maxs.blend(values_simd, maxs_simd);
 
         // Store results back
-        new_means.copy_to_slice(&mut self.means[chunk_start..chunk_end]);
-        new_m2s.copy_to_slice(&mut self.m2s[chunk_start..chunk_end]);
-        new_mins.copy_to_slice(&mut self.mins[chunk_start..chunk_end]);
-        new_maxs.copy_to_slice(&mut self.maxs[chunk_start..chunk_end]);
+        let new_means_array = new_means.to_array();
+        let new_m2s_array = new_m2s.to_array();
+        let new_mins_array = new_mins.to_array();
+        let new_maxs_array = new_maxs.to_array();
+
+        self.means[chunk_start..chunk_start + 4].copy_from_slice(&new_means_array);
+        self.m2s[chunk_start..chunk_start + 4].copy_from_slice(&new_m2s_array);
+        self.mins[chunk_start..chunk_start + 4].copy_from_slice(&new_mins_array);
+        self.maxs[chunk_start..chunk_start + 4].copy_from_slice(&new_maxs_array);
     }
 
     fn update_single(&mut self, idx: usize, value: f64) {

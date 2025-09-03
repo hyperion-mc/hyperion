@@ -2,6 +2,9 @@
 harness = false
 name = "packet_channel"
 
+[features]
+default = []
+
 [dependencies]
 arc-swap = { workspace = true }
 bevy = { workspace = true }
@@ -9,8 +12,8 @@ more-asserts = { workspace = true }
 valence_protocol = { workspace = true }
 
 [dev-dependencies]
-divan = {workspace = true}
-proptest = {workspace = true}
+divan = { workspace = true }
+proptest = { workspace = true }
 
 [lints]
 workspace = true
