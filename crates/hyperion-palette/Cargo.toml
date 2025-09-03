@@ -1,6 +1,5 @@
 [features]
 default = []
-nightly = []
 
 [dependencies]
 anyhow.workspace = true

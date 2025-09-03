@@ -87,7 +87,6 @@ tracing-subscriber = { workspace = true }
 
 [features]
 default = []
-nightly = []
 
 [lints]
 workspace = true

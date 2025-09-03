@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "nightly", feature(portable_simd))]
-
 use std::{clone::Clone, iter::FusedIterator};
 
 use roaring::RoaringBitmap;

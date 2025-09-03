@@ -4,9 +4,9 @@ name = "parallel_stats"
 
 [features]
 default = []
-nightly = []
 
 [dependencies]
+wide = "0.7.28"
 
 [dev-dependencies]
 rand.workspace = true

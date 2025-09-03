@@ -1,19 +1,7 @@
 //! Hyperion
 
-#![cfg_attr(feature = "nightly", feature(allocator_api))]
-#![cfg_attr(feature = "nightly", feature(read_buf))]
-#![cfg_attr(feature = "nightly", feature(core_io_borrowed_buf))]
-#![cfg_attr(feature = "nightly", feature(maybe_uninit_slice))]
-#![cfg_attr(feature = "nightly", feature(iter_array_chunks))]
-#![cfg_attr(feature = "nightly", feature(let_chains))]
-#![cfg_attr(feature = "nightly", feature(never_type))]
-#![cfg_attr(feature = "nightly", feature(array_chunks))]
-#![cfg_attr(feature = "nightly", feature(portable_simd))]
-
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
-#[cfg(feature = "nightly")]
-use std::alloc::Allocator;
 use std::{fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
@@ -268,28 +256,12 @@ impl Plugin for HyperionCore {
     }
 }
 
-#[cfg(feature = "nightly")]
-/// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
-#[derive(Debug)]
-pub struct Scratch<A: Allocator = std::alloc::Global> {
-    inner: Box<[u8], A>,
-}
-
-#[cfg(not(feature = "nightly"))]
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
 #[derive(Debug)]
 pub struct Scratch {
     inner: Box<[u8]>,
 }
 
-#[cfg(feature = "nightly")]
-impl Default for Scratch<std::alloc::Global> {
-    fn default() -> Self {
-        std::alloc::Global.into()
-    }
-}
-
-#[cfg(not(feature = "nightly"))]
 impl Default for Scratch {
     fn default() -> Self {
         Self {
@@ -308,35 +280,10 @@ mod sealed {
     pub trait Sealed {}
 }
 
-#[cfg(feature = "nightly")]
-impl<A: Allocator + Debug> sealed::Sealed for Scratch<A> {}
-
-#[cfg(not(feature = "nightly"))]
 impl sealed::Sealed for Scratch {}
 
-#[cfg(feature = "nightly")]
-impl<A: Allocator + Debug> ScratchBuffer for Scratch<A> {
-    fn obtain(&mut self) -> &mut [u8] {
-        &mut self.inner
-    }
-}
-
-#[cfg(not(feature = "nightly"))]
 impl ScratchBuffer for Scratch {
     fn obtain(&mut self) -> &mut [u8] {
         &mut self.inner
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl<A: Allocator> From<A> for Scratch<A> {
-    fn from(allocator: A) -> Self {
-        // A zeroed slice is allocated to avoid reading from uninitialized memory, which is UB.
-        // Allocating zeroed memory is usually very cheap, so there are minimal performance
-        // penalties from this.
-        let inner = Box::new_zeroed_slice_in(MAX_PACKET_SIZE, allocator);
-        // SAFETY: The box was initialized to zero, and u8 can be represented by zero
-        let inner = unsafe { inner.assume_init() };
-        Self { inner }
     }
 }

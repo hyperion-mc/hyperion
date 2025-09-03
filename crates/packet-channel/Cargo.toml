@@ -4,7 +4,6 @@ name = "packet_channel"
 
 [features]
 default = []
-nightly = []
 
 [dependencies]
 arc-swap = { workspace = true }
