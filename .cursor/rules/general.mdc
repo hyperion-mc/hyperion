@@ -5,3 +5,5 @@ alwaysApply: true
 ---
 
 latest msrv is 1.89.0
+
+After doing any task run ./ci.sh
