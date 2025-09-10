@@ -7,7 +7,7 @@ use serde::de::value::{
     StringDeserializer,
 };
 use serde::de::{self, IntoDeserializer, SeqAccess, Visitor};
-use serde::{forward_to_deserialize_any, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, forward_to_deserialize_any};
 
 use super::Error;
 use crate::conv::{i8_vec_into_u8_vec, u8_slice_as_i8_slice, u8_vec_into_i8_vec};

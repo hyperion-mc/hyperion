@@ -167,21 +167,13 @@ where
     #[inline]
     fn prefix_len_in(&mut self, haystack: &JavaStr) -> Option<usize> {
         let ch = haystack.chars().next()?;
-        if self(ch) {
-            Some(ch.len_utf8())
-        } else {
-            None
-        }
+        if self(ch) { Some(ch.len_utf8()) } else { None }
     }
 
     #[inline]
     fn suffix_len_in(&mut self, haystack: &JavaStr) -> Option<usize> {
         let ch = haystack.chars().next_back()?;
-        if self(ch) {
-            Some(ch.len_utf8())
-        } else {
-            None
-        }
+        if self(ch) { Some(ch.len_utf8()) } else { None }
     }
 
     #[inline]

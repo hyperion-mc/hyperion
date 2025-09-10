@@ -9,7 +9,7 @@ use valence_generated::item::ItemKind;
 use valence_ident::Ident;
 use valence_nbt::Compound;
 
-use crate::{impl_decode_bytes_auto, Decode, DecodeBytes, Encode, VarInt};
+use crate::{Decode, DecodeBytes, Encode, VarInt, impl_decode_bytes_auto};
 
 impl<T: Encode> Encode for Option<T> {
     fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {

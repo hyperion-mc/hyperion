@@ -1,4 +1,4 @@
-use crate::{packet_id, Decode, DecodeBytesAuto, Encode, Packet, VarInt};
+use crate::{Decode, DecodeBytesAuto, Encode, Packet, VarInt, packet_id};
 
 #[derive(Copy, Clone, Debug, Encode, Decode, DecodeBytesAuto, Packet)]
 #[packet(id = packet_id::MOVE_RELATIVE)]

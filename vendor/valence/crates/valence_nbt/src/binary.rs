@@ -4,7 +4,7 @@
 //! # Examples
 //!
 //! ```
-//! use valence_nbt::{compound, to_binary, Compound, List};
+//! use valence_nbt::{Compound, List, compound, to_binary};
 //!
 //! let c = compound! {
 //!     "byte" => 5_i8,
@@ -24,7 +24,7 @@
 //! Decode NBT data from its binary form.
 //!
 //! ```
-//! use valence_nbt::{compound, from_binary, Compound};
+//! use valence_nbt::{Compound, compound, from_binary};
 //!
 //! let some_bytes = [10, 0, 0, 3, 0, 3, 105, 110, 116, 0, 0, 222, 173, 0];
 //!
@@ -45,8 +45,8 @@ mod modified_utf8;
 #[cfg(test)]
 mod tests;
 
-pub use decode::{from_binary, FromModifiedUtf8, FromModifiedUtf8Error};
-pub use encode::{to_binary, written_size, ToModifiedUtf8};
+pub use decode::{FromModifiedUtf8, FromModifiedUtf8Error, from_binary};
+pub use encode::{ToModifiedUtf8, to_binary, written_size};
 pub use error::*;
 
 use crate::Tag;

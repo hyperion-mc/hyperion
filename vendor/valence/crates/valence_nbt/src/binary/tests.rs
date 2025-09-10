@@ -1,6 +1,6 @@
 use crate::binary::written_size;
 use crate::tag::Tag;
-use crate::{compound, from_binary, to_binary, Compound, List, Value};
+use crate::{Compound, List, Value, compound, from_binary, to_binary};
 
 const ROOT_NAME: &str = "The root name‽";
 

@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::{fmt, ops};
 
 use serde::de::Visitor;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use uuid::Uuid;
 use valence_ident::Ident;
 use valence_nbt::Value;
@@ -469,7 +469,8 @@ impl Text {
                 this.0.strikethrough,
                 this.0.underlined,
                 this.0.italic,
-            ].contains(&Some(false))
+            ]
+            .contains(&Some(false))
                 || this.0.color == Some(Color::Reset)
             {
                 // Reset and print sum of old and new modifiers

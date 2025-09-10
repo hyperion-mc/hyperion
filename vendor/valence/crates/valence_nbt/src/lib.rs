@@ -44,7 +44,7 @@ pub mod value;
 /// # Examples
 ///
 /// ```
-/// use valence_nbt::{compound, List};
+/// use valence_nbt::{List, compound};
 ///
 /// let c = compound! {
 ///     "byte" => 123_i8,

@@ -3,7 +3,7 @@
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse2, Error, LitStr, Result};
+use syn::{Error, LitStr, Result, parse2};
 
 #[proc_macro]
 pub fn parse_ident_str(item: StdTokenStream) -> StdTokenStream {

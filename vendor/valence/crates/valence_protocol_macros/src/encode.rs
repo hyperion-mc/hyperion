@@ -1,7 +1,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::spanned::Spanned;
-use syn::{parse2, Data, DeriveInput, Error, Fields, LitInt, Result};
+use syn::{Data, DeriveInput, Error, Fields, LitInt, Result, parse2};
 
 use crate::{add_trait_bounds, pair_variants_with_discriminants};
 

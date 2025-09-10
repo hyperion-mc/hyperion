@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use valence_protocol::ChunkPos;
 
-use crate::layer::bvh::{ChunkBvh, GetChunkPos};
 use crate::ChunkView;
+use crate::layer::bvh::{ChunkBvh, GetChunkPos};
 
 /// A message buffer of global messages (`G`) and local messages (`L`) meant for
 /// consumption by clients. Local messages are those that have some spatial
@@ -58,11 +58,12 @@ where
         let end = self.staging.len();
 
         if let Some((m, range)) = self.global.last_mut()
-            && msg == *m {
-                // Extend the existing message.
-                range.end = end as u32;
-                return Ok(());
-            }
+            && msg == *m
+        {
+            // Extend the existing message.
+            range.end = end as u32;
+            return Ok(());
+        }
 
         self.global.push((msg, start as u32..end as u32));
 
@@ -82,11 +83,12 @@ where
         let end = self.staging.len();
 
         if let Some((m, range)) = self.local.last_mut()
-            && msg == *m {
-                // Extend the existing message.
-                range.end = end as u32;
-                return Ok(());
-            }
+            && msg == *m
+        {
+            // Extend the existing message.
+            range.end = end as u32;
+            return Ok(());
+        }
 
         self.local.push((msg, start as u32..end as u32));
 

@@ -1,4 +1,4 @@
-use crate::{packet_id, ByteAngle, Decode, DecodeBytesAuto, Encode, Packet, VarInt};
+use crate::{ByteAngle, Decode, DecodeBytesAuto, Encode, Packet, VarInt, packet_id};
 
 #[derive(Copy, Clone, Debug, Encode, Decode, DecodeBytesAuto, Packet)]
 #[packet(id = packet_id::ROTATE)]

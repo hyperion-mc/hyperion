@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex; // Using nonstandard mutex to avoid poisoning API.
 use valence_bytes::CowBytes;
 use valence_generated::block::{PropName, PropValue};
-use valence_nbt::{compound, Compound, Value};
+use valence_nbt::{Compound, Value, compound};
 use valence_protocol::encode::{PacketWriter, WritePacket};
 use valence_protocol::packets::play::chunk_data_s2c::ChunkDataBlockEntity;
 use valence_protocol::packets::play::chunk_delta_update_s2c::ChunkDeltaUpdateEntry;
@@ -14,12 +14,12 @@ use valence_protocol::packets::play::{
     BlockEntityUpdateS2c, BlockUpdateS2c, ChunkDataS2c, ChunkDeltaUpdateS2c,
 };
 use valence_protocol::{BlockPos, BlockState, ChunkPos, ChunkSectionPos, Encode};
-use valence_registry::biome::BiomeId;
 use valence_registry::RegistryIdx;
+use valence_registry::biome::BiomeId;
 
 use super::chunk::{
-    bit_width, check_biome_oob, check_block_oob, check_section_oob, BiomeContainer,
-    BlockStateContainer, Chunk, SECTION_BLOCK_COUNT,
+    BiomeContainer, BlockStateContainer, Chunk, SECTION_BLOCK_COUNT, bit_width, check_biome_oob,
+    check_block_oob, check_section_oob,
 };
 use super::paletted_container::PalettedContainer;
 use super::unloaded::{self, UnloadedChunk};
@@ -697,7 +697,7 @@ impl Chunk for LoadedChunk {
 
 #[cfg(test)]
 mod tests {
-    use valence_protocol::{ident, CompressionThreshold};
+    use valence_protocol::{CompressionThreshold, ident};
 
     use super::*;
 

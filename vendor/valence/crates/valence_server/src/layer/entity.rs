@@ -6,9 +6,9 @@ use valence_protocol::encode::{PacketWriter, WritePacket};
 use valence_protocol::{BlockPos, ChunkPos, CompressionThreshold, Encode, Packet};
 use valence_server_common::Server;
 
+use super::Layer;
 use super::bvh::GetChunkPos;
 use super::message::Messages;
-use super::Layer;
 // use crate::client::Client;
 
 /// A [`Component`] containing Minecraft entities.

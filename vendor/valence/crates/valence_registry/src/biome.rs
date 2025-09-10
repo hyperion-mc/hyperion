@@ -14,7 +14,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::error;
-use valence_ident::{ident, Ident};
+use valence_ident::{Ident, ident};
 use valence_nbt::serde::CompoundSerializer;
 
 use crate::codec::{RegistryCodec, RegistryValue};
@@ -57,7 +57,7 @@ fn update_biome_registry(reg: Res<BiomeRegistry>, mut codec: ResMut<RegistryCode
 
         biomes.extend(reg.iter().map(|(_, name, biome)| {
             RegistryValue {
-                name: name,
+                name,
                 element: biome
                     .serialize(CompoundSerializer)
                     .expect("failed to serialize biome"),

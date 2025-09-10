@@ -1,12 +1,12 @@
 #[cfg(feature = "encryption")]
-use aes::cipher::{generic_array::GenericArray, BlockDecryptMut, BlockSizeUser, KeyIvInit};
-use anyhow::{bail, ensure, Context};
+use aes::cipher::{BlockDecryptMut, BlockSizeUser, KeyIvInit, generic_array::GenericArray};
+use anyhow::{Context, bail, ensure};
 use bytes::{Buf, BytesMut};
 
-use crate::var_int::{VarInt, VarIntDecodeError};
 #[cfg(feature = "compression")]
 use crate::CompressionThreshold;
-use crate::{Decode, Packet, MAX_PACKET_SIZE};
+use crate::var_int::{VarInt, VarIntDecodeError};
+use crate::{Decode, MAX_PACKET_SIZE, Packet};
 
 /// The AES block cipher with a 128 bit key, using the CFB-8 mode of
 /// operation.
@@ -216,7 +216,7 @@ impl PacketFrame {
     /// some input was missed.
     pub fn decode<P>(&self) -> anyhow::Result<P>
     where
-        P: Packet + Decode
+        P: Packet + Decode,
     {
         ensure!(
             P::ID == self.id,

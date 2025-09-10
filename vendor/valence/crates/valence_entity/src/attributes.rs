@@ -4,8 +4,8 @@ use bevy_ecs::prelude::*;
 use indexmap::IndexMap;
 use uuid::Uuid;
 pub use valence_generated::attributes::{EntityAttribute, EntityAttributeOperation};
-use valence_protocol::packets::play::entity_attributes_s2c::*;
 use valence_protocol::Ident;
+use valence_protocol::packets::play::entity_attributes_s2c::*;
 
 /// An instance of an Entity Attribute.
 #[derive(Component, Clone, PartialEq, Debug)]

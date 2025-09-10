@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::iter::FusedIterator;
 
-use valence_ident::{ident, Ident};
+use valence_ident::{Ident, ident};
 
 use crate::item::ItemKind;
 

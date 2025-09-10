@@ -19,7 +19,7 @@
 
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
-use syn::{parse_quote, Attribute, GenericParam, Generics, LitInt, Result, Variant};
+use syn::{Attribute, GenericParam, Generics, LitInt, Result, Variant, parse_quote};
 
 mod decode;
 mod encode;

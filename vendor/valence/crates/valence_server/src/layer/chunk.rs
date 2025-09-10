@@ -21,8 +21,8 @@ use valence_protocol::packets::play::particle_s2c::Particle;
 use valence_protocol::packets::play::{ParticleS2c, PlaySoundS2c};
 use valence_protocol::sound::{Sound, SoundCategory, SoundId};
 use valence_protocol::{BiomePos, BlockPos, ChunkPos, CompressionThreshold, Encode, Ident, Packet};
-use valence_registry::biome::{BiomeId, BiomeRegistry};
 use valence_registry::DimensionTypeRegistry;
+use valence_registry::biome::{BiomeId, BiomeRegistry};
 use valence_server_common::Server;
 
 use super::bvh::GetChunkPos;

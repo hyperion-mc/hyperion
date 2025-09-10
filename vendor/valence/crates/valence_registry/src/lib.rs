@@ -32,8 +32,8 @@ use bevy_ecs::prelude::*;
 pub use biome::BiomeRegistry;
 pub use codec::RegistryCodec;
 pub use dimension_type::DimensionTypeRegistry;
-use indexmap::map::Entry;
 use indexmap::IndexMap;
+use indexmap::map::Entry;
 pub use tags::TagsRegistry;
 use valence_ident::Ident;
 

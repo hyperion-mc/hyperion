@@ -1,6 +1,6 @@
 use valence_math::DVec3;
 
-use crate::{packet_id, Decode, DecodeBytesAuto, Encode, Packet};
+use crate::{Decode, DecodeBytesAuto, Encode, Packet, packet_id};
 
 #[derive(Copy, Clone, Debug, Encode, Decode, DecodeBytesAuto, Packet)]
 #[packet(id = packet_id::POSITION_AND_ON_GROUND)]

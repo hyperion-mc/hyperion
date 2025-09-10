@@ -8,8 +8,8 @@ use valence_server::block::{PropName, PropValue};
 use valence_server::layer::chunk::{Chunk, UnloadedChunk};
 use valence_server::nbt::{Compound, List, Value};
 use valence_server::protocol::BlockKind;
-use valence_server::registry::biome::BiomeId;
 use valence_server::registry::BiomeRegistry;
+use valence_server::registry::biome::BiomeId;
 use valence_server::{ChunkPos, Ident};
 
 use crate::{RegionError, RegionFolder};

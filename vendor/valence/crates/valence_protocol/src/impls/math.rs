@@ -2,7 +2,7 @@ use std::io::Write;
 
 use valence_math::*;
 
-use crate::{impl_decode_bytes_auto, Decode, Encode};
+use crate::{Decode, Encode, impl_decode_bytes_auto};
 
 impl Encode for Vec2 {
     fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {

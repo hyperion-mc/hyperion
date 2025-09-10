@@ -1,12 +1,12 @@
 use std::io::Write;
 use std::str::FromStr;
 
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use bytes::Bytes;
 use valence_bytes::{CowUtf8Bytes, Utf8Bytes};
 use valence_text::Text;
 
-use crate::{impl_decode_bytes_auto, Bounded, Decode, DecodeBytes, Encode, VarInt};
+use crate::{Bounded, Decode, DecodeBytes, Encode, VarInt, impl_decode_bytes_auto};
 
 const DEFAULT_MAX_STRING_CHARS: usize = 32767;
 const MAX_TEXT_CHARS: usize = 262144;

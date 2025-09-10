@@ -4,7 +4,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use tracing::error;
 use valence_ident::Ident;
-use valence_nbt::{compound, Compound, List, Value};
+use valence_nbt::{Compound, List, Value, compound};
 
 use crate::RegistrySet;
 

@@ -434,8 +434,8 @@ impl<'a> SnbtReader<'a> {
 /// # Example
 ///
 /// ```
-/// use valence_nbt::snbt::from_snbt_str;
 /// use valence_nbt::Value;
+/// use valence_nbt::snbt::from_snbt_str;
 ///
 /// let value = from_snbt_str("1f").unwrap();
 /// assert_eq!(value, Value::Float(1.0));

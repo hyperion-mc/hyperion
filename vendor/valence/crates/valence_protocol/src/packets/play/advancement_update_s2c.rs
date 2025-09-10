@@ -7,7 +7,7 @@ use valence_bytes::{Bytes, CowUtf8Bytes};
 use valence_ident::Ident;
 use valence_text::Text;
 
-use crate::{packet_id, DecodeBytes, Encode, ItemStack, Packet, VarInt};
+use crate::{DecodeBytes, Encode, ItemStack, Packet, VarInt, packet_id};
 
 pub type AdvancementUpdateS2c<'a> =
     GenericAdvancementUpdateS2c<(Ident, Advancement<'a, ItemStack>)>;

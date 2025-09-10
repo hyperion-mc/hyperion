@@ -3,8 +3,8 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parse2, parse_quote, Data, DeriveInput, Error, Fields, PredicateType, Result, Token,
-    TraitBound, TraitBoundModifier, TypeParamBound, WhereClause, WherePredicate,
+    Data, DeriveInput, Error, Fields, PredicateType, Result, Token, TraitBound, TraitBoundModifier,
+    TypeParamBound, WhereClause, WherePredicate, parse_quote, parse2,
 };
 
 use crate::{add_trait_bounds, pair_variants_with_discriminants};

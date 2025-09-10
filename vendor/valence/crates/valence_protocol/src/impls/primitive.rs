@@ -4,7 +4,7 @@ use std::slice;
 use anyhow::ensure;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{impl_decode_bytes_auto, Decode, Encode};
+use crate::{Decode, Encode, impl_decode_bytes_auto};
 
 impl Encode for bool {
     fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {

@@ -6,8 +6,8 @@ use valence_protocol::BlockState;
 use valence_registry::biome::BiomeId;
 
 use super::chunk::{
-    check_biome_oob, check_block_oob, check_section_oob, BiomeContainer, BlockStateContainer,
-    Chunk, MAX_HEIGHT, SECTION_BLOCK_COUNT,
+    BiomeContainer, BlockStateContainer, Chunk, MAX_HEIGHT, SECTION_BLOCK_COUNT, check_biome_oob,
+    check_block_oob, check_section_oob,
 };
 
 #[derive(Clone, Default, Debug)]

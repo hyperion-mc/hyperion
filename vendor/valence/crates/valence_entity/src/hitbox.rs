@@ -276,11 +276,7 @@ fn update_armor_stand_hitbox(
 }
 
 fn child_hitbox(child: bool, v: DVec3) -> DVec3 {
-    if child {
-        v / 2.0
-    } else {
-        v
-    }
+    if child { v / 2.0 } else { v }
 }
 
 fn update_passive_child_hitbox(

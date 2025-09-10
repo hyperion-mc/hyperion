@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use heck::{ToPascalCase, ToShoutySnakeCase};
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use serde::Deserialize;
 use valence_build_utils::{ident, rerun_if_changed};
 

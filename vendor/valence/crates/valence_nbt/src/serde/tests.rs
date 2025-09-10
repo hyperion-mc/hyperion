@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
-use crate::{compound, Compound, List};
+use crate::{Compound, List, compound};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 struct Struct {

@@ -12,7 +12,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use tracing::error;
-use valence_ident::{ident, Ident};
+use valence_ident::{Ident, ident};
 use valence_nbt::serde::CompoundSerializer;
 
 use crate::codec::{RegistryCodec, RegistryValue};
@@ -64,7 +64,7 @@ fn update_dimension_type_registry(
 
         dimension_types.extend(reg.iter().map(|(_, name, dim)| {
             RegistryValue {
-                name: name,
+                name,
                 element: dim
                     .serialize(CompoundSerializer)
                     .expect("failed to serialize dimension type"),
