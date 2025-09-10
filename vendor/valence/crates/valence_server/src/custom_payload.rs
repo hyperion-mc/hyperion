@@ -1,6 +1,8 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use valence_bytes::CowBytes;
 use valence_protocol::packets::play::{CustomPayloadC2s, CustomPayloadS2c};
+use valence_protocol::raw::RawBytes;
 use valence_protocol::{Bounded, Ident, WritePacket};
 
 use crate::client::Client;
@@ -26,7 +28,7 @@ impl Client {
     pub fn send_custom_payload(&mut self, channel: Ident, data: &[u8]) {
         self.write_packet(&CustomPayloadS2c {
             channel: channel.into(),
-            data: Bounded(data.into()),
+            data: Bounded(RawBytes(CowBytes::from(data))),
         });
     }
 }
@@ -40,7 +42,7 @@ fn handle_custom_payload(
             events.send(CustomPayloadEvent {
                 client: packet.client,
                 channel: pkt.channel.into(),
-                data: pkt.data.0 .0.into(),
+                data: pkt.data.0.0.into(),
             })
         }
     }

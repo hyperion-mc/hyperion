@@ -4,8 +4,8 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use derive_more::Deref;
 use tracing::warn;
-use valence_protocol::packets::play::{KeepAliveC2s, KeepAliveS2c};
 use valence_protocol::WritePacket;
+use valence_protocol::packets::play::{KeepAliveC2s, KeepAliveS2c};
 
 use crate::client::{Client, UpdateClientsSet};
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};

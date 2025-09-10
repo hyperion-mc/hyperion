@@ -1,8 +1,8 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use valence_entity::{EntityAnimation, EntityAnimations};
-use valence_protocol::packets::play::HandSwingC2s;
 use valence_protocol::Hand;
+use valence_protocol::packets::play::HandSwingC2s;
 
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};
 

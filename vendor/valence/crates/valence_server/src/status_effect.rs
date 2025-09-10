@@ -6,13 +6,13 @@ use valence_entity::active_status_effects::{ActiveStatusEffect, ActiveStatusEffe
 use valence_entity::entity::Flags;
 use valence_entity::living::{PotionSwirlsAmbient, PotionSwirlsColor};
 use valence_protocol::packets::play::{
-    entity_status_effect_s2c, EntityStatusEffectS2c, RemoveEntityStatusEffectS2c,
+    EntityStatusEffectS2c, RemoveEntityStatusEffectS2c, entity_status_effect_s2c,
 };
 use valence_protocol::status_effects::StatusEffect;
 use valence_protocol::{VarInt, WritePacket};
 
-use crate::client::Client;
 use crate::EventLoopPostUpdate;
+use crate::client::Client;
 
 /// Event for when a status effect is added to an entity or the amplifier or
 /// duration of an existing status effect is changed.
@@ -147,7 +147,7 @@ fn set_swirl(
             .any(|effect| effect.ambient());
     }
 
-    if let Some(ref mut swirl_color) = swirl_color {
+    if let Some(swirl_color) = swirl_color {
         swirl_color.0 = get_color(active_status_effects);
     }
 }

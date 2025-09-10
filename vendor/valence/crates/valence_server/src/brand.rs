@@ -1,6 +1,7 @@
-use valence_bytes::CowUtf8Bytes;
+use valence_bytes::CowBytes;
 use valence_protocol::packets::play::CustomPayloadS2c;
-use valence_protocol::{ident, Bounded, Encode, VarInt, WritePacket};
+use valence_protocol::raw::RawBytes;
+use valence_protocol::{Bounded, Encode, VarInt, WritePacket, ident};
 
 pub trait SetBrand {
     /// Sets the brand of the server.
@@ -23,7 +24,7 @@ impl<T: WritePacket> SetBrand for T {
         buf.extend_from_slice(brand.as_bytes());
         self.write_packet(&CustomPayloadS2c {
             channel: ident!("minecraft:brand"),
-            data: Bounded(buf.into()),
+            data: Bounded(RawBytes(CowBytes::from(buf))),
         });
     }
 }

@@ -1,8 +1,8 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use valence_protocol::WritePacket;
 use valence_protocol::packets::play::{ResourcePackSendS2c, ResourcePackStatusC2s};
 use valence_protocol::text::Text;
-use valence_protocol::WritePacket;
 
 use crate::client::Client;
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};

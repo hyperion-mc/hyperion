@@ -196,7 +196,7 @@ pub trait Encode {
     /// specialization is unavailable in stable Rust at the time of writing,
     /// we must make the slice specialization part of this trait.
     ///
-    /// [`write_all`]: Write:write_all
+    /// [`write_all`]: std::io::Write::write_all
     fn encode_slice(slice: &[Self], mut w: impl Write) -> anyhow::Result<()>
     where
         Self: Sized,

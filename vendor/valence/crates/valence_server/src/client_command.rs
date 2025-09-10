@@ -1,9 +1,9 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use valence_entity::entity::Flags;
-use valence_entity::{entity, Pose};
-pub use valence_protocol::packets::play::client_command_c2s::ClientCommand;
+use valence_entity::{Pose, entity};
 use valence_protocol::packets::play::ClientCommandC2s;
+pub use valence_protocol::packets::play::client_command_c2s::ClientCommand;
 
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};
 

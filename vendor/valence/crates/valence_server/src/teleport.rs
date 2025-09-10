@@ -3,11 +3,11 @@ use bevy_ecs::prelude::*;
 use tracing::warn;
 use valence_entity::{Look, Position};
 use valence_math::DVec3;
+use valence_protocol::WritePacket;
 use valence_protocol::packets::play::player_position_look_s2c::PlayerPositionLookFlags;
 use valence_protocol::packets::play::{PlayerPositionLookS2c, TeleportConfirmC2s};
-use valence_protocol::WritePacket;
 
-use crate::client::{update_view_and_layers, Client, UpdateClientsSet};
+use crate::client::{Client, UpdateClientsSet, update_view_and_layers};
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};
 use crate::spawn::update_respawn_position;
 

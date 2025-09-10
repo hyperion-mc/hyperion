@@ -5,7 +5,7 @@ pub use valence_protocol::packets::play::player_abilities_s2c::PlayerAbilitiesFl
 use valence_protocol::packets::play::{PlayerAbilitiesS2c, UpdatePlayerAbilitiesC2s};
 use valence_protocol::{GameMode, WritePacket};
 
-use crate::client::{update_game_mode, Client, UpdateClientsSet};
+use crate::client::{Client, UpdateClientsSet, update_game_mode};
 use crate::event_loop::{EventLoopPreUpdate, PacketEvent};
 
 /// [`Component`] that stores the player's flying speed ability.

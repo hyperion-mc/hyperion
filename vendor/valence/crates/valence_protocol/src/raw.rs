@@ -14,7 +14,7 @@ use crate::{Bounded, DecodeBytes, Encode};
 /// slice. The input will be at the EOF state after this is decoded.
 ///
 /// [encoding]: Encode
-/// [decoding]: Decode
+/// [decoding]: crate::DecodeBytes
 #[derive(
     Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug, Deref, DerefMut, From, Into,
 )]

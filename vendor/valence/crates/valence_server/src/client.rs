@@ -13,6 +13,7 @@ use bytes::{Bytes, BytesMut};
 use derive_more::{Deref, DerefMut, From, Into};
 use tracing::warn;
 use uuid::Uuid;
+use valence_bytes::CowBytes;
 use valence_entity::attributes::{EntityAttributes, TrackedEntityAttributes};
 use valence_entity::living::Health;
 use valence_entity::player::{Food, PlayerEntityBundle, Saturation};
@@ -33,6 +34,7 @@ use valence_protocol::packets::play::{
     ParticleS2c, PlaySoundS2c, UnloadChunkS2c,
 };
 use valence_protocol::profile::Property;
+use valence_protocol::raw::RawBytes;
 use valence_protocol::sound::{Sound, SoundCategory, SoundId};
 use valence_protocol::text::{IntoText, Text};
 use valence_protocol::var_int::VarInt;
@@ -40,8 +42,8 @@ use valence_protocol::{BlockPos, ChunkPos, Encode, GameMode, Packet};
 use valence_registry::RegistrySet;
 use valence_server_common::{Despawned, UniqueId};
 
-use crate::layer::{ChunkLayer, EntityLayer, UpdateLayersPostClientSet, UpdateLayersPreClientSet};
 use crate::ChunkView;
+use crate::layer::{ChunkLayer, EntityLayer, UpdateLayersPostClientSet, UpdateLayersPreClientSet};
 
 pub struct ClientPlugin;
 
@@ -445,12 +447,12 @@ pub struct Properties(pub Vec<Property>);
 impl Properties {
     /// Finds the property with the name "textures".
     pub fn textures(&self) -> Option<&Property> {
-        self.0.iter().find(|p| p.name == "textures")
+        self.0.iter().find(|p| p.name == "textures".into())
     }
 
     /// Finds the property with the name "textures" mutably.
     pub fn textures_mut(&mut self) -> Option<&mut Property> {
-        self.0.iter_mut().find(|p| p.name == "textures")
+        self.0.iter_mut().find(|p| p.name == "textures".into())
     }
 
     /// Returns the value of the "textures" property. It's a base64-encoded
@@ -468,13 +470,13 @@ impl Properties {
     /// Mojang.
     pub fn set_skin(&mut self, skin: impl Into<String>, signature: impl Into<String>) {
         if let Some(prop) = self.textures_mut() {
-            prop.value = skin.into();
-            prop.signature = Some(signature.into());
+            prop.value = skin.into().into();
+            prop.signature = Some(signature.into().into());
         } else {
             self.0.push(Property {
-                name: "textures".to_owned(),
-                value: skin.into(),
-                signature: Some(signature.into()),
+                name: "textures".into(),
+                value: skin.into().into(),
+                signature: Some(signature.into().into()),
             });
         }
     }
@@ -1151,7 +1153,7 @@ fn init_tracked_data(mut clients: Query<(&mut Client, &TrackedData), Added<Track
         if let Some(init_data) = tracked_data.init_data() {
             client.write_packet(&EntityTrackerUpdateS2c {
                 entity_id: VarInt(0),
-                tracked_values: init_data.into(),
+                tracked_values: RawBytes(CowBytes::from(init_data)),
             });
         }
     }
@@ -1162,7 +1164,7 @@ fn update_tracked_data(mut clients: Query<(&mut Client, &TrackedData)>) {
         if let Some(update_data) = tracked_data.update_data() {
             client.write_packet(&EntityTrackerUpdateS2c {
                 entity_id: VarInt(0),
-                tracked_values: update_data.into(),
+                tracked_values: RawBytes(CowBytes::from(update_data)),
             });
         }
     }

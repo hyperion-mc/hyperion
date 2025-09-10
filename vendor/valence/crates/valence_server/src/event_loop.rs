@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use bevy_app::prelude::*;
 use bevy_app::MainScheduleOrder;
+use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ScheduleLabel;
 use bevy_ecs::system::SystemState;
