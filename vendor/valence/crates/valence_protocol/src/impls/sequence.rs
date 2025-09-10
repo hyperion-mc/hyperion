@@ -82,7 +82,6 @@ impl<T: DecodeBytes, const N: usize> DecodeBytes for [T; N] {
 //        Ok(arr)
 //    }
 //}
-
 impl<T: Encode> Encode for [T] {
     fn encode(&self, mut w: impl Write) -> anyhow::Result<()> {
         let len = self.len();

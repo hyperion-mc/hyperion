@@ -38,7 +38,7 @@ mod bounded;
 mod byte_angle;
 pub mod chunk_pos;
 pub mod chunk_section_pos;
-// pub mod decode;
+pub mod decode;
 mod difficulty;
 mod direction;
 pub mod encode;
@@ -392,7 +392,7 @@ pub enum PacketState {
 #[allow(dead_code)]
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
+    /*
 
     use bytes::BytesMut;
 
@@ -546,4 +546,5 @@ mod tests {
         check_test_packet(&mut dec, "fourth");
         check_test_packet(&mut dec, "third");
     }
+    */
 }

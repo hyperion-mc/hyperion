@@ -9,6 +9,6 @@ format.
 - `binary`: Adds support for serializing and deserializing in Java edition's binary format.
 - `snbt`: Adds support for serializing and deserializing in "stringified" format.
 - `preserve_order`: Causes the order of fields in [`Compound`]s to be
-preserved during insertion and deletion at a slight cost to performance.
-The iterators on `Compound` can then implement [`DoubleEndedIterator`].
+  preserved during insertion and deletion at a slight cost to performance.
+  The iterators on `Compound` can then implement [`DoubleEndedIterator`].
 - `serde` Adds support for [`serde`](https://docs.rs/serde/latest/serde/)

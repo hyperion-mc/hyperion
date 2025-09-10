@@ -34,11 +34,9 @@ macro_rules! ident {
     ($string:literal) => {
         // SAFETY: parse_ident_str returns a &'static str, which is guaranteed to be
         // valid UTF-8
-        unsafe {
-            $crate::Ident::new_unchecked($crate::Utf8Bytes::from_static($crate::parse_ident_str!(
-                $string
-            )))
-        }
+        $crate::Ident::new_unchecked($crate::Utf8Bytes::from_static($crate::parse_ident_str!(
+            $string
+        )))
     };
 }
 

@@ -34,3 +34,12 @@ perf.data
 .trigger-debug
 .trigger
 # valence/
+
+proxy.crt
+proxy_private_key.pem
+root_ca.crt
+root_ca.pem
+root_ca.srl
+server.crt
+server_private_key.pem
+logs

@@ -11,7 +11,6 @@ mod tests;
 /// Errors that can occur while serializing or deserializing.
 #[derive(Clone, Error, Debug)]
 #[error("{0}")]
-
 pub struct Error(Box<str>);
 
 impl Error {

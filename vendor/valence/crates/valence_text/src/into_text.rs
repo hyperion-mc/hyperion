@@ -367,8 +367,8 @@ mod tests {
             matches!(value.into_cow_text(), Cow::Borrowed(..))
         }
 
-        assert!(is_borrowed(&"this should be borrowed".into_text()));
-        assert!(is_borrowed(&"this should be borrowed too".bold()));
+        assert!(is_borrowed("this should be borrowed".into_text()));
+        assert!(is_borrowed("this should be borrowed too".bold()));
         assert!(!is_borrowed("this should be owned?".bold()));
         assert!(!is_borrowed("this should be owned"));
         assert!(!is_borrowed(465));

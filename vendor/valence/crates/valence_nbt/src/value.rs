@@ -210,7 +210,7 @@ impl_value!(ValueMut, 'a, (**), &'a mut);
 
 impl<S> Value<S> {
     /// Converts a reference to a value to a [`ValueRef`].
-    pub fn as_value_ref(&self) -> ValueRef<S> {
+    pub fn as_value_ref(&self) -> ValueRef<'_, S> {
         match self {
             Value::Byte(v) => ValueRef::Byte(v),
             Value::Short(v) => ValueRef::Short(v),
@@ -228,7 +228,7 @@ impl<S> Value<S> {
     }
 
     /// Converts a mutable reference to a value to a [`ValueMut`].
-    pub fn as_value_mut(&mut self) -> ValueMut<S> {
+    pub fn as_value_mut(&mut self) -> ValueMut<'_, S> {
         match self {
             Value::Byte(v) => ValueMut::Byte(v),
             Value::Short(v) => ValueMut::Short(v),
@@ -551,12 +551,9 @@ impl<S> From<uuid::Uuid> for Value<S> {
 }
 
 #[cfg(feature = "valence_ident")]
-impl<I, S> From<valence_ident::Ident<I>> for Value<S>
-where
-    I: Into<Value<S>>,
-{
-    fn from(value: valence_ident::Ident<I>) -> Self {
-        value.into_inner().into()
+impl From<valence_ident::Ident> for Value<String> {
+    fn from(value: valence_ident::Ident) -> Self {
+        Value::String(value.as_str().to_owned())
     }
 }
 
@@ -593,13 +590,6 @@ impl<'a, S> From<&'a Value<S>> for ValueRef<'a, S> {
 impl<'a, S> From<ValueMut<'a, S>> for ValueRef<'a, S> {
     fn from(v: ValueMut<'a, S>) -> Self {
         v.into_value_ref()
-    }
-}
-
-#[cfg(feature = "valence_ident")]
-impl<'a> From<&'a valence_ident::Ident> for ValueRef<'a, String> {
-    fn from(v: &'a valence_ident::Ident) -> Self {
-        Self::String(v.as_ref())
     }
 }
 

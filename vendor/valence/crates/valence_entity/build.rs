@@ -384,20 +384,23 @@ fn build_entities() -> anyhow::Result<TokenStream> {
                                 }]);
 
                                 // Get the default values of the attributes.
-                                let mut attribute_default_values = TokenStream::new();
-
-                                if let Some(attributes) = &entity.attributes {
-                                    for attribute in attributes {
-                                        let name = ident(attribute.name.to_pascal_case());
-                                        let base_value = attribute.base_value;
-                                        attribute_default_values.extend([quote! {
-                                            .with_attribute_and_value(
-                                                super::EntityAttribute::#name,
-                                                #base_value,
-                                            )
-                                        }]);
+                                #[allow(clippy::excessive_nesting)]
+                                let attribute_default_values = {
+                                    let mut values = TokenStream::new();
+                                    if let Some(attributes) = &entity.attributes {
+                                        for attribute in attributes {
+                                            let name = ident(attribute.name.to_pascal_case());
+                                            let base_value = attribute.base_value;
+                                            values.extend([quote! {
+                                                .with_attribute_and_value(
+                                                    super::EntityAttribute::#name,
+                                                    #base_value,
+                                                )
+                                            }]);
+                                        }
                                     }
-                                }
+                                    values
+                                };
 
                                 bundle_init_fields.extend([quote! {
                                     living_attributes: super::attributes::EntityAttributes::new() #attribute_default_values,

@@ -130,17 +130,17 @@ impl Decode for VarLong {
 
 #[cfg(test)]
 mod tests {
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, rng};
 
     use super::*;
 
     #[test]
     fn encode_decode() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut buf = vec![];
 
         for n in (0..1_000_000)
-            .map(|_| rng.r#gen())
+            .map(|_| rng.random())
             .chain([0, i64::MIN, i64::MAX])
         {
             VarLong(n).encode(&mut buf).unwrap();

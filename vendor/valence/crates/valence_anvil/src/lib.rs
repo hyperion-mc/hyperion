@@ -32,8 +32,8 @@ use flate2::bufread::{GzDecoder, ZlibDecoder};
 use flate2::write::{GzEncoder, ZlibEncoder};
 use lru::LruCache;
 use thiserror::Error;
-use valence_nbt::binary::{FromModifiedUtf8, ToModifiedUtf8};
 use valence_nbt::Compound;
+use valence_nbt::binary::{FromModifiedUtf8, ToModifiedUtf8};
 
 #[cfg(feature = "bevy_plugin")]
 mod bevy;
@@ -298,8 +298,8 @@ impl RegionFolder {
         fn region_chunks(
             this: &mut RegionFolder,
             pos: Result<(i32, i32), RegionError>,
-        ) -> impl Iterator<Item = Result<(i32, i32), RegionError>> {
-            let positions = match pos {
+        ) -> Vec<Result<(i32, i32), RegionError>> {
+            match pos {
                 Ok((region_x, region_z)) => {
                     match RegionFolder::region(
                         &mut this.regions,
@@ -313,8 +313,7 @@ impl RegionFolder {
                     }
                 }
                 Err(err) => vec![Err(err)],
-            };
-            positions.into_iter()
+            }
         }
 
         Ok(std::fs::read_dir(&self.region_root)?
