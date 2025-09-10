@@ -22,7 +22,7 @@
 // pub mod action;
 // pub mod brand;
 mod chunk_view;
-// pub mod client;
+pub mod client;
 // pub mod client_command;
 // pub mod client_settings;
 // pub mod custom_payload;
