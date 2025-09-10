@@ -86,7 +86,10 @@ async fn handle_proxy_messages(
 
         match result {
             ArchivedProxyToServerMessage::PlayerConnect(message) => {
-                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let Ok(stream) = rkyv::deserialize::<u64, rkyv::rancor::Error>(&message.stream)
+                else {
+                    continue;
+                };
 
                 let (sender, receiver) = packet_channel::channel(DEFAULT_FRAGMENT_SIZE);
                 if player_packet_sender.insert(stream, sender).is_some() {
@@ -112,7 +115,10 @@ async fn handle_proxy_messages(
                 });
             }
             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
-                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let Ok(stream) = rkyv::deserialize::<u64, rkyv::rancor::Error>(&message.stream)
+                else {
+                    continue;
+                };
 
                 if player_packet_sender.remove(&stream).is_none() {
                     error!(
@@ -131,7 +137,10 @@ async fn handle_proxy_messages(
                 });
             }
             ArchivedProxyToServerMessage::PlayerPackets(message) => {
-                let Ok(stream) = rkyv::deserialize::<u64, !>(&message.stream);
+                let Ok(stream) = rkyv::deserialize::<u64, rkyv::rancor::Error>(&message.stream)
+                else {
+                    continue;
+                };
 
                 let Some(sender) = player_packet_sender.get_mut(&stream) else {
                     error!(

@@ -2,7 +2,11 @@
 harness = false
 name = "parallel_stats"
 
+[features]
+default = []
+
 [dependencies]
+wide = "0.7.28"
 
 [dev-dependencies]
 rand.workspace = true

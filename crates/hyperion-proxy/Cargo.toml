@@ -12,7 +12,7 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-rustls = { workspace = true }
 tokio-util = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }
-bvh = { workspace = true }
+
 bytes = { workspace = true }
 clap = { workspace = true }
 glam = { workspace = true }

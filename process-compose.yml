@@ -1,0 +1,68 @@
+version: "0.5"
+
+processes:
+  # Single build process (cargo builds all binaries in parallel)
+  build:
+    command: "cargo build --bin hyperion-proxy --bin bedwars --bin rust-mc-bot"
+    working_dir: "/Users/andrewgazelka/Projects/personal/hyperion"
+    environment:
+      - RUST_LOG=debug
+    log_location: "./logs/build.log"
+
+  # Run processes (dependent on build)
+  hyperion-proxy:
+    command: "./target/debug/hyperion-proxy --root-ca-cert root_ca.crt --cert proxy.crt --private-key proxy_private_key.pem --server 127.0.0.1:35565 0.0.0.0:25565"
+    working_dir: "/Users/andrewgazelka/Projects/personal/hyperion"
+    depends_on:
+      build:
+        condition: process_completed_successfully
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    log_location: "./logs/hyperion-proxy.log"
+    restart: "on_failure"
+    restart_policy:
+      restart_delay: 5s
+      max_restarts: 3
+
+  bedwars:
+    command: "./target/debug/bedwars --root-ca-cert root_ca.crt --cert server.crt --private-key server_private_key.pem --ip 0.0.0.0 --port 35565"
+    working_dir: "/Users/andrewgazelka/Projects/personal/hyperion"
+    depends_on:
+      build:
+        condition: process_completed_successfully
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    log_location: "./logs/bedwars.log"
+    restart: "on_failure"
+    restart_policy:
+      restart_delay: 5s
+      max_restarts: 3
+
+  rust-mc-bot:
+    command: "./target/debug/rust-mc-bot"
+    working_dir: "/Users/andrewgazelka/Projects/personal/hyperion"
+    depends_on:
+      build:
+        condition: process_completed_successfully
+      hyperion-proxy:
+        condition: process_healthy
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - BOT_SERVER=127.0.0.1:25565
+      - BOT_BOT_COUNT=500
+      - BOT_THREADS=2
+    log_location: "./logs/rust-mc-bot.log"
+    restart: "on_failure"
+    restart_policy:
+      restart_delay: 5s
+      max_restarts: 3
+    disabled: true  # Similar to docker profile, can be enabled when needed
+
+log:
+  fields:
+    - "time"
+    - "level"
+    - "message"

@@ -54,10 +54,11 @@ fn execute_commands(
             let mut msg = String::new();
             write!(&mut msg, "§cAvailable commands: §r[").unwrap();
 
-            for w in registry
-                .get_permitted(world, packet.sender())
-                .intersperse(", ")
-            {
+            let permitted: Vec<_> = registry.get_permitted(world, packet.sender()).collect();
+            for (i, w) in permitted.iter().enumerate() {
+                if i > 0 {
+                    write!(&mut msg, ", ").unwrap();
+                }
                 write!(&mut msg, "{w}").unwrap();
             }
 

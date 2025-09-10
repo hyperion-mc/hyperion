@@ -3,3 +3,4 @@
 cognitive-complexity-threshold = 200
 excessive-nesting-threshold = 7
 too-many-lines-threshold = 200
+msrv = "1.89.0"

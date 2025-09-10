@@ -24,11 +24,12 @@ impl<T: Debug> Bvh<T> {
             Node::Leaf(elems) => {
                 // Only a leaf: check all elements directly.
                 for elem in elems {
-                    if let Some(t) = get_aabb(elem).intersect_ray(&ray) {
-                        if t < closest_t && t.into_inner() >= 0.0 {
-                            closest_t = t;
-                            closest_elem = Some(elem);
-                        }
+                    if let Some(t) = get_aabb(elem).intersect_ray(&ray)
+                        && t < closest_t
+                        && t.into_inner() >= 0.0
+                    {
+                        closest_t = t;
+                        closest_elem = Some(elem);
                     }
                 }
             }
@@ -36,13 +37,13 @@ impl<T: Debug> Bvh<T> {
                 let mut heap: BinaryHeap<_> = BinaryHeap::new();
 
                 // Check if the ray hits the root node's AABB
-                if let Some(t) = internal.aabb.intersect_ray(&ray) {
-                    if t.into_inner() >= 0.0 {
-                        heap.push(Reverse(NodeOrd {
-                            node: internal,
-                            by: t,
-                        }));
-                    }
+                if let Some(t) = internal.aabb.intersect_ray(&ray)
+                    && t.into_inner() >= 0.0
+                {
+                    heap.push(Reverse(NodeOrd {
+                        node: internal,
+                        by: t,
+                    }));
                 }
 
                 while let Some(Reverse(current)) = heap.pop() {
@@ -57,22 +58,24 @@ impl<T: Debug> Bvh<T> {
                     for child in node.children(self) {
                         match child {
                             Node::Internal(child_node) => {
-                                if let Some(t) = child_node.aabb.intersect_ray(&ray) {
-                                    if t < closest_t && t.into_inner() >= 0.0 {
-                                        heap.push(Reverse(NodeOrd {
-                                            node: child_node,
-                                            by: t,
-                                        }));
-                                    }
+                                if let Some(t) = child_node.aabb.intersect_ray(&ray)
+                                    && t < closest_t
+                                    && t.into_inner() >= 0.0
+                                {
+                                    heap.push(Reverse(NodeOrd {
+                                        node: child_node,
+                                        by: t,
+                                    }));
                                 }
                             }
                             Node::Leaf(elems) => {
                                 for elem in elems {
-                                    if let Some(t) = get_aabb(elem).intersect_ray(&ray) {
-                                        if t < closest_t && t.into_inner() >= 0.0 {
-                                            closest_t = t;
-                                            closest_elem = Some(elem);
-                                        }
+                                    if let Some(t) = get_aabb(elem).intersect_ray(&ray)
+                                        && t < closest_t
+                                        && t.into_inner() >= 0.0
+                                    {
+                                        closest_t = t;
+                                        closest_elem = Some(elem);
                                     }
                                 }
                             }

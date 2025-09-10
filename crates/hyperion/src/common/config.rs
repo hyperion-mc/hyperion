@@ -76,6 +76,7 @@ impl Config {
         info!("configuration file not found, using defaults");
 
         // make required folders
+        #[allow(clippy::collapsible_if)]
         if let Some(parent) = path.as_ref().parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
                 // this might happen on a read-only filesystem (i.e.,

@@ -1,0 +1,36 @@
+[package]
+name = "valence_entity"
+description = "Minecraft entities for Valence"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bitfield-struct.workspace = true
+derive_more.workspace = true
+valence_math.workspace = true
+paste.workspace = true
+rustc-hash.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+valence_server_common.workspace = true
+valence_nbt.workspace = true
+valence_generated.workspace = true
+valence_protocol.workspace = true
+indexmap.workspace = true
+
+[build-dependencies]
+anyhow.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+serde_json.workspace = true
+heck.workspace = true
+serde.workspace = true
+valence_build_utils.workspace = true

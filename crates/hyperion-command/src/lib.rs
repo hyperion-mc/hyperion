@@ -1,5 +1,3 @@
-#![feature(iter_intersperse)]
-
 use bevy::prelude::*;
 
 mod component;

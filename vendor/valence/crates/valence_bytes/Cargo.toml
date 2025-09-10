@@ -1,0 +1,12 @@
+[package]
+name = "valence_bytes"
+description = "Storing reference counted bytes"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes.workspace = true

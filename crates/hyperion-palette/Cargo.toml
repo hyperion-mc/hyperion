@@ -1,3 +1,6 @@
+[features]
+default = []
+
 [dependencies]
 anyhow.workspace = true
 roaring.workspace = true
