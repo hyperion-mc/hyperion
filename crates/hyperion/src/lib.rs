@@ -23,6 +23,7 @@
 #![feature(trivial_bounds)]
 #![feature(pointer_is_aligned_to)]
 #![feature(thread_local)]
+#![feature(duration_constructors_lite)]
 
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
