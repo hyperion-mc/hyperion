@@ -86,7 +86,7 @@ impl Default for ServerPingResponse {
 
 fn process_status_request(
     mut packets: EventReader<'_, '_, packet::status::QueryRequest>,
-    ping_response_data: Res<ServerPingResponse>,
+    ping_response_data: Res<'_, ServerPingResponse>,
     compose: Res<'_, Compose>,
 ) {
     for packet in packets.read() {
