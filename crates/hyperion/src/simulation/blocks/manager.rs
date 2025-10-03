@@ -124,7 +124,7 @@ impl RegionManagerTask {
     async fn create_and_insert_region(&mut self, coord: IVec2) -> std::io::Result<Arc<Region>> {
         let file = self.region_file(coord.x, coord.y).await?;
         let region =
-            Region::open(&file).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            Region::open(&file).map_err(std::io::Error::other)?;
         let region = Arc::new(region);
         let region_weak = Arc::downgrade(&region);
         self.regions.insert(coord, region_weak);
