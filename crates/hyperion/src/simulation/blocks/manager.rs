@@ -113,11 +113,10 @@ impl RegionManagerTask {
     }
 
     async fn get_or_create_region(&mut self, coord: IVec2) -> std::io::Result<Arc<Region>> {
-        if let Some(region) = self.regions.get(&coord) {
-            if let Some(region) = region.upgrade() {
+        if let Some(region) = self.regions.get(&coord)
+            && let Some(region) = region.upgrade() {
                 return Ok(region);
             }
-        }
 
         self.create_and_insert_region(coord).await
     }
