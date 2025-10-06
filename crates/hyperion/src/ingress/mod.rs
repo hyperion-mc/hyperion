@@ -66,8 +66,27 @@ pub fn process_handshake(
     }
 }
 
+#[derive(Resource)]
+pub struct ServerPingResponse {
+    pub description: String,
+    pub max_players: u32,
+}
+
+impl Default for ServerPingResponse {
+    fn default() -> Self {
+        Self {
+            description: String::from(
+                "Getting 10k Players to PvP at Once on a Minecraft Server to Break the Guinness \
+                 World Record",
+            ),
+            max_players: 12_000,
+        }
+    }
+}
+
 fn process_status_request(
     mut packets: EventReader<'_, '_, packet::status::QueryRequest>,
+    ping_response_data: Res<'_, ServerPingResponse>,
     compose: Res<'_, Compose>,
 ) {
     for packet in packets.read() {
@@ -89,10 +108,10 @@ fn process_status_request(
             },
             "players": {
                 "online": online,
-                "max": 12_000,
+                "max": ping_response_data.max_players,
                 "sample": [],
             },
-            "description": "Getting 10k Players to PvP at Once on a Minecraft Server to Break the Guinness World Record",
+            "description": ping_response_data.description,
             // "favicon": favicon,
         });
 
@@ -288,5 +307,6 @@ impl Plugin for IngressPlugin {
             ),
         );
         app.add_observer(remove_player_from_visibility);
+        app.init_resource::<ServerPingResponse>();
     }
 }
