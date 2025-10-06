@@ -192,7 +192,7 @@ macro_rules! define_and_register_components {
 
 impl MetadataChanges {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 

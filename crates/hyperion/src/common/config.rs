@@ -76,8 +76,8 @@ impl Config {
         info!("configuration file not found, using defaults");
 
         // make required folders
-        if let Some(parent) = path.as_ref().parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+        if let Some(parent) = path.as_ref().parent()
+            && let Err(e) = std::fs::create_dir_all(parent) {
                 // this might happen on a read-only filesystem (i.e.,
                 // when running on a CI, profiling in Instruments, etc.)
                 warn!(
@@ -87,7 +87,6 @@ impl Config {
                 );
                 return Ok(Self::default());
             }
-        }
 
         // write default config to file
         let default_config = Self::default();

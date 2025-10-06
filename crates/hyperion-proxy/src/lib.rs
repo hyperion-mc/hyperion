@@ -4,6 +4,8 @@
 #![feature(never_type)]
 #![feature(stmt_expr_attributes)]
 #![feature(gen_blocks)]
+#![expect(incomplete_features, reason = "generic_const_exprs")]
+#![feature(generic_const_exprs)]
 #![allow(
     clippy::redundant_pub_crate,
     clippy::cast_possible_truncation,

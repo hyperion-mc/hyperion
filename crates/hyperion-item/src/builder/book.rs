@@ -34,11 +34,10 @@ impl BookBuilder {
         let page = page.into();
         let json = format!(r#"{{"text":"{page}"}}"#);
 
-        if let Some(nbt) = &mut self.item.nbt {
-            if let nbt::Value::List(nbt::List::String(pages)) = nbt.get_mut("pages").unwrap() {
+        if let Some(nbt) = &mut self.item.nbt
+            && let nbt::Value::List(nbt::List::String(pages)) = nbt.get_mut("pages").unwrap() {
                 pages.push(json);
             }
-        }
 
         self
     }

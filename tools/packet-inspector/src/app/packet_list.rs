@@ -98,11 +98,10 @@ fn draw_packet_list(state: &mut SharedState, ui: &mut Ui) {
         .stick_to_bottom(!state.update_scroll)
         .show(ui, |ui| {
             for (i, packet) in packets.iter().enumerate() {
-                if let Some(filtered) = state.packet_filter.get(packet) {
-                    if !filtered {
+                if let Some(filtered) = state.packet_filter.get(packet)
+                    && !filtered {
                         continue;
                     }
-                }
 
                 let selected = { state.selected_packet == Some(i) };
 

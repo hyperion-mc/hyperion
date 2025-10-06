@@ -82,11 +82,10 @@ impl GuiApp {
         // Persistent Storage
         let mut shared_state = SharedState::new(ctx);
 
-        if let Some(storage) = cc.storage {
-            if let Some(value) = eframe::get_value::<SharedState>(storage, eframe::APP_KEY) {
+        if let Some(storage) = cc.storage
+            && let Some(value) = eframe::get_value::<SharedState>(storage, eframe::APP_KEY) {
                 shared_state = value.merge(shared_state);
             }
-        }
 
         let autostart = shared_state.autostart;
         let shared_state = Arc::new(RwLock::new(shared_state));
