@@ -166,23 +166,57 @@ sequenceDiagram
     end
 ```
 
+## Running Hyperion for testing in a development environment
 
-## Running
+First, clone this repostiory with:
+
+```bash
+git clone https://github.com/hyperion-mc/hyperion.git
+```
+
+Then enter the repository directory with:
+
+```bash
+cd hyperion
+```
+
+Then generate keys. This requires `openssl` to be installed. Note that `-days 365` specifies the the number of days until the certificate expires.
+
+> [!WARNING]
+> All private keys (`.pem` files) must be stored securely. Do not send these private keys to anyone.
+
+```bash
+openssl req -new -nodes -newkey rsa:4096 -keyout root_ca.pem -x509 -out root_ca.crt -days 365 -subj /
+openssl req -nodes -newkey rsa:4096 -keyout game_private_key.pem -out game.csr -subj /
+openssl x509 -req -in game.csr -CA root_ca.crt -CAkey root_ca.pem -CAcreateserial -out game.crt -days 365 -sha256 -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1")
+rm game.csr
+openssl req -nodes -newkey rsa:4096 -keyout proxy_private_key.pem -out proxy.csr -subj /
+openssl x509 -req -in proxy.csr -CA root_ca.crt -CAkey root_ca.pem -CAcreateserial -out proxy.crt -days 365 -sha256 -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1")
+rm proxy.csr
+```
+
+Now run the game server. Note that the game server automatically starts the proxy.
+
+```bash
+cargo run --release --bin bedwars -- --ip 127.0.0.1 --root-ca-cert root_ca.crt --cert game.crt --private-key game_private_key.pem
+```
+
+You can now connect a 1.20.1 Minecraft client to the game server at port `25565`, such as through `127.0.0.1:25565` or `domain_name:25565`.
+
+## Running Hyperion in a production environment
 
 ### Network topology
 
 Hyperion uses one game server which runs all game-related code (e.g. physics, game events). One or more proxies can connect to the game server. Players connect to one of the proxies.
 
-For development and testing purposes, it is okay to run one game server and one proxy on the same server. When generating keys, you will need to change the key and certificate file names used below to avoid file name conflicts.
-
-On a production environment, the game server and each proxy should run on separate servers for performance.
+On a production environment, the game server and each proxy should run on separate servers to improve performance.
 
 ### Generating keys and certificates
 
 The connection between the game server and the proxies are encrypted through mTLS to ensure that the connection is secure and authenticate the proxies.
 
 > [!WARNING]
-> All private keys must be stored securely, and it is strongly recommended to generate the private keys on the server that will use them instead of transferring them over the Internet. Malicious proxies that have access to a private key can circumvent player authentication and can cause the game server to exhibit undefined behavior which can potentially lead to arbitrary code execution on the game server. If any private key has been compromised, redo this section to create new keys.
+> All private keys (`.pem` files) must be stored securely, and it is strongly recommended to generate the private keys on the server that will use them instead of transferring them over the Internet. Do not send these private keys to anyone. Malicious proxies that have access to a private key can circumvent player authentication and can cause the game server to exhibit undefined behavior which can potentially lead to arbitrary code execution on the game server. If any private key has been compromised, redo this section to create new keys.
 
 #### Create a private certificate authority (CA)
 
@@ -191,14 +225,12 @@ A server should be picked to store the certificate authority keys and will be re
 On the certificate authority server, generate a key and certificate by running:
 
 ```bash
-openssl req -new -nodes -newkey rsa:4096 -keyout root_ca.pem -x509 -out root_ca.crt -days 365
+openssl req -new -nodes -newkey rsa:4096 -keyout root_ca.pem -x509 -out root_ca.crt -days 365 -subj /
 ```
-
-OpenSSL will ask for information when running the command. All fields can be left empty.
 
 The `-days` field specifies when the certificate will expire. It will expire in 365 days in the above command, but this can be modified as needed.
 
-`root_ca.crt` is the root CA cert and should be copied to the game server and all proxy servers. When running the game server or the proxy, make sure to pass `--root-ca-cert root_ca.crt` as a command line flag.
+`root_ca.crt` is the root CA cert and should be copied to the game server and all proxy servers.
 
 #### Generate server keys and certificates
 
@@ -207,10 +239,8 @@ Follow these instructions for the game server and each proxy server. The server 
 On the target server, run:
 
 ```bash
-openssl req -nodes -newkey rsa:4096 -keyout server_private_key.pem -out server.csr
+openssl req -nodes -newkey rsa:4096 -keyout server_private_key.pem -out server.csr -subj /
 ```
-
-OpenSSL will ask for information when running the command. All fields can be left empty.
 
 Afterwards, transfer `server.csr` to the certificate authority server. On the certificate authority server, run:
 
@@ -227,24 +257,42 @@ Then, transfer `server.crt` to the target server.
 
 `server.csr` and `server.crt` on the certificate authority server and `server.csr` on the target server are no longer needed and may be deleted.
 
-`server.crt` is the target server's certificate and `server_private_key.pem` is the target server's private key. When running the game server or the proxy, make sure to pass `--cert server.crt --private-key server_private_key.pem` as a command line flag.
+### With local build
 
-### Without cloning
+#### Running the proxy
+
+First, compile the proxy on a machine with Cargo installed:
 
 ```bash
-curl -L https://raw.githubusercontent.com/hyperion-mc/hyperion/main/docker-compose.yml | docker compose -f - up --pull always
+cargo build --release --bin hyperion-proxy
 ```
 
-### `main` branch
+If the proxy servers are running on different targets (e.g. different CPU architectures, different OS, different libc), you will need to compile the proxy for each target.
+
+Now, copy `target/release/hyperion-proxy` to each proxy server.
+
+On each proxy server, run:
 
 ```bash
-docker compose up --pull always
+./hyperion-proxy 0.0.0.0:25565 --server game_server_ip:35565 --root-ca-cert root_ca.crt --cert server.crt --private-key server_private_key.pem
 ```
 
-### With local build (for development)
+Replace `game_server_ip` with the IP or domain name of the game server. Note that this must match the `subjectAltName` used to generate the game server certificate above.
+
+#### Running the game server
+
+First, compile the game server on a machine with Cargo installed that is the same target as the game server (i.e. same CPU architecture, same OS, same libc). This can also be compiled directly on the game server.
 
 ```bash
-docker compose up --build
+cargo build --release --bin bedwars
+```
+
+Now, copy `target/release/bedwars` to the game server.
+
+On the game server, run:
+
+```bash
+./bedwars --root-ca-cert root_ca.crt --cert server.crt --private-key server_private_key.pem
 ```
 
 ## Features
