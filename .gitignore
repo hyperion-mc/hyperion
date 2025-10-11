@@ -34,3 +34,4 @@ vendor/
 .trigger-debug
 .trigger
 valence/
+/certs
