@@ -1268,8 +1268,8 @@ fn validate_slot_changes(
 
     // Validate that the total number of items we're trying to distribute
     // doesn't exceed what's in the cursor
-    let total_distributed_items = slot_changes.len() as i32;
-    if total_distributed_items > cursor_item.count as i32 {
+    let total_distributed_items = i32::try_from(slot_changes.len()).unwrap();
+    if total_distributed_items > i32::from(cursor_item.count) {
         return false;
     }
 
