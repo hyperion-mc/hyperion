@@ -1225,12 +1225,9 @@ fn validate_slot_changes(
             return false;
         };
 
-        // Check if slot exists in our inventory
-        if slot_idx >= inventories_mut.len() {
+        let Some(slot) = inventories_mut.get(slot_idx) else {
             return false;
-        }
-
-        let slot = &inventories_mut[slot_idx];
+        };
 
         // Skip readonly slots
         if slot.readonly {
@@ -1264,13 +1261,6 @@ fn validate_slot_changes(
                 return false;
             }
         }
-    }
-
-    // Validate that the total number of items we're trying to distribute
-    // doesn't exceed what's in the cursor
-    let total_distributed_items = i32::try_from(slot_changes.len()).unwrap();
-    if total_distributed_items > i32::from(cursor_item.count) {
-        return false;
     }
 
     true
