@@ -267,7 +267,25 @@ your own mechanics and replace the core mechanics with your own.
 [![Star History Chart](https://api.star-history.com/svg?repos=andrewgazelka/hyperion&type=Date)](https://star-history.com/#andrewgazelka/hyperion&Date)
 
 
-Thank you for your hard work[^1] [@CuzImClicks](https://github.com/CuzImClicks), [@Indra-db](https://github.com/Indra-db), [@james-j-obrien](https://github.com/james-j-obrien), [@Ruben2424](https://github.com/Ruben2424), [@SanderMertens](https://github.com/SanderMertens), [@Tebarem](https://github.com/Tebarem), and [@TestingPlant](https://github.com/TestingPlant).
+Thank you for your hard work[^1]
+[@andrewgazelka](https://github.com/andrewgazelka),
+[@CuzImClicks](https://github.com/CuzImClicks),
+[@dyc3](https://github.com/dyc3),
+[@eduxstad](https://github.com/eduxstad),
+[@Eoghanmc22](https://github.com/Eoghanmc22),
+[@GroobleDierne](https://github.com/GroobleDierne),
+[@herin049](https://github.com/herin049),
+[@Indra-db](https://github.com/Indra-db),
+[@james-j-obrien](https://github.com/james-j-obrien),
+[@Kumpelinus](https://github.com/Kumpelinus),
+[@LooFifteen](https://github.com/LooFifteen),
+[@OreQr](https://github.com/OreQr),
+[@rj00a](https://github.com/rj00a),
+[@Ruben2424](https://github.com/Ruben2424),
+[@SanderMertens](https://github.com/SanderMertens),
+[@Tebarem](https://github.com/Tebarem),
+[@TestingPlant](https://github.com/TestingPlant), and
+[@wyattgill9](https://github.com/wyattgill9)!
 
 
 [^1]: alphabetically ordered
