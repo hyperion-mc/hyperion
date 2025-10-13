@@ -34,6 +34,7 @@ impl BookBuilder {
         let page = page.into();
         let json = format!(r#"{{"text":"{page}"}}"#);
 
+        #[allow(clippy::collapsible_if)]
         if let Some(nbt) = &mut self.item.nbt {
             if let nbt::Value::List(nbt::List::String(pages)) = nbt.get_mut("pages").unwrap() {
                 pages.push(json);

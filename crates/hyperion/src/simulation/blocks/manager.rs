@@ -113,6 +113,7 @@ impl RegionManagerTask {
     }
 
     async fn get_or_create_region(&mut self, coord: IVec2) -> std::io::Result<Arc<Region>> {
+        #[allow(clippy::collapsible_if)]
         if let Some(region) = self.regions.get(&coord) {
             if let Some(region) = region.upgrade() {
                 return Ok(region);
@@ -124,8 +125,7 @@ impl RegionManagerTask {
 
     async fn create_and_insert_region(&mut self, coord: IVec2) -> std::io::Result<Arc<Region>> {
         let file = self.region_file(coord.x, coord.y).await?;
-        let region =
-            Region::open(&file).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let region = Region::open(&file).map_err(std::io::Error::other)?;
         let region = Arc::new(region);
         let region_weak = Arc::downgrade(&region);
         self.regions.insert(coord, region_weak);

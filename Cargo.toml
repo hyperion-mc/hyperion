@@ -40,12 +40,13 @@ members = [
     'crates/packet-channel',
     'crates/simd-utils',
     'events/bedwars',
-    'tools/packet-inspector',
+    # 'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
 resolver = '2'
 
 [workspace.dependencies]
+aes = "0.8.2"
 anyhow = '1.0.98'
 approx = '0.5.1'
 arc-swap = '1.7.1'
@@ -57,6 +58,8 @@ boxcar = '0.2.13'
 bumpalo = '3.16'
 byteorder = '1.5.0'
 bytes = '1.8.0'
+cesu8 = "1.1.0"
+cfb8 = "0.8.1"
 colored = "3.0.0"
 compact_str = '0.9.0'
 convert_case = "0.7.1"
@@ -73,6 +76,8 @@ flume = '0.11.1'
 futures-util = '0.3.31'
 glam = "0.29.3"
 heapless = '0.8.0'
+heck = "0.5.0"
+hmac = "0.12.1"
 heed = "0.21.0"
 hex = '0.4.3'
 humantime = '2.1.0'
@@ -92,6 +97,7 @@ ordered-float = "5.0.0"
 papaya = "0.2.1"
 parking_lot = '0.12.3'
 paste = "1.0.15"
+pretty_assertions = "1.3.0"
 plotters-bitmap = '0.3.6'
 proc-macro2 = '1.0.95'
 proptest = '1.5.0'
@@ -99,32 +105,66 @@ quote = '1.0.39'
 rand = "0.9.1"
 rayon = '1.10.0'
 rkyv = '0.8.8'
-rustls = { version = '0.23.31', default-features = false, features = ['logging', 'std', 'tls12'] }
+rustls = { version = '0.23.31', default-features = false, features = [
+    'logging',
+    'std',
+    'tls12',
+] }
 rustls-pki-types = '1.12.0'
 rustls-webpki = '0.103.4'
+rsa = "0.9.2"
+rsa-der = "0.3.0"
 serde = '1.0.217'
 serde_json = '1.0.140'
 serial_test = '3.2.0'
+sha1 = "0.10.5"
 slotmap = '1.0.7'
 snafu = '0.8.5'
 syn = '2.0.101'
 tango-bench = "0.6.0"
 tar = '0.4.41'
+tempfile = "3.3.0"
 thiserror = '2.0.12'
 thread_local = '1.1.8'
 tikv-jemallocator = '0.6.0'
 time = '0.3.41'
 tokio = '1.45.0'
-tokio-rustls = { version = '0.26.2', default-features = false, features = ['logging', 'tls12'] }
+tokio-rustls = { version = '0.26.2', default-features = false, features = [
+    'logging',
+    'tls12',
+] }
 toml = '0.8.14'
 tracing-appender = '0.2.3'
+url = { version = "2.2.2", features = ["serde"] }
 uuid = '1.16.0'
+valence_math = { path = 'vendor/valence/crates/valence_math' }
+valence_protocol_macros = { path = 'vendor/valence/crates/valence_protocol_macros' }
+valence_ident_macros = { path = 'vendor/valence/crates/valence_ident_macros' }
+valence_lang = { path = 'vendor/valence/crates/valence_lang' }
+valence_server_common = { path = 'vendor/valence/crates/valence_server_common' }
+java_string = { path = 'vendor/valence/crates/java_string' }
+lru = "0.12.0"
+num = "0.4.0"
+num-bigint = "0.4.3"
+owo-colors = "4.1.0"
+petgraph = "0.6.3"
+regex = "1.6.0"
+zip = "2.2.0"
+valence_entity = { path = 'vendor/valence/crates/valence_entity' }
+valence_advancement = { path = 'vendor/valence/crates/valence_advancement' }
+valence_boss_bar = { path = 'vendor/valence/crates/valence_boss_bar' }
+valence_command = { path = 'vendor/valence/crates/valence_command' }
+valence_command_macros = { path = 'vendor/valence/crates/valence_command_macros' }
+valence_inventory = { path = 'vendor/valence/crates/valence_inventory' }
+valence_network = { path = 'vendor/valence/crates/valence_network' }
+valence_player_list = { path = 'vendor/valence/crates/valence_player_list' }
+valence_scoreboard = { path = 'vendor/valence/crates/valence_scoreboard' }
+valence_weather = { path = 'vendor/valence/crates/valence_weather' }
+valence_world_border = { path = 'vendor/valence/crates/valence_world_border' }
 
 [workspace.dependencies.hyperion-proxy-module]
 path = "crates/hyperion-proxy-module"
 
-[workspace.dependencies.bvh]
-git = 'https://github.com/TestingPlant/bvh-data'
 
 [workspace.dependencies.bvh-region]
 path = 'crates/bvh-region'
@@ -133,6 +173,22 @@ path = 'crates/bvh-region'
 default-features = false
 features = ['multi_threaded']
 version = "0.16.1"
+
+[workspace.dependencies.bevy_app]
+version = "0.12"
+default-features = false
+
+[workspace.dependencies.bevy_ecs]
+version = "0.12"
+default-features = false
+features = ["multi-threaded"]
+
+[workspace.dependencies.bevy_hierarchy]
+version = "0.12"
+default-features = false
+
+[workspace.dependencies.bevy_utils]
+version = "0.12"
 
 [workspace.dependencies.bytemuck]
 features = ['derive']
@@ -143,7 +199,16 @@ features = ['derive']
 version = '4.5.38'
 
 [workspace.dependencies.derive_more]
-features = ['display', 'from', 'into', 'deref', 'deref_mut', 'debug', 'constructor', 'add']
+features = [
+    'display',
+    'from',
+    'into',
+    'deref',
+    'deref_mut',
+    'debug',
+    'constructor',
+    'add',
+]
 version = "2.0.1"
 
 [workspace.dependencies.divan]
@@ -230,11 +295,9 @@ version = '0.12.12'
 path = 'crates/hyperion-respawn'
 
 [workspace.dependencies.roaring]
-features = ['simd']
 version = '0.10.12'
 
 [workspace.dependencies.rustc-hash]
-features = ['nightly']
 version = '2.0.0'
 
 [workspace.dependencies.sha2]
@@ -264,47 +327,37 @@ features = ['timer-fallback']
 version = '0.11.4'
 
 [workspace.dependencies.valence_anvil]
-branch = 'feat-bytes'
+path = 'vendor/valence/crates/valence_anvil'
 features = ['parsing']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_build_utils]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_build_utils'
 
 [workspace.dependencies.valence_bytes]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_bytes'
 
 [workspace.dependencies.valence_generated]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_generated'
 
 [workspace.dependencies.valence_ident]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_ident'
 
 [workspace.dependencies.valence_nbt]
-branch = 'feat-bytes'
+path = 'vendor/valence/crates/valence_nbt'
 features = ['serde']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_protocol]
-branch = 'feat-bytes'
+path = 'vendor/valence/crates/valence_protocol'
 features = ['compression']
-git = 'https://github.com/TestingPlant/valence'
 
 [workspace.dependencies.valence_registry]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_registry'
 
 [workspace.dependencies.valence_server]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_server'
 
 [workspace.dependencies.valence_text]
-branch = 'feat-bytes'
-git = 'https://github.com/TestingPlant/valence'
+path = 'vendor/valence/crates/valence_text'
 
 [workspace.dependencies.bedwars]
 path = "events/bedwars"

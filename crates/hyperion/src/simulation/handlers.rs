@@ -283,12 +283,11 @@ pub fn is_grounded(position: &Vec3, blocks: &Blocks) -> bool {
 }
 
 fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bool {
-    use std::ops::ControlFlow;
-
     let (min, max) = block_bounds(*position, size);
     let shrunk = aabb(*position, size).shrink(0.01);
 
-    let res = blocks.get_blocks(min, max, |pos, block| {
+    let mut has_collision = false;
+    let _unused = blocks.get_blocks(min, max, |pos, block| {
         let pos = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
 
         for aabb in block.collision_shapes() {
@@ -296,14 +295,15 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
             let aabb = aabb.move_by(pos);
 
             if shrunk.collides(&aabb) {
-                return ControlFlow::Break(false);
+                has_collision = true;
+                return Err(anyhow::anyhow!("early exit")); // Early exit on collision
             }
         }
 
-        ControlFlow::Continue(())
+        Ok(())
     });
 
-    res.is_break()
+    has_collision
 }
 
 fn hand_swing(

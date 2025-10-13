@@ -48,7 +48,7 @@ paste = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rkyv = { workspace = true }
-roaring = { workspace = true, features = ["simd"] }
+roaring = { workspace = true }
 rustc-hash = { workspace = true }
 rustls = { workspace = true }
 rustls-pki-types = { workspace = true }
@@ -84,6 +84,9 @@ hyperion-genmap = { workspace = true }
 serial_test = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[features]
+default = []
 
 [lints]
 workspace = true

@@ -11,6 +11,7 @@ use crate::net::ConnectionId;
 pub struct Packet<T> {
     sender: Entity,
     connection_id: ConnectionId,
+    #[allow(clippy::struct_field_names)]
     packet_id: u64,
 
     #[deref]

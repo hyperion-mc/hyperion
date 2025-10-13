@@ -1,34 +1,8 @@
 //! Hyperion
 
-#![feature(type_alias_impl_trait)]
-#![feature(io_error_more)]
-#![feature(trusted_len)]
-#![feature(allocator_api)]
-#![feature(read_buf)]
-#![feature(core_io_borrowed_buf)]
-#![feature(maybe_uninit_slice)]
-#![feature(duration_millis_float)]
-#![feature(iter_array_chunks)]
-#![feature(assert_matches)]
-#![feature(try_trait_v2)]
-#![feature(let_chains)]
-#![feature(ptr_metadata)]
-#![feature(stmt_expr_attributes)]
-#![feature(array_try_map)]
-#![feature(split_array)]
-#![feature(never_type)]
-#![feature(duration_constructors)]
-#![feature(array_chunks)]
-#![feature(portable_simd)]
-#![feature(trivial_bounds)]
-#![feature(pointer_is_aligned_to)]
-#![feature(thread_local)]
-
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
-use std::{
-    alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration,
-};
+use std::{fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
 use egress::EgressPlugin;
@@ -96,7 +70,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
         rlim_max: 0, // Initialize hard limit to 0
     };
 
-    if unsafe { getrlimit(RLIMIT_NOFILE, &mut limits) } == 0 {
+    if unsafe { getrlimit(RLIMIT_NOFILE, &raw mut limits) } == 0 {
         // Create a stack-allocated buffer...
 
         info!("current soft limit: {}", limits.rlim_cur);
@@ -117,7 +91,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
 
     info!("setting soft limit to: {}", limits.rlim_cur);
 
-    if unsafe { setrlimit(RLIMIT_NOFILE, &limits) } != 0 {
+    if unsafe { setrlimit(RLIMIT_NOFILE, &raw const limits) } != 0 {
         error!("Failed to set the file handle limits");
         return Err(std::io::Error::last_os_error());
     }
@@ -284,20 +258,20 @@ impl Plugin for HyperionCore {
 
 /// A scratch buffer for intermediate operations. This will return an empty [`Vec`] when calling [`Scratch::obtain`].
 #[derive(Debug)]
-pub struct Scratch<A: Allocator = std::alloc::Global> {
-    inner: Box<[u8], A>,
+pub struct Scratch {
+    inner: Box<[u8]>,
 }
 
-impl Default for Scratch<std::alloc::Global> {
+impl Default for Scratch {
     fn default() -> Self {
-        std::alloc::Global.into()
+        Self {
+            inner: vec![0u8; MAX_PACKET_SIZE].into_boxed_slice(),
+        }
     }
 }
 
 /// Nice for getting a buffer that can be used for intermediate work
 pub trait ScratchBuffer: sealed::Sealed + Debug {
-    /// The type of the allocator the [`Vec`] uses.
-    type Allocator: Allocator;
     /// Obtains a buffer that can be used for intermediate work. The contents are unspecified.
     fn obtain(&mut self) -> &mut [u8];
 }
@@ -306,24 +280,10 @@ mod sealed {
     pub trait Sealed {}
 }
 
-impl<A: Allocator + Debug> sealed::Sealed for Scratch<A> {}
+impl sealed::Sealed for Scratch {}
 
-impl<A: Allocator + Debug> ScratchBuffer for Scratch<A> {
-    type Allocator = A;
-
+impl ScratchBuffer for Scratch {
     fn obtain(&mut self) -> &mut [u8] {
         &mut self.inner
-    }
-}
-
-impl<A: Allocator> From<A> for Scratch<A> {
-    fn from(allocator: A) -> Self {
-        // A zeroed slice is allocated to avoid reading from uninitialized memory, which is UB.
-        // Allocating zeroed memory is usually very cheap, so there are minimal performance
-        // penalties from this.
-        let inner = Box::new_zeroed_slice_in(MAX_PACKET_SIZE, allocator);
-        // SAFETY: The box was initialized to zero, and u8 can be represented by zero
-        let inner = unsafe { inner.assume_init() };
-        Self { inner }
     }
 }

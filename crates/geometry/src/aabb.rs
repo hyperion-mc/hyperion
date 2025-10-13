@@ -308,18 +308,18 @@ impl Aabb {
     }
 
     #[must_use]
-    pub fn mid_x(&self) -> f32 {
-        (self.min.x + self.max.x) / 2.0
+    pub const fn mid_x(&self) -> f32 {
+        f32::midpoint(self.min.x, self.max.x)
     }
 
     #[must_use]
-    pub fn mid_y(&self) -> f32 {
-        (self.min.y + self.max.y) / 2.0
+    pub const fn mid_y(&self) -> f32 {
+        f32::midpoint(self.min.y, self.max.y)
     }
 
     #[must_use]
-    pub fn mid_z(&self) -> f32 {
-        (self.min.z + self.max.z) / 2.0
+    pub const fn mid_z(&self) -> f32 {
+        f32::midpoint(self.min.z, self.max.z)
     }
 
     #[inline]
