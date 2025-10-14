@@ -40,7 +40,7 @@ pub fn cached_save<U: reqwest::IntoUrl + 'static>(
             // Convert the byte stream into an AsyncRead
 
             let reader = StreamReader::new(byte_stream.map(|result| {
-                result.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                result.map_err(std::io::Error::other)
             }));
 
             let directory = directory.clone();

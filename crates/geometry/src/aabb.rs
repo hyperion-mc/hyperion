@@ -1,3 +1,5 @@
+#![allow(clippy::manual_midpoint)]
+
 use std::{
     fmt::{Debug, Display},
     ops::Add,

@@ -1,3 +1,5 @@
+#![allow(clippy::manual_abs_diff)]
+
 use std::{convert::TryInto, io, io::Write, mem};
 
 pub struct Buf {

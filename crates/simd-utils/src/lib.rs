@@ -1,6 +1,5 @@
 #![feature(portable_simd)]
 #![feature(trusted_len)]
-#![feature(slice_as_chunks)]
 #![feature(pointer_is_aligned_to)]
 
 use core::simd;
