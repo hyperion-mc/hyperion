@@ -441,6 +441,23 @@ fn handle_click_slot_inner<'a>(
                 return;
             }
 
+            // Validate slot_changes to prevent exploits
+            if !validate_slot_changes(
+                &packet.slot_changes,
+                &inventories_mut,
+                &cursor_item.0,
+                player_only,
+            ) {
+                resync_inventory(
+                    compose,
+                    &inventories_mut,
+                    inv_state,
+                    cursor_item,
+                    packet.connection_id(),
+                );
+                return;
+            }
+
             let mut cursor = cursor_item.0.clone();
             let slots = packet.slot_changes.clone();
 
@@ -1189,6 +1206,64 @@ fn handle_drop_key(
     };
 
     event_writer.write(event);
+}
+
+fn validate_slot_changes(
+    slot_changes: &[SlotChange],
+    inventories_mut: &[&mut ItemSlot],
+    cursor_item: &ItemStack,
+    player_only: bool,
+) -> bool {
+    // If cursor is empty, no slot changes should be valid
+    if cursor_item.is_empty() {
+        return false;
+    }
+
+    for slot_change in slot_changes {
+        // Validate slot index bounds
+        let Ok(slot_idx) = usize::try_from(slot_change.idx) else {
+            return false;
+        };
+
+        let Some(slot) = inventories_mut.get(slot_idx) else {
+            return false;
+        };
+
+        // Skip readonly slots
+        if slot.readonly {
+            return false;
+        }
+
+        // For player-only inventories, validate armor slot restrictions
+        if player_only && (5..=8).contains(&slot_idx) {
+            let is_valid = match slot_idx {
+                5 => cursor_item.item.is_helmet(),
+                6 => cursor_item.item.is_chestplate(),
+                7 => cursor_item.item.is_leggings(),
+                8 => cursor_item.item.is_boots(),
+                _ => true,
+            };
+            if !is_valid {
+                return false;
+            }
+        }
+
+        // Validate that the slot is either empty or contains the same item type
+        // This prevents creating items out of thin air
+        if !slot.stack.is_empty() {
+            // The slot should either be empty or contain the same item type as cursor
+            if slot.stack.item != cursor_item.item || slot.stack.nbt != cursor_item.nbt {
+                return false;
+            }
+
+            // For non-empty slots, they should have space available
+            if slot.stack.count >= slot.stack.item.max_stack() {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
