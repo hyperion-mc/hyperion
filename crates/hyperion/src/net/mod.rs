@@ -687,12 +687,14 @@ impl IoBuf {
     pub(crate) fn send_subscribe_channel_packets(
         &self,
         channel: ChannelId,
+        receiver: ProxyId,
         packets: &[u8],
         exclude: Option<ConnectionId>,
     ) {
         self.add_proxy_message(&IntermediateServerToProxyMessage::SubscribeChannelPackets(
             intermediate::SubscribeChannelPackets {
                 channel_id: channel.inner(),
+                receiver,
                 exclude,
                 data: packets,
             },

@@ -6,7 +6,9 @@ use crate::{
     Blocks,
     net::{
         Compose, ConnectionId,
-        intermediate::{IntermediateServerToProxyMessage, UpdatePlayerPositions},
+        intermediate::{
+            IntermediateServerToProxyMessage, UpdatePlayerPosition, UpdatePlayerPositions,
+        },
     },
     simulation::Position,
 };
@@ -27,20 +29,19 @@ fn send_chunk_positions(
     compose: Res<'_, Compose>,
     query: Query<'_, '_, (&ConnectionId, &Position)>,
 ) {
-    let count = query.iter().count();
-    let mut stream = Vec::with_capacity(count);
-    let mut positions = Vec::with_capacity(count);
+    let updates = query
+        .iter()
+        .map(|(&io, pos)| UpdatePlayerPosition {
+            stream: io,
+            position: hyperion_proto::ChunkPosition::from(pos.to_chunk()),
+        })
+        .collect::<Vec<_>>();
 
-    for (&io, pos) in query.iter() {
-        stream.push(io);
-        positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
-    }
+    let message = IntermediateServerToProxyMessage::UpdatePlayerPositions(UpdatePlayerPositions {
+        updates: &updates,
+    });
 
-    let packet = UpdatePlayerPositions { stream, positions };
-
-    let chunk_positions = IntermediateServerToProxyMessage::UpdatePlayerPositions(packet);
-
-    compose.io_buf().add_proxy_message(&chunk_positions);
+    compose.io_buf().add_proxy_message(&message);
 }
 
 fn broadcast_chunk_deltas(

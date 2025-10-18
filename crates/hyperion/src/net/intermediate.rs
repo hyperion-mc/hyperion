@@ -3,9 +3,14 @@ use hyperion_proto::{ChunkPosition, ServerToProxyMessage, UpdateChannelPosition}
 use crate::net::{ConnectionId, ProxyId};
 
 #[derive(Clone, PartialEq)]
-pub struct UpdatePlayerPositions {
-    pub stream: Vec<ConnectionId>,
-    pub positions: Vec<ChunkPosition>,
+pub struct UpdatePlayerPosition {
+    pub stream: ConnectionId,
+    pub position: ChunkPosition,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct UpdatePlayerPositions<'a> {
+    pub updates: &'a [UpdatePlayerPosition],
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -28,6 +33,7 @@ pub struct RemoveChannel {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SubscribeChannelPackets<'a> {
     pub channel_id: u32,
+    pub receiver: ProxyId,
     pub exclude: Option<ConnectionId>,
 
     pub data: &'a [u8],
@@ -75,7 +81,7 @@ pub struct Shutdown {
 
 #[derive(Clone, PartialEq)]
 pub enum IntermediateServerToProxyMessage<'a> {
-    UpdatePlayerPositions(UpdatePlayerPositions),
+    UpdatePlayerPositions(UpdatePlayerPositions<'a>),
     AddChannel(AddChannel<'a>),
     UpdateChannelPositions(UpdateChannelPositions<'a>),
     RemoveChannel(RemoveChannel),
@@ -116,13 +122,16 @@ impl IntermediateServerToProxyMessage<'_> {
             Self::UpdatePlayerPositions(message) => {
                 Some(ServerToProxyMessage::UpdatePlayerPositions(
                     hyperion_proto::UpdatePlayerPositions {
-                        stream: message
-                            .stream
+                        updates: message
+                            .updates
                             .iter()
-                            .copied()
-                            .filter_map(filter_map_connection_id)
+                            .filter_map(|update| {
+                                Some(hyperion_proto::UpdatePlayerPosition {
+                                    stream: filter_map_connection_id(update.stream)?,
+                                    position: update.position,
+                                })
+                            })
                             .collect::<Vec<_>>(),
-                        positions: message.positions.clone(),
                     },
                 ))
             }
@@ -144,8 +153,8 @@ impl IntermediateServerToProxyMessage<'_> {
                     channel_id: message.channel_id,
                 },
             )),
-            Self::SubscribeChannelPackets(message) => {
-                Some(ServerToProxyMessage::SubscribeChannelPackets(
+            Self::SubscribeChannelPackets(message) => (message.receiver == proxy_id).then(|| {
+                ServerToProxyMessage::SubscribeChannelPackets(
                     hyperion_proto::SubscribeChannelPackets {
                         channel_id: message.channel_id,
                         exclude: message
@@ -154,8 +163,8 @@ impl IntermediateServerToProxyMessage<'_> {
                             .unwrap_or_default(),
                         data: message.data,
                     },
-                ))
-            }
+                )
+            }),
             Self::BroadcastGlobal(message) => Some(ServerToProxyMessage::BroadcastGlobal(
                 hyperion_proto::BroadcastGlobal {
                     exclude: message

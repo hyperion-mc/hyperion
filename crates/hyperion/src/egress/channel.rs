@@ -76,7 +76,7 @@ fn send_subscribe_channel_packets(
 ) {
     for event in events.read() {
         let (entity, uuid, position, pitch, yaw, velocity, &entity_kind, connection_id) =
-            match query.get(event.0) {
+            match query.get(event.channel) {
                 Ok(data) => data,
                 Err(e) => {
                     error!("failed to send subscribe channel packets: query failed: {e}");
@@ -85,7 +85,7 @@ fn send_subscribe_channel_packets(
             };
 
         let mut packet_buf;
-        let minecraft_id = event.0.minecraft_id();
+        let minecraft_id = event.channel.minecraft_id();
 
         match entity_kind {
             EntityKind::Player => {
@@ -150,7 +150,8 @@ fn send_subscribe_channel_packets(
         }
 
         compose.io_buf().send_subscribe_channel_packets(
-            event.0.into(),
+            event.channel.into(),
+            event.requester,
             &packet_buf,
             connection_id.copied(),
         );
