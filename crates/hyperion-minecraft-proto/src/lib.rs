@@ -24,7 +24,9 @@
 // any crate; this is what makes them resolve inside this one too.
 extern crate self as hyperion_minecraft_proto;
 
+pub mod block_state;
 pub mod codec;
+pub mod entity_type;
 pub mod framing;
 pub mod generated;
 pub mod item;

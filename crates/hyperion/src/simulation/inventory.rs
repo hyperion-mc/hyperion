@@ -1,4 +1,22 @@
-use std::borrow::Cow;
+//! Containers, the player inventory, and the packets that keep a client's copy
+//! of them in step with the server's.
+//!
+//! # Two item models meet here
+//!
+//! The simulation still holds items as valence's 1.20.1 [`ItemStack`]: an
+//! [`ItemKind`], a count, and a blob of NBT. Protocol 776 has neither of the
+//! last two in that form -- an item is a count, a *26.2* registry id, and a
+//! patch over the component defaults its type implies. So everything leaving
+//! this module goes through [`slot_of`], and nothing else in the file builds a
+//! wire item by hand.
+//!
+//! The translation is not total, and the gaps are listed on
+//! [`components_of`]. What matters for correctness is that a gap drops a
+//! decoration rather than shifting a byte: [`Slot`] is encoded by the proto
+//! crate's own codec, so an item this file understands badly still occupies
+//! exactly the bytes the client expects to read.
+
+use std::{borrow::Cow, sync::LazyLock};
 
 use flecs_ecs::{
     core::{EntityViewGet, SystemAPI, World, flecs, id},
@@ -8,20 +26,40 @@ use flecs_ecs::{
 use hyperion_inventory::{
     CursorItem, Inventory, InventoryState, ItemKindExt, ItemSlot, OpenInventory, PlayerInventory,
 };
-use hyperion_utils::EntityExt;
-use valence_protocol::{
-    VarInt,
+use hyperion_minecraft_proto::{
+    Encode, RegistryId, Writer,
+    generated::{packet_id::play::clientbound::PacketId, registry},
+    item::{
+        DataComponentPatch, ItemStack as WireItemStack, Slot,
+        payload::{CustomName, DyedColor, EnchantmentGlintOverride, Payload, Text},
+    },
+    nbt,
     packets::play::{
-        self, ClickSlotC2s, UpdateSelectedSlotC2s,
+        clientbound::{ContainerClose, OpenScreen},
+        inventory::{
+            ContainerSetContent, ContainerSetSlot, EquipmentSlot, SetCursorItem, SetEquipment,
+        },
+    },
+    text::Component as TextComponent,
+};
+use hyperion_utils::EntityExt;
+use tracing::{debug, error};
+use valence_protocol::{
+    ItemKind, VarInt,
+    nbt::{Compound, Value},
+    packets::play::{
+        ClickSlotC2s, UpdateSelectedSlotC2s,
         click_slot_c2s::{ClickMode, SlotChange},
-        entity_equipment_update_s2c::EquipmentEntry,
+        open_screen_s2c::WindowType,
     },
 };
 use valence_server::ItemStack;
-use valence_text::IntoText;
 
 use super::{Player, event, handlers::PacketSwitchQuery};
-use crate::net::{Compose, ConnectionId, DataBundle};
+use crate::net::{
+    Compose, ConnectionId, DataBundle,
+    protocol::{Clientbound, send},
+};
 
 #[derive(Component)]
 pub struct InventoryModule;
@@ -45,10 +83,8 @@ impl Module for InventoryModule {
             &ConnectionId,
         )
         .each_iter(
-            |it, row, (open_inventory, compose, inv_state, cursor_item, io)| {
+            |it, _row, (open_inventory, compose, inv_state, cursor_item, io)| {
                 let world = it.world();
-                let entity = it.entity(row);
-                let _entity_id = VarInt(entity.minecraft_id());
                 let stream_id = *io;
 
                 inv_state.set_window_id();
@@ -57,28 +93,49 @@ impl Module for InventoryModule {
                     .entity
                     .entity_view(world)
                     .try_get::<&mut Inventory>(|inventory| {
-                        let packet = &(play::OpenScreenS2c {
-                            window_id: VarInt(i32::from(inv_state.window_id())),
-                            window_type: inventory.kind(),
-                            window_title: inventory.title().to_string().into_cow_text(),
-                        });
+                        let Some(menu) = menu_id(inventory.kind()) else {
+                            error!(
+                                "no minecraft:menu entry for {:?}; not opening the screen",
+                                inventory.kind()
+                            );
+                            return;
+                        };
 
-                        compose.unicast(packet, stream_id).unwrap();
+                        // The title is a text component, which since 1.20.5 is
+                        // NBT on the wire rather than JSON. A plain string is
+                        // a legal component and is what `to_tag` collapses an
+                        // unstyled literal to.
+                        let title = TextComponent::text(inventory.title());
+                        let opened = OpenScreen {
+                            container_id: i32::from(inv_state.window_id()),
+                            r#type: RegistryId(menu),
+                            title: title.to_tag(),
+                        };
 
-                        let packet = &(play::InventoryS2c {
-                            window_id: inv_state.window_id(),
-                            state_id: VarInt(inv_state.state_id()),
-                            slots: Cow::Owned(
-                                inventory
-                                    .slots()
-                                    .iter()
-                                    .map(|slot| slot.stack.clone())
-                                    .collect(),
-                            ),
-                            carried_item: Cow::Borrowed(&cursor_item.0),
-                        });
+                        let content = ContainerSetContent {
+                            container_id: i32::from(inv_state.window_id()),
+                            state_id: inv_state.state_id(),
+                            items: inventory
+                                .slots()
+                                .iter()
+                                .map(|s| slot_of(&s.stack))
+                                .collect(),
+                            carried_item: slot_of(&cursor_item.0),
+                        };
 
-                        compose.unicast(packet, stream_id).unwrap();
+                        if let Err(error) =
+                            send(compose, stream_id, PacketId::OpenScreen.to_raw(), &opened)
+                                .and_then(|()| {
+                                    send(
+                                        compose,
+                                        stream_id,
+                                        PacketId::ContainerSetContent.to_raw(),
+                                        &content,
+                                    )
+                                })
+                        {
+                            error!("could not open the container screen: {error}");
+                        }
                     })
                     .expect("open inventory: no inventory found");
             },
@@ -92,18 +149,20 @@ impl Module for InventoryModule {
             &mut InventoryState,
             &ConnectionId,
         )
-        .each_iter(|it, row, (_open_inventory, compose, inv_state, io)| {
-            let entity = it.entity(row);
-            let _entity_id = VarInt(entity.minecraft_id());
+        .each_iter(|_it, _row, (_open_inventory, compose, inv_state, io)| {
             let stream_id = *io;
-
-            let packet = &(play::CloseScreenS2c {
-                window_id: inv_state.window_id(),
-            });
+            let packet = ContainerClose(i32::from(inv_state.window_id()));
 
             inv_state.reset_window_id();
 
-            compose.unicast(packet, stream_id).unwrap();
+            if let Err(error) = send(
+                compose,
+                stream_id,
+                PacketId::ContainerClose.to_raw(),
+                &packet,
+            ) {
+                error!("could not close the container screen: {error}");
+            }
         });
 
         system!(
@@ -121,55 +180,42 @@ impl Module for InventoryModule {
             |it, row, (compose, inventory, inv_state, cursor_item, open_inventory, io)| {
                 let world = it.world();
                 let entity = it.entity(row);
-                let entity_id = VarInt(entity.minecraft_id());
                 let stream_id = *io;
 
-                // update held item, offhand, and equipment
-                let mut equipment_changes: Vec<EquipmentEntry> = Vec::new();
+                // What everyone else sees on this player: held item, offhand
+                // and armour. The wearer is excluded because their own copy is
+                // already right; the slot packets below are what correct it.
+                let mut equipment: Vec<(EquipmentSlot, Slot<'_>)> = Vec::new();
                 let hand_slot = inventory.get_cursor_index();
                 for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
-                    if slot.changed {
-                        if idx == usize::from(hand_slot) {
-                            equipment_changes.push(EquipmentEntry {
-                                slot: 0,
-                                item: slot.stack.clone(),
-                            });
-                        }
-
-                        if idx == 45 {
-                            equipment_changes.push(EquipmentEntry {
-                                slot: 1,
-                                item: slot.stack.clone(),
-                            });
-                        }
-
-                        if (5..=8).contains(&idx) {
-                            let index = match idx {
-                                5 => 5,
-                                6 => 4,
-                                7 => 3,
-                                8 => 2,
-                                _ => 0,
-                            };
-                            equipment_changes.push(EquipmentEntry {
-                                slot: index,
-                                item: slot.stack.clone(),
-                            });
-                        }
+                    if !slot.changed {
+                        continue;
+                    }
+                    if idx == usize::from(hand_slot) {
+                        equipment.push((EquipmentSlot::MainHand, slot_of(&slot.stack)));
+                    }
+                    if let Some(worn) = worn_slot(idx) {
+                        equipment.push((worn, slot_of(&slot.stack)));
                     }
                 }
 
-                if !equipment_changes.is_empty() {
-                    let packet = &(play::EntityEquipmentUpdateS2c {
-                        entity_id,
-                        equipment: equipment_changes,
-                    });
+                // `SetEquipment` has no length prefix and reads until a byte
+                // without the continue bit, so an entry-less one would make the
+                // client read the next packet's bytes as a slot.
+                if !equipment.is_empty() {
+                    let packet = SetEquipment {
+                        entity: entity.minecraft_id(),
+                        slots: equipment,
+                    };
+                    let bundle = Clientbound::new(PacketId::SetEquipment.to_raw(), &packet);
 
-                    compose
-                        .broadcast_channel(packet, entity.into())
+                    if let Err(error) = compose
+                        .broadcast_channel(bundle, entity.into())
                         .exclude(stream_id)
                         .send()
-                        .unwrap();
+                    {
+                        error!("could not broadcast equipment: {error}");
+                    }
                 }
 
                 if let Some(open_inventory) = open_inventory {
@@ -211,34 +257,58 @@ fn update_player_inventory_inner<'a>(
 ) {
     let mut bundle = DataBundle::new(compose);
     let mut changed_slots = false;
-    let window_id = i8::try_from(inv_state.window_id()).unwrap();
+    let container_id = i32::from(inv_state.window_id());
     for (idx, slot) in inventories_mut.enumerate() {
-        if slot.changed {
-            let idx = i16::try_from(idx).unwrap();
-            let packet = &(play::ScreenHandlerSlotUpdateS2c {
-                window_id,
-                state_id: VarInt(inv_state.state_id()),
-                slot_idx: idx,
-                slot_data: Cow::Borrowed(&slot.stack),
-            });
-
-            bundle.add_packet(packet).unwrap();
-            slot.changed = false;
-            changed_slots = true;
+        if !slot.changed {
+            continue;
         }
+        let Ok(index) = i16::try_from(idx) else {
+            error!("slot {idx} is past what a container can address");
+            continue;
+        };
+        let packet = ContainerSetSlot {
+            container_id,
+            state_id: inv_state.state_id(),
+            slot: index,
+            item_stack: slot_of(&slot.stack),
+        };
+
+        if let Err(error) = bundle.add_packet(Clientbound::new(
+            PacketId::ContainerSetSlot.to_raw(),
+            &packet,
+        )) {
+            error!("could not encode a slot update: {error}");
+            continue;
+        }
+        slot.changed = false;
+        changed_slots = true;
     }
 
     if changed_slots {
-        bundle.unicast(stream_id).unwrap();
+        if let Err(error) = bundle.unicast(stream_id) {
+            error!("could not send slot updates: {error}");
+        }
+        send_cursor(compose, stream_id, cursor_item);
+    }
+}
 
-        let packet = &(play::ScreenHandlerSlotUpdateS2c {
-            window_id: -1,
-            state_id: VarInt(inv_state.state_id()),
-            slot_idx: -1,
-            slot_data: Cow::Borrowed(&cursor_item.0),
-        });
-
-        compose.unicast(packet, stream_id).unwrap();
+/// Tell the client what the cursor is holding.
+///
+/// Before 1.21.2 this was a [`ContainerSetSlot`] addressed to window `-1`,
+/// slot `-1`. That is now an ordinary slot update for a window that does not
+/// exist, so it is dropped rather than applied and the dragged stack stops
+/// updating; the dedicated packet is the only spelling left.
+fn send_cursor(compose: &Compose, stream_id: ConnectionId, cursor_item: &CursorItem) {
+    let packet = SetCursorItem {
+        contents: slot_of(&cursor_item.0),
+    };
+    if let Err(error) = send(
+        compose,
+        stream_id,
+        PacketId::SetCursorItem.to_raw(),
+        &packet,
+    ) {
+        error!("could not send the cursor item: {error}");
     }
 }
 
@@ -1125,28 +1195,265 @@ fn resync_inventory(
     cursor_item: &CursorItem,
     stream_id: ConnectionId,
 ) {
-    let packet = &(play::InventoryS2c {
-        window_id: inv_state.window_id(),
-        state_id: VarInt(inv_state.state_id()),
-        slots: Cow::Owned(
-            inventories_mut
+    let packet = ContainerSetContent {
+        container_id: i32::from(inv_state.window_id()),
+        state_id: inv_state.state_id(),
+        items: inventories_mut
+            .iter()
+            .map(|slot| slot_of(&slot.stack))
+            .collect(),
+        carried_item: slot_of(&cursor_item.0),
+    };
+
+    if let Err(error) = send(
+        compose,
+        stream_id,
+        PacketId::ContainerSetContent.to_raw(),
+        &packet,
+    ) {
+        error!("could not resynchronise the container: {error}");
+    }
+
+    send_cursor(compose, stream_id, cursor_item);
+}
+
+// --- the 1.20.1 item model, translated ------------------------------------
+
+/// The 26.2 item registry id for each of valence's 1.20.1 [`ItemKind`]s.
+///
+/// Indexed by `ItemKind::to_raw`, which is the *1.20.1* id and has drifted a
+/// long way: 26.2 has 1537 items to 1.20.1's 1255, and every insertion in
+/// between shifted the ones after it. Names are the only stable handle, so the
+/// table is built by name once rather than by trusting either numbering.
+///
+/// `-1` marks a name 26.2 no longer has, which [`item_id`] turns into an empty
+/// slot rather than into whatever item happens to sit at some other id.
+static ITEM_IDS: LazyLock<Box<[i32]>> = LazyLock::new(|| {
+    let mut table = vec![-1; ItemKind::ALL.len()];
+    for kind in ItemKind::ALL {
+        // Filled by `to_raw` rather than by iteration order, so the table
+        // stays right even if `ALL` is ever emitted in some other order.
+        let name = renamed(kind.to_str());
+        if let Some(id) = registry::ITEM
+            .id_of(&format!("minecraft:{name}"))
+            .and_then(|id| i32::try_from(id).ok())
+        {
+            table[usize::from(kind.to_raw())] = id;
+        }
+    }
+    table.into_boxed_slice()
+});
+
+/// The 26.2 name for a 1.20.1 item name, where the two differ.
+///
+/// Three items were renamed between the versions and nothing else was dropped,
+/// so this is the whole delta rather than a sample of it. Each is a rename in
+/// the vanilla registry, checked against `generated::registry::ITEM`.
+fn renamed(name: &str) -> &str {
+    match name {
+        // 1.20.3 split the grass block's plant off from `grass`.
+        "grass" => "short_grass",
+        // 1.21.9 qualified the chain by its metal.
+        "chain" => "iron_chain",
+        // 1.20.5 qualified the scute by its animal, for the armadillo's.
+        "scute" => "turtle_scute",
+        _ => name,
+    }
+}
+
+/// The 26.2 registry id for a 1.20.1 item, or `None` when 26.2 has no such
+/// item.
+fn item_id(kind: ItemKind) -> Option<i32> {
+    let id = *ITEM_IDS.get(usize::from(kind.to_raw()))?;
+    (id >= 0).then_some(id)
+}
+
+/// The 26.2 `minecraft:menu` id for a 1.20.1 window type.
+///
+/// Ordinals cannot be reused: 26.2 inserted `crafter_3x3` at position 7, so
+/// everything from `anvil` onwards sits one higher than valence's enum says
+/// and a numeric cast would open the wrong screen.
+fn menu_id(kind: WindowType) -> Option<i32> {
+    let name = match kind {
+        WindowType::Generic9x1 => "minecraft:generic_9x1",
+        WindowType::Generic9x2 => "minecraft:generic_9x2",
+        WindowType::Generic9x3 => "minecraft:generic_9x3",
+        WindowType::Generic9x4 => "minecraft:generic_9x4",
+        WindowType::Generic9x5 => "minecraft:generic_9x5",
+        WindowType::Generic9x6 => "minecraft:generic_9x6",
+        WindowType::Generic3x3 => "minecraft:generic_3x3",
+        WindowType::Anvil => "minecraft:anvil",
+        WindowType::Beacon => "minecraft:beacon",
+        WindowType::BlastFurnace => "minecraft:blast_furnace",
+        WindowType::BrewingStand => "minecraft:brewing_stand",
+        WindowType::Crafting => "minecraft:crafting",
+        WindowType::Enchantment => "minecraft:enchantment",
+        WindowType::Furnace => "minecraft:furnace",
+        WindowType::Grindstone => "minecraft:grindstone",
+        WindowType::Hopper => "minecraft:hopper",
+        WindowType::Lectern => "minecraft:lectern",
+        WindowType::Loom => "minecraft:loom",
+        WindowType::Merchant => "minecraft:merchant",
+        WindowType::ShulkerBox => "minecraft:shulker_box",
+        WindowType::Smithing => "minecraft:smithing",
+        WindowType::Smoker => "minecraft:smoker",
+        WindowType::Cartography => "minecraft:cartography_table",
+        WindowType::Stonecutter => "minecraft:stonecutter",
+    };
+    registry::MENU
+        .id_of(name)
+        .and_then(|id| i32::try_from(id).ok())
+}
+
+/// Which equipment slot a player inventory index shows up in, if any.
+///
+/// The indices are the player container's, unchanged since 1.8. The held item
+/// is not here because which index that is depends on the selected hotbar
+/// slot, so its caller reads that instead of a constant.
+const fn worn_slot(index: usize) -> Option<EquipmentSlot> {
+    match index {
+        5 => Some(EquipmentSlot::Head),
+        6 => Some(EquipmentSlot::Chest),
+        7 => Some(EquipmentSlot::Legs),
+        8 => Some(EquipmentSlot::Feet),
+        45 => Some(EquipmentSlot::OffHand),
+        _ => None,
+    }
+}
+
+/// One simulation item stack as protocol 776 sends it.
+///
+/// An item the 26.2 registry does not have becomes an empty slot. Substituting
+/// a neighbouring id would put a plausible-looking wrong item in the slot,
+/// which is worse to debug than a hole, and there is no id that means "unknown
+/// item".
+fn slot_of(stack: &ItemStack) -> Slot<'static> {
+    if stack.is_empty() {
+        return Slot::Empty;
+    }
+    let Some(item) = item_id(stack.item) else {
+        error!(
+            "26.2 has no item named {}; sending an empty slot",
+            stack.item.to_str()
+        );
+        return Slot::Empty;
+    };
+
+    Slot::Occupied(WireItemStack {
+        count: i32::from(stack.count),
+        item,
+        components: components_of(stack.nbt.as_ref()),
+    })
+}
+
+/// The component patch that carries what a 1.20.1 item's NBT meant.
+///
+/// # What is translated
+///
+/// * `display.Name` becomes `minecraft:custom_name`. The 1.20.1 value is a
+///   JSON text component and the 26.2 one is the same component as NBT, so
+///   this is a structural transcription rather than a reinterpretation.
+/// * `display.color` becomes `minecraft:dyed_color`, the same packed
+///   `0xRRGGBB` int.
+/// * A non-empty `Enchantments` list becomes
+///   `minecraft:enchantment_glint_override`. hyperion only ever writes that
+///   list to make an item shimmer, and the override is how 26.2 spells that;
+///   an item that wanted real enchantments would need each id mapped through
+///   `minecraft:enchantment`, which nothing here asks for.
+///
+/// # What is not
+///
+/// `AttributeModifiers`, the written-book keys and `display.Lore` have 26.2
+/// components but need per-field translation nobody needs yet. `Handler` is
+/// hyperion's own entity id for an item's click handler, is read back off the
+/// server's copy of the stack, and deliberately does not reach the client.
+/// Everything else is dropped and logged at debug.
+fn components_of(source: Option<&Compound>) -> DataComponentPatch<'static> {
+    let mut patch = DataComponentPatch::empty();
+    let Some(source) = source else {
+        return patch;
+    };
+
+    for (key, value) in source {
+        match (key.as_str(), value) {
+            ("display", Value::Compound(display)) => translate_display(display, &mut patch),
+            ("Enchantments", Value::List(list)) if !list.is_empty() => {
+                set_or_log(&mut patch, &EnchantmentGlintOverride(true));
+            }
+            ("Handler", _) => {}
+            _ => debug!("no 26.2 component for item NBT key {key}"),
+        }
+    }
+
+    patch
+}
+
+/// Fold the 1.20.1 `display` compound into the components that replaced it.
+fn translate_display(display: &Compound, patch: &mut DataComponentPatch<'static>) {
+    for (key, value) in display {
+        match (key.as_str(), value) {
+            ("Name", Value::String(json)) => match encoded_component(json) {
+                Some(bytes) => set_or_log(patch, &CustomName(Text::from_bytes(&bytes))),
+                None => debug!("item name is not a text component: {json}"),
+            },
+            ("color", Value::Int(color)) => set_or_log(patch, &DyedColor(*color)),
+            _ => debug!("no 26.2 component for item display key {key}"),
+        }
+    }
+}
+
+/// A 1.20.1 JSON text component, as the network NBT tag 26.2 wants.
+///
+/// Since 1.20.5 `ComponentSerialization.STREAM_CODEC` writes a component as
+/// NBT rather than as JSON, and the *shape* did not change with it: the same
+/// keys, holding the same things. So this is a structural transcription and
+/// not a reinterpretation, and it refuses the cases where the two formats do
+/// not line up -- a JSON `null` has no tag, and NBT has no unsigned or
+/// arbitrary-precision number -- rather than guessing.
+fn encoded_component(json: &str) -> Option<Vec<u8>> {
+    let value = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    let mut writer = Writer::new();
+    tag_of(&value)?.encode(&mut writer).ok()?;
+    Some(writer.into_vec())
+}
+
+/// One JSON value as the NBT tag with the same meaning.
+fn tag_of(value: &serde_json::Value) -> Option<nbt::Tag<'static>> {
+    Some(match value {
+        // NBT has no boolean; the server reads a byte for one either way.
+        serde_json::Value::Bool(flag) => nbt::Tag::Byte(i8::from(*flag)),
+        serde_json::Value::Number(number) => match number.as_i64() {
+            Some(integer) => i32::try_from(integer).map_or(nbt::Tag::Long(integer), nbt::Tag::Int),
+            None => nbt::Tag::Double(number.as_f64()?),
+        },
+        serde_json::Value::String(text) => nbt::Tag::String(Cow::Owned(text.clone())),
+        // A mixed list is legal since 1.21.5, so `extra` holding both strings
+        // and objects survives; `List` does the boxing that needs.
+        serde_json::Value::Array(items) => nbt::Tag::List(
+            items
                 .iter()
-                .map(|slot| slot.stack.clone())
-                .collect(),
+                .map(tag_of)
+                .collect::<Option<nbt::List<'_>>>()?,
         ),
-        carried_item: Cow::Borrowed(&cursor_item.0),
-    });
+        serde_json::Value::Object(fields) => {
+            let mut compound = nbt::Compound::new();
+            for (key, field) in fields {
+                compound.insert(key.clone(), tag_of(field)?);
+            }
+            nbt::Tag::Compound(compound)
+        }
+        serde_json::Value::Null => return None,
+    })
+}
 
-    compose.unicast(packet, stream_id).unwrap();
-
-    let packet = &(play::ScreenHandlerSlotUpdateS2c {
-        window_id: -1,
-        state_id: VarInt(inv_state.state_id()),
-        slot_idx: -1,
-        slot_data: Cow::Borrowed(&cursor_item.0),
-    });
-
-    compose.unicast(packet, stream_id).unwrap();
+/// Write one component into the patch, logging rather than failing.
+///
+/// A payload that will not encode is a bug in this file, not in the item, and
+/// dropping the decoration keeps the rest of the stack on the wire intact.
+fn set_or_log<'a, P: Payload<'a>>(patch: &mut DataComponentPatch<'static>, payload: &P) {
+    if let Err(error) = patch.set(payload) {
+        error!("could not encode an item component: {error}");
+    }
 }
 
 /// Closes whatever inventory the player currently has open. Removing [`OpenInventory`] is what
@@ -1156,4 +1463,110 @@ pub fn handle_close_window(query: &PacketSwitchQuery<'_>) {
         .id
         .entity_view(query.world)
         .remove(id::<OpenInventory>());
+}
+
+#[cfg(test)]
+mod tests {
+    use hyperion_minecraft_proto::{Encode, Writer, item::Slot};
+    use valence_protocol::{
+        ItemKind, ItemStack, nbt::Compound, packets::play::open_screen_s2c::WindowType,
+    };
+
+    use super::{ITEM_IDS, item_id, menu_id, registry, slot_of};
+
+    fn encoded(slot: &Slot<'_>) -> Vec<u8> {
+        let mut writer = Writer::new();
+        slot.encode(&mut writer).expect("encode");
+        writer.into_vec()
+    }
+
+    #[test]
+    fn every_1_20_1_item_has_a_26_2_id() {
+        // A hole here means a rename or a removal the `renamed` table does not
+        // know about, and every one of those silently turns an item into an
+        // empty slot. Naming them is the point: a count alone would not say
+        // which.
+        let missing: Vec<&str> = ItemKind::ALL
+            .iter()
+            .filter(|kind| item_id(**kind).is_none())
+            .map(|kind| kind.to_str())
+            .collect();
+        assert!(missing.is_empty(), "no 26.2 id for {missing:?}");
+        assert_eq!(ITEM_IDS.len(), ItemKind::ALL.len());
+    }
+
+    #[test]
+    fn ids_are_looked_up_by_name_not_carried_over() {
+        // Stone happens to be id 1 in both, so it proves nothing on its own.
+        // A diamond sword is 797 in 1.20.1 and 964 in 26.2, which is exactly
+        // what carrying the number over instead of the name would get wrong.
+        assert_eq!(item_id(ItemKind::Stone), Some(1));
+        assert_eq!(ItemKind::DiamondSword.to_raw(), 797);
+        assert_eq!(item_id(ItemKind::DiamondSword), Some(964));
+    }
+
+    #[test]
+    fn renamed_items_resolve_through_their_new_names() {
+        // The three names 26.2 no longer has. Each resolves only because
+        // `renamed` maps it, so this is what would catch that table being
+        // dropped as "dead code".
+        for (old, new) in [
+            (ItemKind::Grass, "minecraft:short_grass"),
+            (ItemKind::Chain, "minecraft:iron_chain"),
+            (ItemKind::Scute, "minecraft:turtle_scute"),
+        ] {
+            let expected = registry::ITEM
+                .id_of(new)
+                .and_then(|id| i32::try_from(id).ok());
+            assert_eq!(item_id(old), expected, "{} -> {new}", old.to_str());
+        }
+    }
+
+    #[test]
+    fn menu_ids_are_not_the_1_20_1_ordinals() {
+        // 26.2 inserted crafter_3x3 at 7, so everything after generic_3x3 is
+        // one higher than valence's enum position.
+        assert_eq!(menu_id(WindowType::Generic9x1), Some(0));
+        assert_eq!(menu_id(WindowType::Generic3x3), Some(6));
+        assert_eq!(menu_id(WindowType::Anvil), Some(8));
+        // And the one whose name also changed.
+        assert_eq!(menu_id(WindowType::Cartography), Some(23));
+    }
+
+    #[test]
+    fn an_empty_stack_is_one_zero_byte() {
+        assert_eq!(encoded(&slot_of(&ItemStack::EMPTY)), [0]);
+        // A count of zero is empty whatever the item says, matching
+        // `ItemStack.isEmpty`.
+        let zero = ItemStack::new(ItemKind::DiamondSword, 0, None);
+        assert_eq!(encoded(&slot_of(&zero)), [0]);
+    }
+
+    #[test]
+    fn a_plain_stack_carries_an_empty_patch() {
+        let stack = ItemStack::new(ItemKind::DiamondSword, 1, None);
+        // 01 count, c407 item 964, 00 00 nothing added and nothing removed.
+        assert_eq!(encoded(&slot_of(&stack)), [0x01, 0xc4, 0x07, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn a_display_name_becomes_a_custom_name_component() {
+        let mut display = Compound::new();
+        display.insert("Name", r#"{"text":"Excalibur"}"#.to_owned());
+        let mut nbt = Compound::new();
+        nbt.insert("display", display);
+
+        let stack = ItemStack::new(ItemKind::DiamondSword, 1, Some(nbt));
+        let encoded = encoded(&slot_of(&stack));
+
+        // 01 c407     one diamond sword
+        // 01 00       one component added, none removed
+        // 06          minecraft:custom_name
+        // 0a          TAG_Compound, since the JSON is an object
+        // 08 0004 74657874  "text"
+        // 0009 457863616c69627572  "Excalibur"
+        // 00          TAG_End
+        let expected = b"\x01\xc4\x07\x01\x00\x06\x0a\x08\x00\x04text\x00\x09Excalibur\x00";
+        assert_eq!(encoded, expected);
+    }
 }

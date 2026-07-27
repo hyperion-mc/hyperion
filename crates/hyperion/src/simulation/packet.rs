@@ -1,3 +1,13 @@
+//! The event handler registry, and the serverbound play bodies the proto
+//! crate's generator could not describe.
+//!
+//! Packet dispatch itself lives in [`crate::simulation::handlers`], which
+//! matches on the generated `PacketId` for protocol 776 and calls a handler
+//! directly. What is left here is the type-keyed table other crates register
+//! into for the *events* a handler raises: `InteractEvent`,
+//! `CommandCompletionRequest` and `ClientStatusEvent` all reach their
+//! subscribers through [`HandlerRegistry::trigger`].
+
 use std::{
     any::{TypeId, type_name},
     collections::HashMap,
@@ -5,69 +15,12 @@ use std::{
 };
 
 use anyhow::Result;
-use derive_more::Deref;
-use flecs_ecs::{core::Entity, macros::Component};
-use hyperion_utils::{EntityExt, Lifetime};
+use flecs_ecs::macros::Component;
+use hyperion_utils::Lifetime;
 use rustc_hash::FxBuildHasher;
-use valence_protocol::{DecodeBytes, Packet as PacketTrait};
 
-use crate::{
-    net::{ConnectionId, decoder::BorrowedPacketFrame},
-    simulation::handlers::{PacketSwitchQuery, add_builtin_handlers},
-};
+use crate::simulation::handlers::PacketSwitchQuery;
 
-/// A packet which has been decoded, tagged with the player who sent it.
-#[derive(Copy, Clone, Debug, Deref)]
-pub struct Packet<T> {
-    sender: Entity,
-    connection_id: ConnectionId,
-
-    #[deref]
-    body: T,
-}
-
-impl<T> Packet<T> {
-    pub const fn new(sender: Entity, connection_id: ConnectionId, body: T) -> Self {
-        Self {
-            sender,
-            connection_id,
-            body,
-        }
-    }
-
-    /// Entity of the player who sent this packet
-    pub const fn sender(&self) -> Entity {
-        self.sender
-    }
-
-    /// Connection id of the player who sent this packet. This is included for convenience; it is
-    /// the same connection id component in the [`Packet::sender`] entity.
-    pub const fn connection_id(&self) -> ConnectionId {
-        self.connection_id
-    }
-
-    /// Minecraft id of the player who sent this packet. This is included for convenience; it is
-    /// the same Minecraft id in the [`Packet::sender`] entity.
-    pub fn minecraft_id(&self) -> i32 {
-        self.sender().minecraft_id()
-    }
-}
-
-/// One alias per play packet, naming the decoded body a handler receives.
-///
-/// Only play: the states before it are handled by [`crate::net::protocol`],
-/// which decodes straight into the proto crate's types rather than through a
-/// registry.
-pub mod play {
-    hyperion_packet_macros::for_each_play_c2s_packet! {
-        #{
-            pub type #packet_name = super::Packet<#static_valence_packet>;
-        }
-    }
-}
-
-type DeserializerFn =
-    fn(&HandlerRegistry, BorrowedPacketFrame, &mut PacketSwitchQuery<'_>) -> Result<()>;
 type AnyFn = Box<dyn Send + Sync>;
 type Handler<T> = Box<
     dyn for<'packet> Fn(
@@ -78,36 +31,14 @@ type Handler<T> = Box<
         + Sync,
 >;
 
-fn packet_deserializer<P>(
-    registry: &HandlerRegistry,
-    frame: BorrowedPacketFrame,
-    query: &mut PacketSwitchQuery<'_>,
-) -> Result<()>
-where
-    P: PacketTrait + DecodeBytes + Lifetime + 'static,
-{
-    // If no handler is registered for this packet, skip decoding it
-    // TODO: consider moving this check out of the packet deserializer for performance
-    if !registry.has_handler::<P>() {
-        return Ok(());
-    }
-
-    let packet = frame.decode::<P>()?;
-
-    registry.trigger(&packet, query)?;
-
-    Ok(())
-}
-
-#[derive(Component)]
+/// Subscribers to the events raised while a packet is handled, keyed by event
+/// type.
+#[derive(Component, Default)]
 pub struct HandlerRegistry {
-    // Store deserializer and multiple handlers separately
-    deserializers: HashMap<i32, DeserializerFn, FxBuildHasher>,
     handlers: HashMap<TypeId, Vec<AnyFn>, FxBuildHasher>,
 }
 
 impl HandlerRegistry {
-    // Add a handler
     // TODO: With this current system, closures infer that 'a is a specific lifetime if the type isn't specified. Unsure if there's a way to fix it while allowing P to be inferred.
     pub fn add_handler<P, F>(&mut self, handler: Box<F>)
     where
@@ -128,23 +59,6 @@ impl HandlerRegistry {
             // same size, and the value is only ever read back through the matching Handler<P> type
             // in HandlerRegistry::trigger.
             .push(unsafe { transmute::<Handler<P>, AnyFn>(handler) });
-    }
-
-    // Process a packet, calling all registered handlers
-    pub fn process_packet(
-        &self,
-        frame: BorrowedPacketFrame,
-        query: &mut PacketSwitchQuery<'_>,
-    ) -> Result<()> {
-        let id = frame.id;
-
-        // Get the deserializer
-        let deserializer = self
-            .deserializers
-            .get(&id)
-            .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {id}"))?;
-
-        deserializer(self, frame, query)
     }
 
     #[must_use]
@@ -184,19 +98,202 @@ impl HandlerRegistry {
     }
 }
 
-impl Default for HandlerRegistry {
-    fn default() -> Self {
-        let mut registry = Self {
-            deserializers: HashMap::default(),
-            handlers: HashMap::default(),
-        };
-        hyperion_packet_macros::for_each_static_play_c2s_packet! {
-            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET>);
+/// Serverbound play bodies `protocol.json` does not describe in full.
+///
+/// `hyperion-minecraft-proto`'s `build.rs` refuses to generate a layout with an
+/// unresolved leaf anywhere in it, so a handful of packets a playing client
+/// sends every session have no generated struct. Each type here names the leaf
+/// that stopped the generator and the codec it was written against instead, so
+/// a reader can check it against the same decompiled source.
+///
+/// Nothing about these is hyperion-specific; they belong in the proto crate as
+/// soon as it grows a hand-written serverbound module.
+pub mod serverbound {
+    use hyperion_minecraft_proto::{Decode, Reader, Result};
+
+    /// `MessageSignature.BYTES`: an Ed25519 signature over the chat message.
+    pub const MESSAGE_SIGNATURE_BYTES: usize = 256;
+
+    /// `LastSeenMessagesTracker.window` is 20 wide, so the acknowledgement
+    /// bitset is a fixed three bytes rather than a length-prefixed one.
+    pub const LAST_SEEN_ACKNOWLEDGED_BYTES: usize = 3;
+
+    /// The tail every signed chat packet carries: which of the messages the
+    /// client has seen it is acknowledging.
+    ///
+    /// Layout from `LastSeenMessages$Update#STREAM_CODEC`.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct LastSeenMessages {
+        /// How far the acknowledged window has advanced.
+        pub offset: i32,
+        /// One bit per entry in the client's 20-message window.
+        pub acknowledged: [u8; LAST_SEEN_ACKNOWLEDGED_BYTES],
+        /// Checksum over the acknowledged set, so the server can tell a
+        /// desynchronised window from an empty one.
+        pub checksum: i8,
+    }
+
+    impl Decode<'_> for LastSeenMessages {
+        fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+            let offset = reader.var_int()?;
+            // `take` returns exactly this many bytes or errors, so the copy
+            // cannot be short.
+            let mut acknowledged = [0_u8; LAST_SEEN_ACKNOWLEDGED_BYTES];
+            acknowledged.copy_from_slice(reader.take(LAST_SEEN_ACKNOWLEDGED_BYTES)?);
+            let checksum = reader.i8()?;
+
+            Ok(Self {
+                offset,
+                acknowledged,
+                checksum,
+            })
         }
-        hyperion_packet_macros::for_each_lifetime_play_c2s_packet! {
-            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET<'static>>);
+    }
+
+    /// `minecraft:chat`, sent serverbound as play id 9.
+    ///
+    /// Layout from
+    /// `net.minecraft.network.protocol.game.ServerboundChatPacket#STREAM_CODEC`.
+    /// The generator skipped it because the signature is written by
+    /// `output.writeBytes(signature.bytes)`, a raw fixed-width write with no
+    /// codec to name.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct Chat<'a> {
+        /// What the player typed. `ServerboundChatPacket.MAX_MESSAGE_LENGTH`.
+        pub message: &'a str,
+        /// Client clock at send time, in epoch milliseconds. The server rejects
+        /// a signature whose timestamp is too far from its own clock.
+        pub time_stamp: i64,
+        /// Salt mixed into the signature.
+        pub salt: i64,
+        /// Exactly [`MESSAGE_SIGNATURE_BYTES`] when the client has a chat
+        /// session; absent when chat signing is off.
+        pub signature: Option<&'a [u8]>,
+        /// Which previously seen messages this one is chained to.
+        pub last_seen: LastSeenMessages,
+    }
+
+    impl Chat<'_> {
+        /// `ServerboundChatPacket.MAX_MESSAGE_LENGTH`.
+        pub const MAX_MESSAGE_LENGTH: usize = 256;
+    }
+
+    impl<'a> Decode<'a> for Chat<'a> {
+        fn decode(reader: &mut Reader<'a>) -> Result<Self> {
+            let message = reader.string_with_limit(Self::MAX_MESSAGE_LENGTH)?;
+            let time_stamp = reader.i64()?;
+            let salt = reader.i64()?;
+            let signature = reader
+                .bool()?
+                .then(|| reader.take(MESSAGE_SIGNATURE_BYTES))
+                .transpose()?;
+            let last_seen = LastSeenMessages::decode(reader)?;
+
+            Ok(Self {
+                message,
+                time_stamp,
+                salt,
+                signature,
+                last_seen,
+            })
         }
-        add_builtin_handlers(&mut registry);
-        registry
+    }
+
+    /// `minecraft:player_input`, sent serverbound as play id 43.
+    ///
+    /// Layout from `net.minecraft.world.entity.player.Input#STREAM_CODEC`,
+    /// which the generator skipped because the flags are folded into one byte
+    /// by a statement per field rather than by a codec.
+    ///
+    /// This is where sneaking lives in 26.2. `ServerboundPlayerCommandPacket`
+    /// used to carry `PRESS_SHIFT_KEY`/`RELEASE_SHIFT_KEY` and no longer does,
+    /// so a server that only reads player commands never sees a player crouch.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct PlayerInput(pub u8);
+
+    impl PlayerInput {
+        const BACKWARD: u8 = 2;
+        const FORWARD: u8 = 1;
+        const JUMP: u8 = 16;
+        const LEFT: u8 = 4;
+        const RIGHT: u8 = 8;
+        const SHIFT: u8 = 32;
+        const SPRINT: u8 = 64;
+
+        /// Whether the forward key is held.
+        #[must_use]
+        pub const fn forward(self) -> bool {
+            self.0 & Self::FORWARD != 0
+        }
+
+        /// Whether the back key is held.
+        #[must_use]
+        pub const fn backward(self) -> bool {
+            self.0 & Self::BACKWARD != 0
+        }
+
+        /// Whether the left strafe key is held.
+        #[must_use]
+        pub const fn left(self) -> bool {
+            self.0 & Self::LEFT != 0
+        }
+
+        /// Whether the right strafe key is held.
+        #[must_use]
+        pub const fn right(self) -> bool {
+            self.0 & Self::RIGHT != 0
+        }
+
+        /// Whether the jump key is held.
+        #[must_use]
+        pub const fn jump(self) -> bool {
+            self.0 & Self::JUMP != 0
+        }
+
+        /// Whether the sneak key is held.
+        #[must_use]
+        pub const fn shift(self) -> bool {
+            self.0 & Self::SHIFT != 0
+        }
+
+        /// Whether the sprint key is held.
+        #[must_use]
+        pub const fn sprint(self) -> bool {
+            self.0 & Self::SPRINT != 0
+        }
+    }
+
+    impl Decode<'_> for PlayerInput {
+        fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+            Ok(Self(reader.u8()?))
+        }
+    }
+
+    /// `minecraft:player_abilities`, sent serverbound as play id 40.
+    ///
+    /// Layout from
+    /// `net.minecraft.network.protocol.game.ServerboundPlayerAbilitiesPacket#STREAM_CODEC`,
+    /// which the generator skipped because the byte is assembled by a branch
+    /// (`if (this.isFlying) { bitfield = ... }`).
+    ///
+    /// The client only ever reports the flying bit; the other bits of the
+    /// clientbound abilities byte are server-owned and echoed back as zero.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct PlayerAbilities(pub u8);
+
+    impl PlayerAbilities {
+        const FLYING: u8 = 2;
+
+        /// Whether the client is asking to fly.
+        #[must_use]
+        pub const fn is_flying(self) -> bool {
+            self.0 & Self::FLYING != 0
+        }
+    }
+
+    impl Decode<'_> for PlayerAbilities {
+        fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+            Ok(Self(reader.u8()?))
+        }
     }
 }

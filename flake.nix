@@ -339,6 +339,68 @@
               '';
             };
 
+            # Boots the whole stack, drives a scripted 26.2 client through it,
+            # and exits with that client's verdict.
+            #
+            # This is the only check that reads the wire the way a player does.
+            # Every other gate reads the source: `nix run .#test` proves a
+            # packet encodes to the bytes a test says it should, and stays green
+            # while the server sends that packet under a number from a different
+            # protocol version. A client is what notices.
+            #
+            # Ports come from the environment and default off the dev ports, so
+            # a run does not fight a `nix run .#dev` open in another terminal.
+            e2e = {
+              deps = [
+                pkgs.process-compose
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                cd "$root"
+
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
+                player_port="$HYPERION_PLAYER_PORT"
+
+                log="$(mktemp -t hyperion-e2e.XXXXXX)"
+                echo "stack log: $log"
+
+                "${lib.getExe runners.dev}" --tui=false >> "$log" 2>&1 &
+                stack=$!
+                # Killing the process group, not the pid: process-compose forks
+                # cargo, which forks the server, and killing only $stack orphans
+                # both so the next run dies on "address already in use".
+                cleanup() {
+                  kill -- "-$stack" >> "$log" 2>&1 || kill "$stack" >> "$log" 2>&1 || true
+                  wait "$stack" >> "$log" 2>&1 || true
+                }
+                trap cleanup EXIT
+
+                # A cold run compiles two binaries, so the bound is generous. It
+                # is a bound rather than a sleep because a warm run is ready in
+                # seconds and should not pay for the cold one.
+                deadline=$(( SECONDS + 900 ))
+                until python3 -c "import socket,sys; s=socket.socket(); s.settimeout(1); sys.exit(s.connect_ex(('127.0.0.1', $player_port)))"; do
+                  if [ "$SECONDS" -ge "$deadline" ]; then
+                    echo "stack never opened 127.0.0.1:$player_port; tail of $log:" >&2
+                    tail -40 "$log" >&2
+                    exit 1
+                  fi
+                  if ! kill -0 "$stack" >> "$log" 2>&1; then
+                    echo "stack exited before opening a port; tail of $log:" >&2
+                    tail -40 "$log" >&2
+                    exit 1
+                  fi
+                  sleep 2
+                done
+
+                echo "stack up on 127.0.0.1:$player_port"
+                python3 tools/client-26.2.py --host 127.0.0.1 --port "$player_port" --name e2e "$@"
+              '';
+            };
+
             # `nix run .#dev` runs bedwars; this runs the same stack on smash.
             smash-dev = {
               deps = [ pkgs.process-compose pkgs.git ];
@@ -402,6 +464,8 @@
               update-minecraft-data = minecraft.updateScript;
               sync-minecraft-proto = minecraft.syncScript;
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
+              sync-minecraft-block-states = minecraft.syncBlockStatesScript;
+              sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
               extract-minecraft-protocol = minecraft.extractor;
               # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
               # from the server's own codecs, so a new codec can be checked
@@ -421,6 +485,8 @@
             minecraft-encoder-fixtures = minecraft.encoderFixtures;
             minecraft-registry-contents = minecraft.registryContents;
             minecraft-registry-data-rust = minecraft.generatedRegistryData;
+            minecraft-block-states-rust = minecraft.generatedBlockStates;
+            minecraft-entity-types-rust = minecraft.generatedEntityTypes;
           };
 
           # `nix flake check` builds every app, which is what proves each one
@@ -430,6 +496,8 @@
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
+            minecraft-block-states = minecraft.blockStatesUpToDate;
+            minecraft-entity-types = minecraft.entityTypesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;

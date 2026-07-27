@@ -3,9 +3,7 @@ use bytes::{Bytes, BytesMut};
 use flecs_ecs::macros::Component;
 use itertools::Either;
 use packet_channel::RawPacket;
-use valence_protocol::{
-    CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, Packet, VarInt,
-};
+use valence_protocol::{CompressionThreshold, Decode, DecodeBytes, MAX_PACKET_SIZE, VarInt};
 
 /// A buffer for saving bytes that are not yet decoded.
 #[derive(Default, Component)]
@@ -21,54 +19,6 @@ pub struct BorrowedPacketFrame {
     /// or [`RawPacket`] because [`Bytes::from_owner`] has some performance penalty and requires an
     /// allocation to store metadata.
     pub body: Either<Bytes, RawPacket>,
-}
-
-impl BorrowedPacketFrame {
-    /// Attempts to decode this packet as type `P`. An error is returned if the
-    /// packet ID does not match, the body of the packet failed to decode, or
-    /// some input was missed.
-    pub fn decode<P>(self) -> anyhow::Result<P>
-    where
-        P: Packet + DecodeBytes,
-    {
-        ensure!(
-            P::ID == self.id,
-            "packet ID mismatch while decoding '{}': expected {}, got {}",
-            P::NAME,
-            P::ID,
-            self.id
-        );
-
-        let pkt = match self.body {
-            Either::Left(mut bytes) => {
-                let pkt = P::decode_bytes(&mut bytes)?;
-
-                ensure!(
-                    bytes.is_empty(),
-                    "missed {} bytes while decoding '{}'",
-                    bytes.len(),
-                    P::NAME
-                );
-
-                pkt
-            }
-            Either::Right(packet) => {
-                let initial_len = packet.len();
-                let (pkt, bytes_read) = P::decode_from_owned(packet)?;
-
-                ensure!(
-                    bytes_read == initial_len,
-                    "missed {} bytes while decoding '{}'",
-                    initial_len - bytes_read,
-                    P::NAME
-                );
-
-                pkt
-            }
-        };
-
-        Ok(pkt)
-    }
 }
 
 impl PacketDecoder {

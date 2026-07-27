@@ -1,33 +1,41 @@
-use std::{borrow::Cow, cell::RefCell, io::Write, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 
 use anyhow::{Context, bail};
 use bytes::BytesMut;
 use derive_more::Constructor;
 use glam::{I16Vec2, IVec2};
+use hyperion_minecraft_proto::{
+    block_state,
+    generated::packet_id::play::clientbound::PacketId,
+    world::{
+        ContainerKind, PalettedContainer,
+        chunk::{
+            ChunkData, ChunkSection, Heightmap, HeightmapKind, LevelChunkWithLight, LightData,
+            light_mask,
+        },
+    },
+};
 use hyperion_nerd_font::NERD_ROCKET;
 use itertools::Itertools;
 use libdeflater::{CompressionLvl, Compressor};
 use parse::ColumnData;
 use rustc_hash::FxHashSet;
 use tracing::{debug, warn};
-use valence_generated::block::BlockState;
-use valence_nbt::{List, compound};
-use valence_protocol::{
-    ChunkPos, CompressionThreshold, FixedArray,
-    packets::play::chunk_data_s2c::{ChunkDataBlockEntity, ChunkDataS2c},
-};
+use valence_protocol::CompressionThreshold;
 use valence_registry::RegistryIdx;
-use valence_server::layer::chunk::{BiomeContainer, Chunk, bit_width};
+use valence_server::layer::chunk::Chunk;
 
 pub mod parse;
 
-use super::{chunk::Column, shared::WorldShared};
+use super::{chunk::Column, shared::WorldShared, translate};
 use crate::{
     CHUNK_HEIGHT_SPAN, Scratch,
-    net::encoder::PacketEncoder,
+    net::{
+        encoder::PacketEncoder,
+        protocol::{Clientbound, registries},
+    },
     runtime::AsyncRuntime,
     simulation::{blocks::loader::parse::section::Section, util::heightmap},
-    storage::BitStorage,
 };
 
 struct TasksState {
@@ -226,157 +234,288 @@ async fn load_chunk(position: I16Vec2, shared: &WorldShared) -> anyhow::Result<C
     })
 }
 
+/// The light sections a chunk has: one per chunk section plus one below the
+/// world and one above, which is where light spilling in from outside lives
+/// (`LevelLightEngine.getLightSectionCount`).
+const LIGHT_SECTION_COUNT: usize = SECTION_COUNT + 2;
+
+/// Chunk sections in a column, fixed by the overworld's 384-block height.
+const SECTION_COUNT: usize = CHUNK_HEIGHT_SPAN as usize / 16;
+
+/// Sky light for a section the anvil file did not store.
+///
+/// Full bright rather than dark: this server has no light engine, so a section
+/// with no stored light would otherwise render pitch black.
+const FULL_BRIGHT: [u8; 2048] = [0xff; 2048];
+
+/// The paletted-container shapes for this protocol version.
+///
+/// Both are derived from a registry size, and getting either wrong moves the
+/// boundary at which a container switches to the global palette, which
+/// desynchronises the section blob rather than producing an error.
+fn container_kinds() -> (ContainerKind, ContainerKind) {
+    (
+        ContainerKind::block_states(block_state::STATE_COUNT as usize),
+        ContainerKind::biomes(registries::WORLDGEN_BIOME.entries.len()),
+    )
+}
+
+/// Translate one stored section into the form the wire carries.
+fn encode_section(
+    section: &Section,
+    states: ContainerKind,
+    biomes: ContainerKind,
+) -> anyhow::Result<ChunkSection> {
+    let mut non_empty_block_count: i16 = 0;
+    let mut fluid_count: i16 = 0;
+
+    let block_states = match &section.block_states {
+        // By far the common case: an untouched section is 4096 of one block,
+        // and skipping the 4096-entry vector keeps chunk loading off the
+        // allocator for most of a column.
+        hyperion_palette::PalettedContainer::Single(raw) => {
+            let state = valence_generated::block::BlockState::from_raw(*raw)
+                .context("stored block state is not a 1.20.1 state")?;
+            if !state.is_air() {
+                non_empty_block_count = 4096;
+            }
+            if state.is_liquid() {
+                fluid_count = 4096;
+            }
+            PalettedContainer::single(states, i32::try_from(translate::block_state(state))?)
+        }
+        container => {
+            let mut values = Vec::with_capacity(states.entry_count());
+            for raw in container {
+                let state = valence_generated::block::BlockState::from_raw(raw)
+                    .context("stored block state is not a 1.20.1 state")?;
+                if !state.is_air() {
+                    non_empty_block_count += 1;
+                }
+                // Undercounts waterlogged blocks, which vanilla would include.
+                // The client reads `fluidCount` into a field it never renders
+                // from; only `nonEmptyBlockCount` decides whether a section is
+                // drawn, and that one is exact.
+                if state.is_liquid() {
+                    fluid_count += 1;
+                }
+                values.push(i32::try_from(translate::block_state(state))?);
+            }
+            // The default is the first value rather than air. Vanilla only
+            // seeds a section's palette with air when it *creates* one; a
+            // section read off disk gets the palette the file had. Passing
+            // air here would add an eighteenth entry to a seventeen-block
+            // section and push it from four bits per block to five.
+            let default = values[0];
+            PalettedContainer::from_values(states, default, &values)?
+        }
+    };
+
+    let biome_values: Vec<i32> = (0..biomes.entry_count())
+        .map(|index| i32::try_from(section.biomes.get(index).to_index()).unwrap_or(0))
+        .collect();
+    let biomes = PalettedContainer::from_values(biomes, biome_values[0], &biome_values)?;
+
+    Ok(ChunkSection {
+        non_empty_block_count,
+        fluid_count,
+        block_states,
+        biomes,
+    })
+}
+
+/// Build the `level_chunk_with_light` body for one column.
+///
+/// # Errors
+/// Returns an error when the column is not the overworld's height or holds a
+/// block state that is not a 1.20.1 state, both of which mean the anvil parse
+/// produced something this encoder cannot describe.
+pub fn build_chunk_packet(
+    chunk: &ColumnData,
+    location: IVec2,
+) -> anyhow::Result<LevelChunkWithLight<'static>> {
+    let (state_kind, biome_kind) = container_kinds();
+
+    anyhow::ensure!(
+        chunk.sections.len() == SECTION_COUNT,
+        "column at {location} has {} sections, but the overworld has {SECTION_COUNT}",
+        chunk.sections.len()
+    );
+
+    // A placeholder rather than a real heightmap: hyperion has no light engine
+    // and nothing that needs the true surface, and a column claiming to be
+    // solid to the top is what the 763 path sent too. All three client-visible
+    // kinds carry it because the client leaves a kind it was not sent at zero,
+    // which would put the surface at the bottom of the world.
+    let placeholder = heightmap(CHUNK_HEIGHT_SPAN, CHUNK_HEIGHT_SPAN - 3)
+        .into_iter()
+        .map(i64::try_from)
+        .try_collect::<_, Vec<i64>, _>()?;
+    let heightmaps = HeightmapKind::CLIENT
+        .into_iter()
+        .map(|kind| Heightmap {
+            kind,
+            data: placeholder.clone(),
+        })
+        .collect();
+
+    let mut sections = Vec::with_capacity(SECTION_COUNT);
+    let mut sky_sections = Vec::with_capacity(LIGHT_SECTION_COUNT);
+    let mut block_sections = Vec::new();
+    let mut sky_updates = Vec::with_capacity(LIGHT_SECTION_COUNT);
+    let mut block_updates = Vec::new();
+
+    for (index, section) in chunk.sections.iter().enumerate() {
+        sections.push(encode_section(section, state_kind, biome_kind)?);
+
+        // Light section 0 is the one below the world, so a chunk section's
+        // light index is one higher than its own.
+        let light_index = index + 1;
+
+        sky_sections.push(light_index);
+        sky_updates.push(section.sky_light.unwrap_or(FULL_BRIGHT).to_vec());
+
+        if let Some(block_light) = section.block_light {
+            block_sections.push(light_index);
+            block_updates.push(block_light.to_vec());
+        }
+    }
+
+    // The section above the world, so that sky light reaches the top layer of
+    // blocks from outside rather than stopping at it.
+    sky_sections.push(LIGHT_SECTION_COUNT - 1);
+    sky_updates.push(FULL_BRIGHT.to_vec());
+
+    Ok(LevelChunkWithLight {
+        x: location.x,
+        z: location.y,
+        chunk: ChunkData {
+            heightmaps,
+            sections,
+            // Empty on purpose. A block entity carries a network id into
+            // `minecraft:block_entity_type` and an NBT update tag, and both
+            // are 1.20.1-shaped here: the ids are a different registry and the
+            // tags predate data components. Sending them untranslated would
+            // disconnect the client, so until they are ported a chest is a
+            // chest-shaped block with no contents. Tracked as part of the 776
+            // port rather than fixed here.
+            block_entities: Vec::new(),
+        },
+        light: LightData {
+            sky_mask: light_mask(&sky_sections),
+            block_mask: light_mask(&block_sections),
+            empty_sky_mask: Vec::new(),
+            empty_block_mask: Vec::new(),
+            sky_updates,
+            block_updates,
+        },
+    })
+}
+
+/// Frame and compress one column's packet.
+///
+/// The bytes are cached on the [`Column`], because a column goes to every
+/// player who walks into range and building it is the expensive part.
 fn encode_chunk_packet(
     chunk: &ColumnData,
     location: IVec2,
     state: &mut TasksState,
 ) -> anyhow::Result<Option<BytesMut>> {
     let encoder = PacketEncoder::new(CompressionThreshold::from(6));
-
-    let section_count = CHUNK_HEIGHT_SPAN as usize / 16_usize;
-    let dimension_height = CHUNK_HEIGHT_SPAN;
-
-    let map = heightmap(dimension_height, dimension_height - 3);
-    let map = map.into_iter().map(i64::try_from).try_collect()?;
-
-    // convert section_count + 2 0b1s into `u64` array
-    // todo: this is jank let's do the non jank way so we can get smaller packet sizes
-    let mut sky_light_mask = BitStorage::new(1, section_count + 2, None)?;
-    let mut block_light_mask = BitStorage::new(1, section_count + 2, None)?;
-
-    // 2048 bytes per section -> long count = 2048 / 8 = 256
-    // let empty_light = FixedArray([0x00_u8; 2048]);
-
-    let mut sky_light_arrays = vec![];
-    let mut block_light_arrays = vec![];
-
-    let mut section_bytes = Vec::new();
-
-    sky_light_mask.set(0, 0);
-
-    block_light_mask.set(0, 0);
-
-    for (i, section) in chunk.sections.iter().enumerate() {
-        use valence_protocol::Encode;
-        let non_air_blocks: u16 = 42;
-        non_air_blocks.encode(&mut section_bytes).unwrap();
-
-        // todo: how do sky light and block light work differently?
-
-        if let Some(sky_light) = section.sky_light {
-            let sky_light = FixedArray(sky_light);
-            sky_light_arrays.push(sky_light);
-        } else {
-            // if there is no sky light, let's assume it is full bright for now
-            sky_light_arrays.push(FixedArray([0xff; 2048]));
-        }
-        sky_light_mask.set(i + 1, 1);
-
-        if let Some(block_light) = section.block_light {
-            let block_light = FixedArray(block_light);
-            block_light_arrays.push(block_light);
-            block_light_mask.set(i + 1, 1);
-        }
-
-        write_block_states(&section.block_states, &mut section_bytes).unwrap();
-        write_biomes(&section.biomes, &mut section_bytes).unwrap();
-    }
-
-    // todo: is this right?
-    sky_light_mask.set(section_count + 1, 1);
-    sky_light_arrays.push(FixedArray([0xff; 2048]));
-
-    block_light_mask.set(section_count + 1, 0);
-
-    // todo: Maybe we want the top one to actually be all Fs because I think this is just an edge case for how things are rendered.
-    // sky_light_arrays.push(empty_light);
-    // block_light_arrays.push(empty_light);
-
-    // debug_assert_eq!(sky_light_arrays.len(), section_count + 2);
-    // debug_assert_eq!(block_light_arrays.len(), section_count + 2);
-
-    let sky_light_data = sky_light_mask.into_data();
-    let block_light_data = block_light_mask.into_data();
-
-    let block_entities = chunk
-        .block_entities
-        .iter()
-        .map(|(idx, data)| {
-            pub const START_Y: i16 = -64;
-
-            // Decode the coordinates relative to the chunk
-            let x = idx % 16;
-            let y = idx / 16 / 16;
-            let z = (idx / 16) % 16;
-
-            // Get the block entity kind
-            let kind = chunk.block_state(x, y, z).block_entity_kind().unwrap();
-
-            let absolute_y = i16::try_from(y).unwrap() + START_Y;
-
-            // Pack x and z coordinate into one integer
-            #[expect(clippy::cast_possible_truncation, reason = "this cannot truncate")]
-            let packed_xz = ((x * 16) | z) as i8;
-
-            ChunkDataBlockEntity {
-                packed_xz,
-                y: absolute_y,
-                kind,
-                data: Cow::Borrowed(data),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let pkt = ChunkDataS2c {
-        pos: ChunkPos::new(location.x, location.y),
-
-        // todo: I think this is for rain and snow???
-        heightmaps: Cow::Owned(compound! {
-            "MOTION_BLOCKING" => List::Long(map),
-        }),
-        blocks_and_biomes: (&*section_bytes).into(),
-        block_entities: Cow::Borrowed(&block_entities),
-
-        sky_light_mask: Cow::Borrowed(&sky_light_data),
-        block_light_mask: Cow::Borrowed(&block_light_data),
-
-        empty_sky_light_mask: Cow::Borrowed(&[]),
-        empty_block_light_mask: Cow::Borrowed(&[]),
-
-        sky_light_arrays: Cow::Owned(sky_light_arrays),
-        block_light_arrays: Cow::Owned(block_light_arrays),
-    };
+    let packet = build_chunk_packet(chunk, location)?;
 
     let buf = &mut state.bytes;
     let scratch = &mut state.scratch;
     let compressor = &mut state.compressor;
 
-    let result = encoder.append_packet(&pkt, buf, scratch, compressor)?;
+    let result = encoder.append_packet(
+        Clientbound::new(PacketId::LevelChunkWithLight.to_raw(), &packet),
+        buf,
+        scratch,
+        compressor,
+    )?;
 
     Ok(Some(result))
 }
 
-fn write_block_states(
-    states: &hyperion_palette::PalettedContainer,
-    writer: &mut impl Write,
-) -> anyhow::Result<()> {
-    states.encode_mc_format(
-        writer,
-        Into::into,
-        4,
-        8,
-        bit_width(BlockState::max_raw().into()),
-    )?;
-    Ok(())
-}
+#[cfg(test)]
+mod tests {
+    use glam::IVec2;
+    use hyperion_minecraft_proto::{Encode, Reader, Writer, block_state};
+    use valence_generated::block::BlockState;
+    use valence_server::layer::chunk::Chunk;
 
-fn write_biomes(biomes: &BiomeContainer, writer: &mut impl Write) -> anyhow::Result<()> {
-    biomes.encode_mc_format(
-        writer,
-        |b| b.to_index() as u64,
-        0,
-        3,
-        6, // bit_width(info.biome_registry_len - 1),
-    )?;
-    Ok(())
+    use super::{ColumnData, SECTION_COUNT, build_chunk_packet, container_kinds};
+    use crate::{CHUNK_HEIGHT_SPAN, simulation::blocks::loader::parse::section::Section};
+
+    /// A column that carries real terrain, decoded back with the same reader a
+    /// client uses.
+    ///
+    /// The section blob has no internal framing: a container written at the
+    /// wrong bit width leaves the reader mid-section with no error until the
+    /// blob runs out, so a decode that consumes exactly the bytes the encoder
+    /// produced is the check that the whole column is self-consistent.
+    #[test]
+    fn a_built_column_decodes_as_the_client_reads_it() {
+        let mut column = ColumnData::new_with(CHUNK_HEIGHT_SPAN, Section::empty_sky);
+        // One uniform section and one with a handful of distinct blocks, so
+        // that both the single-value and the palette path are exercised.
+        column.fill_block_state_section(0, BlockState::STONE);
+        for (index, state) in [
+            BlockState::DIRT,
+            BlockState::GRASS_BLOCK,
+            BlockState::CHEST,
+            BlockState::WATER,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            column.set_block_state(u32::try_from(index).unwrap(), 20, 0, state);
+        }
+
+        let packet = build_chunk_packet(&column, IVec2::new(3, -4)).unwrap();
+        assert_eq!(packet.chunk.sections.len(), SECTION_COUNT);
+        assert_eq!(packet.chunk.sections[0].non_empty_block_count, 4096);
+        assert_eq!(
+            packet.chunk.sections[0].block_states.get(0),
+            i32::try_from(block_state::state_id("minecraft:stone", &[]).unwrap()).unwrap()
+        );
+
+        // The four blocks land in section 1, one of them water.
+        assert_eq!(packet.chunk.sections[1].non_empty_block_count, 4);
+        assert_eq!(packet.chunk.sections[1].fluid_count, 1);
+
+        // Section 2 is untouched sky, so it stays air and the client is free
+        // to skip drawing it.
+        assert_eq!(packet.chunk.sections[2].non_empty_block_count, 0);
+
+        let mut writer = Writer::new();
+        packet.encode(&mut writer).unwrap();
+        let bytes = writer.into_vec();
+
+        let (states, biomes) = container_kinds();
+        let mut reader = Reader::new(&bytes);
+        let round_tripped = hyperion_minecraft_proto::world::LevelChunkWithLight::decode(
+            SECTION_COUNT,
+            states,
+            biomes,
+            &mut reader,
+        )
+        .unwrap();
+        reader.finish().unwrap();
+        assert_eq!(round_tripped, packet);
+    }
+
+    /// A column the anvil parse produced at the wrong height is refused, not
+    /// truncated: the client reads exactly as many sections as its dimension
+    /// says and would run off the end of the blob.
+    #[test]
+    fn a_column_of_the_wrong_height_is_refused() {
+        let short = ColumnData::new(16 * 4);
+        let error = build_chunk_packet(&short, IVec2::ZERO).unwrap_err();
+        assert!(
+            error.to_string().contains("has 4 sections"),
+            "unexpected error: {error}"
+        );
+    }
 }

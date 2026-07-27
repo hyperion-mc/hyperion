@@ -32,3 +32,27 @@ impl<T: NbtScan + ?Sized> NbtScan for &T {
         (**self).tag_len(bytes)
     }
 }
+
+/// [`NbtScan`] backed by this crate's own NBT reader.
+///
+/// The trait exists so the item layer does not depend on an NBT
+/// implementation, not because this crate lacks one. Anything that already has
+/// [`crate::nbt`] linked in wants this rather than a scanner of its own.
+///
+/// It measures by decoding and discarding, which is the only honest way to
+/// find the end of a tag: the length is not written anywhere, so every byte
+/// has to be walked whether or not the value is kept.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Scanner;
+
+impl NbtScan for Scanner {
+    fn tag_len(&self, bytes: &[u8]) -> Result<usize> {
+        let mut reader = crate::Reader::new(bytes);
+        // `decode_optional` rather than `Tag::decode`, because a bare
+        // `TAG_End` is a legal one-byte value here: `FriendlyByteBuf.writeNbt`
+        // writes it for a null tag, and a component whose shape is `Nbt` can
+        // carry one. Rejecting it would fail a packet the server would accept.
+        crate::nbt::decode_optional(&mut reader)?;
+        Ok(bytes.len() - reader.remaining_len())
+    }
+}

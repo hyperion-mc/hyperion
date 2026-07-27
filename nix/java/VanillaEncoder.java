@@ -8,6 +8,9 @@
 //                       its own encoder's output against. A file rather than
 //                       stdout because `Bootstrap.bootStrap` redirects stdout
 //                       through the logger, which would prefix every line.
+//   packets             prints `name -> hex` for the play packets alone, for
+//                       reading rather than for diffing. The same builders
+//                       feed `fixtures`, so the two can never disagree.
 //   registries <dir>    writes the network NBT of every synchronised registry
 //                       element, which `nix/generate-rust.py` turns into the
 //                       tables under `src/generated`.
@@ -16,23 +19,36 @@
 // Rust. Both halves live in version control, which is the point: issue #970 is
 // that this used to be retyped from scratch every time somebody needed it.
 
+import com.google.common.collect.ImmutableMultimap;
+
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
+import com.mojang.authlib.properties.PropertyMap;
+import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.DynamicOps;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 
+import it.unimi.dsi.fastutil.shorts.ShortArraySet;
+import it.unimi.dsi.fastutil.shorts.ShortSet;
+
 import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -42,6 +58,9 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.IdMap;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.data.registries.VanillaRegistries;
 import net.minecraft.nbt.NbtOps;
@@ -49,19 +68,42 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.CipherEncoder;
 import net.minecraft.network.CompressionEncoder;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.Varint21LengthFieldPrepender;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+import net.minecraft.network.syncher.EntityDataSerializer;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.RegistryDataLoader;
 import net.minecraft.server.Bootstrap;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Abilities;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.Strategy;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.Vec3;
 
 public final class VanillaEncoder {
     /// Fixture ordering is part of the output, so a map that keeps insertion
@@ -69,10 +111,15 @@ public final class VanillaEncoder {
     private final Map<String, String> fixtures = new LinkedHashMap<>();
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("usage: VanillaEncoder (fixtures <file> | registries <dir>)");
+        if (args.length < 1 || (args.length < 2 && !args[0].equals("packets"))) {
+            System.err.println("usage: VanillaEncoder (fixtures <file> | packets | registries <dir>)");
             System.exit(2);
         }
+
+        // `Bootstrap.bootStrap` replaces both standard streams with ones that
+        // funnel through log4j, so the handle for the `packets` listing is
+        // taken before that happens rather than after.
+        PrintStream stdout = System.out;
 
         // Without these the block state registry is empty and every codec
         // below either throws or silently encodes nothing.
@@ -82,6 +129,7 @@ public final class VanillaEncoder {
         VanillaEncoder encoder = new VanillaEncoder();
         switch (args[0]) {
             case "fixtures" -> encoder.fixtures(Path.of(args[1]));
+            case "packets" -> encoder.printPackets(stdout);
             case "registries" -> encoder.registries(Path.of(args[1]));
             default -> {
                 System.err.println("unknown command: " + args[0]);
@@ -97,7 +145,19 @@ public final class VanillaEncoder {
         palettedContainers();
         heightmaps();
         lightData();
+        playPackets();
         Files.writeString(out, toJson(), StandardCharsets.UTF_8);
+    }
+
+    /// The `packets` command: the same builders `fixtures` uses, listed for
+    /// reading. Anything named here is also in `vanilla.json`, so a value read
+    /// off this listing is a value some Rust test is already asserting.
+    private void printPackets(PrintStream out) {
+        playPackets();
+        for (Map.Entry<String, String> entry : fixtures.entrySet()) {
+            out.println(entry.getKey() + " -> " + entry.getValue());
+        }
+        out.flush();
     }
 
     /// Frames driven through the real netty handlers rather than a
@@ -263,6 +323,333 @@ public final class VanillaEncoder {
         buffer = new FriendlyByteBuf(Unpooled.buffer());
         buffer.writeCollection(List.of(), dataLayer);
         put("light.no_layers", hex(drain(buffer)));
+    }
+
+    // --- play packets -----------------------------------------------------
+
+    /// A `UUID` with every byte distinct, so a transposed half shows up.
+    private static final UUID PROFILE_ID = UUID.fromString("00112233-4455-6677-8899-aabbccddeeff");
+
+    /// Clientbound play packets the extractor could not follow, encoded
+    /// through their own `StreamCodec`.
+    ///
+    /// Each one is built with values that are wrong in a visible way if a
+    /// field is dropped, reordered or sized differently: no zeroes, no
+    /// defaults, and asymmetric coordinates so an x/z swap is not a fixpoint.
+    private void playPackets() {
+        RegistryAccess.Frozen registries = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+
+        addEntity(registries);
+        setEntityData(registries);
+        setEntityMotion(registries);
+        setEquipment(registries);
+        playerInfoUpdate(registries);
+        playerAbilities(registries);
+        sectionBlocksUpdate(registries);
+        containerPackets(registries);
+    }
+
+    private void addEntity(RegistryAccess registries) {
+        put("entity_type_id.pig", Integer.toString(BuiltInRegistries.ENTITY_TYPE.getId(EntityType.PIG)));
+
+        // The three rotations are `Mth.packDegrees` bytes on the wire, not
+        // floats, so the packing is pinned separately from the packet: a Rust
+        // helper that rounds the other way would otherwise only show up as one
+        // wrong byte in a 40-byte blob.
+        put("packed_degrees.0", Integer.toString(net.minecraft.util.Mth.packDegrees(0.0f)));
+        put("packed_degrees.90", Integer.toString(net.minecraft.util.Mth.packDegrees(90.0f)));
+        put("packed_degrees.-45.5", Integer.toString(net.minecraft.util.Mth.packDegrees(-45.5f)));
+        put("packed_degrees.179.9", Integer.toString(net.minecraft.util.Mth.packDegrees(179.9f)));
+        put("packed_degrees.-179.9", Integer.toString(net.minecraft.util.Mth.packDegrees(-179.9f)));
+
+        ClientboundAddEntityPacket packet = new ClientboundAddEntityPacket(
+                0x2A,
+                PROFILE_ID,
+                1.5,
+                64.0625,
+                -2.25,
+                12.5f,
+                -45.5f,
+                EntityType.PIG,
+                7,
+                new Vec3(0.25, -0.5, 0.125),
+                179.9);
+        put("packet.add_entity", encode(registries, ClientboundAddEntityPacket.STREAM_CODEC, packet));
+    }
+
+    private void setEntityData(RegistryAccess registries) {
+        // The serializer id is an index into a registration-ordered bimap, so
+        // it moves whenever Mojang inserts one. Pinning the ids the Rust
+        // helpers hard-code is what makes that a test failure rather than a
+        // silently mistyped field.
+        putSerializerId("byte", EntityDataSerializers.BYTE);
+        putSerializerId("int", EntityDataSerializers.INT);
+        putSerializerId("long", EntityDataSerializers.LONG);
+        putSerializerId("float", EntityDataSerializers.FLOAT);
+        putSerializerId("string", EntityDataSerializers.STRING);
+        putSerializerId("component", EntityDataSerializers.COMPONENT);
+        putSerializerId("optional_component", EntityDataSerializers.OPTIONAL_COMPONENT);
+        putSerializerId("item_stack", EntityDataSerializers.ITEM_STACK);
+        putSerializerId("boolean", EntityDataSerializers.BOOLEAN);
+        putSerializerId("block_pos", EntityDataSerializers.BLOCK_POS);
+
+        List<SynchedEntityData.DataValue<?>> values = List.of(
+                new SynchedEntityData.DataValue<>(0, EntityDataSerializers.BYTE, (byte) 0x21),
+                new SynchedEntityData.DataValue<>(1, EntityDataSerializers.INT, -1234),
+                new SynchedEntityData.DataValue<>(2, EntityDataSerializers.LONG, 1234567890123L),
+                new SynchedEntityData.DataValue<>(3, EntityDataSerializers.FLOAT, 12.5f),
+                new SynchedEntityData.DataValue<>(4, EntityDataSerializers.STRING, "hello"),
+                new SynchedEntityData.DataValue<>(5, EntityDataSerializers.BOOLEAN, true),
+                new SynchedEntityData.DataValue<>(6, EntityDataSerializers.COMPONENT, Component.literal("hi")),
+                new SynchedEntityData.DataValue<>(
+                        7, EntityDataSerializers.OPTIONAL_COMPONENT, Optional.of(Component.literal("hi"))),
+                new SynchedEntityData.DataValue<>(
+                        8, EntityDataSerializers.OPTIONAL_COMPONENT, Optional.<Component>empty()),
+                new SynchedEntityData.DataValue<>(
+                        9, EntityDataSerializers.ITEM_STACK, new ItemStack(Items.DIAMOND_SWORD, 3)),
+                new SynchedEntityData.DataValue<>(10, EntityDataSerializers.ITEM_STACK, ItemStack.EMPTY),
+                new SynchedEntityData.DataValue<>(
+                        11, EntityDataSerializers.BLOCK_POS, new net.minecraft.core.BlockPos(1, -2, 3)));
+
+        put("packet.set_entity_data", encode(
+                registries,
+                ClientboundSetEntityDataPacket.STREAM_CODEC,
+                new ClientboundSetEntityDataPacket(0x2A, values)));
+
+        // The terminator is the whole body when there is nothing to send, and
+        // a codec that wrote a count instead would still look plausible.
+        put("packet.set_entity_data.empty", encode(
+                registries,
+                ClientboundSetEntityDataPacket.STREAM_CODEC,
+                new ClientboundSetEntityDataPacket(1, List.of())));
+    }
+
+    /// `Vec3.LP_STREAM_CODEC`, which is where the interesting cases are: the
+    /// encoding quantises against a per-vector scale and only writes a
+    /// continuation `VarInt` when that scale needs more than two bits.
+    private void setEntityMotion(RegistryAccess registries) {
+        Map<String, Vec3> vectors = new LinkedHashMap<>();
+        // Below `ABS_MIN_VALUE`: one zero byte and nothing else.
+        vectors.put("zero", Vec3.ZERO);
+        vectors.put("subnormal", new Vec3(1.0e-6, -1.0e-6, 0.0));
+        // Scale 1..3 fits the two marker bits, so no continuation.
+        vectors.put("small", new Vec3(0.25, -0.5, 0.125));
+        vectors.put("scale_one_exact", new Vec3(1.0, -1.0, 0.5));
+        vectors.put("scale_three", new Vec3(2.0, -1.0, 3.0));
+        // 3.25 ceils to 4, the first scale that needs the continuation.
+        vectors.put("scale_four", new Vec3(1.5, -3.25, 2.0));
+        vectors.put("scale_large", new Vec3(100.5, -0.5, 20.0));
+        // Past `ABS_MAX_VALUE`, where `sanitize` clamps.
+        vectors.put("clamped", new Vec3(1.0e12, -1.0e12, 0.0));
+        vectors.put("nan", new Vec3(Double.NaN, 1.0, Double.NaN));
+
+        for (Map.Entry<String, Vec3> entry : vectors.entrySet()) {
+            ByteBuf buffer = Unpooled.buffer();
+            Vec3.LP_STREAM_CODEC.encode(buffer, entry.getValue());
+            put("lp_vec3." + entry.getKey(), hex(drain(buffer)));
+
+            put("packet.set_entity_motion." + entry.getKey(), encode(
+                    registries,
+                    ClientboundSetEntityMotionPacket.STREAM_CODEC,
+                    new ClientboundSetEntityMotionPacket(0x2A, entry.getValue())));
+        }
+    }
+
+    private void setEquipment(RegistryAccess registries) {
+        put("item_id.diamond_sword", Integer.toString(BuiltInRegistries.ITEM.getId(Items.DIAMOND_SWORD)));
+        put("item_id.stone", Integer.toString(BuiltInRegistries.ITEM.getId(Items.STONE)));
+
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            put("equipment_slot." + slot.getSerializedName(), Integer.toString(slot.ordinal()));
+        }
+
+        // Three entries so both the continuation bit and its absence on the
+        // last one are exercised, and an empty stack in the middle because
+        // that is the case `OPTIONAL_STREAM_CODEC` shortens to a single byte.
+        List<Pair<EquipmentSlot, ItemStack>> slots = List.of(
+                Pair.of(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_SWORD, 1)),
+                Pair.of(EquipmentSlot.HEAD, ItemStack.EMPTY),
+                Pair.of(EquipmentSlot.SADDLE, new ItemStack(Items.STONE, 64)));
+        put("packet.set_equipment", encode(
+                registries,
+                ClientboundSetEquipmentPacket.STREAM_CODEC,
+                new ClientboundSetEquipmentPacket(0x2A, slots)));
+
+        put("packet.set_equipment.single", encode(
+                registries,
+                ClientboundSetEquipmentPacket.STREAM_CODEC,
+                new ClientboundSetEquipmentPacket(
+                        1, List.of(Pair.of(EquipmentSlot.OFFHAND, new ItemStack(Items.STONE, 2))))));
+    }
+
+    private void playerInfoUpdate(RegistryAccess registries) {
+        for (ClientboundPlayerInfoUpdatePacket.Action action : ClientboundPlayerInfoUpdatePacket.Action.values()) {
+            put("player_info_action." + action.name().toLowerCase(java.util.Locale.ROOT),
+                    Integer.toString(action.ordinal()));
+        }
+
+        PropertyMap properties = new PropertyMap(ImmutableMultimap.of(
+                "textures", new Property("textures", "dGV4dHVyZQ==", "c2lnbmF0dXJl")));
+        GameProfile profile = new GameProfile(PROFILE_ID, "Notch", properties);
+
+        ClientboundPlayerInfoUpdatePacket.Entry entry = new ClientboundPlayerInfoUpdatePacket.Entry(
+                PROFILE_ID,
+                profile,
+                true,
+                42,
+                GameType.CREATIVE,
+                Component.literal("Notch"),
+                true,
+                7,
+                null);
+
+        // Every action but INITIALIZE_CHAT, whose payload is a signed profile
+        // key this harness has no way to build.
+        EnumSet<ClientboundPlayerInfoUpdatePacket.Action> all = EnumSet.of(
+                ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_GAME_MODE,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LIST_ORDER,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_HAT);
+        put("packet.player_info_update", encode(
+                registries,
+                ClientboundPlayerInfoUpdatePacket.STREAM_CODEC,
+                playerInfoPacket(all, List.of(entry))));
+
+        // A null display name and a profile with no properties: the two
+        // absent-value shapes ADD_PLAYER and UPDATE_DISPLAY_NAME each have.
+        ClientboundPlayerInfoUpdatePacket.Entry bare = new ClientboundPlayerInfoUpdatePacket.Entry(
+                PROFILE_ID,
+                new GameProfile(PROFILE_ID, "Bare", new PropertyMap(ImmutableMultimap.of())),
+                false,
+                0,
+                GameType.SURVIVAL,
+                null,
+                false,
+                0,
+                null);
+        EnumSet<ClientboundPlayerInfoUpdatePacket.Action> minimal = EnumSet.of(
+                ClientboundPlayerInfoUpdatePacket.Action.ADD_PLAYER,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LISTED,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY,
+                ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME);
+        put("packet.player_info_update.minimal", encode(
+                registries,
+                ClientboundPlayerInfoUpdatePacket.STREAM_CODEC,
+                playerInfoPacket(minimal, List.of(bare, entry))));
+    }
+
+    /// The packet with a chosen entry list.
+    ///
+    /// Its public constructors all take live `ServerPlayer`s, which need a
+    /// running server; the field the codec reads is set directly instead. The
+    /// bytes still come from the real `write`, which is the point of the
+    /// fixture.
+    private static ClientboundPlayerInfoUpdatePacket playerInfoPacket(
+            EnumSet<ClientboundPlayerInfoUpdatePacket.Action> actions,
+            List<ClientboundPlayerInfoUpdatePacket.Entry> entries) {
+        ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(actions, List.of());
+        try {
+            Field field = ClientboundPlayerInfoUpdatePacket.class.getDeclaredField("entries");
+            field.setAccessible(true);
+            field.set(packet, entries);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("ClientboundPlayerInfoUpdatePacket.entries is no longer settable", e);
+        }
+        return packet;
+    }
+
+    private void playerAbilities(RegistryAccess registries) {
+        Abilities abilities = new Abilities();
+        abilities.invulnerable = true;
+        abilities.flying = false;
+        abilities.mayfly = true;
+        abilities.instabuild = true;
+        abilities.setFlyingSpeed(0.05f);
+        abilities.setWalkingSpeed(0.1f);
+        put("packet.player_abilities", encode(
+                registries,
+                ClientboundPlayerAbilitiesPacket.STREAM_CODEC,
+                new ClientboundPlayerAbilitiesPacket(abilities)));
+
+        Abilities none = new Abilities();
+        none.setFlyingSpeed(0.0f);
+        none.setWalkingSpeed(0.0f);
+        put("packet.player_abilities.none", encode(
+                registries,
+                ClientboundPlayerAbilitiesPacket.STREAM_CODEC,
+                new ClientboundPlayerAbilitiesPacket(none)));
+    }
+
+    private void sectionBlocksUpdate(RegistryAccess registries) {
+        LevelChunkSection section = new LevelChunkSection(PalettedContainerFactory.create(registries));
+        // `setBlockState`'s locking overload asserts a chunk lock is held, and
+        // there is no chunk here.
+        section.setBlockState(1, 3, 2, Blocks.STONE.defaultBlockState(), false);
+        section.setBlockState(15, 15, 0, Blocks.DIRT.defaultBlockState(), false);
+
+        // `ShortArraySet` rather than a hash set: the packet writes in
+        // iteration order, and only an insertion-ordered set makes that
+        // reproducible enough to commit.
+        ShortSet changes = new ShortArraySet();
+        changes.add(packSectionRelative(1, 3, 2));
+        changes.add(packSectionRelative(15, 15, 0));
+
+        put("section_relative.1_3_2", Integer.toString(packSectionRelative(1, 3, 2)));
+        put("section_relative.15_15_0", Integer.toString(packSectionRelative(15, 15, 0)));
+        put("section_pos.3_-1_7", Long.toString(SectionPos.of(3, -1, 7).asLong()));
+
+        put("packet.section_blocks_update", encode(
+                registries,
+                ClientboundSectionBlocksUpdatePacket.STREAM_CODEC,
+                new ClientboundSectionBlocksUpdatePacket(SectionPos.of(3, -1, 7), changes, section)));
+    }
+
+    /// `SectionPos`'s relative packing: x in bits 8..12, z in 4..8, y in 0..4.
+    private static short packSectionRelative(int x, int y, int z) {
+        return (short) (x << 8 | z << 4 | y);
+    }
+
+    private void containerPackets(RegistryAccess registries) {
+        List<ItemStack> items = List.of(
+                new ItemStack(Items.STONE, 64),
+                ItemStack.EMPTY,
+                new ItemStack(Items.DIAMOND_SWORD, 1));
+        put("packet.container_set_content", encode(
+                registries,
+                ClientboundContainerSetContentPacket.STREAM_CODEC,
+                new ClientboundContainerSetContentPacket(3, 17, items, new ItemStack(Items.STONE, 2))));
+
+        put("packet.container_set_slot", encode(
+                registries,
+                ClientboundContainerSetSlotPacket.STREAM_CODEC,
+                new ClientboundContainerSetSlotPacket(3, 17, 9, new ItemStack(Items.DIAMOND_SWORD, 1))));
+
+        // Slot -1 with the player's own container id, which is how a server
+        // sets the cursor stack; a `short` field written as a `VarInt` would
+        // pass every positive case and fail this one.
+        put("packet.container_set_slot.cursor", encode(
+                registries,
+                ClientboundContainerSetSlotPacket.STREAM_CODEC,
+                new ClientboundContainerSetSlotPacket(0, 1, -1, ItemStack.EMPTY)));
+    }
+
+    private void putSerializerId(String name, EntityDataSerializer<?> serializer) {
+        put("entity_data_serializer." + name, Integer.toString(EntityDataSerializers.getSerializedId(serializer)));
+    }
+
+    /// Drive one packet through its own codec.
+    ///
+    /// The bound is `? super RegistryFriendlyByteBuf` because the three buffer
+    /// types form a chain: a packet declaring `ByteBuf` or `FriendlyByteBuf`
+    /// still accepts the registry-carrying one.
+    private static <T> String encode(
+            RegistryAccess registries, StreamCodec<? super RegistryFriendlyByteBuf, T> codec, T packet) {
+        RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), registries);
+        codec.encode(buffer, packet);
+        return hex(drain(buffer));
     }
 
     // --- registry dump ----------------------------------------------------

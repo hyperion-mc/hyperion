@@ -39,6 +39,7 @@ mod manager;
 pub mod frame;
 mod region;
 mod shared;
+pub mod translate;
 
 pub enum GetChunk<'a> {
     Loaded(&'a Column),

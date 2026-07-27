@@ -1,18 +1,32 @@
+//! Keeping every observer's view of an entity up to date.
+//!
+//! Movement is sent as a delta where it fits and as a position sync where it
+//! does not, the same choice `net.minecraft.server.level.ServerEntity` makes:
+//! the delta is `round(x * 4096)` differenced against the last value sent, so
+//! it saturates a `short` at eight blocks and the entity has to be resynced
+//! instead.
+
 use std::fmt::Debug;
 
 use flecs_ecs::prelude::*;
 use glam::{IVec3, Vec3};
+use hyperion_minecraft_proto::{
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::{
+        clientbound::SetExperience,
+        entity::{
+            EntityPositionSync, MoveEntityPos, MoveEntityPosRot, MoveEntityRot, RotateHead,
+            SetEntityData, SetEntityMotion, pack_degrees,
+        },
+    },
+    types::{PositionMoveRotation, Vec3 as ProtoVec3},
+};
 use hyperion_utils::EntityExt;
 use itertools::Either;
-use valence_bytes::CowBytes;
-use valence_protocol::{
-    ByteAngle, RawBytes, VarInt,
-    packets::play::{self},
-};
 
 use crate::{
     Prev,
-    net::{Compose, ConnectionId, DataBundle},
+    net::{Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
         Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
@@ -28,6 +42,27 @@ use crate::{
 
 #[derive(Component)]
 pub struct EntityStateSyncModule;
+
+/// The movement delta `ClientboundMoveEntityPacket` carries.
+///
+/// `VecDeltaCodec` rounds each coordinate to 1/4096 of a block *before*
+/// subtracting, rather than rounding the difference, so a stationary entity
+/// whose position is not exactly representable does not drift by one step per
+/// tick. Saturating rather than wrapping is this server's own choice: the
+/// caller only sends a delta it has already checked fits, and wrapping a
+/// coordinate that slipped through would teleport the entity to the far side
+/// of the range instead of to its edge.
+fn encode_delta(from: Vec3, to: Vec3) -> [i16; 3] {
+    let step = |old: f32, new: f32| {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a coordinate is inside the world limit, so 4096 times it is far inside i64"
+        )]
+        let quantise = |value: f32| (f64::from(value) * 4096.0).round() as i64;
+        i16::try_from(quantise(new) - quantise(old)).unwrap_or(i16::MAX)
+    };
+    [step(from.x, to.x), step(from.y, to.y), step(from.z, to.z)]
+}
 
 fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
     let post_store = world
@@ -85,16 +120,24 @@ impl Module for EntityStateSyncModule {
                 if prev_xp != current {
                     let visual = current.get_visual();
 
-                    let packet = play::ExperienceBarUpdateS2c {
-                        bar: visual.prop,
-                        level: VarInt(i32::from(visual.level)),
-                        total_xp: VarInt::default(),
+                    let packet = SetExperience {
+                        experience_progress: visual.prop,
+                        experience_level: i32::from(visual.level),
+                        // The client only renders the level and the bar, so
+                        // the running total it would use for a death drop is
+                        // left at zero rather than tracked.
+                        total_experience: 0,
                     };
 
                     let entity = table.entity(idx);
                     entity.modified(id::<Xp>());
 
-                    compose.unicast(&packet, *net).unwrap();
+                    compose
+                        .unicast(
+                            Clientbound::new(PacketId::SetExperience.to_raw(), &packet),
+                            *net,
+                        )
+                        .unwrap();
                 }
 
                 *prev_xp = *current;
@@ -109,17 +152,20 @@ impl Module for EntityStateSyncModule {
         .kind(id::<flecs::pipeline::OnStore>())
         .each_iter(move |it, row, (compose, metadata_changes)| {
             let entity = it.entity(row);
-            let entity_id = VarInt(entity.minecraft_id());
+            let entity_id = entity.minecraft_id();
 
             let metadata = get_and_clear_metadata(metadata_changes);
 
             if let Some(view) = metadata {
-                let pkt = play::EntityTrackerUpdateS2c {
-                    entity_id,
-                    tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+                let pkt = SetEntityData {
+                    id: entity_id,
+                    packed_items: &view,
                 };
                 compose
-                    .broadcast_channel(&pkt, entity.into())
+                    .broadcast_channel(
+                        Clientbound::new(PacketId::SetEntityData.to_raw(), &pkt),
+                        entity.into(),
+                    )
                     .send()
                     .unwrap();
             }
@@ -138,11 +184,14 @@ impl Module for EntityStateSyncModule {
 
             let entity = it.entity(row);
 
-            let entity_id = VarInt(entity.minecraft_id());
+            let entity_id = entity.minecraft_id();
 
             for pkt in animation.packets(entity_id) {
                 compose
-                    .broadcast_channel(&pkt, entity.into())
+                    .broadcast_channel(
+                        Clientbound::new(PacketId::Animate.to_raw(), &pkt),
+                        entity.into(),
+                    )
                     .exclude(io)
                     .send()
                     .unwrap();
@@ -187,7 +236,7 @@ impl Module for EntityStateSyncModule {
             )| {
                 let world = it.world();
                 let entity = it.entity(row);
-                let entity_id = VarInt(entity.minecraft_id());
+                let entity_id = entity.minecraft_id();
 
                 if let Some(pending_teleport) = pending_teleport {
                     if pending_teleport.ttl == 0 {
@@ -240,67 +289,124 @@ impl Module for EntityStateSyncModule {
                             tracking.fall_start_y = position.y;
                         }
 
+                        let delta = encode_delta(tracking.last_tick_position, **position);
+
                         if changed_position && !needs_teleport && look_changed {
-                            let packet = play::RotateAndMoveRelativeS2c {
+                            let packet = MoveEntityPosRot {
                                 entity_id,
-                                #[allow(clippy::cast_possible_truncation)]
-                                delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
+                                xa: delta[0],
+                                ya: delta[1],
+                                za: delta[2],
+                                y_rot: pack_degrees(**yaw),
+                                x_rot: pack_degrees(**pitch),
                                 on_ground: grounded,
                             };
 
-                            bundle.add_packet(&packet).unwrap();
+                            bundle
+                                .add_packet(Clientbound::new(
+                                    PacketId::MoveEntityPosRot.to_raw(),
+                                    &packet,
+                                ))
+                                .unwrap();
                         } else {
                             if changed_position && !needs_teleport {
-                                let packet = play::MoveRelativeS2c {
+                                let packet = MoveEntityPos {
                                     entity_id,
-                                    #[allow(clippy::cast_possible_truncation)]
-                                    delta: (position_delta * 4096.0).to_array().map(|x| x as i16),
+                                    xa: delta[0],
+                                    ya: delta[1],
+                                    za: delta[2],
                                     on_ground: grounded,
                                 };
 
-                                bundle.add_packet(&packet).unwrap();
+                                bundle
+                                    .add_packet(Clientbound::new(
+                                        PacketId::MoveEntityPos.to_raw(),
+                                        &packet,
+                                    ))
+                                    .unwrap();
                             }
 
                             if look_changed {
-                                let packet = play::RotateS2c {
+                                let packet = MoveEntityRot {
                                     entity_id,
-                                    yaw: ByteAngle::from_degrees(**yaw),
-                                    pitch: ByteAngle::from_degrees(**pitch),
+                                    y_rot: pack_degrees(**yaw),
+                                    x_rot: pack_degrees(**pitch),
                                     on_ground: grounded,
                                 };
 
-                                bundle.add_packet(&packet).unwrap();
+                                bundle
+                                    .add_packet(Clientbound::new(
+                                        PacketId::MoveEntityRot.to_raw(),
+                                        &packet,
+                                    ))
+                                    .unwrap();
                             }
-                            let packet = play::EntitySetHeadYawS2c {
+                            let packet = RotateHead {
                                 entity_id,
-                                head_yaw: ByteAngle::from_degrees(**yaw),
+                                y_head_rot: pack_degrees(**yaw),
                             };
 
-                            bundle.add_packet(&packet).unwrap();
+                            bundle
+                                .add_packet(Clientbound::new(
+                                    PacketId::RotateHead.to_raw(),
+                                    &packet,
+                                ))
+                                .unwrap();
                         }
 
                         if needs_teleport {
-                            let packet = play::EntityPositionS2c {
-                                entity_id,
-                                position: position.as_dvec3(),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
+                            // `ClientboundEntityPositionSyncPacket`, not
+                            // `TeleportEntity`: since 1.21.2 the latter carries
+                            // a relative-movement bitmask and is what a client
+                            // acknowledges for its *own* position, while this
+                            // is what `ServerEntity` sends to observers.
+                            let packet = EntityPositionSync {
+                                id: entity_id,
+                                values: PositionMoveRotation {
+                                    position: ProtoVec3 {
+                                        x: f64::from(position.x),
+                                        y: f64::from(position.y),
+                                        z: f64::from(position.z),
+                                    },
+                                    delta_movement: ProtoVec3 {
+                                        x: f64::from(velocity.0.x),
+                                        y: f64::from(velocity.0.y),
+                                        z: f64::from(velocity.0.z),
+                                    },
+                                    y_rot: **yaw,
+                                    x_rot: **pitch,
+                                },
                                 on_ground: grounded,
                             };
 
-                            bundle.add_packet(&packet).unwrap();
+                            bundle
+                                .add_packet(Clientbound::new(
+                                    PacketId::EntityPositionSync.to_raw(),
+                                    &packet,
+                                ))
+                                .unwrap();
                         }
                     });
 
                     if velocity.0 != Vec3::ZERO {
-                        let packet = play::EntityVelocityUpdateS2c {
-                            entity_id,
-                            velocity: velocity.to_packet_units(),
+                        let packet = SetEntityMotion {
+                            id: entity_id,
+                            // Blocks per tick, which is what `Velocity` already
+                            // holds; `Vec3.LP_STREAM_CODEC` quantises it rather
+                            // than taking the 1/8000-block shorts 1.20.1 did.
+                            movement: ProtoVec3 {
+                                x: f64::from(velocity.0.x),
+                                y: f64::from(velocity.0.y),
+                                z: f64::from(velocity.0.z),
+                            },
                         };
 
-                        bundle.add_packet(&packet).unwrap();
+                        bundle
+                            .add_packet(Clientbound::new(
+                                PacketId::SetEntityMotion.to_raw(),
+                                &packet,
+                            ))
+                            .unwrap();
                         velocity.0 = Vec3::ZERO;
                     }
 

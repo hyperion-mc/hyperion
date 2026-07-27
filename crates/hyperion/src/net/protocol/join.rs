@@ -11,7 +11,7 @@ use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     packets::play_login::{
-        BlockPos, CommonPlayerSpawnInfo, GameType, GlobalPos, Login, PlayerPosition,
+        BlockPos, CommonPlayerSpawnInfo, GameEvent, GameType, GlobalPos, Login, PlayerPosition,
         PositionMoveRotation, Relative, SetChunkCacheCenter, SetDefaultSpawnPosition, Vec3,
     },
 };
@@ -146,6 +146,25 @@ pub fn enter_world(
                 x_rot: pitch,
             },
             relatives: Relative::NONE,
+        },
+    )?;
+
+    // Without this the client renders the terrain but never dismisses the
+    // "Loading terrain..." screen, because `LEVEL_CHUNKS_LOAD_START` is what
+    // `ClientPacketListener` waits on to hand control to the player.
+    //
+    // Vanilla sends it after the first chunk batch. hyperion streams chunks
+    // from `egress::sync_chunks` on the ticks after this one, and there is no
+    // point in the join path that knows when the first batch has landed, so it
+    // goes here. The visible difference is that the world fades in from empty
+    // rather than appearing complete.
+    send(
+        compose,
+        connection_id,
+        PacketId::GameEvent.to_raw(),
+        &GameEvent {
+            event: GameEvent::LEVEL_CHUNKS_LOAD_START,
+            param: 0.0,
         },
     )?;
 

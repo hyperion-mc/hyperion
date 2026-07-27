@@ -1,8 +1,14 @@
+//! The shared flag byte every entity carries (index 0).
+
 use derive_more::Deref;
 use flecs_ecs::{core::ComponentOrPairId, macros::Component};
 
 use crate::simulation::metadata::Metadata;
 
+/// `Entity.DATA_SHARED_FLAGS_ID`, one bit per state.
+///
+/// The bit numbers are `Entity.FLAG_ONFIRE` and friends, which are unchanged
+/// in 26.2; bit 2 is still the pre-1.9 "riding" flag and is never set.
 // todo: can be u8
 #[derive(Component, PartialEq, Eq, Copy, Clone, Debug, Deref)]
 #[flecs(meta)]

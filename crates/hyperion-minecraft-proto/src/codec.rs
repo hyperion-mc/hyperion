@@ -304,6 +304,21 @@ impl Writer {
         self.buffer
     }
 
+    /// A writer that appends to an existing buffer.
+    ///
+    /// Paired with [`Writer::clear`] this is how a caller encoding one packet
+    /// per entity per tick keeps a single allocation instead of taking a fresh
+    /// one every time.
+    #[must_use]
+    pub const fn from_vec(buffer: Vec<u8>) -> Self {
+        Self { buffer }
+    }
+
+    /// Drop everything written so far, keeping the allocation.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
+
     /// Append raw bytes.
     pub fn raw(&mut self, bytes: &[u8]) {
         self.buffer.extend_from_slice(bytes);

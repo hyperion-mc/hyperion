@@ -60,15 +60,156 @@ S2C_PLAY_PLAYER_POSITION = 0x48
 S2C_PLAY_SET_CHUNK_CACHE_CENTER = 0x5E
 S2C_PLAY_SET_DEFAULT_SPAWN = 0x61
 
+# Every clientbound play id in protocol 776, generated from
+# crates/hyperion-minecraft-proto/src/generated/packet_id.rs. The whole point
+# of listing all of them is that an id the server sends which is NOT in here is
+# proof the server is still speaking some other protocol's numbering: valence's
+# 1.20.1 table tops out well inside this range, so a stray 763 packet does not
+# announce itself by being out of bounds. It announces itself by being a 776
+# packet nobody would send at that moment -- 0x1E DebugSample, say, where 763
+# meant UnloadChunk.
 PLAY_NAMES = {
-    S2C_PLAY_DISCONNECT: "Disconnect",
-    S2C_PLAY_GAME_EVENT: "GameEvent",
-    S2C_PLAY_KEEP_ALIVE: "KeepAlive",
-    S2C_PLAY_LEVEL_CHUNK: "LevelChunkWithLight",
-    S2C_PLAY_LOGIN: "Login",
-    S2C_PLAY_PLAYER_POSITION: "PlayerPosition",
-    S2C_PLAY_SET_CHUNK_CACHE_CENTER: "SetChunkCacheCenter",
-    S2C_PLAY_SET_DEFAULT_SPAWN: "SetDefaultSpawnPosition",
+    0x00: "BundleDelimiter",
+    0x01: "AddEntity",
+    0x02: "Animate",
+    0x03: "AwardStats",
+    0x04: "BlockChangedAck",
+    0x05: "BlockDestruction",
+    0x06: "BlockEntityData",
+    0x07: "BlockEvent",
+    0x08: "BlockUpdate",
+    0x09: "BossEvent",
+    0x0A: "ChangeDifficulty",
+    0x0B: "ChunkBatchFinished",
+    0x0C: "ChunkBatchStart",
+    0x0D: "ChunksBiomes",
+    0x0E: "ClearTitles",
+    0x0F: "CommandSuggestions",
+    0x10: "Commands",
+    0x11: "ContainerClose",
+    0x12: "ContainerSetContent",
+    0x13: "ContainerSetData",
+    0x14: "ContainerSetSlot",
+    0x15: "CookieRequest",
+    0x16: "Cooldown",
+    0x17: "CustomChatCompletions",
+    0x18: "CustomPayload",
+    0x19: "DamageEvent",
+    0x1A: "DebugBlockValue",
+    0x1B: "DebugChunkValue",
+    0x1C: "DebugEntityValue",
+    0x1D: "DebugEvent",
+    0x1E: "DebugSample",
+    0x1F: "DeleteChat",
+    0x20: "Disconnect",
+    0x21: "DisguisedChat",
+    0x22: "EntityEvent",
+    0x23: "EntityPositionSync",
+    0x24: "Explode",
+    0x25: "ForgetLevelChunk",
+    0x26: "GameEvent",
+    0x27: "GameRuleValues",
+    0x28: "GameTestHighlightPos",
+    0x29: "MountScreenOpen",
+    0x2A: "HurtAnimation",
+    0x2B: "InitializeBorder",
+    0x2C: "KeepAlive",
+    0x2D: "LevelChunkWithLight",
+    0x2E: "LevelEvent",
+    0x2F: "LevelParticles",
+    0x30: "LightUpdate",
+    0x31: "Login",
+    0x32: "LowDiskSpaceWarning",
+    0x33: "MapItemData",
+    0x34: "MerchantOffers",
+    0x35: "MoveEntityPos",
+    0x36: "MoveEntityPosRot",
+    0x37: "MoveMinecartAlongTrack",
+    0x38: "MoveEntityRot",
+    0x39: "MoveVehicle",
+    0x3A: "OpenBook",
+    0x3B: "OpenScreen",
+    0x3C: "OpenSignEditor",
+    0x3D: "Ping",
+    0x3E: "PongResponse",
+    0x3F: "PlaceGhostRecipe",
+    0x40: "PlayerAbilities",
+    0x41: "PlayerChat",
+    0x42: "PlayerCombatEnd",
+    0x43: "PlayerCombatEnter",
+    0x44: "PlayerCombatKill",
+    0x45: "PlayerInfoRemove",
+    0x46: "PlayerInfoUpdate",
+    0x47: "PlayerLookAt",
+    0x48: "PlayerPosition",
+    0x49: "PlayerRotation",
+    0x4A: "RecipeBookAdd",
+    0x4B: "RecipeBookRemove",
+    0x4C: "RecipeBookSettings",
+    0x4D: "RemoveEntities",
+    0x4E: "RemoveMobEffect",
+    0x4F: "ResetScore",
+    0x50: "ResourcePackPop",
+    0x51: "ResourcePackPush",
+    0x52: "Respawn",
+    0x53: "RotateHead",
+    0x54: "SectionBlocksUpdate",
+    0x55: "SelectAdvancementsTab",
+    0x56: "ServerData",
+    0x57: "SetActionBarText",
+    0x58: "SetBorderCenter",
+    0x59: "SetBorderLerpSize",
+    0x5A: "SetBorderSize",
+    0x5B: "SetBorderWarningDelay",
+    0x5C: "SetBorderWarningDistance",
+    0x5D: "SetCamera",
+    0x5E: "SetChunkCacheCenter",
+    0x5F: "SetChunkCacheRadius",
+    0x60: "SetCursorItem",
+    0x61: "SetDefaultSpawnPosition",
+    0x62: "SetDisplayObjective",
+    0x63: "SetEntityData",
+    0x64: "SetEntityLink",
+    0x65: "SetEntityMotion",
+    0x66: "SetEquipment",
+    0x67: "SetExperience",
+    0x68: "SetHealth",
+    0x69: "SetHeldSlot",
+    0x6A: "SetObjective",
+    0x6B: "SetPassengers",
+    0x6C: "SetPlayerInventory",
+    0x6D: "SetPlayerTeam",
+    0x6E: "SetScore",
+    0x6F: "SetSimulationDistance",
+    0x70: "SetSubtitleText",
+    0x71: "SetTime",
+    0x72: "SetTitleText",
+    0x73: "SetTitlesAnimation",
+    0x74: "SoundEntity",
+    0x75: "Sound",
+    0x76: "StartConfiguration",
+    0x77: "StopSound",
+    0x78: "StoreCookie",
+    0x79: "SystemChat",
+    0x7A: "TabList",
+    0x7B: "TagQuery",
+    0x7C: "TakeItemEntity",
+    0x7D: "TeleportEntity",
+    0x7E: "TestInstanceBlockStatus",
+    0x7F: "TickingState",
+    0x80: "TickingStep",
+    0x81: "Transfer",
+    0x82: "UpdateAdvancements",
+    0x83: "UpdateAttributes",
+    0x84: "UpdateMobEffect",
+    0x85: "UpdateRecipes",
+    0x86: "UpdateTags",
+    0x87: "ProjectilePower",
+    0x88: "CustomReportDetails",
+    0x89: "ServerLinks",
+    0x8A: "Waypoint",
+    0x8B: "ClearDialog",
+    0x8C: "ShowDialog",
 }
 
 
@@ -274,6 +415,26 @@ class Client:
                 self.log("<- configuration packet 0x%02X len=%d %s" % (packet_id, len(payload), payload[:48].hex()))
 
 
+# Packets a server has no reason to send between accepting a login and the
+# player standing in the world. Each is a 1.20.1 id that a port leaves behind:
+# 0x24 was chunk data, 0x1E was chunk unload, 0x28 and 0x7E are test harness
+# packets a production server never sends at all.
+NEVER_ON_JOIN = frozenset(
+    {
+        0x1A,  # DebugBlockValue
+        0x1B,  # DebugChunkValue
+        0x1C,  # DebugEntityValue
+        0x1D,  # DebugEvent
+        0x1E,  # DebugSample
+        0x24,  # Explode
+        0x28,  # GameTestHighlightPos
+        0x32,  # LowDiskSpaceWarning
+        0x7E,  # TestInstanceBlockStatus
+        0x80,  # TickingStep
+    }
+)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
@@ -316,8 +477,7 @@ def main():
             log("connection lost: %s" % error)
             break
 
-        name = PLAY_NAMES.get(packet_id, "0x%02X" % packet_id)
-        seen[name] = seen.get(name, 0) + 1
+        seen[packet_id] = seen.get(packet_id, 0) + 1
 
         if packet_id == S2C_PLAY_LOGIN:
             client.entity_id = struct.unpack(">i", payload[:4])[0]
@@ -343,12 +503,54 @@ def main():
             log("<- Disconnect %s" % printable(payload))
             break
 
-    log("summary: " + ", ".join("%s x%d" % (k, v) for k, v in sorted(seen.items())))
-    if client.joined:
-        log("RESULT: reached play state (Login received)")
-        return 0
-    log("RESULT: never reached play state (client would sit on 'Joining world...')")
-    return 1
+    log("packets received in play state, by id:")
+    unknown = []
+    for packet_id in sorted(seen):
+        name = PLAY_NAMES.get(packet_id)
+        if name is None:
+            unknown.append(packet_id)
+            name = "<NOT A 776 CLIENTBOUND PLAY ID>"
+        log("    0x%02X %-28s x%d" % (packet_id, name, seen[packet_id]))
+
+    if unknown:
+        log(
+            "RESULT: %d packet id(s) are not clientbound play ids in protocol "
+            "776: %s" % (len(unknown), ", ".join("0x%02X" % i for i in unknown))
+        )
+        return 1
+
+    # Every id in 0x00..0x8x is a valid 776 packet, so "the id decoded" proves
+    # nothing on its own: a 1.20.1 chunk packet lands on 0x24 and reads as a
+    # perfectly well-formed Explode. What gives the mismatch away is meaning.
+    # A server that has just accepted a connection has no reason to detonate
+    # anything or to emit a profiler sample, so seeing one of these is proof
+    # the numbering is from some other protocol version.
+    implausible = sorted(i for i in seen if i in NEVER_ON_JOIN)
+    if implausible:
+        for packet_id in implausible:
+            log(
+                "RESULT: %d x 0x%02X %s during a join, which no server sends. "
+                "The wire is carrying another protocol's numbering."
+                % (seen[packet_id], packet_id, PLAY_NAMES[packet_id])
+            )
+        return 1
+
+    if not client.joined:
+        log("RESULT: never reached play state (client would sit on 'Joining world...')")
+        return 1
+
+    # Reaching play is necessary but not sufficient. A vanilla client shows the
+    # world only once it has terrain and has been told loading is done, so
+    # those are checked separately rather than folded into one pass/fail.
+    chunks = seen.get(S2C_PLAY_LEVEL_CHUNK, 0)
+    loaded = seen.get(S2C_PLAY_GAME_EVENT, 0)
+    log("RESULT: reached play state (Login received)")
+    log("RESULT: %d LevelChunkWithLight packet(s)" % chunks)
+    log(
+        "RESULT: GameEvent(LEVEL_CHUNKS_LOAD_START) %s"
+        % ("sent" if loaded else "NEVER SENT - client stays on the loading screen")
+    )
+    return 0 if chunks and loaded else 1
 
 
 if __name__ == "__main__":
