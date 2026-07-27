@@ -1,26 +1,35 @@
-//! <https://wiki.vg/index.php?title=Protocol&oldid=18375>
+//! Decoding and acting on the packets a playing client sends.
+//!
+//! Every id here comes from
+//! [`hyperion_minecraft_proto::generated::packet_id::play::serverbound::PacketId`],
+//! which is generated from Minecraft 26.2's own data (protocol 776). The ids
+//! are not the ones valence uses for 1.20.1: `chat` moved from 5 to 9,
+//! `swing` from 47 to 63, `container_click` from 11 to 18, and the movement
+//! packets from 20..=23 to 30..=33. A stale table does not error, it runs the
+//! wrong handler on bytes that parse, which is why [`route`] resolves an id
+//! through the generated enum rather than through integer literals, and why
+//! anything it cannot place is logged rather than dropped.
 
-// The RegistryHandler requires a specific function signature
+// Every handler shares one signature so that `route` can hand back a function
+// pointer, which leaves several of them returning a Result they never fail.
 #![allow(clippy::unnecessary_wraps)]
-#![allow(clippy::trivially_copy_pass_by_ref)]
 
 use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
+use hyperion_minecraft_proto::{
+    generated::packet_id::play::serverbound::PacketId,
+    packets::play::serverbound::{self as c2s, client_command, player_action, player_command},
+    types::{Direction, HumanoidArm, InteractionHand},
+};
 use hyperion_utils::EntityExt;
-use tracing::{info, instrument, warn};
+use tracing::warn;
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
 };
-use valence_protocol::{
-    Hand, VarInt,
-    packets::play::{
-        self, client_command_c2s::ClientCommand, player_action_c2s::PlayerAction,
-        player_interact_entity_c2s::EntityInteraction,
-    },
-};
+use valence_protocol::{Hand, packets::play};
 use valence_text::IntoText;
 
 use super::{
@@ -29,10 +38,14 @@ use super::{
     block_bounds,
     blocks::Blocks,
     event::ClientStatusEvent,
-    inventory::{handle_click_slot, handle_close_window, handle_update_selected_slot},
+    inventory::{handle_close_window, handle_update_selected_slot},
 };
 use crate::{
-    net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
+    net::{
+        Compose, ConnectionId, PROTOCOL_VERSION,
+        decoder::BorrowedPacketFrame,
+        protocol::{decode_body, frame_body},
+    },
     simulation::{
         Pitch, Yaw, aabb, event,
         metadata::{
@@ -40,30 +53,610 @@ use crate::{
             living_entity::HandStates,
             player::{DisplayedSkinParts, MainHand},
         },
-        packet::HandlerRegistry,
+        packet::{HandlerRegistry, serverbound},
     },
     storage::{CommandCompletionRequest, Events, InteractEvent},
 };
 
-fn full(
-    &play::FullC2s {
-        position,
-        yaw,
-        pitch,
-        on_ground,
-    }: &play::FullC2s,
+/// `Player.STANDING_DIMENSIONS` height.
+///
+/// The server holds the hitbox heights itself because the client only reports
+/// which keys are down, never how tall it thinks it is.
+const STANDING_HEIGHT: f32 = 1.8;
+
+/// Height of the `Pose.CROUCHING` entry in `Player.POSES`.
+const CROUCHING_HEIGHT: f32 = 1.5;
+
+/// Bit 0 of the movement packets' trailing flags byte.
+///
+/// 26.2 replaced `boolean onGround` with a byte whose second bit reports a
+/// horizontal collision, so reading the field as a bool would treat a player
+/// who is airborne but scraping a wall as standing on the ground.
+const ON_GROUND: i8 = 1;
+
+pub struct PacketSwitchQuery<'a> {
+    pub id: Entity,
+    pub handler_registry: &'a HandlerRegistry,
+    pub view: EntityView<'a>,
+    pub compose: &'a Compose,
+    pub io_ref: ConnectionId,
+    pub position: &'a mut Position,
+    pub yaw: &'a mut Yaw,
+    pub pitch: &'a mut Pitch,
+    pub size: &'a mut EntitySize,
+    pub world: &'a World,
+    pub blocks: &'a Blocks,
+    pub pose: &'a mut Pose,
+    pub events: &'a Events,
+    pub confirm_block_sequences: &'a mut ConfirmBlockSequences,
+    pub inventory: &'a mut hyperion_inventory::PlayerInventory,
+    pub animation: &'a mut ActiveAnimation,
+    pub crafting_registry: &'a hyperion_crafting::CraftingRegistry,
+}
+
+/// Reads one packet body and applies it.
+///
+/// Every handler starts by decoding the body, so the type it decodes into sits
+/// next to the behaviour that depends on it rather than in a table somewhere
+/// else.
+type Handler = fn(&[u8], &mut PacketSwitchQuery<'_>) -> anyhow::Result<()>;
+
+/// What this server does with a serverbound play id.
+pub enum Route {
+    /// Decoded and acted on.
+    Act(Handler),
+    /// Well-formed and deliberately dropped; the arm in [`route`] says why.
+    Ignore,
+    /// A 776 packet nothing here reads yet.
+    Unhandled(PacketId),
+    /// An id protocol 776 does not define at all.
+    Unknown(i32),
+}
+
+/// Decide what to do with a serverbound play frame, from its id alone.
+///
+/// Split out from [`packet_switch`] so the id table can be checked without a
+/// world to dispatch into. The failure this defends against is a table from
+/// the wrong protocol version: it produces no error, it runs a handler that
+/// was written for a different packet over bytes that happen to parse.
+#[must_use]
+pub fn route(id: i32) -> Route {
+    let Some(packet) = PacketId::from_raw(id) else {
+        return Route::Unknown(id);
+    };
+
+    match packet {
+        PacketId::AcceptTeleportation => Route::Act(accept_teleportation),
+        PacketId::Attack => Route::Act(attack),
+        PacketId::Chat => Route::Act(chat),
+        PacketId::ChatCommand => Route::Act(chat_command),
+        PacketId::ClientCommand => Route::Act(client_command),
+        PacketId::ClientInformation => Route::Act(client_information),
+        PacketId::CommandSuggestion => Route::Act(command_suggestion),
+        PacketId::ContainerClose => Route::Act(container_close),
+        PacketId::MovePlayerPos => Route::Act(move_player_pos),
+        PacketId::MovePlayerPosRot => Route::Act(move_player_pos_rot),
+        PacketId::MovePlayerRot => Route::Act(move_player_rot),
+        PacketId::MovePlayerStatusOnly => Route::Act(move_player_status_only),
+        PacketId::PlayerAbilities => Route::Act(player_abilities),
+        PacketId::PlayerAction => Route::Act(player_action),
+        PacketId::PlayerCommand => Route::Act(player_command),
+        PacketId::PlayerInput => Route::Act(player_input),
+        PacketId::SetCarriedItem => Route::Act(set_carried_item),
+        PacketId::Swing => Route::Act(swing),
+        PacketId::UseItem => Route::Act(use_item),
+        PacketId::UseItemOn => Route::Act(use_item_on),
+
+        // Read and dropped on purpose. Each of these is something a healthy
+        // client sends on its own schedule and that this server has no state
+        // to update for, so warning about them would bury the ids that matter:
+        //
+        // - `client_tick_end` arrives every tick, `chunk_batch_received` after
+        //   every batch, and this server sends chunks without pacing them.
+        // - `keep_alive`, `pong` and `ping_request` are liveness only; nothing
+        //   here times a connection out on them yet.
+        // - `chat_ack` and `chat_session_update` belong to signed chat, which
+        //   this server does not verify.
+        // - `player_loaded` is the client saying its terrain finished loading,
+        //   which the join sequence does not wait on.
+        // - `custom_payload`, `cookie_response` and `resource_pack` answer
+        //   things this server never asks for.
+        // - the recipe book and advancement settings are client-side UI state.
+        PacketId::ChatAck
+        | PacketId::ChatSessionUpdate
+        | PacketId::ChunkBatchReceived
+        | PacketId::ClientTickEnd
+        | PacketId::CookieResponse
+        | PacketId::CustomPayload
+        | PacketId::KeepAlive
+        | PacketId::PingRequest
+        | PacketId::PlayerLoaded
+        | PacketId::Pong
+        | PacketId::RecipeBookChangeSettings
+        | PacketId::RecipeBookSeenRecipe
+        | PacketId::ResourcePack
+        | PacketId::SeenAdvancements => Route::Ignore,
+
+        // Everything else, including any variant a later protocol adds to this
+        // non-exhaustive enum. Reaching this arm is a gap, not a no-op, so
+        // packet_switch says so.
+        other => Route::Unhandled(other),
+    }
+}
+
+/// Decodes `frame` and applies it to the player who sent it.
+///
+/// # Errors
+/// Returns an error when the body does not match the layout its id promises.
+pub fn packet_switch(
+    frame: BorrowedPacketFrame,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // check to see if the player is moving too fast
-    // if they are, ignore the packet
+    let body = frame_body(&frame);
 
-    let position = position.as_vec3();
-    change_position_or_correct_client(query, position, on_ground);
+    match route(frame.id) {
+        Route::Act(handler) => handler(body, query),
+        Route::Ignore => Ok(()),
+        Route::Unhandled(packet) => {
+            warn!(
+                id = frame.id,
+                bytes = body.len(),
+                "no handler for serverbound play packet {packet:?}"
+            );
+            Ok(())
+        }
+        Route::Unknown(id) => {
+            warn!(
+                id,
+                bytes = body.len(),
+                "serverbound play id is not in the protocol {PROTOCOL_VERSION} table"
+            );
+            Ok(())
+        }
+    }
+}
 
-    query.yaw.yaw = yaw;
-    query.pitch.pitch = pitch;
+fn accept_teleportation(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::AcceptTeleportation(teleport_id) = decode_body(body)?;
+    let entity = query.id.entity_view(query.world);
+
+    entity.get::<Option<&PendingTeleportation>>(|pending| {
+        // A stale id means the client is confirming a teleport this server has
+        // already replaced; moving it would undo the newer one.
+        if let Some(pending) = pending
+            && pending.teleport_id == teleport_id
+        {
+            **query.position = pending.destination;
+            entity.remove(id::<PendingTeleportation>());
+        }
+    });
 
     Ok(())
+}
+
+/// 26.2 split attacking out of `interact` into its own packet, so this is the
+/// whole of the melee path: `interact` now only ever means a right-click.
+fn attack(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::Attack = decode_body(body)?;
+
+    query.events.push(
+        event::AttackEntity {
+            origin: query.id,
+            target: Entity::from_minecraft_id(packet.entity_id),
+            damage: 1.0,
+        },
+        query.world,
+    );
+
+    Ok(())
+}
+
+fn chat(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: serverbound::Chat<'_> = decode_body(body)?;
+
+    query.events.push(
+        event::ChatMessage {
+            msg: packet.message.to_owned().into(),
+            by: query.id,
+        },
+        query.world,
+    );
+
+    Ok(())
+}
+
+fn chat_command(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::ChatCommand(command) = decode_body(body)?;
+
+    query.events.push(
+        event::Command {
+            raw: command.to_owned().into(),
+            by: query.id,
+        },
+        query.world,
+    );
+
+    Ok(())
+}
+
+fn client_command(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::ClientCommand(action) = decode_body(body)?;
+
+    let status = match action {
+        client_command::Action::PerformRespawn => event::ClientStatusCommand::PerformRespawn,
+        client_command::Action::RequestStats => event::ClientStatusCommand::RequestStats,
+        // Added in 26.2 for the client's gamerule screen. This server keeps no
+        // per-player gamerule overrides, so there is nothing to answer with.
+        client_command::Action::RequestGameruleValues => return Ok(()),
+    };
+
+    query.handler_registry.trigger(
+        &ClientStatusEvent {
+            client: query.id,
+            status,
+        },
+        query,
+    )
+}
+
+/// The client tells the server which of its own skin layers to render, and the
+/// server has to echo that back as entity metadata or nobody sees them --
+/// including the player themselves in third person. Without this the metadata
+/// keeps its default of 0, so every player appears with the base layer only:
+/// no hat, no jacket, no sleeves.
+///
+/// Sent again in play whenever the player changes a video setting;
+/// [`crate::net::protocol::pre_play`] handles the copy sent in configuration.
+fn client_information(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let info: c2s::ClientInformation<'_> = decode_body(body)?;
+
+    // `ClientInformation` reads the mask with `readUnsignedByte`; the generated
+    // body types it as `i8`, and the metadata field wants the same eight bits
+    // back out.
+    let displayed = info.model_customisation.cast_unsigned();
+
+    let main_hand = match info.main_hand {
+        HumanoidArm::Left => 0,
+        HumanoidArm::Right => 1,
+    };
+
+    query
+        .view
+        .set(DisplayedSkinParts::new(displayed))
+        .set(MainHand::new(main_hand));
+
+    Ok(())
+}
+
+fn command_suggestion(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::CommandSuggestion<'_> = decode_body(body)?;
+
+    query.handler_registry.trigger(
+        &CommandCompletionRequest {
+            query: packet.command.to_owned().into(),
+            id: packet.id,
+        },
+        query,
+    )
+}
+
+fn container_close(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::ContainerClose(_container_id) = decode_body(body)?;
+
+    handle_close_window(query);
+
+    Ok(())
+}
+
+fn move_player_pos(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::MovePlayerPos = decode_body(body)?;
+
+    change_position_or_correct_client(
+        query,
+        DVec3::new(packet.x, packet.y, packet.z).as_vec3(),
+        packet.on_ground & ON_GROUND != 0,
+    );
+
+    Ok(())
+}
+
+fn move_player_pos_rot(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::MovePlayerPosRot = decode_body(body)?;
+
+    change_position_or_correct_client(
+        query,
+        DVec3::new(packet.x, packet.y, packet.z).as_vec3(),
+        packet.on_ground & ON_GROUND != 0,
+    );
+
+    **query.yaw = packet.y_rot;
+    **query.pitch = packet.x_rot;
+
+    Ok(())
+}
+
+fn move_player_rot(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::MovePlayerRot = decode_body(body)?;
+
+    **query.yaw = packet.y_rot;
+    **query.pitch = packet.x_rot;
+
+    Ok(())
+}
+
+/// The client sends this when only the ground flag changed, which is how a
+/// standing player reports landing. Feeding it through the same path as a move
+/// keeps the fall and jump bookkeeping in
+/// [`change_position_or_correct_client`] from missing that transition.
+fn move_player_status_only(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::MovePlayerStatusOnly(flags) = decode_body(body)?;
+
+    let unchanged = **query.position;
+    change_position_or_correct_client(query, unchanged, flags & ON_GROUND != 0);
+
+    Ok(())
+}
+
+fn player_abilities(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: serverbound::PlayerAbilities = decode_body(body)?;
+
+    query.view.get::<&mut Flight>(|flight| {
+        flight.is_flying = packet.is_flying() && flight.allow;
+    });
+
+    Ok(())
+}
+
+// i.e., shooting a bow, digging a block, etc
+fn player_action(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::PlayerAction = decode_body(body)?;
+
+    let position = IVec3::new(packet.pos.x, packet.pos.y, packet.pos.z);
+
+    match packet.action {
+        player_action::Action::StartDestroyBlock => {
+            query.events.push(
+                event::StartDestroyBlock {
+                    position,
+                    from: query.id,
+                    sequence: packet.sequence,
+                },
+                query.world,
+            );
+        }
+        player_action::Action::StopDestroyBlock => {
+            query.events.push(
+                event::DestroyBlock {
+                    position,
+                    from: query.id,
+                    sequence: packet.sequence,
+                },
+                query.world,
+            );
+        }
+        player_action::Action::ReleaseUseItem => {
+            let event = event::ReleaseUseItem {
+                from: query.id,
+                item: query.inventory.get_cursor().stack.item,
+            };
+
+            query.id.entity_view(query.world).set(HandStates::new(0));
+
+            query.events.push(event, query.world);
+        }
+        action => bail!("unimplemented {action:?}"),
+    }
+
+    Ok(())
+}
+
+fn player_command(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::PlayerCommand = decode_body(body)?;
+
+    match packet.action {
+        player_command::Action::StartSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = true;
+            });
+        }
+        player_command::Action::StopSprinting => {
+            query.view.get::<&mut MovementTracking>(|tracking| {
+                tracking.sprinting = false;
+            });
+        }
+        player_command::Action::StopSleeping => {
+            *query.pose = Pose::Standing;
+            query.size.height = STANDING_HEIGHT;
+        }
+        player_command::Action::StartRidingJump
+        | player_command::Action::StopRidingJump
+        | player_command::Action::OpenInventory
+        | player_command::Action::StartFallFlying => {}
+    }
+
+    Ok(())
+}
+
+/// Which movement keys are down, including sneak.
+///
+/// 26.2 dropped `PRESS_SHIFT_KEY`/`RELEASE_SHIFT_KEY` from
+/// `ServerboundPlayerCommandPacket`, so this is the only packet that reports
+/// crouching. A server that reads only player commands leaves every player
+/// standing, at full hitbox height, however much they crouch.
+fn player_input(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let input: serverbound::PlayerInput = decode_body(body)?;
+
+    if input.shift() {
+        *query.pose = Pose::Sneaking;
+        query.size.height = CROUCHING_HEIGHT;
+    } else if *query.pose == Pose::Sneaking {
+        *query.pose = Pose::Standing;
+        query.size.height = STANDING_HEIGHT;
+    }
+
+    Ok(())
+}
+
+fn set_carried_item(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::SetCarriedItem(slot) = decode_body(body)?;
+
+    // `simulation::inventory` is still written against valence's 763 packets.
+    // The hotbar index is a plain integer in both, so the one-field body is
+    // rebuilt here rather than duplicating the slot bookkeeping; the rest of
+    // that module needs the 776 port before `container_click` can work.
+    handle_update_selected_slot(
+        play::UpdateSelectedSlotC2s {
+            slot: u16::try_from(slot)?,
+        },
+        query,
+    );
+
+    Ok(())
+}
+
+fn swing(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::Swing(hand) = decode_body(body)?;
+
+    query.animation.push(match hand {
+        InteractionHand::MainHand => animation::Kind::SwingMainArm,
+        InteractionHand::OffHand => animation::Kind::SwingOffHand,
+    });
+
+    Ok(())
+}
+
+/// Handles player interaction with items in hand
+///
+/// Common uses:
+/// - Starting to wind up a bow for shooting arrows
+/// - Using consumable items like food or potions
+/// - Throwing items like snowballs or ender pearls
+/// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
+/// - Activating items with duration effects (e.g. chorus fruit teleport)
+fn use_item(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::UseItem = decode_body(body)?;
+    let hand = hand(packet.hand);
+
+    let cursor = &query.inventory.get_cursor().stack;
+
+    if !cursor.is_empty() {
+        if cursor.item == ItemKind::WrittenBook {
+            query
+                .compose
+                .unicast(&play::OpenWrittenBookS2c { hand }, query.io_ref)?;
+        }
+
+        query.events.push(
+            event::ItemInteract {
+                entity: query.id,
+                hand,
+                sequence: packet.sequence,
+            },
+            query.world,
+        );
+    }
+
+    query.handler_registry.trigger(
+        &InteractEvent {
+            hand,
+            sequence: packet.sequence,
+        },
+        query,
+    )
+}
+
+fn use_item_on(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: c2s::UseItemOn = decode_body(body)?;
+
+    query.confirm_block_sequences.push(packet.sequence);
+
+    let hit = packet.block_hit;
+    let interacted = IVec3::new(hit.block_pos.x, hit.block_pos.y, hit.block_pos.z);
+
+    let Some(interacted_block) = query.blocks.get_block(interacted) else {
+        return Ok(());
+    };
+
+    if interacted_block.get(PropName::Open).is_some() {
+        // Toggle the open state of a door
+        // todo: place block instead of toggling door if the player is crouching and holding a
+        // block
+
+        query.events.push(
+            event::ToggleDoor {
+                position: interacted,
+                from: query.id,
+                sequence: packet.sequence,
+            },
+            query.world,
+        );
+
+        return Ok(());
+    }
+
+    // Attempt to place a block
+    let held = &query.inventory.get_cursor().stack;
+
+    if held.is_empty() {
+        return Ok(());
+    }
+
+    let kind = held.item;
+
+    let Some(block_kind) = BlockKind::from_item_kind(kind) else {
+        warn!("invalid item kind to place: {kind:?}");
+        return Ok(());
+    };
+
+    let block_state = BlockState::from_kind(block_kind);
+    let position = interacted + offset(hit.direction);
+
+    // todo(hack): technically players can do some crazy position stuff to abuse this probably
+    let player_aabb = aabb(**query.position, *query.size);
+
+    let collides_player = block_state
+        .collision_shapes()
+        .map(|aabb| {
+            Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position.as_vec3())
+        })
+        .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
+
+    if collides_player {
+        return Ok(());
+    }
+
+    query.events.push(
+        event::PlaceBlock {
+            position,
+            from: query.id,
+            sequence: packet.sequence,
+            block: block_state,
+        },
+        query.world,
+    );
+
+    Ok(())
+}
+
+/// The unit step away from a block face, for placing against it.
+const fn offset(direction: Direction) -> IVec3 {
+    match direction {
+        Direction::Down => IVec3::new(0, -1, 0),
+        Direction::Up => IVec3::new(0, 1, 0),
+        Direction::North => IVec3::new(0, 0, -1),
+        Direction::South => IVec3::new(0, 0, 1),
+        Direction::West => IVec3::new(-1, 0, 0),
+        Direction::East => IVec3::new(1, 0, 0),
+    }
+}
+
+/// The proto crate's hand and valence's are the same two values in the same
+/// order; the events and the clientbound packets still speak valence's.
+const fn hand(hand: InteractionHand) -> Hand {
+    match hand {
+        InteractionHand::MainHand => Hand::Main,
+        InteractionHand::OffHand => Hand::Off,
+    }
 }
 
 // #[instrument(skip_all)]
@@ -178,486 +771,4 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
     });
 
     res.is_break()
-}
-
-fn look_and_on_ground(
-    &play::LookAndOnGroundC2s { yaw, pitch, .. }: &play::LookAndOnGroundC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    **query.yaw = yaw;
-    **query.pitch = pitch;
-
-    Ok(())
-}
-
-fn position_and_on_ground(
-    &play::PositionAndOnGroundC2s {
-        position,
-        on_ground,
-    }: &play::PositionAndOnGroundC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    change_position_or_correct_client(query, position.as_vec3(), on_ground);
-
-    Ok(())
-}
-
-fn chat_command(
-    pkt: &play::CommandExecutionC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    query.events.push(
-        event::Command {
-            raw: pkt.command.0.clone().into_owned(),
-            by: query.id,
-        },
-        query.world,
-    );
-
-    Ok(())
-}
-
-fn hand_swing(
-    &packet: &play::HandSwingC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    match packet.hand {
-        Hand::Main => {
-            query.animation.push(animation::Kind::SwingMainArm);
-        }
-        Hand::Off => {
-            query.animation.push(animation::Kind::SwingOffHand);
-        }
-    }
-
-    Ok(())
-}
-
-#[instrument(skip_all)]
-fn player_interact_entity(
-    packet: &play::PlayerInteractEntityC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    // attack
-    if packet.interact != EntityInteraction::Attack {
-        return Ok(());
-    }
-
-    let target = packet.entity_id.0;
-    let target = Entity::from_minecraft_id(target);
-
-    query.events.push(
-        event::AttackEntity {
-            origin: query.id,
-            target,
-            damage: 1.0,
-        },
-        query.world,
-    );
-
-    Ok(())
-}
-
-pub struct PacketSwitchQuery<'a> {
-    pub id: Entity,
-    pub handler_registry: &'a HandlerRegistry,
-    pub view: EntityView<'a>,
-    pub compose: &'a Compose,
-    pub io_ref: ConnectionId,
-    pub position: &'a mut Position,
-    pub yaw: &'a mut Yaw,
-    pub pitch: &'a mut Pitch,
-    pub size: &'a mut EntitySize,
-    pub world: &'a World,
-    pub blocks: &'a Blocks,
-    pub pose: &'a mut Pose,
-    pub events: &'a Events,
-    pub confirm_block_sequences: &'a mut ConfirmBlockSequences,
-    pub inventory: &'a mut hyperion_inventory::PlayerInventory,
-    pub animation: &'a mut ActiveAnimation,
-    pub crafting_registry: &'a hyperion_crafting::CraftingRegistry,
-}
-
-// i.e., shooting a bow, digging a block, etc
-fn player_action(
-    &packet: &play::PlayerActionC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let sequence = packet.sequence.0;
-    let position = IVec3::new(packet.position.x, packet.position.y, packet.position.z);
-
-    match packet.action {
-        PlayerAction::StartDestroyBlock => {
-            let event = event::StartDestroyBlock {
-                position,
-                from: query.id,
-                sequence,
-            };
-            query.events.push(event, query.world);
-        }
-        PlayerAction::StopDestroyBlock => {
-            let event = event::DestroyBlock {
-                position,
-                from: query.id,
-                sequence,
-            };
-
-            query.events.push(event, query.world);
-        }
-        PlayerAction::ReleaseUseItem => {
-            let event = event::ReleaseUseItem {
-                from: query.id,
-                item: query.inventory.get_cursor().stack.item,
-            };
-
-            query.id.entity_view(query.world).set(HandStates::new(0));
-
-            query.events.push(event, query.world);
-        }
-        action => bail!("unimplemented {action:?}"),
-    }
-
-    // todo: implement
-
-    Ok(())
-}
-
-// for sneaking/crouching/etc
-fn client_command(
-    &packet: &play::ClientCommandC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    match packet.action {
-        ClientCommand::StartSneaking => {
-            *query.pose = Pose::Sneaking;
-            query.size.height = 1.5;
-        }
-        ClientCommand::StopSneaking | ClientCommand::LeaveBed => {
-            *query.pose = Pose::Standing;
-            query.size.height = 1.8;
-        }
-        ClientCommand::StartSprinting => {
-            query.view.get::<&mut MovementTracking>(|tracking| {
-                tracking.sprinting = true;
-            });
-        }
-        ClientCommand::StopSprinting => {
-            query.view.get::<&mut MovementTracking>(|tracking| {
-                tracking.sprinting = false;
-            });
-        }
-        ClientCommand::StartJumpWithHorse
-        | ClientCommand::StopJumpWithHorse
-        | ClientCommand::OpenHorseInventory
-        | ClientCommand::StartFlyingWithElytra => {}
-    }
-
-    Ok(())
-}
-
-/// Handles player interaction with items in hand
-///
-/// Common uses:
-/// - Starting to wind up a bow for shooting arrows
-/// - Using consumable items like food or potions
-/// - Throwing items like snowballs or ender pearls
-/// - Using tools/items with special right-click actions (e.g. fishing rods, shields)
-/// - Activating items with duration effects (e.g. chorus fruit teleport)
-pub fn player_interact_item(
-    &play::PlayerInteractItemC2s { hand, sequence }: &play::PlayerInteractItemC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let event = InteractEvent {
-        hand,
-        sequence: sequence.0,
-    };
-
-    let cursor = &query.inventory.get_cursor().stack;
-
-    if !cursor.is_empty() {
-        let flecs_event = event::ItemInteract {
-            entity: query.id,
-            hand,
-            sequence: sequence.0,
-        };
-        if cursor.item == ItemKind::WrittenBook {
-            let packet = play::OpenWrittenBookS2c { hand };
-            query.compose.unicast(&packet, query.io_ref)?;
-        }
-        query.events.push(flecs_event, query.world);
-    }
-
-    query.handler_registry.trigger(&event, query)?;
-
-    Ok(())
-}
-
-pub fn player_interact_block(
-    &packet: &play::PlayerInteractBlockC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    // PlayerInteractBlockC2s contains:
-    // - hand: Hand (enum: MainHand or OffHand)
-    // - position: BlockPos (x, y, z coordinates of the block)
-    // - face: Direction (enum: Down, Up, North, South, West, East)
-    // - cursor_position: Vec3 (x, y, z coordinates of cursor on the block face)
-    // - inside_block: bool (whether the player's head is inside a block)
-    // - sequence: VarInt (sequence number for this interaction)
-
-    query.confirm_block_sequences.push(packet.sequence.0);
-
-    let interacted_block_pos = packet.position;
-    let interacted_block_pos_vec = IVec3::new(
-        interacted_block_pos.x,
-        interacted_block_pos.y,
-        interacted_block_pos.z,
-    );
-
-    let Some(interacted_block) = query.blocks.get_block(interacted_block_pos_vec) else {
-        return Ok(());
-    };
-
-    if interacted_block.get(PropName::Open).is_some() {
-        // Toggle the open state of a door
-        // todo: place block instead of toggling door if the player is crouching and holding a
-        // block
-
-        query.events.push(
-            event::ToggleDoor {
-                position: interacted_block_pos_vec,
-                from: query.id,
-                sequence: packet.sequence.0,
-            },
-            query.world,
-        );
-    } else {
-        // Attempt to place a block
-
-        let held = &query.inventory.get_cursor().stack;
-
-        if held.is_empty() {
-            return Ok(());
-        }
-
-        let kind = held.item;
-
-        let Some(block_kind) = BlockKind::from_item_kind(kind) else {
-            warn!("invalid item kind to place: {kind:?}");
-            return Ok(());
-        };
-
-        let block_state = BlockState::from_kind(block_kind);
-
-        let position = interacted_block_pos.get_in_direction(packet.face);
-        let position = IVec3::new(position.x, position.y, position.z);
-
-        let position_dvec3 = position.as_vec3();
-
-        // todo(hack): technically players can do some crazy position stuff to abuse this probably
-        let player_aabb = aabb(**query.position, *query.size);
-
-        let collides_player = block_state
-            .collision_shapes()
-            .map(|aabb| {
-                Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position_dvec3)
-            })
-            .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
-
-        if collides_player {
-            return Ok(());
-        }
-
-        query.events.push(
-            event::PlaceBlock {
-                position,
-                from: query.id,
-                sequence: packet.sequence.0,
-                block: block_state,
-            },
-            query.world,
-        );
-    }
-
-    Ok(())
-}
-
-pub fn update_selected_slot(
-    &packet: &play::UpdateSelectedSlotC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    handle_update_selected_slot(packet, query);
-
-    Ok(())
-}
-
-pub fn creative_inventory_action(
-    play::CreativeInventoryActionC2s { slot, clicked_item }: &play::CreativeInventoryActionC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    info!("creative inventory action: {slot} {clicked_item:?}");
-
-    let Ok(slot) = u16::try_from(*slot) else {
-        warn!("invalid slot {slot}");
-        return Ok(());
-    };
-
-    query.inventory.set(slot, clicked_item.clone())?;
-
-    Ok(())
-}
-
-// keywords: inventory
-fn click_slot(
-    pkt: &play::ClickSlotC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    handle_click_slot(pkt, query);
-
-    Ok(())
-}
-
-fn chat_message(
-    pkt: &play::ChatMessageC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let msg = pkt.message.0.clone().into_owned();
-
-    query
-        .events
-        .push(event::ChatMessage { msg, by: query.id }, query.world);
-
-    Ok(())
-}
-
-pub fn request_command_completions(
-    play::RequestCommandCompletionsC2s {
-        transaction_id,
-        text,
-    }: &play::RequestCommandCompletionsC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let completion = CommandCompletionRequest {
-        query: text.0.clone().into_owned(),
-        id: transaction_id.0,
-    };
-
-    query.handler_registry.trigger(&completion, query)?;
-
-    Ok(())
-}
-
-pub fn client_status(
-    pkt: &play::ClientStatusC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let command = ClientStatusEvent {
-        client: query.id,
-        status: match pkt {
-            play::ClientStatusC2s::PerformRespawn => event::ClientStatusCommand::PerformRespawn,
-            play::ClientStatusC2s::RequestStats => event::ClientStatusCommand::RequestStats,
-        },
-    };
-
-    query.handler_registry.trigger(&command, query)?;
-
-    Ok(())
-}
-
-/// The client tells the server which of its own skin layers to render, and the
-/// server has to echo that back as entity metadata or nobody sees them --
-/// including the player themselves in third person. Without this the metadata
-/// keeps its default of 0, so every player appears with the base layer only:
-/// no hat, no jacket, no sleeves.
-pub fn client_settings(
-    pkt: &play::ClientSettingsC2s<'_>,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    // The bitfield's memory layout is already the wire mask the metadata field
-    // expects, so it round-trips without re-deriving each flag.
-    let parts = u8::from(pkt.displayed_skin_parts);
-
-    query
-        .view
-        .set(DisplayedSkinParts::new(parts))
-        .set(MainHand::new(pkt.main_arm as u8));
-
-    Ok(())
-}
-
-pub fn confirm_teleportation(
-    pkt: &play::TeleportConfirmC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let entity = query.id.entity_view(query.world);
-
-    entity.get::<Option<&PendingTeleportation>>(|pending_teleport| {
-        if let Some(pending_teleport) = pending_teleport {
-            if VarInt(pending_teleport.teleport_id) != pkt.teleport_id {
-                return;
-            }
-
-            **query.position = pending_teleport.destination;
-            entity.remove(id::<PendingTeleportation>());
-        }
-    });
-
-    Ok(())
-}
-
-pub fn player_abilities(
-    pkt: &play::UpdatePlayerAbilitiesC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    let entity = query.id.entity_view(query.world);
-
-    entity.get::<&mut Flight>(|flight| match pkt {
-        play::UpdatePlayerAbilitiesC2s::StopFlying => flight.is_flying = false,
-        play::UpdatePlayerAbilitiesC2s::StartFlying => flight.is_flying = flight.allow,
-    });
-    Ok(())
-}
-
-// keywords: inventory
-fn close_handled_screen(
-    _: &play::CloseHandledScreenC2s,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    handle_close_window(query);
-
-    Ok(())
-}
-
-pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
-    registry.add_handler(Box::new(chat_message));
-    registry.add_handler(Box::new(click_slot));
-    registry.add_handler(Box::new(close_handled_screen));
-    registry.add_handler(Box::new(client_command));
-    registry.add_handler(Box::new(client_settings));
-    registry.add_handler(Box::new(client_status));
-    registry.add_handler(Box::new(chat_command));
-    registry.add_handler(Box::new(creative_inventory_action));
-    registry.add_handler(Box::new(full));
-    registry.add_handler(Box::new(hand_swing));
-    registry.add_handler(Box::new(look_and_on_ground));
-    registry.add_handler(Box::new(player_action));
-    registry.add_handler(Box::new(player_interact_block));
-    registry.add_handler(Box::new(player_interact_entity));
-    registry.add_handler(Box::new(player_interact_item));
-    registry.add_handler(Box::new(position_and_on_ground));
-    registry.add_handler(Box::new(request_command_completions));
-    registry.add_handler(Box::new(update_selected_slot));
-    registry.add_handler(Box::new(confirm_teleportation));
-    registry.add_handler(Box::new(player_abilities));
-}
-
-/// Decodes `raw` and runs every handler registered for that packet type.
-///
-/// valence's `feat-bytes` packets own their payload (`Utf8Bytes` and friends are reference-counted
-/// slices of the frame), so the decoded packet is self-contained and no borrow of the frame
-/// outlives this call.
-pub fn packet_switch(
-    raw: BorrowedPacketFrame,
-    query: &mut PacketSwitchQuery<'_>,
-) -> anyhow::Result<()> {
-    query.handler_registry.process_packet(raw, query)
 }
