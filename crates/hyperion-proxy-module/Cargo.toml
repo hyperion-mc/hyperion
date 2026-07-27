@@ -1,4 +1,5 @@
 [dependencies]
+anyhow = { workspace = true }
 hyperion-proxy = { workspace = true }
 hyperion = { workspace = true }
 flecs_ecs = { workspace = true }

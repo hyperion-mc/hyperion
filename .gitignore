@@ -31,4 +31,8 @@ vendor/
 /extractor/run
 /extractor/bin
 .trigger-*
+
+# `nix run .#certs` writes the development certificate authority and both
+# private keys here.
+/certs
 valence/

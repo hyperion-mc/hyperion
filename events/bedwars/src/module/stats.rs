@@ -7,10 +7,13 @@ use hyperion::{
     net::Compose,
     valence_protocol::{packets::play, text::IntoText},
 };
-use tracing::info_span;
+use tracing::{info, info_span};
 
 #[derive(Component)]
 pub struct StatsModule;
+
+/// One console line per second at the 20 Hz tick rate.
+const TICKS_PER_LOG: u32 = 20;
 
 impl Module for StatsModule {
     #[allow(clippy::excessive_nesting)]
@@ -19,6 +22,7 @@ impl Module for StatsModule {
 
         let mut tick_times = Vec::with_capacity(20 * 60); // 20 ticks per second, 60 seconds
         let mut last_frame_time_total = 0.0;
+        let mut ticks_since_log = 0u32;
 
         system!("stats", world, &Compose).each_iter(move |it, _, compose| {
             let span = info_span!("stats");
@@ -57,6 +61,18 @@ impl Module for StatsModule {
             };
 
             compose.broadcast(&pkt).send().unwrap();
+
+            // The tab list carries this already, but an operator watching the
+            // console has no other way to see whether anyone is connected or how
+            // the tick budget is holding up.
+            ticks_since_log += 1;
+            if ticks_since_log >= TICKS_PER_LOG {
+                ticks_since_log = 0;
+                info!(
+                    "{player_count} players online | tick µ/5s {avg_s05:.2} ms, µ/15s \
+                     {avg_s15:.2} ms, µ/1m {avg_s60:.2} ms"
+                );
+            }
         });
     }
 }

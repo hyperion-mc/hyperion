@@ -27,6 +27,17 @@ pub struct LastFireTime {
     pub time: SystemTime,
 }
 
+impl Default for LastFireTime {
+    /// `flecs::With` auto-adds this to every player, and flecs constructs it
+    /// through `Default`, so the default has to mean "has never fired" or a
+    /// freshly joined player would be on cooldown.
+    fn default() -> Self {
+        Self {
+            time: SystemTime::UNIX_EPOCH,
+        }
+    }
+}
+
 impl LastFireTime {
     pub fn now() -> Self {
         Self {
@@ -44,6 +55,16 @@ impl LastFireTime {
 #[derive(Component)]
 pub struct BowCharging {
     pub start_time: SystemTime,
+}
+
+impl Default for BowCharging {
+    /// `flecs::With` auto-adds this to every player, so the default stands for
+    /// "not drawing the bow". It has to read as a draw that just started:
+    /// `SystemTime::UNIX_EPOCH` would clamp to full charge and hand every
+    /// player a free maximum-power shot on their first release.
+    fn default() -> Self {
+        Self::now()
+    }
 }
 
 impl BowCharging {

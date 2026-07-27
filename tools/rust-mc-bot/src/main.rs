@@ -95,20 +95,35 @@ fn main() {
         Address::TCP(server)
     };
 
-    tracing::info!("cpus: {}", config.threads);
-
     let bot_on = Arc::new(AtomicU32::new(0));
 
     if config.bot_count > 0 {
-        let mut threads = Vec::new();
-        for _ in 0..config.threads {
-            let addrs = addrs.clone();
-            let bot_on = bot_on.clone();
-            threads.push(std::thread::spawn(move || {
-                let mut manager = BotManager::create(config.bot_count, addrs, bot_on).unwrap();
-                manager.game_loop();
-            }));
-        }
+        // BOT_BOT_COUNT is the total number of bots, not the number per thread.
+        // The remainder goes to the first threads so the total is exact whatever
+        // the core count is.
+        let thread_count = u32::try_from(config.threads)
+            .unwrap_or(u32::MAX)
+            .clamp(1, config.bot_count);
+        let per_thread = config.bot_count / thread_count;
+        let remainder = config.bot_count % thread_count;
+
+        tracing::info!(
+            "connecting {count} bots to {server} across {thread_count} threads",
+            count = config.bot_count,
+            server = config.server
+        );
+
+        let threads: Vec<_> = (0..thread_count)
+            .map(|index| {
+                let count = per_thread + u32::from(index < remainder);
+                let addrs = addrs.clone();
+                let bot_on = bot_on.clone();
+                std::thread::spawn(move || {
+                    let mut manager = BotManager::create(count, addrs, bot_on).unwrap();
+                    manager.game_loop();
+                })
+            })
+            .collect();
 
         for thread in threads {
             let _unused = thread.join();

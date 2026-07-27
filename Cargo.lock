@@ -3149,6 +3149,7 @@ dependencies = [
 name = "hyperion-proxy-module"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "flecs_ecs",
  "hyperion",
  "hyperion-proxy",
