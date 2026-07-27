@@ -4,8 +4,11 @@ use flecs_ecs::{
     prelude::Module,
 };
 use hyperion::{
-    net::Compose,
-    valence_protocol::{packets::play, text::IntoText},
+    hyperion_minecraft_proto::{
+        generated::packet_id::play::clientbound::PacketId, packets::play::clientbound::TabList,
+        text::Component,
+    },
+    net::{Compose, protocol::Clientbound},
 };
 use tracing::{info, info_span};
 
@@ -55,12 +58,19 @@ impl Module for TabListModule {
 
             let footer = format!("§d§l{player_count} players online");
 
-            let pkt = play::PlayerListHeaderS2c {
-                header: title.into_cow_text(),
-                footer: footer.into_cow_text(),
+            // The components borrow the two strings and the tags borrow the
+            // components, so all four have to outlive the send.
+            let header_text = Component::text(title.as_str());
+            let footer_text = Component::text(footer.as_str());
+            let pkt = TabList {
+                header: header_text.to_tag(),
+                footer: footer_text.to_tag(),
             };
 
-            compose.broadcast(&pkt).send().unwrap();
+            compose
+                .broadcast(Clientbound::new(PacketId::TabList.to_raw(), &pkt))
+                .send()
+                .unwrap();
 
             // The tab list carries this already, but an operator watching the
             // console has no other way to see whether anyone is connected or how
