@@ -361,11 +361,13 @@ silently. Build the module with `-C prefer-dynamic` so it links the hyperion-hot
 dylib rather than its rlib.
 ```
 
-nix makes the compiler half structural rather than conventional. `flake.nix` now derives
-the toolchain from `rust-toolchain.toml` with `fromRustupToolchainFile`, so `nix run
-.#hot-reload-demo` cannot build the host and the modules with different compilers. It
-previously carried a second pin, `nightly-2025-02-22`, which had already drifted from the
-`nightly-2025-05-05` that cargo obeys.
+nix makes the compiler half structural rather than conventional. `flake.nix` derives the
+toolchain from `rust-toolchain.toml` (`rustChannel = (importTOML ./rust-toolchain.toml)
+.toolchain.channel`), so `nix run .#hot-reload-demo` builds the host and every module with
+one compiler by construction rather than by convention. That single-source pin is not this
+work's doing; it landed with the nix apps refactor. It is load-bearing here in a way it is
+not elsewhere, because everywhere else a mismatched compiler produces a rebuild, and here
+it would produce a module whose `String` has a different layout than the host's.
 
 ### What the index repo's module system does and does not lend
 
@@ -407,9 +409,13 @@ Stated plainly, because these are the parts a reader cannot see for themselves.
   `crates/hyperion/` and `events/`, so this runs against a purpose-built demo module. The
   changes those crates would need are: `#[flecs(meta)]` on every reloadable component, and
   an `export_module!` per reloadable module. No change to the runtime crate is required.
-- **`nix flake check` does not pass as a whole.** `packages.default` fails with
-  `A hash was specified for divan-0.1.17, but there is no corresponding git dependency`.
-  This predates this work — it reproduces with these changes stashed — and belongs to the
-  flecs migration, whose `cargoLock.outputHashes` still names `flecs_ecs-0.1.3`.
+- **`nix flake check` does not pass as a whole.** `packages.default` fails during
+  evaluation with `Cargo.lock contains multiple git dependencies with the same
+  name-version: valence_*`, because the workspace pins two branches of the same valence
+  fork and `cargo-unit` cannot vendor both without losing source identity. This predates
+  this work and is unrelated to it: `refactor/flecs`'s own `Cargo.lock` carries the same
+  duplicate entries, and this branch's lock differs from it only by the three new crates.
+  The two hot-reload checks build and pass on their own:
+  `nix build .#checks.<system>.hot-reload-demo .#checks.<system>.hot-reload-registry-guard`.
 - **Only tested on aarch64-darwin.** `build.rs` has a Linux branch using
   `--export-dynamic` instead of ld64's `-exported_symbol`, and it has never been run.
