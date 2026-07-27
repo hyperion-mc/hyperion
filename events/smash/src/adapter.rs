@@ -16,18 +16,21 @@ use std::sync::{Arc, Mutex};
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion::{
-    net::{Compose, ConnectionId, agnostic},
+    hyperion_minecraft_proto::{
+        generated::packet_id::play::clientbound::PacketId,
+        packets::play::{
+            clientbound::{SetActionBarText, SetDisplayObjective, SetTitleText},
+            player::{
+                DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore,
+            },
+        },
+        text::Component,
+    },
+    net::{Compose, ConnectionId, agnostic, protocol::Clientbound},
     simulation::{PendingTeleportation, Velocity, metadata::living_entity::Health},
     valence_protocol::{
         ItemKind, ItemStack, Particle, VarInt,
-        packets::play::{
-            self,
-            game_state_change_s2c::GameEventKind,
-            scoreboard_display_s2c::ScoreboardPosition,
-            scoreboard_objective_update_s2c::{ObjectiveMode, ObjectiveRenderType},
-            scoreboard_player_update_s2c::ScoreboardPlayerUpdateAction,
-        },
-        text::IntoText,
+        packets::play::{self, game_state_change_s2c::GameEventKind},
     },
 };
 use hyperion_inventory::PlayerInventory;
@@ -320,16 +323,26 @@ fn send(compose: &Compose, channel: Channel, text: &str, to: Option<ConnectionId
             dispatch(compose, &chat, to);
         }
         Channel::ActionBar => {
-            let packet = play::OverlayMessageS2c {
-                action_bar_text: text.to_owned().into_cow_text(),
+            let component = Component::text(text);
+            let packet = SetActionBarText {
+                text: component.to_tag(),
             };
-            dispatch(compose, &packet, to);
+            dispatch(
+                compose,
+                Clientbound::new(PacketId::SetActionBarText.to_raw(), &packet),
+                to,
+            );
         }
         Channel::Title => {
-            let packet = play::TitleS2c {
-                title_text: text.to_owned().into_cow_text(),
+            let component = Component::text(text);
+            let packet = SetTitleText {
+                text: component.to_tag(),
             };
-            dispatch(compose, &packet, to);
+            dispatch(
+                compose,
+                Clientbound::new(PacketId::SetTitleText.to_raw(), &packet),
+                to,
+            );
         }
     }
 }
@@ -356,26 +369,41 @@ where
 fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
     const OBJECTIVE: &str = "smash";
 
-    let remove = play::ScoreboardObjectiveUpdateS2c {
-        objective_name: OBJECTIVE.into(),
-        mode: ObjectiveMode::Remove,
+    // `METHOD_REMOVE`, which takes every score with it, so the rows below are
+    // written into an objective the client has just been told is empty.
+    let remove = SetObjective {
+        objective_name: OBJECTIVE,
+        display: None,
+        change: false,
     };
-    let _unused = compose.unicast(&remove, to);
+    let _unused = compose.unicast(
+        Clientbound::new(PacketId::SetObjective.to_raw(), &remove),
+        to,
+    );
 
-    let create = play::ScoreboardObjectiveUpdateS2c {
-        objective_name: OBJECTIVE.into(),
-        mode: ObjectiveMode::Create {
-            objective_display_name: title.to_owned().into_cow_text(),
+    let title_text = Component::text(title);
+    let create = SetObjective {
+        objective_name: OBJECTIVE,
+        display: Some(ObjectiveDisplay {
+            display_name: title_text,
             render_type: ObjectiveRenderType::Integer,
-        },
+            number_format: None,
+        }),
+        change: false,
     };
-    let _unused = compose.unicast(&create, to);
+    let _unused = compose.unicast(
+        Clientbound::new(PacketId::SetObjective.to_raw(), &create),
+        to,
+    );
 
-    let display = play::ScoreboardDisplayS2c {
-        position: ScoreboardPosition::Sidebar,
-        score_name: OBJECTIVE.into(),
+    let display = SetDisplayObjective {
+        id: DisplaySlot::Sidebar.to_id(),
+        objective_name: OBJECTIVE,
     };
-    let _unused = compose.unicast(&display, to);
+    let _unused = compose.unicast(
+        Clientbound::new(PacketId::SetDisplayObjective.to_raw(), &display),
+        to,
+    );
 
     // A sidebar row is keyed by its own text, so two identical rows collapse
     // into one. Padding with a run of colour codes keeps them distinct and
@@ -385,14 +413,14 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
             continue;
         };
         let unique = format!("{line}{}", "§r".repeat(index));
-        let packet = play::ScoreboardPlayerUpdateS2c {
-            entity_name: unique.as_str().into(),
-            action: ScoreboardPlayerUpdateAction::Update {
-                objective_name: OBJECTIVE.into(),
-                objective_score: VarInt(score),
-            },
+        let packet = SetScore {
+            owner: unique.as_str(),
+            objective_name: OBJECTIVE,
+            score,
+            display: None,
+            number_format: None,
         };
-        let _unused = compose.unicast(&packet, to);
+        let _unused = compose.unicast(Clientbound::new(PacketId::SetScore.to_raw(), &packet), to);
     }
 }
 

@@ -1,10 +1,16 @@
 use flecs_ecs::{core::World, prelude::*};
 use hyperion::{
-    net::{Compose, ConnectionId},
+    hyperion_minecraft_proto::{
+        Uuid as ProtoUuid,
+        generated::packet_id::play::clientbound::PacketId,
+        packets::{
+            play::player::{PlayerInfoActions, PlayerInfoEntry, PlayerInfoUpdate},
+            play_login::GameType,
+        },
+    },
+    net::{Compose, ConnectionId, protocol::Clientbound},
     simulation::{Uuid, metadata::entity::EntityFlags},
 };
-use valence_protocol::packets::play::{self, player_list_s2c::PlayerListActions};
-use valence_server::GameMode;
 
 #[derive(Component)]
 pub struct VanishModule;
@@ -41,45 +47,35 @@ impl Module for VanishModule {
             let entity = it.entity(row);
             let world = it.world();
 
-            if vanished.is_vanished() {
-                // Remove from player list and make them invisible
-                let remove_packet = play::PlayerListS2c {
-                    actions: PlayerListActions::new()
-                        .with_update_listed(true)
-                        .with_update_game_mode(true),
-                    entries: vec![play::player_list_s2c::PlayerListEntry {
-                        player_uuid: uuid.0,
-                        listed: false,
-                        game_mode: GameMode::Survival,
-                        ..Default::default()
-                    }]
-                    .into(),
-                };
-                compose.broadcast(&remove_packet).send().unwrap();
+            let listed = !vanished.is_vanished();
 
-                // Set entity flags to make them invisible
-                let flags = EntityFlags::INVISIBLE;
-                entity.entity_view(world).set(flags);
+            // `UPDATE_LISTED` is what hides the row; the game mode rides along
+            // because a client that has never seen this player needs one and
+            // the entry costs a byte either way.
+            let packet = PlayerInfoUpdate {
+                actions: PlayerInfoActions::UPDATE_LISTED
+                    .union(PlayerInfoActions::UPDATE_GAME_MODE),
+                entries: vec![PlayerInfoEntry {
+                    profile_id: ProtoUuid(uuid.0.as_u128()),
+                    listed,
+                    game_mode: GameType::Survival,
+                    ..PlayerInfoEntry::default()
+                }],
+            };
+            compose
+                .broadcast(Clientbound::new(
+                    PacketId::PlayerInfoUpdate.to_raw(),
+                    &packet,
+                ))
+                .send()
+                .unwrap();
+
+            let flags = if listed {
+                EntityFlags::default()
             } else {
-                // Add back to player list and make them visible
-                let add_packet = play::PlayerListS2c {
-                    actions: PlayerListActions::new()
-                        .with_update_listed(true)
-                        .with_update_game_mode(true),
-                    entries: vec![play::player_list_s2c::PlayerListEntry {
-                        player_uuid: uuid.0,
-                        listed: true,
-                        game_mode: GameMode::Survival,
-                        ..Default::default()
-                    }]
-                    .into(),
-                };
-                compose.broadcast(&add_packet).send().unwrap();
-
-                // Clear invisible flag
-                let flags = EntityFlags::default();
-                entity.entity_view(world).set(flags);
-            }
+                EntityFlags::INVISIBLE
+            };
+            entity.entity_view(world).set(flags);
         });
     }
 }

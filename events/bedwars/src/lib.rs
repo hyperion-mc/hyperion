@@ -65,28 +65,37 @@ impl Team {
     }
 }
 
+impl Team {
+    /// The wool colour this team is drawn in, as packed `0xRRGGBB`.
+    #[must_use]
+    pub const fn rgb(self) -> u32 {
+        // Source: <https://minecraft.wiki/w/Wool/DV>
+        // (<https://web.archive.org/web/20231011122724/https://minecraft.wiki/w/Wool/DV>)
+        match self {
+            Self::Black => 0x0014_1519,
+            Self::Blue => 0x0035_399D,
+            Self::Brown => 0x0072_4728,
+            Self::Cyan => 0x0015_8991,
+            Self::Gray => 0x003E_4447,
+            Self::Green => 0x0054_6D1B,
+            Self::LightBlue => 0x003A_AFD9,
+            Self::LightGray => 0x008E_8E86,
+            Self::Lime => 0x0070_B919,
+            Self::Magenta => 0x00BD_44B3,
+            Self::Orange => 0x00F0_7613,
+            Self::Pink => 0x00ED_8DAC,
+            Self::Purple => 0x0079_2AAC,
+            Self::Red => 0x00A1_2722,
+            Self::White => 0x00E9_ECEC,
+            Self::Yellow => 0x00F8_C627,
+        }
+    }
+}
+
 impl From<Team> for valence_text::Color {
     fn from(team: Team) -> Self {
-        // Source: https://minecraft.wiki/w/Wool/DV
-        // (https://web.archive.org/web/20231011122724/https://minecraft.wiki/w/Wool/DV)
-        match team {
-            Team::Black => Self::rgb(0x14, 0x15, 0x19),
-            Team::Blue => Self::rgb(0x35, 0x39, 0x9D),
-            Team::Brown => Self::rgb(0x72, 0x47, 0x28),
-            Team::Cyan => Self::rgb(0x15, 0x89, 0x91),
-            Team::Gray => Self::rgb(0x3E, 0x44, 0x47),
-            Team::Green => Self::rgb(0x54, 0x6D, 0x1B),
-            Team::LightBlue => Self::rgb(0x3A, 0xAF, 0xD9),
-            Team::LightGray => Self::rgb(0x8E, 0x8E, 0x86),
-            Team::Lime => Self::rgb(0x70, 0xB9, 0x19),
-            Team::Magenta => Self::rgb(0xBD, 0x44, 0xB3),
-            Team::Orange => Self::rgb(0xF0, 0x76, 0x13),
-            Team::Pink => Self::rgb(0xED, 0x8D, 0xAC),
-            Team::Purple => Self::rgb(0x79, 0x2A, 0xAC),
-            Team::Red => Self::rgb(0xA1, 0x27, 0x22),
-            Team::White => Self::rgb(0xE9, 0xEC, 0xEC),
-            Team::Yellow => Self::rgb(0xF8, 0xC6, 0x27),
-        }
+        let [_, red, green, blue] = team.rgb().to_be_bytes();
+        Self::rgb(red, green, blue)
     }
 }
 

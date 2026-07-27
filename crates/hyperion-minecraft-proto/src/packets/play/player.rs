@@ -1293,6 +1293,69 @@ impl<'a> Decode<'a> for NumberFormat<'a> {
     }
 }
 
+/// Where an objective is drawn (`DisplaySlot`), as a `VarInt` id.
+///
+/// `ClientboundSetDisplayObjectivePacket.STREAM_CODEC` is
+/// `ByteBufCodecs.idMapper(DisplaySlot::byId, DisplaySlot::id)` and
+/// `DisplaySlot.id` is the constant's declaration index, so the sixteen team
+/// slots have to be spelled out for the three useful ones to land on the right
+/// numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
+pub enum DisplaySlot {
+    /// `list`: beside the player's name in the tab list.
+    #[default]
+    List = 0,
+    /// `sidebar`: the panel on the right of the screen.
+    Sidebar = 1,
+    /// `below_name`: under the player's name tag in the world.
+    BelowName = 2,
+    /// `sidebar.team.black`, shown to players on the black team.
+    TeamBlack = 3,
+    /// `sidebar.team.dark_blue`.
+    TeamDarkBlue = 4,
+    /// `sidebar.team.dark_green`.
+    TeamDarkGreen = 5,
+    /// `sidebar.team.dark_aqua`.
+    TeamDarkAqua = 6,
+    /// `sidebar.team.dark_red`.
+    TeamDarkRed = 7,
+    /// `sidebar.team.dark_purple`.
+    TeamDarkPurple = 8,
+    /// `sidebar.team.gold`.
+    TeamGold = 9,
+    /// `sidebar.team.gray`.
+    TeamGray = 10,
+    /// `sidebar.team.dark_gray`.
+    TeamDarkGray = 11,
+    /// `sidebar.team.blue`.
+    TeamBlue = 12,
+    /// `sidebar.team.green`.
+    TeamGreen = 13,
+    /// `sidebar.team.aqua`.
+    TeamAqua = 14,
+    /// `sidebar.team.red`.
+    TeamRed = 15,
+    /// `sidebar.team.light_purple`.
+    TeamLightPurple = 16,
+    /// `sidebar.team.yellow`.
+    TeamYellow = 17,
+    /// `sidebar.team.white`.
+    TeamWhite = 18,
+}
+
+impl DisplaySlot {
+    /// The wire id, for the `VarInt` slot field of
+    /// [`crate::packets::play::clientbound::SetDisplayObjective`].
+    ///
+    /// That packet is generated, so its field is a plain `i32` rather than
+    /// this enum; going through here is what keeps a caller from writing the
+    /// number out by hand.
+    #[must_use]
+    pub const fn to_id(self) -> i32 {
+        self as i32
+    }
+}
+
 /// How an objective's score is drawn beside a name
 /// (`ObjectiveCriteria.RenderType`), as a `VarInt` ordinal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
