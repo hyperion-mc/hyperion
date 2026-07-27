@@ -182,13 +182,19 @@
                 exit 0
               fi
 
-              openssl req -new -nodes -newkey rsa:4096 -keyout root_ca.pem -x509 \
-                -out root_ca.crt -days 365 -subj "/CN=hyperion dev CA"
+              # genpkey rather than `req -newkey`: the same key, without the two
+              # screens of progress dots `req` writes to stderr.
+              newkey() { openssl genpkey -quiet -algorithm RSA \
+                -pkeyopt rsa_keygen_bits:4096 -out "$1"; }
+
+              newkey root_ca.pem
+              openssl req -new -x509 -key root_ca.pem -out root_ca.crt \
+                -days 365 -subj "/CN=hyperion dev CA"
 
               for name in server proxy; do
-                openssl req -nodes -newkey rsa:4096 \
-                  -keyout "''${name}_private_key.pem" -out "''${name}.csr" \
-                  -subj "/CN=hyperion dev ''${name}"
+                newkey "''${name}_private_key.pem"
+                openssl req -new -key "''${name}_private_key.pem" \
+                  -out "''${name}.csr" -subj "/CN=hyperion dev ''${name}"
                 # The proxy dials the game server over loopback, so the SAN has to
                 # name the literal address it connects to; without it the
                 # handshake fails with "certificate not valid for name".
@@ -204,9 +210,15 @@
             '';
           };
 
-          # Prepended to every runner so a clean checkout starts with one command
-          # and no documented setup step.
+          # `.cargo/config.toml`'s `[env]` only reaches processes cargo itself
+          # starts, and `dev` execs the built binary directly, so without this the
+          # game server logged absolutely nothing.
+          defaultLogLevel = ''export RUST_LOG="''${RUST_LOG:-info}"'';
+
+          # Prepended to the runners that speak mTLS, so a clean checkout starts
+          # with one command and no documented setup step.
           ensureCerts = ''
+            ${defaultLogLevel}
             certs="$(git rev-parse --show-toplevel)/${certDir}"
             "${lib.getExe certs}" "$certs"
           '';
@@ -233,8 +245,8 @@
             bedwars = {
               deps = [ pkgs.git ];
               text = ''
+                ${ensureCerts}
                 if [ "$#" -eq 0 ]; then
-                  ${ensureCerts}
                   set -- \
                     --root-ca-cert "$certs/root_ca.crt" \
                     --cert "$certs/server.crt" \
@@ -248,14 +260,12 @@
               '';
             };
 
-            # rust-mc-bot reads its whole configuration from BOT_-prefixed
-            # environment variables, so the address and count cannot be passed
-            # positionally to the binary.
+            # Bots talk plain Minecraft to the proxy, so they need no certificates.
             bots.text = ''
-              export BOT_SERVER="''${1:-127.0.0.1:25565}"
-              export BOT_BOT_COUNT="''${2:-100}"
+              ${defaultLogLevel}
               ulimit -Sn ${fileDescriptors}
-              exec cargo run --release -p rust-mc-bot
+              exec cargo run --release -p rust-mc-bot -- \
+                "''${1:-127.0.0.1:25565}" "''${2:-100}"
             '';
 
             # One rebuild-and-restart loop for any profile: `nix run .#dev`, or

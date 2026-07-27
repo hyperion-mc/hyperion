@@ -162,13 +162,31 @@ sequenceDiagram
 
 ## Running
 
+### On one machine
+
+```bash
+nix run .#dev
+```
+
+That is the whole of it. `nix run .#dev` generates a throwaway certificate
+authority on first use, starts the game server and the proxy, and rebuilds both
+when you edit `crates/hyperion` or `events/bedwars`. Pass a cargo profile to
+build optimised instead: `nix run .#dev -- release-full`.
+
+Point clients at it with `nix run .#bots -- 127.0.0.1:25565 100`, or join
+`localhost` from a Minecraft 1.20.1 client.
+
+The certificates land in `certs/` and are gitignored. `nix run .#certs` writes
+them on their own; delete the directory to start again. They are for a single
+machine and nothing else: the SANs cover `localhost` and `127.0.0.1`, the CA
+private key sits next to the keys it signed, and none of it should leave the
+checkout.
+
 ### Network topology
 
 Hyperion uses one game server which runs all game-related code (e.g. physics, game events). One or more proxies can connect to the game server. Players connect to one of the proxies.
 
-For development and testing purposes, it is okay to run one game server and one proxy on the same server. When generating keys, you will need to change the key and certificate file names used below to avoid file name conflicts.
-
-On a production environment, the game server and each proxy should run on separate servers for performance.
+On a production environment, the game server and each proxy should run on separate servers for performance. The rest of this section is that setup; skip it if you are only running locally.
 
 ### Generating keys and certificates
 
@@ -222,24 +240,25 @@ Then, transfer `server.crt` to the target server.
 
 `server.crt` is the target server's certificate and `server_private_key.pem` is the target server's private key. When running the game server or the proxy, make sure to pass `--cert server.crt --private-key server_private_key.pem` as a command line flag.
 
-### Without cloning
+### Running the two halves separately
+
+`nix run .#bedwars` is a complete server on its own: it hosts a proxy in the same
+process, on 25565, so players can join straight away. Give it any argument and it
+takes none of the defaults, which is how a deployment passes its own addresses
+and certificates:
 
 ```bash
-nix run github:hyperion-mc/hyperion#bedwars
-nix run github:hyperion-mc/hyperion#hyperion-proxy
+nix run .#bedwars -- \
+  --ip 0.0.0.0 --port 35565 \
+  --root-ca-cert root_ca.crt --cert server.crt --private-key server_private_key.pem
 ```
 
-### From a clone
-
-`nix run .#dev` starts the game server and the proxy together and rebuilds both
-when you edit `crates/hyperion` or `events/bedwars`. Pass a cargo profile to
-build optimised instead: `nix run .#dev -- release-full`.
+Without `--proxy-addr` that runs the game server alone, and a proxy elsewhere
+connects to it:
 
 ```bash
-nix run .#dev
+nix run .#proxy
 ```
-
-Point bots at it with `nix run .#bots -- 127.0.0.1:25565 100`.
 
 ## Development
 
@@ -248,8 +267,9 @@ Every command is a flake app, so nix is the only thing you need installed.
 | Command | Does |
 | --- | --- |
 | `nix run .#dev` | Game server and proxy, rebuilding on change |
+| `nix run .#certs` | Write the development certificate authority and keys |
 | `nix run .#proxy` | Proxy alone, release-full |
-| `nix run .#bedwars` | Game server alone, release-full |
+| `nix run .#bedwars` | Game server with a proxy in-process, release-full |
 | `nix run .#bots -- <ip> <count>` | Connect bots to a running server |
 | `nix run .#ci` | Everything CI runs |
 | `nix run .#fmt` | `cargo fmt`; add `-- --check` to verify only |

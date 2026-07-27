@@ -5230,13 +5230,11 @@ name = "rust-mc-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dotenvy",
- "envy",
+ "clap",
  "libdeflater",
  "mio",
  "num_cpus",
  "rand 0.9.1",
- "serde",
  "tracing",
  "tracing-subscriber",
 ]
