@@ -226,24 +226,17 @@ fn shape(ty: &Type) -> Shape<'_> {
     }
 }
 
-/// Whether the derive has to walk into the type rather than delegate to its
-/// `Encode`/`Decode` impl. It does exactly when a limit has to reach a type
-/// nested inside the field's own.
-const fn limited(options: &attr::Field) -> bool {
-    options.max_len.is_some() || options.max_count.is_some()
-}
-
 fn encode_value(place: &TokenStream, ty: &Type, options: &attr::Field) -> Result<TokenStream> {
     let krate = krate();
     if let Some(path) = &options.with {
         return Ok(quote!(#path::encode(#place, writer)?;));
     }
-    if !limited(options) {
+    if options.reach.is_empty() {
         return Ok(quote!(#krate::Encode::encode(#place, writer)?;));
     }
     // Bound to a name first: the place is an expression like `&self.pages`,
     // and `&self.pages.iter()` would borrow the iterator rather than the field.
-    let body = encode_limited(&quote!(value), ty, options, 0)?;
+    let body = encode_reaching(&quote!(value), ty, options.reach, 0)?;
     Ok(quote! {
         {
             let value = #place;
@@ -252,17 +245,22 @@ fn encode_value(place: &TokenStream, ty: &Type, options: &attr::Field) -> Result
     })
 }
 
-fn encode_limited(
+/// Encode a field by walking into its type until every option has found the
+/// type it describes.
+///
+/// `place` is always a reference, at every depth: the field is borrowed on the
+/// way in, `Option::as_ref` and `slice::iter` keep it so.
+fn encode_reaching(
     place: &TokenStream,
     ty: &Type,
-    options: &attr::Field,
+    reach: attr::Reach,
     depth: usize,
 ) -> Result<TokenStream> {
     let krate = krate();
     match shape(ty) {
         Shape::Option(inner) => {
             let binding = format_ident!("value_{}", depth);
-            let body = encode_limited(&quote!(#binding), inner, options, depth + 1)?;
+            let body = encode_reaching(&quote!(#binding), inner, reach, depth + 1)?;
             Ok(quote! {
                 writer.bool(#place.is_some());
                 if let ::core::option::Option::Some(#binding) = #place.as_ref() {
@@ -272,8 +270,8 @@ fn encode_limited(
         }
         Shape::Vec(inner) => {
             let binding = format_ident!("item_{}", depth);
-            let body = encode_limited(&quote!(#binding), inner, options, depth + 1)?;
-            let max = count_limit(options.max_count);
+            let body = encode_reaching(&quote!(#binding), inner, reach.count_applied(), depth + 1)?;
+            let max = count_limit(reach.max_count);
             Ok(quote! {
                 #krate::codec::write_count(writer, #place.len(), #max)?;
                 for #binding in #place.iter() {
@@ -282,14 +280,24 @@ fn encode_limited(
             })
         }
         Shape::Str => {
-            let max = require_len(options, ty)?;
+            let max = require_len(reach, ty, "a string")?;
             Ok(quote!(writer.string_with_limit(#place, #max)?;))
         }
         Shape::Bytes => {
-            let max = require_len(options, ty)?;
+            let max = require_len(reach, ty, "a byte slice")?;
             Ok(quote!(writer.byte_array_with_limit(#place, #max)?;))
         }
-        Shape::Opaque => Ok(quote!(#krate::Encode::encode(#place, writer)?;)),
+        Shape::Opaque => match reach.encoding {
+            Some(encoding) => {
+                unapplied(reach.encoding_applied(), ty, "an integer")?;
+                let write = format_ident!("{}", encoding_method(encoding));
+                Ok(quote!(writer.#write(*#place);))
+            }
+            None => {
+                unapplied(reach, ty, "a type with a codec of its own")?;
+                Ok(quote!(#krate::Encode::encode(#place, writer)?;))
+            }
+        },
     }
 }
 
@@ -298,17 +306,17 @@ fn decode_value(ty: &Type, options: &attr::Field) -> Result<TokenStream> {
     if let Some(path) = &options.with {
         return Ok(quote!(#path::decode(reader)?));
     }
-    if !limited(options) {
+    if options.reach.is_empty() {
         return Ok(quote!(#krate::Decode::decode(reader)?));
     }
-    decode_limited(ty, options)
+    decode_reaching(ty, options.reach)
 }
 
-fn decode_limited(ty: &Type, options: &attr::Field) -> Result<TokenStream> {
+fn decode_reaching(ty: &Type, reach: attr::Reach) -> Result<TokenStream> {
     let krate = krate();
     match shape(ty) {
         Shape::Option(inner) => {
-            let body = decode_limited(inner, options)?;
+            let body = decode_reaching(inner, reach)?;
             Ok(quote! {
                 if reader.bool()? {
                     ::core::option::Option::Some(#body)
@@ -318,8 +326,8 @@ fn decode_limited(ty: &Type, options: &attr::Field) -> Result<TokenStream> {
             })
         }
         Shape::Vec(inner) => {
-            let body = decode_limited(inner, options)?;
-            let max = count_limit(options.max_count);
+            let body = decode_reaching(inner, reach.count_applied())?;
+            let max = count_limit(reach.max_count);
             // The capacity is clamped to the bytes actually available, because
             // the count is attacker-controlled and every element costs at
             // least one byte.
@@ -337,24 +345,67 @@ fn decode_limited(ty: &Type, options: &attr::Field) -> Result<TokenStream> {
             })
         }
         Shape::Str => {
-            let max = require_len(options, ty)?;
+            let max = require_len(reach, ty, "a string")?;
             Ok(quote!(reader.string_with_limit(#max)?))
         }
         Shape::Bytes => {
-            let max = require_len(options, ty)?;
+            let max = require_len(reach, ty, "a byte slice")?;
             Ok(quote!(reader.byte_array_with_limit(#max)?))
         }
-        Shape::Opaque => Ok(quote!(#krate::Decode::decode(reader)?)),
+        Shape::Opaque => match reach.encoding {
+            Some(encoding) => {
+                unapplied(reach.encoding_applied(), ty, "an integer")?;
+                let read = format_ident!("{}", encoding_method(encoding));
+                Ok(quote!(reader.#read()?))
+            }
+            None => {
+                unapplied(reach, ty, "a type with a codec of its own")?;
+                Ok(quote!(#krate::Decode::decode(reader)?))
+            }
+        },
     }
 }
 
-fn require_len(options: &attr::Field, ty: &Type) -> Result<usize> {
-    options.max_len.ok_or_else(|| {
+/// The `Reader` and `Writer` method for an encoding. They share a name, which
+/// is what lets one lookup serve both directions.
+const fn encoding_method(encoding: attr::Encoding) -> &'static str {
+    match encoding {
+        attr::Encoding::VarInt => "var_int",
+        attr::Encoding::VarLong => "var_long",
+    }
+}
+
+fn require_len(reach: attr::Reach, ty: &Type, leaf: &str) -> Result<usize> {
+    // Whatever else was asked for is reported first: it names a type this
+    // field does not contain, which is the more surprising of the two.
+    unapplied(reach.len_applied(), ty, leaf)?;
+    reach.max_len.ok_or_else(|| {
         syn::Error::new(
             ty.span(),
-            "`max_count` reached a string or byte slice; use `max_len`",
+            format!("this field bottoms out in {leaf}, whose limit is `max_len`"),
         )
     })
+}
+
+/// Refuse an option that reached the bottom of a field without finding the
+/// type it describes.
+///
+/// Dropping one silently would produce a codec that looks constrained and is
+/// not, which is the failure this derive exists to rule out.
+fn unapplied(reach: attr::Reach, ty: &Type, leaf: &str) -> Result<()> {
+    let name = if reach.max_len.is_some() {
+        "`max_len`"
+    } else if reach.max_count.is_some() {
+        "`max_count`"
+    } else if reach.encoding.is_some() {
+        "`varint`/`varlong`"
+    } else {
+        return Ok(());
+    };
+    Err(syn::Error::new(
+        ty.span(),
+        format!("{name} found nothing to apply to: this field bottoms out in {leaf}"),
+    ))
 }
 
 fn count_limit(max: Option<usize>) -> TokenStream {

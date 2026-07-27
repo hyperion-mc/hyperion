@@ -20,7 +20,7 @@ use std::{
 };
 
 use hyperion_minecraft_proto::{
-    Decode, Encode, PROTOCOL_VERSION, Reader, VarInt, Writer,
+    Decode, Encode, PROTOCOL_VERSION, Reader, Writer,
     packets::{
         handshake::serverbound::Intention,
         status::{
@@ -88,7 +88,7 @@ fn status_ping_against_real_server() {
 
     // Handshake, then status request, in one write the way a real client does.
     let handshake = Intention {
-        protocol_version: VarInt(PROTOCOL_VERSION),
+        protocol_version: PROTOCOL_VERSION,
         host_name: host,
         port,
         intention: ClientIntent::Status,
