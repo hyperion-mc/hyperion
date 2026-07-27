@@ -24,7 +24,7 @@ use crate::{
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
     runtime::AsyncRuntime,
     simulation::{
-        AiTargetable, ChunkPosition, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name,
+        AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name,
         PacketState, Player, Uuid, Velocity, Xp, animation::ActiveAnimation,
         entity_kind::EntityKind, metadata::MetadataPrefabs, skin::PlayerSkin,
     },
@@ -170,12 +170,22 @@ fn process_login_hello(world: &World) {
             &MojangClient,
             &CommandChannel,
             &IgnMap,
+            &Comms,
         )>("process_login_hello")
         .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(
             |it,
              _,
-             (queue, compose, runtime, skins_collection, mojang, command_channel, ign_map)| {
+             (
+                queue,
+                compose,
+                runtime,
+                skins_collection,
+                mojang,
+                command_channel,
+                ign_map,
+                comms,
+            )| {
                 let world = it.world();
 
                 for packet in std::mem::take(&mut queue.LoginHello) {
@@ -223,36 +233,30 @@ fn process_login_hello(world: &World) {
                     let skin = if profile_id.is_some() {
                         let mojang = mojang.clone();
                         let skins_collection = skins_collection.clone();
-                        let command_channel = command_channel.clone();
+                        let skins_tx = comms.skins_tx.clone();
 
                         runtime.spawn(async move {
-                            let skin =
-                                match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await
-                                {
-                                    Ok(Some(skin)) => skin,
-                                    Err(e) => {
-                                        error!("failed to get skin {e}. Using empty skin");
-                                        PlayerSkin::EMPTY
-                                    }
-                                    Ok(None) => {
-                                        error!("failed to get skin. Using empty skin");
-                                        PlayerSkin::EMPTY
-                                    }
-                                };
-
-                            command_channel.push(move |world: &World| {
-                                let entity = world.entity_from_id(sender);
-
-                                if !entity.is_alive() {
-                                    warn!(
-                                        "failed to get entity after skin has been fetched (likely \
-                                         because the player has already left the server)"
-                                    );
-                                    return;
+                            let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection)
+                                .await
+                            {
+                                Ok(Some(skin)) => skin,
+                                Err(e) => {
+                                    error!("failed to get skin {e}. Using empty skin");
+                                    PlayerSkin::EMPTY
                                 }
+                                Ok(None) => {
+                                    error!("failed to get skin. Using empty skin");
+                                    PlayerSkin::EMPTY
+                                }
+                            };
 
-                                entity.set(skin);
-                            });
+                            // The join system drains this channel; sending the
+                            // skin is what triggers the world join. Setting it
+                            // on the entity here instead leaves the player
+                            // authenticated but never admitted to the world.
+                            if let Err(e) = skins_tx.send((sender, skin)) {
+                                error!("failed to hand skin to the join system: {e}");
+                            }
                         });
 
                         None
@@ -283,8 +287,10 @@ fn process_login_hello(world: &World) {
                             .add(id::<Player>());
                     });
 
-                    if let Some(skin) = skin {
-                        entity.set(skin);
+                    if let Some(skin) = skin
+                        && let Err(e) = comms.skins_tx.send((entity.id(), skin))
+                    {
+                        error!("failed to hand skin to the join system: {e}");
                     }
 
                     entity.add_enum(PacketState::Play);
