@@ -5,7 +5,7 @@ use flecs_ecs::prelude::*;
 use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span};
 use valence_protocol::{
     Bounded, VarInt,
     packets::{
@@ -18,7 +18,6 @@ use valence_protocol::{
 
 use crate::{
     Prev, Shutdown,
-    command_channel::CommandChannel,
     egress::sync_chunks::ChunkSendQueue,
     ingress::decode::{DecodeModule, queues},
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
@@ -33,13 +32,6 @@ use crate::{
 };
 
 pub mod decode;
-
-/// Hand a player to `player_joins`, which is what sends them the Login packet.
-fn queue_join(comms: &Comms, player: Entity, skin: &PlayerSkin) {
-    if let Err(e) = comms.skins_tx.send((player, skin.clone())) {
-        error!("failed to queue a player for joining: {e}");
-    }
-}
 
 /// This marks players who have already been disconnected and about to be destructed. This component should not be
 /// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
@@ -175,24 +167,12 @@ fn process_login_hello(world: &World) {
             &AsyncRuntime,
             &SkinHandler,
             &MojangClient,
-            &CommandChannel,
             &IgnMap,
             &Comms,
         )>("process_login_hello")
         .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(
-            |it,
-             _,
-             (
-                queue,
-                compose,
-                runtime,
-                skins_collection,
-                mojang,
-                command_channel,
-                ign_map,
-                comms,
-            )| {
+            |it, _, (queue, compose, runtime, skins_collection, mojang, ign_map, comms)| {
                 let world = it.world();
 
                 for packet in std::mem::take(&mut queue.LoginHello) {
@@ -240,7 +220,7 @@ fn process_login_hello(world: &World) {
                     let skin = if profile_id.is_some() {
                         let mojang = mojang.clone();
                         let skins_collection = skins_collection.clone();
-                        let command_channel = command_channel.clone();
+                        let skins_tx = comms.skins_tx.clone();
 
                         runtime.spawn(async move {
                             let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection)
@@ -257,23 +237,13 @@ fn process_login_hello(world: &World) {
                                 }
                             };
 
-                            command_channel.push(move |world: &World| {
-                                let entity = world.entity_from_id(sender);
-
-                                if !entity.is_alive() {
-                                    warn!(
-                                        "failed to get entity after skin has been fetched (likely \
-                                         because the player has already left the server)"
-                                    );
-                                    return;
-                                }
-
-                                // Handing the skin to `player_joins` rather than
-                                // setting it here: that system is what sends the
-                                // Login packet, and it only ever runs for a
-                                // player who arrives down this channel.
-                                world.get::<&Comms>(|comms| queue_join(comms, sender, &skin));
-                            });
+                            // The join system drains this channel; sending the
+                            // skin is what triggers the world join. Setting it
+                            // on the entity here instead leaves the player
+                            // authenticated but never admitted to the world.
+                            if let Err(e) = skins_tx.send((sender, skin)) {
+                                error!("failed to hand skin to the join system: {e}");
+                            }
                         });
 
                         None
@@ -304,12 +274,10 @@ fn process_login_hello(world: &World) {
                             .add(id::<Player>());
                     });
 
-                    // `player_joins` is what sends the Login packet, and it
-                    // reads its work list off this channel. A player who never
-                    // arrives down it authenticates and then waits on "Joining
-                    // world..." forever while the proxy reports them connected.
-                    if let Some(skin) = skin {
-                        queue_join(comms, sender, &skin);
+                    if let Some(skin) = skin
+                        && let Err(e) = comms.skins_tx.send((entity.id(), skin))
+                    {
+                        error!("failed to hand skin to the join system: {e}");
                     }
 
                     entity.add_enum(PacketState::Play);

@@ -38,6 +38,41 @@ pub enum Error {
     },
     /// Bytes remained after decoding a packet that should have consumed all of them.
     TrailingBytes(usize),
+    /// A value nested deeper than the decoder will follow.
+    ///
+    /// An item component can contain an item, so nesting is unbounded on the
+    /// wire and a recursive decoder has to stop before the stack does.
+    DepthLimitExceeded(u32),
+    /// An item stack was empty where the field requires a real stack.
+    EmptyItemStack,
+    /// A tag type byte named no NBT tag, or named `TAG_End` where a value was due.
+    InvalidTagType(u8),
+    /// An NBT value was a bare `TAG_End`, which `ByteBufCodecs.tagCodec` rejects.
+    UnexpectedEndTag,
+    /// NBT nested past `NbtAccounter`'s 512-deep limit.
+    NbtTooDeep,
+    /// An NBT string was malformed modified UTF-8, or held an unpaired surrogate.
+    InvalidModifiedUtf8,
+    /// A codec required a field the value did not carry.
+    MissingField(&'static str),
+    /// A field held a tag of the wrong type for its codec.
+    WrongTagType {
+        /// Field whose value was wrong.
+        field: &'static str,
+        /// Tag type the codec wanted.
+        expected: &'static str,
+        /// Tag type actually present.
+        found: u8,
+    },
+    /// A string discriminant had no meaning in this protocol version.
+    UnknownVariant {
+        /// Name of the type the value was being decoded into.
+        name: &'static str,
+        /// The value that was not recognised.
+        value: String,
+    },
+    /// No alternative in a `FuzzyCodec` matched the fields present.
+    NoMatchingCodec(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -57,6 +92,23 @@ impl fmt::Display for Error {
             Self::InvalidUtf8 => f.write_str("string field was not valid UTF-8"),
             Self::InvalidEnum { name, value } => write!(f, "invalid {name} discriminant: {value}"),
             Self::TrailingBytes(n) => write!(f, "{n} trailing bytes after packet body"),
+            Self::DepthLimitExceeded(max) => write!(f, "value nested deeper than {max} levels"),
+            Self::EmptyItemStack => f.write_str("empty item stack where one was required"),
+            Self::InvalidTagType(id) => write!(f, "invalid NBT tag type: {id}"),
+            Self::UnexpectedEndTag => f.write_str("NBT value was a bare TAG_End"),
+            Self::NbtTooDeep => f.write_str("NBT nested deeper than 512 levels"),
+            Self::InvalidModifiedUtf8 => f.write_str("NBT string was not valid modified UTF-8"),
+            Self::MissingField(name) => write!(f, "missing required field: {name}"),
+            Self::WrongTagType {
+                field,
+                expected,
+                found,
+            } => write!(
+                f,
+                "field {field} should be {expected}, found tag type {found}"
+            ),
+            Self::UnknownVariant { name, value } => write!(f, "invalid {name}: {value}"),
+            Self::NoMatchingCodec(name) => write!(f, "no {name} matched the fields present"),
         }
     }
 }

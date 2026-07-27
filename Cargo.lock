@@ -610,7 +610,6 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-item",
  "hyperion-permission",
- "hyperion-proxy-module",
  "hyperion-utils",
  "rayon",
  "roaring",
@@ -3170,17 +3169,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperion-proxy-module"
-version = "0.1.0"
-dependencies = [
- "flecs_ecs",
- "hyperion",
- "hyperion-proxy",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "hyperion-scheduled"
 version = "0.1.0"
 
@@ -5704,7 +5692,6 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-item",
  "hyperion-permission",
- "hyperion-proxy-module",
  "hyperion-utils",
  "proptest",
  "rayon",

@@ -21,7 +21,6 @@ use std::net::SocketAddr;
 use flecs_ecs::prelude::*;
 use hyperion::{Crypto, GameServerEndpoint, HyperionCore};
 use hyperion_clap::hyperion_command::CommandRegistry;
-use hyperion_proxy_module::{HyperionProxyModule, ProxyAddress, ProxyCerts};
 
 use crate::module::{
     ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
@@ -89,12 +88,6 @@ impl Module for SmashHost {
     }
 }
 
-/// A proxy to run inside the game-server process.
-pub struct EmbeddedProxy {
-    pub listen: String,
-    pub certs: ProxyCerts,
-}
-
 /// Build the world and run it. The entry point `main.rs` calls.
 ///
 /// `embedded_proxy` asks for a proxy inside this process, listening on that
@@ -105,24 +98,11 @@ pub struct EmbeddedProxy {
 ///
 /// # Errors
 /// If the thread count does not fit in the `i32` flecs wants.
-pub fn init_game(
-    address: SocketAddr,
-    embedded_proxy: Option<EmbeddedProxy>,
-    crypto: Crypto,
-) -> Result<(), std::num::TryFromIntError> {
+pub fn init_game(address: SocketAddr, crypto: Crypto) -> Result<(), std::num::TryFromIntError> {
     let world = World::new();
 
     world.import::<HyperionCore>();
     world.import::<SmashHost>();
-
-    if let Some(proxy) = embedded_proxy {
-        world.import::<HyperionProxyModule>();
-        world.set(ProxyAddress {
-            proxy: proxy.listen,
-            server: address.to_string(),
-            certs: proxy.certs,
-        });
-    }
 
     world.set(crypto);
     world.set(GameServerEndpoint::from(address));

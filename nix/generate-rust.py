@@ -1,9 +1,14 @@
 """Generate the Rust protocol tables for hyperion-minecraft-proto.
 
-Only facts that came out of Mojang's own data are emitted here: the protocol
-number, the packet id tables, and the registries. Wire codecs are deliberately
-not generated -- see docs/minecraft-26.2-migration.md for why that is a design
-decision rather than an omission.
+Everything here is a fact read out of Mojang's own data: the protocol number,
+the packet id tables, the registries, the data component types an item can
+carry, and the wire layout of each packet and component whose codec the
+extractor could follow all the way to the bytes.
+
+Layouts that could not be followed are absent rather than approximated. The
+accessors return Option and the generator refuses to run on a wire kind it has
+no variant for, so a layout that comes out of the generated tables is one whose
+whole byte sequence is known.
 
 Mojang's names are used verbatim, because as of 26.1 they are the real names
 rather than a community mapping, and matching them makes every generated symbol
@@ -15,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import keyword
+import re
 from pathlib import Path
 
 HEADER = """\
@@ -41,6 +47,25 @@ def screaming(name: str) -> str:
     return snake(name).upper()
 
 
+def grouped_arms(arms: list[tuple[str, str]], indent: str) -> str:
+    """Render match arms, merging the ones that share a body.
+
+    Two components that reuse the same codec produce the same arm, and
+    clippy::match_same_arms rejects that, so equal bodies are merged into one
+    pattern in first-appearance order.
+    """
+    order: list[str] = []
+    patterns: dict[str, list[str]] = {}
+    for pattern, body in arms:
+        if body not in patterns:
+            patterns[body] = []
+            order.append(body)
+        patterns[body].append(pattern)
+    return "".join(
+        "{}{} => {},\n".format(indent, " | ".join(patterns[body]), body) for body in order
+    )
+
+
 def emit_version(doc: dict) -> str:
     v = doc["version"]
     body = [
@@ -58,7 +83,7 @@ def emit_version(doc: dict) -> str:
     return HEADER.format(version=v["id"], protocol=v["protocolVersion"]) + "\n".join(body)
 
 
-def emit_packet_ids(doc: dict) -> str:
+def emit_packet_ids(doc: dict, emitter: WireEmitter) -> str:
     v = doc["version"]
     out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"])]
     out.append("""
@@ -95,7 +120,7 @@ pub enum Direction {
             packets = sorted(by_key.get((state, direction), []), key=lambda p: p["protocolId"])
             if not packets:
                 continue
-            mods.append(emit_enum(state, direction, packets))
+            mods.append(emit_enum(state, direction, packets, emitter))
         if mods:
             out.append("pub mod {} {{\n".format(state))
             out.append("\n".join(mods))
@@ -103,9 +128,10 @@ pub enum Direction {
     return "".join(out)
 
 
-def emit_enum(state: str, direction: str, packets: list[dict]) -> str:
+def emit_enum(state: str, direction: str, packets: list[dict], emitter: WireEmitter) -> str:
     lines = ["    /// `{}` packets sent {}.\n".format(state, direction)]
     lines.append("    pub mod {} {{\n".format(direction))
+    lines.append("")
     lines.append("""        /// Numeric packet id for the `{state}` / `{direction}` channel.
         ///
         /// Discriminants are the on-wire ids taken from Mojang's data
@@ -166,6 +192,29 @@ def emit_enum(state: str, direction: str, packets: list[dict]) -> str:
     for p in packets:
         cls = 'Some("{}")'.format(p["javaClass"]) if p["javaClass"] else "None"
         lines.append("                    Self::{} => {},\n".format(pascal(p["resource"]), cls))
+    lines.append("""                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+""")
+    layout_arms: list[tuple[str, str]] = []
+    for p in packets:
+        if not p["complete"]:
+            continue
+        hint = "{}_{}_{}".format(state, direction, p["resource"])
+        layout_arms.append(
+            ("Self::" + pascal(p["resource"]), "Some({})".format(emitter.reference(hint, p["wire"]))))
+    lines.append(grouped_arms(layout_arms, " " * 20))
+    # A catch-all rather than a None arm per packet, since those arms would be
+    # identical and clippy::match_same_arms rejects that; omitted entirely when
+    # every packet in the channel has a layout, or it is unreachable.
+    if len(layout_arms) != len(packets):
+        lines.append("                    _ => None,\n")
     lines.append("""                }
             }
         }
@@ -230,14 +279,20 @@ def emit_mod(doc: dict) -> str:
     return HEADER.format(version=v["id"], protocol=v["protocolVersion"]) + """
 //! Tables generated from Mojang's own data for this protocol version.
 //!
-//! Nothing in here is hand-written, and nothing in here encodes a wire layout:
-//! layouts live in the hand-written codec modules alongside this one.
+//! Nothing in here is hand-written. [`wire`] carries the layouts the extractor
+//! could read off the server's own stream codecs; where it could not, the
+//! layout is absent rather than approximated, and the hand-written codec
+//! modules alongside this one cover the difference.
 
+pub mod data_component;
 pub mod packet_id;
 pub mod registry;
 pub mod version;
+pub mod wire;
 
+pub use data_component::DataComponent;
 pub use version::{MINECRAFT_VERSION, PROTOCOL_VERSION, WORLD_VERSION};
+pub use wire::{Field, Wire};
 """
 
 
@@ -250,16 +305,441 @@ def main() -> int:
     doc = json.loads(args.protocol.read_text())
     args.out.mkdir(parents=True, exist_ok=True)
 
+    # One emitter across both files: a codec shared by a packet and a data
+    # component is hoisted into a single static rather than written twice.
+    emitter = WireEmitter(doc["types"])
     written = {
         "mod.rs": emit_mod(doc),
         "version.rs": emit_version(doc),
-        "packet_id.rs": emit_packet_ids(doc),
+        "packet_id.rs": emit_packet_ids(doc, emitter),
         "registry.rs": emit_registries(doc),
+        "data_component.rs": emit_data_components(doc, emitter),
+        # Last, so every static the other files reference has been collected.
+        "wire.rs": emit_wire(doc, emitter),
     }
     for name, text in written.items():
         (args.out / name).write_text(text)
         print("{}: {} bytes".format(name, len(text)))
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Wire layouts
+#
+# Only layouts the extractor resolved all the way down are emitted, and the
+# accessors return Option, so there is no way to get a layout back that is
+# quietly missing a field. A packet or component whose codec branches on a
+# runtime value simply has no layout here.
+# ---------------------------------------------------------------------------
+
+# Extractor wire kind -> Rust variant. A kind with no entry is a build failure
+# rather than a silent omission: emitting an Unknown variant for it would hand
+# callers a layout that looks usable and is short.
+WIRE_VARIANTS: dict[str, str] = {
+    "unit": "crate::generated::wire::Wire::Unit",
+    "bool": "crate::generated::wire::Wire::Bool",
+    "i8": "crate::generated::wire::Wire::I8",
+    "i16": "crate::generated::wire::Wire::I16",
+    "i32": "crate::generated::wire::Wire::I32",
+    "i64": "crate::generated::wire::Wire::I64",
+    "u16": "crate::generated::wire::Wire::U16",
+    "f32": "crate::generated::wire::Wire::F32",
+    "f64": "crate::generated::wire::Wire::F64",
+    "varint": "crate::generated::wire::Wire::VarInt",
+    "varlong": "crate::generated::wire::Wire::VarLong",
+    "uuid": "crate::generated::wire::Wire::Uuid",
+    "block_pos": "crate::generated::wire::Wire::BlockPos",
+    "chunk_pos": "crate::generated::wire::Wire::ChunkPos",
+    "block_hit_result": "crate::generated::wire::Wire::BlockHitResult",
+    "identifier": "crate::generated::wire::Wire::Identifier",
+    "nbt": "crate::generated::wire::Wire::Nbt",
+    "optional_nbt": "crate::generated::wire::Wire::OptionalNbt",
+    "long_array": "crate::generated::wire::Wire::LongArray",
+    "varint_array": "crate::generated::wire::Wire::VarIntArray",
+}
+
+
+def rust_ident(key: str) -> str:
+    """`net.minecraft.world.phys.Vec3#STREAM_CODEC` -> a static's name.
+
+    The whole Java path is kept so the name cannot collide and so a reader can
+    grep the generated static straight back to the class it came from.
+    """
+    return re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_").upper()
+
+
+# Statics and variants are written out fully qualified. The generated files
+# reference each other, and a `use` that turns out unused in one of them is a
+# denied lint, so the path is spelled rather than imported conditionally.
+WIRE_PATH = "crate::generated::wire"
+
+
+def rust_int(value: int) -> str:
+    """262144 -> 262_144, which is what clippy::pedantic insists on."""
+    text = str(value)
+    groups = []
+    while len(text) > 3:
+        groups.insert(0, text[-3:])
+        text = text[:-3]
+    groups.insert(0, text)
+    return "_".join(groups)
+
+
+def option_u32(value: object) -> str:
+    return "None" if value is None else "Some({})".format(rust_int(int(value)))
+
+
+class WireEmitter:
+    """Renders resolved wire types, hoisting named codecs into statics."""
+
+    def __init__(self, types: dict[str, dict]) -> None:
+        self.types = types
+        self.emitted: dict[str, str] = {}
+        self.order: list[str] = []
+
+    def reference(self, hint: str, wire: dict) -> str:
+        """A `&'static Wire` for a top-level layout.
+
+        Always a static, never an inline literal: a `const fn` cannot return a
+        reference to a temporary, so a layout that is a bare struct rather than
+        a named codec still needs somewhere to live.
+        """
+        if wire["kind"] == "named":
+            return self.expr(wire)
+        name = "LAYOUT_{}".format(rust_ident(hint))
+        if name not in self.emitted.values():
+            self.order.append("/// Layout of `{}`.\npub(crate) static {}: Wire = {};\n".format(
+                hint, name, self.value(wire)))
+            self.emitted["layout:" + hint] = name
+        return "&{}::{}".format(WIRE_PATH, name)
+
+    def expr(self, wire: dict) -> str:
+        """A `&'static Wire` expression, emitting any statics it needs."""
+        if wire["kind"] == "named":
+            return "&{}::{}".format(WIRE_PATH, self.static_for(wire["ref"]))
+        return "&{}".format(self.value(wire))
+
+    def value(self, wire: dict) -> str:
+        kind = wire["kind"]
+        if kind in WIRE_VARIANTS:
+            return WIRE_VARIANTS[kind]
+        if kind == "string":
+            return "crate::generated::wire::Wire::Str {{ max: {} }}".format(option_u32(wire.get("max")))
+        if kind == "byte_array":
+            return "crate::generated::wire::Wire::ByteArray {{ max: {} }}".format(option_u32(wire.get("max")))
+        if kind == "registry_id":
+            return 'crate::generated::wire::Wire::RegistryId {{ registry: "{}" }}'.format(wire["registry"])
+        if kind == "holder_set":
+            return 'crate::generated::wire::Wire::HolderSet {{ registry: "{}" }}'.format(wire["registry"])
+        if kind == "holder":
+            return 'crate::generated::wire::Wire::Holder {{ registry: "{}", direct: {} }}'.format(
+                wire["registry"], self.expr(wire["of"]))
+        if kind == "option":
+            return "crate::generated::wire::Wire::Optional({})".format(self.expr(wire["of"]))
+        if kind == "list":
+            return "crate::generated::wire::Wire::List {{ element: {}, max: {} }}".format(
+                self.expr(wire["of"]), option_u32(wire.get("max")))
+        if kind == "length_prefixed":
+            return "crate::generated::wire::Wire::LengthPrefixed {{ value: {}, max: {} }}".format(
+                self.expr(wire["of"]), option_u32(wire.get("max")))
+        if kind == "map":
+            return "crate::generated::wire::Wire::Map {{ key: {}, value: {} }}".format(
+                self.expr(wire["key"]), self.expr(wire["value"]))
+        if kind == "either":
+            return "crate::generated::wire::Wire::Either {{ left: {}, right: {} }}".format(
+                self.expr(wire["left"]), self.expr(wire["right"]))
+        if kind == "struct":
+            members = ", ".join(
+                'crate::generated::wire::Field {{ name: "{}", wire: {} }}'.format(f["name"], self.expr(f["wire"]))
+                for f in wire["fields"])
+            return "crate::generated::wire::Wire::Struct(&[{}])".format(members)
+        raise SystemExit("generate-rust.py has no Rust variant for wire kind {!r}".format(kind))
+
+    def static_for(self, ref: str) -> str:
+        name = self.emitted.get(ref)
+        if name is not None:
+            return name
+        # A codec that is just another codec under a new name shares its
+        # static: `static A: Wire = B;` is not a thing Rust will accept, and
+        # duplicating the body would hide the sharing.
+        alias = ref
+        while self.types[alias]["kind"] == "named" and self.types[alias]["ref"] != alias:
+            alias = self.types[alias]["ref"]
+        if alias != ref:
+            name = self.static_for(alias)
+            self.emitted[ref] = name
+            return name
+        name = rust_ident(ref)
+        # Recorded before rendering so a self-referential codec terminates.
+        self.emitted[ref] = name
+        body = self.value(self.types[ref])
+        # pub(crate): the accessors handing out references to these live in
+        # sibling modules, but the name itself is not part of the API.
+        self.order.append(
+            "/// `{}`\npub(crate) static {}: Wire = {};\n".format(ref, name, body))
+        return name
+
+
+WIRE_PREAMBLE = """
+//! Wire layouts read off the server's own stream codecs.
+//!
+//! A layout is only present when the extractor followed it all the way to the
+//! bytes, and every accessor returns `Option`. Anything whose encoder branches
+//! on a runtime value has no entry here, so a layout obtained from this module
+//! is complete by construction rather than by convention.
+
+/// One field of a [`Wire::Struct`], in the order it appears on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Field {
+    /// Mojang's own name for the field, from the record component or getter.
+    pub name: &'static str,
+    /// Layout of the field's value.
+    pub wire: &'static Wire,
+}
+
+/// The layout of a value on the wire.
+///
+/// Variants name what the server writes rather than how a Rust value is
+/// shaped: a registry id and a plain `VarInt` are different variants because
+/// they mean different things, while a signed and an unsigned 16-bit read are
+/// the same two bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Wire {
+    /// Occupies no bytes.
+    Unit,
+    /// One byte, zero or one.
+    Bool,
+    /// Signed byte.
+    I8,
+    /// Big-endian signed 16-bit.
+    I16,
+    /// Big-endian unsigned 16-bit.
+    U16,
+    /// Big-endian signed 32-bit.
+    I32,
+    /// Big-endian signed 64-bit.
+    I64,
+    /// Big-endian IEEE 754 single.
+    F32,
+    /// Big-endian IEEE 754 double.
+    F64,
+    /// Variable-length signed 32-bit, seven bits per byte.
+    VarInt,
+    /// Variable-length signed 64-bit, seven bits per byte.
+    VarLong,
+    /// Two big-endian 64-bit halves, most significant first.
+    Uuid,
+    /// One 64-bit word packing x, z and y as 26, 26 and 12 bits.
+    BlockPos,
+    /// One 64-bit word packing two 32-bit chunk coordinates.
+    ChunkPos,
+    /// A block position, a face, three fractional offsets and two flags.
+    BlockHitResult,
+    /// A namespaced name written as a length-prefixed UTF-8 string.
+    Identifier,
+    /// A network NBT tag: a type byte then the payload, with no name.
+    Nbt,
+    /// A network NBT tag where `TAG_End` means the value is absent.
+    OptionalNbt,
+    /// A `VarInt` count, then that many big-endian 64-bit words.
+    LongArray,
+    /// A `VarInt` count, then that many `VarInt`s.
+    VarIntArray,
+    /// A `VarInt` byte count, then that many bytes.
+    ByteArray {
+        /// Largest byte count the server accepts.
+        max: Option<u32>,
+    },
+    /// A `VarInt` length, then that many bytes of UTF-8.
+    Str {
+        /// Largest length the server accepts, in UTF-16 code units.
+        max: Option<u32>,
+    },
+    /// A `VarInt` index into a synced registry.
+    RegistryId {
+        /// Registry the index is scoped to, e.g. `minecraft:item`.
+        registry: &'static str,
+    },
+    /// A `VarInt`: zero then a tag name, otherwise a count plus one followed
+    /// by that many registry ids.
+    HolderSet {
+        /// Registry the members belong to.
+        registry: &'static str,
+    },
+    /// A `VarInt`: zero then an inline value, otherwise a registry id plus one.
+    Holder {
+        /// Registry the id is scoped to.
+        registry: &'static str,
+        /// Layout written when the value is inline rather than referenced.
+        direct: &'static Wire,
+    },
+    /// A boolean, then the value when it is present.
+    Optional(&'static Wire),
+    /// A `VarInt` count, then that many elements.
+    List {
+        /// Layout of one element.
+        element: &'static Wire,
+        /// Largest count the server accepts.
+        max: Option<u32>,
+    },
+    /// A `VarInt` byte length, then the value within it.
+    LengthPrefixed {
+        /// Layout of the value inside the length.
+        value: &'static Wire,
+        /// Largest byte length the server accepts.
+        max: Option<u32>,
+    },
+    /// A `VarInt` count, then that many key and value pairs.
+    Map {
+        /// Layout of a key.
+        key: &'static Wire,
+        /// Layout of a value.
+        value: &'static Wire,
+    },
+    /// A boolean selecting which of two layouts follows; true selects `left`.
+    Either {
+        /// Layout written when the discriminant is true.
+        left: &'static Wire,
+        /// Layout written when the discriminant is false.
+        right: &'static Wire,
+    },
+    /// Fields written back to back with nothing between them.
+    Struct(&'static [Field]),
+}
+
+impl Wire {
+    /// Whether the layout is a single value with no nested structure.
+    ///
+    /// A scalar can be read and written without walking the tree, which is
+    /// what most of an item's data components turn out to be.
+    #[must_use]
+    pub const fn is_scalar(&self) -> bool {
+        !matches!(
+            self,
+            Self::Struct(_)
+                | Self::List { .. }
+                | Self::Map { .. }
+                | Self::Either { .. }
+                | Self::Optional(_)
+                | Self::LengthPrefixed { .. }
+                | Self::Holder { .. }
+        )
+    }
+}
+"""
+
+
+def emit_wire(doc: dict, emitter: WireEmitter) -> str:
+    v = doc["version"]
+    return (
+        HEADER.format(version=v["id"], protocol=v["protocolVersion"])
+        + WIRE_PREAMBLE
+        + "\n"
+        + "\n".join(emitter.order)
+    )
+
+
+def emit_data_components(doc: dict, emitter: WireEmitter) -> str:
+    """The data component registry: ids, names and value layouts.
+
+    An `ItemStack` on the wire is an item id, a count and a patch over this
+    registry, so every component's layout is part of the item layout. Ids come
+    from Mojang's registry report and are cross-checked in the extractor
+    against the order the server registers them in.
+    """
+    v = doc["version"]
+    components = doc["dataComponents"]
+    known = sum(1 for c in components if c["complete"])
+    layouts = {
+        c["name"]: emitter.reference(c["name"], c["wire"]) for c in components if c["complete"]
+    }
+
+    out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"])]
+    out.append("""
+//! Data component types an item stack can carry.
+//!
+//! {known} of the {total} components have a layout the extractor could follow
+//! to the bytes; the rest have codecs that branch on a runtime type, and
+//! [`DataComponent::layout`] returns `None` for those rather than a guess.
+
+/// A vanilla data component type.
+///
+/// Discriminants are the network ids from `minecraft:data_component_type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum DataComponent {{
+""".format(known=known, total=len(components)))
+    for index, c in enumerate(components):
+        out.append("    /// `{}`\n".format(c["name"]))
+        out.append("    {} = {},\n".format(pascal(c["name"]), index))
+    out.append("}\n\n")
+
+    out.append("impl DataComponent {\n")
+    out.append("    /// Every component, in network id order.\n")
+    out.append("    pub const ALL: &'static [Self] = &[\n")
+    for c in components:
+        out.append("        Self::{},\n".format(pascal(c["name"])))
+    out.append("    ];\n\n")
+
+    out.append("""    /// Numeric id as written on the wire.
+    #[must_use]
+    pub const fn to_raw(self) -> i32 {
+        self as i32
+    }
+
+    /// Resolve an on-wire id, returning `None` for ids this version does not
+    /// define.
+    #[must_use]
+    pub const fn from_raw(id: i32) -> Option<Self> {
+        match id {
+""")
+    for index, c in enumerate(components):
+        out.append("            {} => Some(Self::{}),\n".format(index, pascal(c["name"])))
+    out.append("""            _ => None,
+        }
+    }
+
+    /// Mojang resource name, e.g. `minecraft:custom_data`.
+    #[must_use]
+    pub const fn resource(self) -> &'static str {
+        match self {
+""")
+    for c in components:
+        out.append('            Self::{} => "{}",\n'.format(pascal(c["name"]), c["name"]))
+    out.append("""        }
+    }
+
+    /// Layout of the component's value, or `None` where the server's own
+    /// codec branches on a runtime type and no fixed layout exists.
+    #[must_use]
+    pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+        match self {
+""")
+    out.append(grouped_arms(
+        [("Self::" + pascal(c["name"]), "Some({})".format(layouts[c["name"]]))
+         for c in components if c["name"] in layouts],
+        " " * 12))
+    if len(layouts) != len(components):
+        out.append("            _ => None,\n")
+    out.append("""        }
+    }
+
+    /// Whether the value is a single scalar with no nested structure.
+    ///
+    /// False for components with no known layout as well as for structured
+    /// ones, so a caller that only handles scalars can branch on this alone.
+    #[must_use]
+    pub const fn is_scalar(self) -> bool {
+        match self.layout() {
+            Some(wire) => wire.is_scalar(),
+            None => false,
+        }
+    }
+}
+""")
+    return "".join(out)
 
 
 if __name__ == "__main__":

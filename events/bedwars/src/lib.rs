@@ -9,7 +9,6 @@ use flecs_ecs::prelude::*;
 use hyperion::{Crypto, GameServerEndpoint, HyperionCore, simulation::Player, spatial};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
-use hyperion_proxy_module::{HyperionProxyModule, ProxyAddress};
 use valence_text::IntoText;
 
 use crate::{
@@ -152,13 +151,7 @@ pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
     let world = World::new();
 
     world.import::<HyperionCore>();
-    world.import::<HyperionProxyModule>();
     world.import::<BedwarsModule>();
-
-    world.set(ProxyAddress {
-        server: address.to_string(),
-        ..ProxyAddress::default()
-    });
 
     world.set(crypto);
     world.set(GameServerEndpoint::from(address));
