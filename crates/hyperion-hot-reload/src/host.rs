@@ -79,7 +79,7 @@ impl Default for HotReloader {
 
 impl HotReloader {
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             loaded: BTreeMap::new(),
             retained: Vec::new(),

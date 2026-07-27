@@ -136,7 +136,7 @@ fn members_of(ty: EntityView<'_>) -> Vec<(String, sys::ecs_entity_t, i32, i32)> 
             return;
         }
         child.get::<&flecs::meta::Member>(|m| {
-            out.push((child.name().to_string(), m.type_, m.offset, m.count));
+            out.push((child.name(), m.type_, m.offset, m.count));
         });
     });
     // flecs stores members as child entities and does not promise an order.
@@ -154,7 +154,7 @@ fn constants_of(ty: EntityView<'_>) -> Vec<String> {
         if child.has(<flecs::meta::Member as FlecsConstantId>::ID) {
             return;
         }
-        out.push((*child.id(), child.name().to_string()));
+        out.push((*child.id(), child.name()));
     });
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out.into_iter().map(|(_, name)| name).collect()
@@ -193,7 +193,7 @@ fn flatten(
     if has_kind(ty, unsafe { sys::FLECS_IDEcsPrimitiveID_ }) {
         out.push(FieldSchema {
             name: prefix.to_owned(),
-            type_name: ty.symbol().to_string(),
+            type_name: ty.symbol(),
             offset: base,
             size,
             count: 0,
@@ -259,7 +259,7 @@ pub fn read_component_schema(
     // The symbol, not the path: importing a module re-parents its components underneath
     // the module entity, so the path is not stable identity. See `ComponentSchema::name`.
     let name = {
-        let symbol = component.symbol().to_string();
+        let symbol = component.symbol();
         if symbol.is_empty() {
             component
                 .path()

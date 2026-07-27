@@ -93,6 +93,24 @@
             };
 
           checkScripts = lib.mapAttrs mkScript {
+            # `flecs_ecs_sys`'s default features include `regenerate_binding`,
+            # whose build script writes bindgen output into its own source
+            # directory -- inside the shared cargo registry every checkout on
+            # the machine reads. Cargo unifies features across the graph, so one
+            # dependency pulling the sys crate with default features corrupts
+            # that copy for everyone. `flecs_ecs` sets default-features = false;
+            # this fails the moment anything reintroduces them. See ENG-10307.
+            hot-reload-registry-guard.text = ''
+              tree=$(cargo tree -p hyperion-hot-reload -e features -i flecs_ecs_sys)
+              if grep -q 'regenerate_binding' <<<"$tree"; then
+                echo "FAIL: flecs_ecs_sys resolved with regenerate_binding." >&2
+                echo "Its build script writes into the shared cargo registry." >&2
+                grep -n 'regenerate_binding' <<<"$tree" >&2
+                exit 1
+              fi
+              echo "ok: flecs_ecs_sys has no regenerate_binding in the resolved graph"
+            '';
+
             fmt.text = ''cargo fmt --all "$@"'';
 
             lint.text = ''cargo clippy ${clippyArgs} -- -D warnings'';
@@ -161,6 +179,17 @@
           };
 
           runners = lib.mapAttrs mkScript {
+            # Builds four successive versions of the demo game module and drives
+            # one running world through all of them. Being a nix app is what
+            # makes the single-compiler precondition structural rather than a
+            # convention: `repr(Rust)` has no stable ABI, so a host and a module
+            # built by different rustc versions disagree about the layout of
+            # every type they share.
+            hot-reload-demo = {
+              deps = [ pkgs.cmake pkgs.pkg-config ];
+              text = ''exec ./crates/hyperion-hot-reload/demo.sh "$@"'';
+            };
+
             proxy.text = ''
               ulimit -Sn ${fileDescriptors}
               exec cargo run --profile release-full --bin hyperion-proxy -- \

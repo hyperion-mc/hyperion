@@ -35,15 +35,15 @@ fn module(components: Vec<ComponentSchema>) -> ModuleManifest {
 }
 
 /// Stands in for a world that holds data for every component.
-fn has_data(_: &str) -> bool {
+const fn has_data(_: &str) -> bool {
     true
 }
 
-fn no_data(_: &str) -> bool {
+const fn no_data(_: &str) -> bool {
     false
 }
 
-fn noop_migration(_: &[u8], _: &mut [u8]) {}
+const fn noop_migration(_: &[u8], _: &mut [u8]) {}
 
 #[test]
 fn identical_schemas_keep_their_data() {

@@ -71,7 +71,7 @@ fn schema_of<T: ComponentId + DataComponent>(
     read_component_schema(world.component::<T>().entity_view(world), opaque)
 }
 
-fn no_opaque() -> BTreeMap<String, u32> {
+const fn no_opaque() -> BTreeMap<String, u32> {
     BTreeMap::new()
 }
 
