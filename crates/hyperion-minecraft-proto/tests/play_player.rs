@@ -11,7 +11,9 @@
 //! as hex. The Java value each vector came from is written out beside it.
 //!
 //! So a passing test says this crate agrees with Mojang's encoder, not that it
-//! agrees with itself.
+//! agrees with itself. The one exception is [`display_slot_ids`], which covers
+//! an enum rather than a packet and so has no `STREAM_CODEC` to run; its two
+//! vectors are declaration indices read off `DisplaySlot`, and the test says so.
 //!
 //! # Why one test compares documents rather than bytes
 //!
@@ -26,13 +28,13 @@ use hyperion_minecraft_proto::{
     Decode, Encode, Reader, Uuid, Writer,
     packets::{
         play::{
-            clientbound::SystemChat,
+            clientbound::{SetDisplayObjective, SystemChat},
             player::{
-                AbilityFlags, ArgumentType, CommandNode, CommandNodeStub, Commands, NumberFormat,
-                ObjectiveDisplay, ObjectiveRenderType, PlayerAbilities, PlayerInfoActions,
-                PlayerInfoEntry, PlayerInfoUpdate, PlayerProfile, SetObjective, SetPlayerTeam,
-                SetScore, StringArgumentKind, TeamCollisionRule, TeamColor, TeamOptions,
-                TeamParameters, TeamVisibility,
+                AbilityFlags, ArgumentType, CommandNode, CommandNodeStub, Commands, DisplaySlot,
+                NumberFormat, ObjectiveDisplay, ObjectiveRenderType, PlayerAbilities,
+                PlayerInfoActions, PlayerInfoEntry, PlayerInfoUpdate, PlayerProfile, SetObjective,
+                SetPlayerTeam, SetScore, StringArgumentKind, TeamCollisionRule, TeamColor,
+                TeamOptions, TeamParameters, TeamVisibility,
             },
         },
         play_login::GameType,
@@ -496,5 +498,33 @@ fn set_player_team_methods() {
             players: Vec::new(),
         },
         &hex("047265647301"),
+    );
+}
+
+/// The two ends of `DisplaySlot`, whose ids are declaration indices.
+///
+/// Unlike every other vector in this file these two were not printed by the
+/// Java harness: `DisplaySlot` is an enum and not a packet, so there is nothing
+/// to hand a `STREAM_CODEC`. They are the ordinals of the first and last
+/// constant, and what they defend is the sixteen team slots in between staying
+/// spelled out. Dropping one shifts `TeamWhite` to 17 and fails here.
+#[test]
+fn display_slot_ids() {
+    round_trip(&DisplaySlot::Sidebar, &hex("01"));
+    round_trip(&DisplaySlot::TeamWhite, &hex("12"));
+    assert_eq!(DisplaySlot::Sidebar.to_id(), 1);
+    assert_eq!(DisplaySlot::TeamWhite.to_id(), 18);
+}
+
+/// The sidebar slot in the packet that carries it, which is the one call the
+/// server makes.
+#[test]
+fn set_display_objective_sidebar() {
+    round_trip(
+        &SetDisplayObjective {
+            id: DisplaySlot::Sidebar.to_id(),
+            objective_name: "smash",
+        },
+        &hex("0105736d617368"),
     );
 }

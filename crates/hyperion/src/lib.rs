@@ -30,6 +30,9 @@ pub use flecs_ecs;
 use flecs_ecs::prelude::*;
 pub use glam;
 use glam::{I16Vec2, IVec2};
+// Event crates build 26.2 packet bodies with this, the same way they reach for
+// `valence_protocol` on the 763 path.
+pub use hyperion_minecraft_proto;
 use ingress::IngressModule;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
