@@ -32,15 +32,34 @@ committed copy can disagree with the filter.
 ## What a generated packet looks like
 
 ```rust
-use hyperion_minecraft_proto::{PROTOCOL_VERSION, VarInt, packets::handshake, types::ClientIntent};
+use hyperion_minecraft_proto::{PROTOCOL_VERSION, packets::handshake, types::ClientIntent};
 
 let hello = handshake::serverbound::Intention {
-    protocol_version: VarInt(PROTOCOL_VERSION),
+    protocol_version: PROTOCOL_VERSION,
     host_name: "localhost",
     port: 25565,
     intention: ClientIntent::Login,
 };
 ```
+
+A number is a number. How many bytes it costs on the wire is the wire's
+business, so the struct behind that call site is
+
+```rust,ignore
+pub struct Intention<'a> {
+    #[proto(varint)]
+    pub protocol_version: i32,
+    #[proto(max_len = 32767)]
+    pub host_name: &'a str,
+    pub port: i16,
+    pub intention: ClientIntent,
+}
+```
+
+and `VarInt` never appears where a caller has to type it. A type still appears
+where it means something the wire distinguishes and Rust does not: `BlockPos`
+is eight bytes with three coordinates in them, and `RegistryId` is an index
+into a named registry rather than a count.
 
 177 of the 180 packet classes whose layout the extractor recovered in full are
 generated. **A layout it could not follow all the way has no struct at all**, so

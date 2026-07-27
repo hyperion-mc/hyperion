@@ -320,12 +320,52 @@ struct Traits {
     eq: bool,
 }
 
+/// How the wire writes an integer, where its Rust type does not say.
+///
+/// A field is the plain integer plus the attribute naming the encoding, since
+/// how many bytes a number costs is the wire's business and not the caller's.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Encoding {
+    VarInt,
+    VarLong,
+}
+
+impl Encoding {
+    /// What the field's `#[proto(...)]` says.
+    const fn attribute(self) -> &'static str {
+        match self {
+            Self::VarInt => "varint",
+            Self::VarLong => "varlong",
+        }
+    }
+
+    /// The Rust type a field with this encoding has.
+    const fn plain(self) -> &'static str {
+        match self {
+            Self::VarInt => "i32",
+            Self::VarLong => "i64",
+        }
+    }
+
+    /// The type that carries the encoding itself, for a position no attribute
+    /// reaches.
+    const fn wrapper(self) -> &'static str {
+        match self {
+            Self::VarInt => "VarInt",
+            Self::VarLong => "VarLong",
+        }
+    }
+}
+
 /// A lowered field or element type.
 #[derive(Clone)]
 struct Lowered {
     ty: String,
     traits: Traits,
     limits: Limits,
+    /// Set when `ty` is a plain integer whose wire form the field's attribute
+    /// has to name.
+    encoding: Option<Encoding>,
     doc: Option<String>,
     /// A module supplying the whole field's codec, where the derive's
     /// structural rules do not describe the layout.
@@ -338,12 +378,14 @@ impl Lowered {
             ty: ty.to_owned(),
             traits,
             limits: Limits::default(),
+            encoding: None,
             doc: None,
             with: None,
         }
     }
 
-    /// Put this type inside a combinator, keeping what still applies.
+    /// Put this type inside a combinator the derive threads a field attribute
+    /// through, which is `Option` and `Vec`.
     fn wrap(self, ty: String, copy: bool) -> Result<Self, String> {
         if self.with.is_some() {
             // The derive applies a custom codec to a whole field, so it cannot
@@ -361,6 +403,28 @@ impl Lowered {
             doc: None,
             ..self
         })
+    }
+
+    /// The `#[proto(...)]` attribute this type needs where it is used as a
+    /// field, if any.
+    ///
+    /// The encoding comes first because it says what the value is; the limits
+    /// only say how much of it there may be.
+    fn attribute(&self) -> Option<String> {
+        if let Some(with) = self.with {
+            return Some(format!("#[proto(with = {with})]"));
+        }
+        let mut parts = Vec::new();
+        if let Some(encoding) = self.encoding {
+            parts.push(encoding.attribute().to_owned());
+        }
+        if let Some(len) = self.limits.len {
+            parts.push(format!("max_len = {len}"));
+        }
+        if let Some(count) = self.limits.count {
+            parts.push(format!("max_count = {count}"));
+        }
+        (!parts.is_empty()).then(|| format!("#[proto({})]", parts.join(", ")))
     }
 }
 
@@ -381,17 +445,6 @@ impl Limits {
             len: pick(self.len, other.len, "max_len")?,
             count: pick(self.count, other.count, "max_count")?,
         })
-    }
-
-    fn render(self) -> Option<String> {
-        let mut parts = Vec::new();
-        if let Some(len) = self.len {
-            parts.push(format!("max_len = {len}"));
-        }
-        if let Some(count) = self.count {
-            parts.push(format!("max_count = {count}"));
-        }
-        (!parts.is_empty()).then(|| format!("#[proto({})]", parts.join(", ")))
     }
 }
 
@@ -668,33 +721,62 @@ const REFUSED: &str = "//\n// Layouts the extractor recovered in full but this g
 // Lowering a wire tree to Rust
 // ---------------------------------------------------------------------------
 
+/// A plain value: copied freely, compared exactly, owning its own bytes.
+const VALUE: Traits = Traits {
+    borrows: false,
+    copy: true,
+    eq: true,
+};
+/// A value with a float somewhere in it, which rules out `Eq` and `Hash`.
+const FLOATING: Traits = Traits { eq: false, ..VALUE };
+/// A value that points into the buffer it was read from.
+const BORROWED: Traits = Traits {
+    borrows: true,
+    ..VALUE
+};
+/// A heap-allocated list, which rules out `Copy`.
+const LIST: Traits = Traits {
+    copy: false,
+    ..VALUE
+};
+/// An NBT tree: borrowed, heap-backed, and with floats in it.
+const NBT: Traits = Traits {
+    borrows: true,
+    copy: false,
+    eq: false,
+};
+
 /// A scalar wire kind and its Rust spelling, with the derives it permits.
+///
+/// How wide a number is belongs to the value and is in the type column; how
+/// many bytes it costs belongs to the wire and is in the encoding column,
+/// which becomes the field's `#[proto(...)]`. That is why `varint` and `i32`
+/// share a Rust type and differ only in the third column.
 ///
 /// Anything not listed has no Rust spelling yet, and a packet that reaches one
 /// goes unwritten rather than approximated.
-const SCALARS: [(&str, &str, bool, bool, bool); 21] = [
-    // kind, rust type, borrows, copy, eq
-    ("unit", "()", false, true, true),
-    ("bool", "bool", false, true, true),
-    ("i8", "i8", false, true, true),
-    ("u8", "u8", false, true, true),
-    ("i16", "i16", false, true, true),
-    ("u16", "u16", false, true, true),
-    ("i32", "i32", false, true, true),
-    ("i64", "i64", false, true, true),
-    ("f32", "f32", false, true, false),
-    ("f64", "f64", false, true, false),
-    ("varint", "VarInt", false, true, true),
-    ("varlong", "VarLong", false, true, true),
-    ("uuid", "Uuid", false, true, true),
-    ("block_pos", "BlockPos", false, true, true),
-    ("chunk_pos", "ChunkPos", false, true, true),
-    ("block_hit_result", "BlockHitResult", false, true, false),
-    ("identifier", "Identifier<'a>", true, true, true),
-    ("string", "&'a str", true, true, true),
-    ("byte_array", "&'a [u8]", true, true, true),
-    ("long_array", "Vec<i64>", false, false, true),
-    ("varint_array", "Vec<VarInt>", false, false, true),
+const SCALARS: [(&str, &str, Option<Encoding>, Traits); 21] = [
+    ("unit", "()", None, VALUE),
+    ("bool", "bool", None, VALUE),
+    ("i8", "i8", None, VALUE),
+    ("u8", "u8", None, VALUE),
+    ("i16", "i16", None, VALUE),
+    ("u16", "u16", None, VALUE),
+    ("i32", "i32", None, VALUE),
+    ("i64", "i64", None, VALUE),
+    ("f32", "f32", None, FLOATING),
+    ("f64", "f64", None, FLOATING),
+    ("varint", "i32", Some(Encoding::VarInt), VALUE),
+    ("varlong", "i64", Some(Encoding::VarLong), VALUE),
+    ("uuid", "Uuid", None, VALUE),
+    ("block_pos", "BlockPos", None, VALUE),
+    ("chunk_pos", "ChunkPos", None, VALUE),
+    ("block_hit_result", "BlockHitResult", None, FLOATING),
+    ("identifier", "Identifier<'a>", None, BORROWED),
+    ("string", "&'a str", None, BORROWED),
+    ("byte_array", "&'a [u8]", None, BORROWED),
+    ("long_array", "Vec<i64>", None, LIST),
+    ("varint_array", "Vec<i32>", Some(Encoding::VarInt), LIST),
 ];
 
 /// Types the generated code may name, all re-exported at the crate root so
@@ -763,8 +845,9 @@ impl Generator<'_> {
         }
 
         let kind = wire["kind"].as_str().unwrap_or("unresolved");
-        if let Some(&(_, ty, borrows, copy, eq)) = SCALARS.iter().find(|entry| entry.0 == kind) {
-            let mut lowered = Lowered::scalar(ty, Traits { borrows, copy, eq });
+        if let Some(&(_, ty, encoding, traits)) = SCALARS.iter().find(|entry| entry.0 == kind) {
+            let mut lowered = Lowered::scalar(ty, traits);
+            lowered.encoding = encoding;
             // A string's limit is UTF-16 code units and a byte array's is
             // bytes; `max_len` means "the length this type is measured in".
             if matches!(kind, "string" | "byte_array") {
@@ -781,20 +864,12 @@ impl Generator<'_> {
                     doc: wire["registry"]
                         .as_str()
                         .map(|registry| format!("Index into `{registry}`.")),
-                    ..Lowered::scalar("RegistryId", Traits {
-                        borrows: false,
-                        copy: true,
-                        eq: true,
-                    })
+                    ..Lowered::scalar("RegistryId", VALUE)
                 })
             }
             "nbt" => {
                 self.note_import(at, "nbt");
-                Ok(Lowered::scalar("nbt::Tag<'a>", Traits {
-                    borrows: true,
-                    copy: false,
-                    eq: false,
-                }))
+                Ok(Lowered::scalar("nbt::Tag<'a>", NBT))
             }
             // A root `TAG_End` means absent here, which is not the
             // boolean-prefixed `Option` the derive writes by default.
@@ -802,11 +877,7 @@ impl Generator<'_> {
                 self.note_import(at, "nbt");
                 Ok(Lowered {
                     with: Some("crate::nbt::optional"),
-                    ..Lowered::scalar("Option<nbt::Tag<'a>>", Traits {
-                        borrows: true,
-                        copy: false,
-                        eq: false,
-                    })
+                    ..Lowered::scalar("Option<nbt::Tag<'a>>", NBT)
                 })
             }
             "option" => {
@@ -816,20 +887,27 @@ impl Generator<'_> {
             }
             "list" => {
                 let inner = self.lower(&wire["of"], at, scope, &singular(label))?;
+                if inner.limits.count.is_some() {
+                    // One field carries one collection limit, and it would be
+                    // applied to the outer list rather than to this one.
+                    return Err("two collection limits in one field".to_owned());
+                }
                 let ty = format!("Vec<{}>", inner.ty);
                 let count = wire["max"].as_u64();
                 let mut out = inner.wrap(ty, false)?;
-                out.limits = out.limits.merge(Limits { len: None, count })?;
+                out.limits.count = count;
                 Ok(out)
             }
             "length_prefixed" => {
                 let inner = self.lower(&wire["of"], at, scope, label)?;
+                let inner = self.seal(inner, at)?;
                 self.note_import(at, "LengthPrefixed");
                 let ty = format!("LengthPrefixed<{}>", inner.ty);
                 inner.wrap(ty, true)
             }
             "holder" => {
                 let inner = self.lower(&wire["of"], at, scope, label)?;
+                let inner = self.seal(inner, at)?;
                 self.note_import(at, "Holder");
                 let ty = format!("Holder<{}>", inner.ty);
                 let doc = wire["registry"]
@@ -842,25 +920,22 @@ impl Generator<'_> {
             }
             "either" => {
                 let left = self.lower(&wire["left"], at, scope, label)?;
+                let left = self.seal(left, at)?;
                 let right = self.lower(&wire["right"], at, scope, label)?;
-                self.note_import(at, "Either");
-                let ty = format!("Either<{}, {}>", left.ty, right.ty);
-                let limits = left.limits.merge(right.limits)?;
-                let traits = Traits {
-                    borrows: left.traits.borrows || right.traits.borrows,
-                    copy: left.traits.copy && right.traits.copy,
-                    eq: left.traits.eq && right.traits.eq,
-                };
-                let merged = Lowered {
-                    limits,
-                    ..Lowered::scalar(&ty, traits)
-                };
+                let right = self.seal(right, at)?;
                 if left.with.is_some() || right.with.is_some() {
                     return Err(
                         "a custom codec inside `Either` needs a hand-written packet".to_owned()
                     );
                 }
-                Ok(merged)
+                self.note_import(at, "Either");
+                let ty = format!("Either<{}, {}>", left.ty, right.ty);
+                let traits = Traits {
+                    borrows: left.traits.borrows || right.traits.borrows,
+                    copy: left.traits.copy && right.traits.copy,
+                    eq: left.traits.eq && right.traits.eq,
+                };
+                Ok(Lowered::scalar(&ty, traits))
             }
             "enum" => self.lower_enum(wire, at, scope),
             "map" => self.lower_map(wire, at, scope, label),
@@ -920,11 +995,7 @@ impl Generator<'_> {
         let placed = Placed {
             place,
             name,
-            traits: Traits {
-                borrows: false,
-                copy: true,
-                eq: true,
-            },
+            traits: VALUE,
         };
         self.placed.insert(owner.to_owned(), placed.clone());
         Ok(Lowered::scalar(&self.reference(&placed, at), placed.traits))
@@ -1001,6 +1072,27 @@ impl Generator<'_> {
         let result = self.define_named(reference, &target, at, scope);
         self.active.remove(reference);
         result
+    }
+
+    /// Give a lowered value a type that describes its own wire form, for a
+    /// position no field attribute reaches.
+    ///
+    /// The derive threads `#[proto(...)]` through `Option` and `Vec` and no
+    /// further, so an integer under `Holder`, `LengthPrefixed` or `Either`
+    /// goes back to the wrapper type that carries its encoding. A limit has no
+    /// such spelling, so a field wanting one there is refused rather than
+    /// generated without it.
+    fn seal(&mut self, mut lowered: Lowered, at: &Place) -> Result<Lowered, String> {
+        if lowered.limits != Limits::default() {
+            return Err("a limit inside this combinator needs a hand-written packet".to_owned());
+        }
+        if let Some(encoding) = lowered.encoding.take() {
+            // Only `i32` and `i64` ever carry an encoding, and only under
+            // `Option` and `Vec`, so this cannot rewrite an unrelated name.
+            lowered.ty = lowered.ty.replace(encoding.plain(), encoding.wrapper());
+            self.note_import(at, encoding.wrapper());
+        }
+        Ok(lowered)
     }
 
     /// Record that a file names one of the crate's own types.
@@ -1195,11 +1287,7 @@ impl Generator<'_> {
                 "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Encode, Decode)]\n",
             );
             let _unused = writeln!(out, "pub struct {name};");
-            return Ok((out, Traits {
-                borrows: false,
-                copy: true,
-                eq: true,
-            }));
+            return Ok((out, VALUE));
         }
         if kind != "struct" {
             // One value with nothing around it: the server's codec for
@@ -1212,10 +1300,8 @@ impl Generator<'_> {
             }
             let _unused = writeln!(out, "#[derive({})]", derive_list(lowered.traits).join(", "));
             let attr = lowered
-                .with
-                .map(|with| format!("#[proto(with = {with})] "))
-                .or_else(|| lowered.limits.render().map(|attr| format!("{attr} ")))
-                .unwrap_or_default();
+                .attribute()
+                .map_or_else(String::new, |attr| format!("{attr} "));
             let _unused = writeln!(
                 out,
                 "pub struct {name}{lifetime}({attr}pub {});",
@@ -1226,11 +1312,9 @@ impl Generator<'_> {
 
         let empty = Vec::new();
         let mut fields = Vec::new();
-        let mut traits = Traits {
-            borrows: false,
-            copy: true,
-            eq: true,
-        };
+        // The derives start at the most permissive and each field takes away
+        // what it cannot support.
+        let mut traits = VALUE;
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for field in resolved["fields"].as_array().unwrap_or(&empty) {
             let label = field["name"].as_str().unwrap_or("value");
@@ -1266,9 +1350,7 @@ impl Generator<'_> {
             if let Some(doc) = &lowered.doc {
                 let _unused = writeln!(out, "    /// {doc}");
             }
-            if let Some(with) = lowered.with {
-                let _unused = writeln!(out, "    #[proto(with = {with})]");
-            } else if let Some(attr) = lowered.limits.render() {
+            if let Some(attr) = lowered.attribute() {
                 let _unused = writeln!(out, "    {attr}");
             }
             let _unused = writeln!(out, "    pub {rust}: {},", lowered.ty);
