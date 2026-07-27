@@ -41,15 +41,27 @@
 //!
 //! | attribute | effect |
 //! | --- | --- |
+//! | `#[proto(varint)]` | write the innermost `i32` seven bits per byte |
+//! | `#[proto(varlong)]` | write the innermost `i64` seven bits per byte |
 //! | `#[proto(max_len = N)]` | limit on the innermost string, in UTF-16 code units |
 //! | `#[proto(max_count = N)]` | limit on the innermost collection's element count |
 //! | `#[proto(with = path)]` | use `path::encode` and `path::decode` for this field |
 //!
-//! `max_len` and `max_count` thread through `Option<_>` and `Vec<_>` to the
-//! type they constrain, so `#[proto(max_len = 1024)] pages: Vec<&'a str>`
-//! bounds each page rather than the list. Both limits are enforced on write as
-//! well as on read: the server checks on read only, but a value that cannot be
-//! read is one that should never have been sent.
+//! How wide a number is belongs to the value and lives in its type; how many
+//! bytes it costs belongs to the wire and lives here. A field is therefore
+//! `#[proto(varint)] pub entity_id: i32`, and a caller writes `entity_id: 42`.
+//!
+//! Every one of these describes a type nested somewhere under the field's own,
+//! so the derive walks through `Option<_>` and `Vec<_>` until it finds it:
+//! `#[proto(max_len = 1024)] pages: Vec<&'a str>` bounds each page rather than
+//! the list, and `#[proto(varint)] passengers: Vec<i32>` writes each id as a
+//! `VarInt` while the count keeps its own encoding. Reaching the bottom of a
+//! field with something still unapplied is a compile error, since a codec that
+//! looks constrained and is not is the failure this derive exists to rule out.
+//!
+//! Limits are enforced on write as well as on read: the server checks on read
+//! only, but a value that cannot be read is one that should never have been
+//! sent.
 //!
 //! [`Error::InvalidEnum`]: ../hyperion_minecraft_proto/enum.Error.html
 

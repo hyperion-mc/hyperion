@@ -119,7 +119,9 @@ impl Field {
         encoding: Encoding,
         meta: &syn::meta::ParseNestedMeta<'_>,
     ) -> Result<()> {
-        if self.reach.encoding.is_some_and(|already| already != encoding) {
+        if let Some(already) = self.reach.encoding
+            && already != encoding
+        {
             return Err(meta.error("a value has one wire encoding, and two are named here"));
         }
         self.reach.encoding = Some(encoding);

@@ -1,24 +1,30 @@
 //! The value types a packet field can have.
 //!
 //! Each one exists because the wire distinguishes something Rust's primitives
-//! do not. A `VarInt` and an `i32` are both 32-bit signed integers and are
-//! different numbers of bytes; a [`BlockPos`] and an `i64` are the same eight
-//! bytes and mean different things. Giving each its own type is what lets
-//! `#[derive(Encode, Decode)]` read a field's wire form off its Rust type
-//! instead of being told.
+//! do not: a [`BlockPos`] and an `i64` are the same eight bytes and mean
+//! different things.
+//!
+//! How many bytes a *number* costs is not one of those distinctions. That is
+//! the wire's choice about a value Rust already has a type for, so it lives in
+//! `#[proto(varint)]` on the field rather than in a wrapper the caller has to
+//! spell; see [`crate::Encode`]'s derive. [`VarInt`] and [`VarLong`] remain
+//! for the positions an attribute cannot reach, such as inside an [`Either`].
 
 use std::fmt;
 
 use crate::{Decode, Encode, Error, Reader, Result, Writer, codec};
 
-/// A 32-bit signed integer written seven bits per byte.
+/// An `i32` that carries its own seven-bits-per-byte encoding.
 ///
-/// Most integers in the protocol are this rather than a fixed four bytes,
-/// which is why it is the type that appears and `i32` is the exception.
+/// A packet field says this with `#[proto(varint)]` and stays an `i32`. This
+/// type is for the positions where no attribute reaches the value: a type
+/// parameter of [`Either`], [`Holder`] or [`LengthPrefixed`], and the codec
+/// layer's own plumbing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct VarInt(pub i32);
 
-/// A 64-bit signed integer written seven bits per byte.
+/// An `i64` that carries its own seven-bits-per-byte encoding, as [`VarInt`]
+/// does for `i32`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct VarLong(pub i64);
 

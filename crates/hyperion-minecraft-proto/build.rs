@@ -446,7 +446,6 @@ impl Limits {
             count: pick(self.count, other.count, "max_count")?,
         })
     }
-
 }
 
 fn pick(a: Option<u64>, b: Option<u64>, what: &str) -> Result<Option<u64>, String> {
@@ -722,38 +721,62 @@ const REFUSED: &str = "//\n// Layouts the extractor recovered in full but this g
 // Lowering a wire tree to Rust
 // ---------------------------------------------------------------------------
 
+/// A plain value: copied freely, compared exactly, owning its own bytes.
+const VALUE: Traits = Traits {
+    borrows: false,
+    copy: true,
+    eq: true,
+};
+/// A value with a float somewhere in it, which rules out `Eq` and `Hash`.
+const FLOATING: Traits = Traits { eq: false, ..VALUE };
+/// A value that points into the buffer it was read from.
+const BORROWED: Traits = Traits {
+    borrows: true,
+    ..VALUE
+};
+/// A heap-allocated list, which rules out `Copy`.
+const LIST: Traits = Traits {
+    copy: false,
+    ..VALUE
+};
+/// An NBT tree: borrowed, heap-backed, and with floats in it.
+const NBT: Traits = Traits {
+    borrows: true,
+    copy: false,
+    eq: false,
+};
+
 /// A scalar wire kind and its Rust spelling, with the derives it permits.
 ///
-/// The width of a number is the value's own property and is in the type; how
-/// many bytes it costs is the wire's, and is in the encoding column, which
-/// becomes the field's `#[proto(...)]`. That is why `varint` and `i32` share
-/// a Rust type and differ only in the third column.
+/// How wide a number is belongs to the value and is in the type column; how
+/// many bytes it costs belongs to the wire and is in the encoding column,
+/// which becomes the field's `#[proto(...)]`. That is why `varint` and `i32`
+/// share a Rust type and differ only in the third column.
 ///
 /// Anything not listed has no Rust spelling yet, and a packet that reaches one
 /// goes unwritten rather than approximated.
-const SCALARS: [(&str, &str, Option<Encoding>, bool, bool, bool); 21] = [
-    // kind, rust type, encoding, borrows, copy, eq
-    ("unit", "()", None, false, true, true),
-    ("bool", "bool", None, false, true, true),
-    ("i8", "i8", None, false, true, true),
-    ("u8", "u8", None, false, true, true),
-    ("i16", "i16", None, false, true, true),
-    ("u16", "u16", None, false, true, true),
-    ("i32", "i32", None, false, true, true),
-    ("i64", "i64", None, false, true, true),
-    ("f32", "f32", None, false, true, false),
-    ("f64", "f64", None, false, true, false),
-    ("varint", "i32", Some(Encoding::VarInt), false, true, true),
-    ("varlong", "i64", Some(Encoding::VarLong), false, true, true),
-    ("uuid", "Uuid", None, false, true, true),
-    ("block_pos", "BlockPos", None, false, true, true),
-    ("chunk_pos", "ChunkPos", None, false, true, true),
-    ("block_hit_result", "BlockHitResult", None, false, true, false),
-    ("identifier", "Identifier<'a>", None, true, true, true),
-    ("string", "&'a str", None, true, true, true),
-    ("byte_array", "&'a [u8]", None, true, true, true),
-    ("long_array", "Vec<i64>", None, false, false, true),
-    ("varint_array", "Vec<i32>", Some(Encoding::VarInt), false, false, true),
+const SCALARS: [(&str, &str, Option<Encoding>, Traits); 21] = [
+    ("unit", "()", None, VALUE),
+    ("bool", "bool", None, VALUE),
+    ("i8", "i8", None, VALUE),
+    ("u8", "u8", None, VALUE),
+    ("i16", "i16", None, VALUE),
+    ("u16", "u16", None, VALUE),
+    ("i32", "i32", None, VALUE),
+    ("i64", "i64", None, VALUE),
+    ("f32", "f32", None, FLOATING),
+    ("f64", "f64", None, FLOATING),
+    ("varint", "i32", Some(Encoding::VarInt), VALUE),
+    ("varlong", "i64", Some(Encoding::VarLong), VALUE),
+    ("uuid", "Uuid", None, VALUE),
+    ("block_pos", "BlockPos", None, VALUE),
+    ("chunk_pos", "ChunkPos", None, VALUE),
+    ("block_hit_result", "BlockHitResult", None, FLOATING),
+    ("identifier", "Identifier<'a>", None, BORROWED),
+    ("string", "&'a str", None, BORROWED),
+    ("byte_array", "&'a [u8]", None, BORROWED),
+    ("long_array", "Vec<i64>", None, LIST),
+    ("varint_array", "Vec<i32>", Some(Encoding::VarInt), LIST),
 ];
 
 /// Types the generated code may name, all re-exported at the crate root so
@@ -822,10 +845,8 @@ impl Generator<'_> {
         }
 
         let kind = wire["kind"].as_str().unwrap_or("unresolved");
-        if let Some(&(_, ty, encoding, borrows, copy, eq)) =
-            SCALARS.iter().find(|entry| entry.0 == kind)
-        {
-            let mut lowered = Lowered::scalar(ty, Traits { borrows, copy, eq });
+        if let Some(&(_, ty, encoding, traits)) = SCALARS.iter().find(|entry| entry.0 == kind) {
+            let mut lowered = Lowered::scalar(ty, traits);
             lowered.encoding = encoding;
             // A string's limit is UTF-16 code units and a byte array's is
             // bytes; `max_len` means "the length this type is measured in".
@@ -843,20 +864,12 @@ impl Generator<'_> {
                     doc: wire["registry"]
                         .as_str()
                         .map(|registry| format!("Index into `{registry}`.")),
-                    ..Lowered::scalar("RegistryId", Traits {
-                        borrows: false,
-                        copy: true,
-                        eq: true,
-                    })
+                    ..Lowered::scalar("RegistryId", VALUE)
                 })
             }
             "nbt" => {
                 self.note_import(at, "nbt");
-                Ok(Lowered::scalar("nbt::Tag<'a>", Traits {
-                    borrows: true,
-                    copy: false,
-                    eq: false,
-                }))
+                Ok(Lowered::scalar("nbt::Tag<'a>", NBT))
             }
             // A root `TAG_End` means absent here, which is not the
             // boolean-prefixed `Option` the derive writes by default.
@@ -864,11 +877,7 @@ impl Generator<'_> {
                 self.note_import(at, "nbt");
                 Ok(Lowered {
                     with: Some("crate::nbt::optional"),
-                    ..Lowered::scalar("Option<nbt::Tag<'a>>", Traits {
-                        borrows: true,
-                        copy: false,
-                        eq: false,
-                    })
+                    ..Lowered::scalar("Option<nbt::Tag<'a>>", NBT)
                 })
             }
             "option" => {
@@ -986,11 +995,7 @@ impl Generator<'_> {
         let placed = Placed {
             place,
             name,
-            traits: Traits {
-                borrows: false,
-                copy: true,
-                eq: true,
-            },
+            traits: VALUE,
         };
         self.placed.insert(owner.to_owned(), placed.clone());
         Ok(Lowered::scalar(&self.reference(&placed, at), placed.traits))
@@ -1282,11 +1287,7 @@ impl Generator<'_> {
                 "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Encode, Decode)]\n",
             );
             let _unused = writeln!(out, "pub struct {name};");
-            return Ok((out, Traits {
-                borrows: false,
-                copy: true,
-                eq: true,
-            }));
+            return Ok((out, VALUE));
         }
         if kind != "struct" {
             // One value with nothing around it: the server's codec for
@@ -1311,11 +1312,9 @@ impl Generator<'_> {
 
         let empty = Vec::new();
         let mut fields = Vec::new();
-        let mut traits = Traits {
-            borrows: false,
-            copy: true,
-            eq: true,
-        };
+        // The derives start at the most permissive and each field takes away
+        // what it cannot support.
+        let mut traits = VALUE;
         let mut seen: BTreeSet<String> = BTreeSet::new();
         for field in resolved["fields"].as_array().unwrap_or(&empty) {
             let label = field["name"].as_str().unwrap_or("value");
