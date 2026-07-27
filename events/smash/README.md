@@ -68,21 +68,66 @@ then `world.import::<Wolf>()`. `tests/modularity.rs` proves the claim by
 defining a kit from outside the crate and asserting no file under `src/`
 mentions it.
 
-## Building
-
-`flecs_ecs 0.2.2` declares an MSRV of 1.88, above the repository's current pin.
-Use the toolchain the in-flight flecs migration already pins:
+## Running it
 
 ```sh
-RUSTUP_TOOLCHAIN=nightly-2025-05-05 cargo test -p smash
-RUSTUP_TOOLCHAIN=nightly-2025-05-05 cargo clippy -p smash --all-targets --all-features -- -D warnings
+nix run .#certs   # once: the game server and the proxy authenticate over mTLS
+nix run .#smash   # game server with a proxy inside it, on localhost:25565
 ```
 
-This crate does not depend on `hyperion` yet, because hyperion is mid-migration
-from `bevy_ecs` back to `flecs_ecs`. Everything the host would provide is behind
-the `Server` trait in [`src/server.rs`](src/server.rs), with a recording double
-in [`src/server/mock.rs`](src/server/mock.rs), so the game logic runs and is
-tested today.
+`nix run .#smash-dev` is the same thing split into the deployed shape -- game
+server, separate proxy -- under a rebuild-and-restart watcher, the way
+`nix run .#dev` does it for bedwars.
+
+Once in the world: `/kits` lists what is available, `/kit skeleton` picks one.
+Names are matched with case and spaces discarded, so `/kit irongolem` is
+`Iron Golem`. Right-click a hotbar slot to use the ability bound to it; left
+click to swing.
+
+To check the server is genuinely joinable rather than merely accepting
+connections, drive [`tools/smash-client.py`](../../tools/smash-client.py) at it.
+It is a scripted 1.20.1 client that distinguishes "authenticated" from "in the
+world" -- the distinction the proxy's connection count cannot make, and the one
+that separates a working server from a client stuck on *Joining world...*
+forever:
+
+```sh
+python3 tools/smash-client.py --port 25565 --name Alpha --command "kit skeleton"
+```
+
+## The host half
+
+`SmashModule` is the game and depends on nothing but `flecs_ecs` and `glam`.
+`SmashHost` is the game plus hyperion, and everything hyperion-shaped is in
+four files:
+
+```
+src/
+  adapter.rs   implements Server against hyperion; the only file importing both
+  mirror.rs    hyperion position/facing/ground state onto the game's mirrors
+  input.rs     packet events into ability activations, damage and kit hotbars
+  command.rs   /kit and /kits
+  main.rs      argument parsing and the entry point
+```
+
+Writes cross the seam as a queue drained once per tick rather than as immediate
+world edits, because `Server` is called from inside observers -- ability
+activation, the damage pipeline, the lobby -- where taking a second mutable
+borrow of a component a running query holds is a runtime abort. The cost is one
+tick of latency on knockback.
+
+Nothing under `src/module/` changed to make any of this work, which was the
+design's own test of whether the seam was in the right place.
+
+## Building
+
+`flecs_ecs 0.2.2` declares an MSRV of 1.88, which the repository's pinned
+`nightly-2025-05-05` satisfies, so the ordinary gates cover this crate:
+
+```sh
+nix run .#test
+nix run .#lint
+```
 
 ## Documents
 

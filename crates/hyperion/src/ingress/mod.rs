@@ -41,7 +41,6 @@ fn queue_join(comms: &Comms, player: Entity, skin: &PlayerSkin) {
     }
 }
 
-
 /// This marks players who have already been disconnected and about to be destructed. This component should not be
 /// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
 #[derive(Component, Debug)]
@@ -244,19 +243,19 @@ fn process_login_hello(world: &World) {
                         let command_channel = command_channel.clone();
 
                         runtime.spawn(async move {
-                            let skin =
-                                match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await
-                                {
-                                    Ok(Some(skin)) => skin,
-                                    Err(e) => {
-                                        error!("failed to get skin {e}. Using empty skin");
-                                        PlayerSkin::EMPTY
-                                    }
-                                    Ok(None) => {
-                                        error!("failed to get skin. Using empty skin");
-                                        PlayerSkin::EMPTY
-                                    }
-                                };
+                            let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection)
+                                .await
+                            {
+                                Ok(Some(skin)) => skin,
+                                Err(e) => {
+                                    error!("failed to get skin {e}. Using empty skin");
+                                    PlayerSkin::EMPTY
+                                }
+                                Ok(None) => {
+                                    error!("failed to get skin. Using empty skin");
+                                    PlayerSkin::EMPTY
+                                }
+                            };
 
                             command_channel.push(move |world: &World| {
                                 let entity = world.entity_from_id(sender);

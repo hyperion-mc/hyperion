@@ -502,18 +502,15 @@ Stated plainly, because these are the parts nobody can see from the code.
 
 ## Wiring to hyperion, file by file
 
-This crate deliberately does not depend on the `hyperion` crate, because
-hyperion is mid-migration from `bevy_ecs` back to `flecs_ecs` and anything
-written against bevy today would be thrown away. It depends on `flecs_ecs 0.2.2`
-and `glam` and nothing else. Once the `refactor/flecs` branch lands, the wiring
-is mechanical and confined to new files.
+**Built.** The plan below is what was written, and it went in as planned: four
+new files, no change to any module under `src/module/`. What follows records
+both the plan and where reality differed, because the differences are the
+interesting part.
 
-The version choice is not a guess: `refactor/flecs` already pins
-`flecs_ecs = "0.2.2"` with the `flecs_manual_registration` feature and bumps the
-toolchain to `nightly-2025-05-05`. This crate builds against the same release.
-Until that toolchain bump merges, `events/smash` will not build on the
-repository's pinned `nightly-2025-02-22`, because `flecs_ecs 0.2.2` declares an
-MSRV of 1.88 — see the build note at the end.
+`SmashModule` still depends on nothing but `flecs_ecs 0.2.2` and `glam`;
+`SmashHost` is the game plus hyperion. The flecs migration has landed, so the
+repository's pinned `nightly-2025-05-05` builds the crate and the ordinary
+`nix run .#test` and `nix run .#lint` cover it.
 
 ### New: `events/smash/src/adapter.rs`
 
@@ -554,6 +551,22 @@ Mirrors `events/bedwars/src/main.rs`: clap and `envy` argument parsing, tracing
 setup, jemalloc, `Crypto::new`, then build the world, `world.set(ServerHandle)`,
 `world.import::<SmashModule>()`, and run.
 
+One addition over bedwars: `--embedded-proxy <ADDR>`. `HyperionProxyModule`
+runs a proxy inside the game-server process, and bedwars imports it
+unconditionally, so `nix run .#dev` has the in-process proxy and the standalone
+one racing for port 25565. The loser panics in a background tokio task and the
+process carries on, which is a hard failure to read. Making it a flag lets
+`nix run .#smash` be a whole server in one process and `nix run .#smash-dev`
+run the deployed shape with no race.
+
+### New: `events/smash/src/command.rs`
+
+Not in the original plan. `/kit <name>` and `/kits`, through `hyperion-clap`,
+because there is no kit menu and something has to select a kit. A Minecraft
+command argument is one whitespace-delimited token and half the kit names have
+a space in them, so `/kit` matches on the name with case and punctuation
+discarded: `/kit irongolem` finds `Iron Golem`.
+
 ### Changed: `events/smash/Cargo.toml`
 
 Add `hyperion`, `hyperion-inventory`, `hyperion-utils`, `valence_protocol`,
@@ -569,19 +582,57 @@ Nothing further. `events/smash` is already in `members`.
 
 Every module under `events/smash/src/module/` and every test. That is the point
 of the seam: if wiring requires editing a game module, the seam was in the wrong
-place.
+place. It held.
+
+---
+
+## What the wiring found
+
+Four things the plan did not anticipate. Recorded because each one is a
+property of the boundary rather than of the code either side of it.
+
+**Writes cannot be applied where they are made.** `Server` is called from inside
+flecs observers — from ability activation, from the damage pipeline, from the
+lobby's phase transitions — and at those points the world is mid-iteration.
+Taking a second mutable borrow of a component a running query is reading is a
+runtime abort in flecs, not a compile error, so applying `add_velocity`
+immediately would have been a crash waiting on a coincidence. The adapter
+queues instead and drains once per tick in `PostUpdate`. The cost is one tick of
+latency on knockback; the benefit is that the whole class of bug is unreachable.
+
+**A read-back inside a command sees nothing.** `lobby::select_kit` calls
+`kit::apply` and then `kit::hotbar` on the same player. In a bare world that
+works, and the tests prove it does. Inside a hyperion command it does not: the
+command runs inside a system, so every `add` `kit::apply` makes is deferred, and
+`kit::hotbar` reads back a player who has not been granted anything yet. Every
+kit selection produced an empty hotbar and therefore no abilities at all.
+
+The adapter marks the player and rebuilds the hotbar from a system on a later
+tick, when the deferred operations have committed. This is not a flaw in
+`select_kit` so much as an unstated precondition — *it must not run inside a
+deferred context* — and the honest fix would be to say so in its signature.
+
+**Cooldowns are the only observable proof an input landed.** A right-click that
+finds no ability in the slot returns `Ok(())` and says nothing, which is correct
+but means a mis-wired input layer is indistinguishable from an empty hotbar.
+Firing the same ability twice and watching for `That ability is recharging.` on
+the action bar is what finally distinguished them.
+
+**The host was not joinable at all.** Independent of this crate:
+`egress::player_join`'s `player_joins` system, which is what sends the Login
+packet, reads its work list off `Comms::skins_rx`, and nothing in the tree ever
+sent on `skins_tx`. Every client authenticated and then waited on *Joining
+world…* forever while the proxy counted it as connected. Fixed in
+`crates/hyperion/src/ingress/mod.rs` by routing both the offline and the
+Mojang-fetch skin paths through that channel.
 
 ### Build note
 
-Until `refactor/flecs` merges its toolchain bump, build and test this crate with
-the toolchain that branch already pins:
+`flecs_ecs 0.2.2` declares an MSRV of 1.88, which the repository's pinned
+`nightly-2025-05-05` satisfies, so `nix run .#test` and `nix run .#lint` cover
+this crate with no special handling.
 
-```sh
-RUSTUP_TOOLCHAIN=nightly-2025-05-05 cargo test -p smash
-RUSTUP_TOOLCHAIN=nightly-2025-05-05 cargo clippy -p smash --all-targets --all-features -- -D warnings
-```
-
-There is also a live hazard with concurrent builds: `flecs_ecs_sys 0.2.1` writes
+There is a live hazard with concurrent builds: `flecs_ecs_sys 0.2.1` writes
 its generated bindings into the **shared crates.io registry checkout** rather
 than `OUT_DIR`, so two builds with different feature sets corrupt each other's
 `bindings.rs`. Details and the upstream report are in

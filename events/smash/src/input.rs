@@ -45,7 +45,9 @@ impl Module for InputModule {
             .with(id::<Uuid>())
             .without(id::<hyperion::simulation::Position>())
             .each_entity(|entity, arena| {
-                entity.set(hyperion::simulation::Position::from(arena.spawn(*entity.id())));
+                entity.set(hyperion::simulation::Position::from(
+                    arena.spawn(*entity.id()),
+                ));
             });
 
         // A hyperion player becomes a smash player. `Player` carries `With`
@@ -155,9 +157,11 @@ impl Module for InputModule {
                     return;
                 };
                 entity.set(HyperionHealth::new(health.current));
-                entity.world().get::<&crate::server::ServerHandle>(|server| {
-                    server.set_health(id, health.current, health.max);
-                });
+                entity
+                    .world()
+                    .get::<&crate::server::ServerHandle>(|server| {
+                        server.set_health(id, health.current, health.max);
+                    });
             });
     }
 }

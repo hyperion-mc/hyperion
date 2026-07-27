@@ -91,19 +91,31 @@ impl Module for SmashHost {
 
 /// Build the world and run it. The entry point `main.rs` calls.
 ///
+/// `embedded_proxy` asks for a proxy inside this process, listening on that
+/// address. Running one is the shortest path to a playable server, but it is
+/// optional because the deployed shape is proxies on their own machines --
+/// and because two proxies racing for one port is the sort of thing that
+/// leaves a dev stack half up with no obvious reason why.
+///
 /// # Errors
 /// If the thread count does not fit in the `i32` flecs wants.
-pub fn init_game(address: SocketAddr, crypto: Crypto) -> Result<(), std::num::TryFromIntError> {
+pub fn init_game(
+    address: SocketAddr,
+    embedded_proxy: Option<String>,
+    crypto: Crypto,
+) -> Result<(), std::num::TryFromIntError> {
     let world = World::new();
 
     world.import::<HyperionCore>();
-    world.import::<HyperionProxyModule>();
     world.import::<SmashHost>();
 
-    world.set(ProxyAddress {
-        server: address.to_string(),
-        ..ProxyAddress::default()
-    });
+    if let Some(proxy) = embedded_proxy {
+        world.import::<HyperionProxyModule>();
+        world.set(ProxyAddress {
+            proxy,
+            server: address.to_string(),
+        });
+    }
 
     world.set(crypto);
     world.set(GameServerEndpoint::from(address));

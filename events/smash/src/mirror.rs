@@ -33,16 +33,7 @@ impl Module for MirrorModule {
             .kind(id::<flecs::pipeline::OnLoad>())
             .with(Player::id())
             .each(
-                |(
-                    source,
-                    yaw,
-                    pitch,
-                    tracking,
-                    position,
-                    facing,
-                    ground,
-                    velocity,
-                )| {
+                |(source, yaw, pitch, tracking, position, facing, ground, velocity)| {
                     position.0 = **source;
                     facing.0 = look_vector(**yaw, **pitch);
                     ground.0 = tracking.was_on_ground;

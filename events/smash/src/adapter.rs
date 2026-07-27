@@ -202,9 +202,8 @@ impl Module for SmashAdapterModule {
             .kind(id::<flecs::pipeline::PostUpdate>())
             .each_iter(|it, _, (queue, compose)| {
                 let world = it.world();
-                let drained = std::mem::take(
-                    &mut *queue.0.lock().expect("server op queue poisoned"),
-                );
+                let drained =
+                    std::mem::take(&mut *queue.0.lock().expect("server op queue poisoned"));
                 for op in drained {
                     apply(world, compose, op);
                 }
@@ -263,8 +262,7 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             entity.get::<&mut PlayerInventory>(|inventory| {
                 inventory.clear();
                 for item in &items {
-                    let _unused =
-                        inventory.set_hotbar(u16::from(item.slot), stack_for(item));
+                    let _unused = inventory.set_hotbar(u16::from(item.slot), stack_for(item));
                 }
             });
         }
@@ -297,10 +295,7 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             };
             sidebar(compose, connection, &title, &lines);
         }
-        Op::Spectating {
-            player,
-            spectating,
-        } => {
+        Op::Spectating { player, spectating } => {
             let entity = world.entity_from_id(player);
             if !entity.is_alive() {
                 return;

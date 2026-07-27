@@ -42,6 +42,13 @@
 
       clippyArgs = "--all-targets --all-features";
 
+      # `nix run .#certs` writes here and every runner reads from here, so the
+      # path is stated once. Gitignored: these are throwaway localhost keys.
+      certDir = ".dev-certs";
+      certFlags = "--root-ca-cert ${certDir}/root_ca.crt "
+        + "--cert ${certDir}/server.crt "
+        + "--private-key ${certDir}/server_private_key.pem";
+
       mkSystem = system:
         let
           pkgs = import nixpkgs {
@@ -193,12 +200,50 @@
             proxy.text = ''
               ulimit -Sn ${fileDescriptors}
               exec cargo run --profile release-full --bin hyperion-proxy -- \
-                --server 127.0.0.1:35565 0.0.0.0:25565
+                --server 127.0.0.1:35565 ${certFlags} 0.0.0.0:25565
             '';
 
             bedwars.text = ''
               exec cargo run --profile release-full -p bedwars -- "$@"
             '';
+
+            # One process: the game server with a proxy inside it. `nix run
+            # .#smash` is a complete, joinable server on 25565.
+            smash.text = ''
+              exec cargo run --profile release-full -p smash -- \
+                ${certFlags} --embedded-proxy 0.0.0.0:25565 "$@"
+            '';
+
+            # The game server and the proxy authenticate each other over mTLS,
+            # so neither will start without a certificate. This makes the
+            # development pair, which is the one case where a single key for
+            # both ends is fine because both ends are this machine.
+            certs = {
+              deps = [ pkgs.git pkgs.openssl ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                dir="$root/${certDir}"
+                if [ -f "$dir/server.crt" ] && [ "''${1:-}" != "--force" ]; then
+                  echo "${certDir} already exists; pass --force to replace it"
+                  exit 0
+                fi
+                mkdir -p "$dir"
+                openssl req -new -nodes -newkey rsa:4096 \
+                  -keyout "$dir/root_ca.pem" -x509 -out "$dir/root_ca.crt" \
+                  -days 365 -subj "/CN=hyperion-dev-ca"
+                openssl req -nodes -newkey rsa:4096 \
+                  -keyout "$dir/server_private_key.pem" -out "$dir/server.csr" \
+                  -subj "/CN=hyperion-dev"
+                # Without a subjectAltName the peer is rejected with
+                # "certificate not valid for name".
+                printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\n' > "$dir/san.cnf"
+                openssl x509 -req -in "$dir/server.csr" \
+                  -CA "$dir/root_ca.crt" -CAkey "$dir/root_ca.pem" -CAcreateserial \
+                  -out "$dir/server.crt" -days 365 -sha256 -extfile "$dir/san.cnf"
+                rm -f "$dir/server.csr" "$dir/san.cnf"
+                echo "wrote development certificates to ${certDir}"
+              '';
+            };
 
             # rust-mc-bot reads its whole configuration from BOT_-prefixed
             # environment variables, so the address and count cannot be passed
@@ -231,9 +276,40 @@
                 export RUST_BACKTRACE=full
 
                 parallel --ungroup --halt now,done=1 --jobs 3 ::: \
-                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars'" \
-                  "cargo run --profile $profile --bin hyperion-proxy -- --server 127.0.0.1:35565 0.0.0.0:25565" \
+                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars ${certFlags}'" \
+                  "cargo run --profile $profile --bin hyperion-proxy -- --server 127.0.0.1:35565 ${certFlags} 0.0.0.0:25565" \
                   "cargo watch -w '$root/crates/hyperion' -w '$root/events/bedwars' -s 'cargo build --profile $profile -p bedwars' -s 'touch $trigger'"
+              '';
+            };
+
+            # `dev` for Super Smash Mobs: the same three jobs, the same trigger
+            # file, the same restart-on-rebuild. The game server runs without an
+            # embedded proxy here because the standalone one below owns 25565.
+            smash-dev = {
+              deps = [ pkgs.cargo-watch pkgs.git pkgs.parallel ];
+              text = ''
+                profile="''${1:-dev}"
+                case "$profile" in
+                  dev | debug) profile=dev; target=debug ;;
+                  *) target="$profile" ;;
+                esac
+
+                root="$(git rev-parse --show-toplevel)"
+                if [ ! -f "$root/${certDir}/server.crt" ]; then
+                  echo "no ${certDir}; run 'nix run .#certs' first" >&2
+                  exit 1
+                fi
+
+                trigger="$root/.trigger-smash-$target"
+                touch "$trigger"
+
+                ulimit -Sn ${fileDescriptors}
+                export RUST_BACKTRACE=full
+
+                parallel --ungroup --halt now,done=1 --jobs 3 ::: \
+                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/smash ${certFlags}'" \
+                  "cargo run --profile $profile --bin hyperion-proxy -- --server 127.0.0.1:35565 ${certFlags} 0.0.0.0:25565" \
+                  "cargo watch -w '$root/crates/hyperion' -w '$root/events/smash' -s 'cargo build --profile $profile -p smash' -s 'touch $trigger'"
               '';
             };
           };
@@ -297,7 +373,7 @@
 
           packages = {
             default = workspace.binaries.bedwars;
-            inherit (workspace.binaries) bedwars hyperion-proxy rust-mc-bot;
+            inherit (workspace.binaries) bedwars hyperion-proxy rust-mc-bot smash;
 
             minecraft-server-jar = minecraft.serverJar;
             minecraft-data = minecraft.generatedData;

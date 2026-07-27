@@ -5696,7 +5696,6 @@ dependencies = [
  "clap",
  "dotenvy",
  "envy",
- "fastrand 2.3.0",
  "flecs_ecs",
  "glam 0.29.3",
  "hyperion",
@@ -5715,7 +5714,6 @@ dependencies = [
  "tracing-subscriber",
  "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
  "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
- "valence_text 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]

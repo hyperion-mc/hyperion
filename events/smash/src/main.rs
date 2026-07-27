@@ -34,6 +34,13 @@ struct Args {
     /// The file path to the game server's private key
     #[clap(long)]
     private_key: PathBuf,
+
+    /// Run a proxy inside this process, listening here. Omit it when a separate
+    /// proxy already owns the public port, or the two race for it and the loser
+    /// dies in a background task with nothing on stdout to say so.
+    #[clap(long)]
+    #[serde(default)]
+    embedded_proxy: Option<String>,
 }
 
 fn default_ip() -> String {
@@ -46,13 +53,15 @@ const fn default_port() -> u16 {
 
 fn setup_logging() {
     tracing::subscriber::set_global_default(
-        Registry::default().with(EnvFilter::from_default_env()).with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_thread_ids(false)
-                .with_file(true)
-                .with_line_number(true),
-        ),
+        Registry::default()
+            .with(EnvFilter::from_default_env())
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(false)
+                    .with_thread_ids(false)
+                    .with_file(true)
+                    .with_line_number(true),
+            ),
     )
     .expect("setup tracing subscribers");
 }
@@ -80,5 +89,5 @@ fn main() {
     let address = address.parse::<SocketAddr>().unwrap();
     let crypto = Crypto::new(&args.root_ca_cert, &args.cert, &args.private_key).unwrap();
 
-    init_game(address, crypto).unwrap();
+    init_game(address, args.embedded_proxy, crypto).unwrap();
 }
