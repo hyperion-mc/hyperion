@@ -1,18 +1,30 @@
+//! Streaming terrain to a player as they move.
+//!
+//! Two systems: one turns a change of chunk into a queue of columns to send
+//! and a set of columns to forget, and the other drains that queue at a fixed
+//! rate so that a player joining does not get 400 columns in one tick.
+
 use std::cmp::Ordering;
 
 use derive_more::derive::{Deref, DerefMut};
 use flecs_ecs::prelude::*;
 use glam::I16Vec2;
+use hyperion_minecraft_proto::{
+    ChunkPos,
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::clientbound::{
+        ChunkBatchFinished, ChunkBatchStart, ForgetLevelChunk, SetChunkCacheCenter,
+    },
+};
 use itertools::Itertools;
 use tracing::error;
-use valence_protocol::{
-    ChunkPos, VarInt,
-    packets::play::{self},
-};
 
 use crate::{
     config::Config,
-    net::{Compose, ConnectionId, DataBundle},
+    net::{
+        Compose, ConnectionId, DataBundle,
+        protocol::{Clientbound, send},
+    },
     simulation::{
         ChunkPosition, PacketState, Position,
         blocks::{Blocks, GetChunk},
@@ -55,13 +67,19 @@ impl Module for SyncChunksModule {
                     return;
                 }
 
-                // center chunk
-                let center_chunk = play::ChunkRenderDistanceCenterS2c {
-                    chunk_x: VarInt(i32::from(current_chunk.x)),
-                    chunk_z: VarInt(i32::from(current_chunk.y)),
+                // The client discards any chunk outside its cache centre, so
+                // this has to move before the columns around it are sent.
+                let center_chunk = SetChunkCacheCenter {
+                    x: i32::from(current_chunk.x),
+                    z: i32::from(current_chunk.y),
                 };
 
-                if let Err(e) = compose.unicast(&center_chunk, stream_id) {
+                if let Err(e) = send(
+                    compose,
+                    stream_id,
+                    PacketId::SetChunkCacheCenter.to_raw(),
+                    &center_chunk,
+                ) {
                     error!(
                         "failed to send chunk render distance center packet: {e}. Chunk location: \
                          {current_chunk:?}"
@@ -96,16 +114,17 @@ impl Module for SyncChunksModule {
                 let mut bundle = DataBundle::new(compose);
 
                 for chunk in removed_chunks {
-                    let pos = ChunkPos::new(i32::from(chunk.x), i32::from(chunk.y));
-                    let unload_chunk = play::UnloadChunkS2c { pos };
+                    let forget = ForgetLevelChunk(ChunkPos::new(
+                        i32::from(chunk.x),
+                        i32::from(chunk.y),
+                    ));
 
-                    bundle.add_packet(&unload_chunk).unwrap();
-
-                    // if let Err(e) = compose.unicast(&unload_chunk, stream_id, system_id, &world) {
-                    //     error!(
-                    //         "Failed to send unload chunk packet: {e}. Chunk location: {chunk:?}"
-                    //     );
-                    // }
+                    bundle
+                        .add_packet(Clientbound::new(
+                            PacketId::ForgetLevelChunk.to_raw(),
+                            &forget,
+                        ))
+                        .unwrap();
                 }
 
                 bundle.unicast(stream_id).unwrap();
@@ -170,9 +189,7 @@ impl Module for SyncChunksModule {
 
             let last = None;
 
-            let mut iter_count = 0;
-
-            let mut bundle = DataBundle::new(compose);
+            let mut ready = Vec::with_capacity(MAX_CHUNKS_PER_TICK);
 
             #[expect(
                 clippy::cast_possible_wrap,
@@ -198,22 +215,13 @@ impl Module for SyncChunksModule {
                     continue;
                 }
 
-                if iter_count >= MAX_CHUNKS_PER_TICK {
+                if ready.len() >= MAX_CHUNKS_PER_TICK {
                     break;
                 }
 
                 match chunks.get_cached_or_load(elem) {
                     GetChunk::Loaded(chunk) => {
-                        bundle.add_raw(&chunk.base_packet_bytes);
-
-                        for packet in chunk.original_delta_packets() {
-                            if let Err(e) = bundle.add_packet(packet) {
-                                error!("failed to send chunk delta packet: {e}");
-                                return;
-                            }
-                        }
-
-                        iter_count += 1;
+                        ready.push(chunk);
                         #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
                         queue.changes.swap_remove(idx as usize);
                     }
@@ -221,6 +229,46 @@ impl Module for SyncChunksModule {
                 }
 
                 idx -= 1;
+            }
+
+            // The batch is what tells the client how fast this server can feed
+            // it terrain: it times the run and answers with a chunks-per-tick
+            // figure. Sending nothing at all is a batch of zero columns, which
+            // would tell it this server is infinitely slow, so a tick with no
+            // chunk ready sends no batch either.
+            if ready.is_empty() {
+                return;
+            }
+
+            let mut bundle = DataBundle::new(compose);
+
+            if let Err(e) = bundle.add_packet(Clientbound::new(
+                PacketId::ChunkBatchStart.to_raw(),
+                &ChunkBatchStart,
+            )) {
+                error!("failed to start a chunk batch: {e}");
+                return;
+            }
+
+            let batch_size = ready.len();
+            for chunk in ready {
+                bundle.add_raw(&chunk.base_packet_bytes);
+
+                for packet in chunk.original_delta_packets() {
+                    if let Err(e) = bundle.add_packet(packet) {
+                        error!("failed to send chunk delta packet: {e}");
+                        return;
+                    }
+                }
+            }
+
+            let finished = ChunkBatchFinished(i32::try_from(batch_size).unwrap_or(i32::MAX));
+            if let Err(e) = bundle.add_packet(Clientbound::new(
+                PacketId::ChunkBatchFinished.to_raw(),
+                &finished,
+            )) {
+                error!("failed to finish a chunk batch: {e}");
+                return;
             }
 
             bundle.unicast(stream_id).unwrap();
