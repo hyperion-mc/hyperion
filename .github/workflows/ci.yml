@@ -11,18 +11,25 @@ on:
 jobs:
   # Each check is the same flake app a contributor runs locally, so CI cannot
   # drift from `nix run .#ci`.
+  # Job names are fixed by the merge queue ruleset on main, which requires
+  # these exact contexts. The app each one runs is the same one a contributor
+  # runs locally.
   check:
-    name: ${{ matrix.app }}
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - app: fmt
+          - name: Formatting
+            app: fmt
             args: -- --check
-          - app: lint
-          - app: doc
-          - app: test
+          - name: Clippy
+            app: lint
+          - name: Documentation
+            app: doc
+          - name: Tests (ubuntu-latest)
+            app: test
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
