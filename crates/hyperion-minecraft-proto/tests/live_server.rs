@@ -89,7 +89,9 @@ fn status_ping_against_real_server() {
         port,
         intention: ClientIntent::Status,
     };
-    stream.write_all(&frame(0, &handshake)).expect("send handshake");
+    stream
+        .write_all(&frame(0, &handshake))
+        .expect("send handshake");
     stream
         .write_all(&frame(0, &StatusRequest))
         .expect("send status request");
@@ -101,7 +103,11 @@ fn status_ping_against_real_server() {
     let response = StatusResponse::decode(&mut reader).expect("decode status response");
     reader.finish().expect("status response fully consumed");
 
-    eprintln!("status response ({} bytes): {}", body.len(), response.status);
+    eprintln!(
+        "status response ({} bytes): {}",
+        body.len(),
+        response.status
+    );
 
     // The server reports the protocol it speaks; it must be the one we generated
     // our tables from, or the whole pipeline is pointed at the wrong version.

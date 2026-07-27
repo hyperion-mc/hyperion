@@ -114,12 +114,16 @@ let
 
   generatedRust = pkgs.runCommand "hyperion-minecraft-proto-generated-${pin.id}"
     {
-      nativeBuildInputs = [ codegen ];
+      # rustfmt runs here rather than on the committed copy: formatting the
+      # copy alone would make it differ from what the generator emits, and the
+      # staleness check compares the two.
+      nativeBuildInputs = [ codegen pkgs.rustfmt ];
       meta.description = "Generated Rust protocol tables for Minecraft ${pin.id}";
     }
     ''
       mkdir -p $out
       generate-minecraft-proto --protocol ${protocolJson}/protocol.json --out $out
+      find $out -name '*.rs' -exec rustfmt --edition 2024 {} +
     '';
 
   # Re-resolves Mojang's manifest and rewrites the pin. Impure by nature, so it

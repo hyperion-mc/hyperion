@@ -2093,10 +2093,7 @@ pub static DIALOG_ACTION_TYPE: Registry = Registry {
 /// `minecraft:dialog_body_type` (2 entries).
 pub static DIALOG_BODY_TYPE: Registry = Registry {
     name: "minecraft:dialog_body_type",
-    entries: &[
-        "minecraft:item",
-        "minecraft:plain_message",
-    ],
+    entries: &["minecraft:item", "minecraft:plain_message"],
 };
 
 /// `minecraft:dialog_type` (5 entries).
@@ -4377,10 +4374,7 @@ pub static LOOT_FUNCTION_TYPE: Registry = Registry {
 /// `minecraft:loot_nbt_provider_type` (2 entries).
 pub static LOOT_NBT_PROVIDER_TYPE: Registry = Registry {
     name: "minecraft:loot_nbt_provider_type",
-    entries: &[
-        "minecraft:storage",
-        "minecraft:context",
-    ],
+    entries: &["minecraft:storage", "minecraft:context"],
 };
 
 /// `minecraft:loot_number_provider_type` (8 entries).
@@ -4417,10 +4411,7 @@ pub static LOOT_POOL_ENTRY_TYPE: Registry = Registry {
 /// `minecraft:loot_score_provider_type` (2 entries).
 pub static LOOT_SCORE_PROVIDER_TYPE: Registry = Registry {
     name: "minecraft:loot_score_provider_type",
-    entries: &[
-        "minecraft:fixed",
-        "minecraft:context",
-    ],
+    entries: &["minecraft:fixed", "minecraft:context"],
 };
 
 /// `minecraft:map_decoration_type` (35 entries).
@@ -4670,11 +4661,7 @@ pub static MOB_EFFECT: Registry = Registry {
 /// `minecraft:number_format_type` (3 entries).
 pub static NUMBER_FORMAT_TYPE: Registry = Registry {
     name: "minecraft:number_format_type",
-    entries: &[
-        "minecraft:blank",
-        "minecraft:styled",
-        "minecraft:fixed",
-    ],
+    entries: &["minecraft:blank", "minecraft:styled", "minecraft:fixed"],
 };
 
 /// `minecraft:outgoing_rpc_methods` (17 entries).
@@ -4836,19 +4823,13 @@ pub static PARTICLE_TYPE: Registry = Registry {
 /// `minecraft:permission_check_type` (2 entries).
 pub static PERMISSION_CHECK_TYPE: Registry = Registry {
     name: "minecraft:permission_check_type",
-    entries: &[
-        "minecraft:always_pass",
-        "minecraft:require",
-    ],
+    entries: &["minecraft:always_pass", "minecraft:require"],
 };
 
 /// `minecraft:permission_type` (2 entries).
 pub static PERMISSION_TYPE: Registry = Registry {
     name: "minecraft:permission_type",
-    entries: &[
-        "minecraft:atom",
-        "minecraft:command_level",
-    ],
+    entries: &["minecraft:atom", "minecraft:command_level"],
 };
 
 /// `minecraft:point_of_interest_type` (21 entries).
@@ -4892,10 +4873,7 @@ pub static POS_RULE_TEST: Registry = Registry {
 /// `minecraft:position_source_type` (2 entries).
 pub static POSITION_SOURCE_TYPE: Registry = Registry {
     name: "minecraft:position_source_type",
-    entries: &[
-        "minecraft:block",
-        "minecraft:entity",
-    ],
+    entries: &["minecraft:block", "minecraft:entity"],
 };
 
 /// `minecraft:potion` (46 entries).
@@ -7129,18 +7107,13 @@ pub static TEST_ENVIRONMENT_DEFINITION_TYPE: Registry = Registry {
 /// `minecraft:test_function` (1 entries).
 pub static TEST_FUNCTION: Registry = Registry {
     name: "minecraft:test_function",
-    entries: &[
-        "minecraft:always_pass",
-    ],
+    entries: &["minecraft:always_pass"],
 };
 
 /// `minecraft:test_instance_type` (2 entries).
 pub static TEST_INSTANCE_TYPE: Registry = Registry {
     name: "minecraft:test_instance_type",
-    entries: &[
-        "minecraft:block_based",
-        "minecraft:function",
-    ],
+    entries: &["minecraft:block_based", "minecraft:function"],
 };
 
 /// `minecraft:ticket_type` (9 entries).
@@ -7299,11 +7272,7 @@ pub static WORLDGEN_CARVER: Registry = Registry {
 /// `minecraft:worldgen/chunk_generator` (3 entries).
 pub static WORLDGEN_CHUNK_GENERATOR: Registry = Registry {
     name: "minecraft:worldgen/chunk_generator",
-    entries: &[
-        "minecraft:noise",
-        "minecraft:flat",
-        "minecraft:debug",
-    ],
+    entries: &["minecraft:noise", "minecraft:flat", "minecraft:debug"],
 };
 
 /// `minecraft:worldgen/density_function_type` (34 entries).
@@ -7508,9 +7477,7 @@ pub static WORLDGEN_POOL_ALIAS_BINDING: Registry = Registry {
 /// `minecraft:worldgen/root_placer_type` (1 entries).
 pub static WORLDGEN_ROOT_PLACER_TYPE: Registry = Registry {
     name: "minecraft:worldgen/root_placer_type",
-    entries: &[
-        "minecraft:mangrove_root_placer",
-    ],
+    entries: &["minecraft:mangrove_root_placer"],
 };
 
 /// `minecraft:worldgen/structure_piece` (56 entries).
@@ -7579,10 +7546,7 @@ pub static WORLDGEN_STRUCTURE_PIECE: Registry = Registry {
 /// `minecraft:worldgen/structure_placement` (2 entries).
 pub static WORLDGEN_STRUCTURE_PLACEMENT: Registry = Registry {
     name: "minecraft:worldgen/structure_placement",
-    entries: &[
-        "minecraft:random_spread",
-        "minecraft:concentric_rings",
-    ],
+    entries: &["minecraft:random_spread", "minecraft:concentric_rings"],
 };
 
 /// `minecraft:worldgen/structure_pool_element` (5 entries).

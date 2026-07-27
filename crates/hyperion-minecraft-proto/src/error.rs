@@ -44,7 +44,10 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedEof { needed, available } => {
-                write!(f, "unexpected end of input: needed {needed} bytes, {available} available")
+                write!(
+                    f,
+                    "unexpected end of input: needed {needed} bytes, {available} available"
+                )
             }
             Self::VarIntTooLong => f.write_str("variable-length integer exceeded its maximum size"),
             Self::NegativeLength(n) => write!(f, "negative length prefix: {n}"),

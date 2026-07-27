@@ -56,7 +56,11 @@ fn var_int_matches_vanilla_boundaries() {
         assert_eq!(writer.as_slice(), *expected, "encoding {value}");
 
         let mut reader = Reader::new(expected);
-        assert_eq!(reader.var_int().expect("decode"), *value, "decoding {value}");
+        assert_eq!(
+            reader.var_int().expect("decode"),
+            *value,
+            "decoding {value}"
+        );
         assert!(reader.is_empty());
     }
 }
@@ -75,8 +79,12 @@ fn var_long_round_trips() {
         (0, &[0x00]),
         (127, &[0x7F]),
         (128, &[0x80, 0x01]),
-        (i64::MAX, &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F]),
-        (-1, &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]),
+        (i64::MAX, &[
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F,
+        ]),
+        (-1, &[
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01,
+        ]),
     ];
     for (value, expected) in cases {
         let mut writer = Writer::new();
@@ -174,8 +182,18 @@ fn status_response_round_trips() {
 #[test]
 fn ping_and_pong_round_trip() {
     let bytes: &[u8] = &[0x00, 0x00, 0x01, 0x9A, 0x2B, 0x3C, 0x4D, 0x5E];
-    round_trip(&PingRequest { time: 0x0000_019A_2B3C_4D5E }, bytes);
-    round_trip(&PongResponse { time: 0x0000_019A_2B3C_4D5E }, bytes);
+    round_trip(
+        &PingRequest {
+            time: 0x0000_019A_2B3C_4D5E,
+        },
+        bytes,
+    );
+    round_trip(
+        &PongResponse {
+            time: 0x0000_019A_2B3C_4D5E,
+        },
+        bytes,
+    );
 }
 
 // --- login ----------------------------------------------------------------

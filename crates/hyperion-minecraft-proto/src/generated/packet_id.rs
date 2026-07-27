@@ -40,9 +40,7 @@ pub mod handshake {
 
         impl PacketId {
             /// Every packet in this channel, in id order.
-            pub const ALL: &'static [Self] = &[
-                Self::Intention,
-            ];
+            pub const ALL: &'static [Self] = &[Self::Intention];
 
             /// Numeric id as written on the wire.
             #[must_use]
@@ -99,10 +97,7 @@ pub mod status {
 
         impl PacketId {
             /// Every packet in this channel, in id order.
-            pub const ALL: &'static [Self] = &[
-                Self::StatusRequest,
-                Self::PingRequest,
-            ];
+            pub const ALL: &'static [Self] = &[Self::StatusRequest, Self::PingRequest];
 
             /// Numeric id as written on the wire.
             #[must_use]
@@ -161,10 +156,7 @@ pub mod status {
 
         impl PacketId {
             /// Every packet in this channel, in id order.
-            pub const ALL: &'static [Self] = &[
-                Self::StatusResponse,
-                Self::PongResponse,
-            ];
+            pub const ALL: &'static [Self] = &[Self::StatusResponse, Self::PongResponse];
 
             /// Numeric id as written on the wire.
             #[must_use]
@@ -1059,14 +1051,20 @@ pub mod play {
                     Self::ClientTickEnd => Some("ServerboundClientTickEndPacket"),
                     Self::ClientInformation => Some("ServerboundClientInformationPacket"),
                     Self::CommandSuggestion => Some("ServerboundCommandSuggestionPacket"),
-                    Self::ConfigurationAcknowledged => Some("ServerboundConfigurationAcknowledgedPacket"),
+                    Self::ConfigurationAcknowledged => {
+                        Some("ServerboundConfigurationAcknowledgedPacket")
+                    }
                     Self::ContainerButtonClick => Some("ServerboundContainerButtonClickPacket"),
                     Self::ContainerClick => Some("ServerboundContainerClickPacket"),
                     Self::ContainerClose => Some("ServerboundContainerClosePacket"),
-                    Self::ContainerSlotStateChanged => Some("ServerboundContainerSlotStateChangedPacket"),
+                    Self::ContainerSlotStateChanged => {
+                        Some("ServerboundContainerSlotStateChangedPacket")
+                    }
                     Self::CookieResponse => Some("ServerboundCookieResponsePacket"),
                     Self::CustomPayload => Some("ServerboundCustomPayloadPacket"),
-                    Self::DebugSubscriptionRequest => Some("ServerboundDebugSubscriptionRequestPacket"),
+                    Self::DebugSubscriptionRequest => {
+                        Some("ServerboundDebugSubscriptionRequestPacket")
+                    }
                     Self::EditBook => Some("ServerboundEditBookPacket"),
                     Self::EntityTagQuery => Some("ServerboundEntityTagQueryPacket"),
                     Self::Interact => Some("ServerboundInteractPacket"),
@@ -1089,7 +1087,9 @@ pub mod play {
                     Self::PlayerInput => Some("ServerboundPlayerInputPacket"),
                     Self::PlayerLoaded => Some("ServerboundPlayerLoadedPacket"),
                     Self::Pong => Some("ServerboundPongPacket"),
-                    Self::RecipeBookChangeSettings => Some("ServerboundRecipeBookChangeSettingsPacket"),
+                    Self::RecipeBookChangeSettings => {
+                        Some("ServerboundRecipeBookChangeSettingsPacket")
+                    }
                     Self::RecipeBookSeenRecipe => Some("ServerboundRecipeBookSeenRecipePacket"),
                     Self::RenameItem => Some("ServerboundRenameItemPacket"),
                     Self::ResourcePack => Some("ServerboundResourcePackPacket"),
@@ -1108,7 +1108,9 @@ pub mod play {
                     Self::SpectatorAction => Some("ServerboundSpectatorActionPacket"),
                     Self::Swing => Some("ServerboundSwingPacket"),
                     Self::TeleportToEntity => Some("ServerboundTeleportToEntityPacket"),
-                    Self::TestInstanceBlockAction => Some("ServerboundTestInstanceBlockActionPacket"),
+                    Self::TestInstanceBlockAction => {
+                        Some("ServerboundTestInstanceBlockActionPacket")
+                    }
                     Self::UseItemOn => Some("ServerboundUseItemOnPacket"),
                     Self::UseItem => Some("ServerboundUseItemPacket"),
                     Self::CustomClickAction => Some("ServerboundCustomClickActionPacket"),
@@ -1959,12 +1961,16 @@ pub mod play {
                     Self::SetBorderLerpSize => Some("ClientboundSetBorderLerpSizePacket"),
                     Self::SetBorderSize => Some("ClientboundSetBorderSizePacket"),
                     Self::SetBorderWarningDelay => Some("ClientboundSetBorderWarningDelayPacket"),
-                    Self::SetBorderWarningDistance => Some("ClientboundSetBorderWarningDistancePacket"),
+                    Self::SetBorderWarningDistance => {
+                        Some("ClientboundSetBorderWarningDistancePacket")
+                    }
                     Self::SetCamera => Some("ClientboundSetCameraPacket"),
                     Self::SetChunkCacheCenter => Some("ClientboundSetChunkCacheCenterPacket"),
                     Self::SetChunkCacheRadius => Some("ClientboundSetChunkCacheRadiusPacket"),
                     Self::SetCursorItem => Some("ClientboundSetCursorItemPacket"),
-                    Self::SetDefaultSpawnPosition => Some("ClientboundSetDefaultSpawnPositionPacket"),
+                    Self::SetDefaultSpawnPosition => {
+                        Some("ClientboundSetDefaultSpawnPositionPacket")
+                    }
                     Self::SetDisplayObjective => Some("ClientboundSetDisplayObjectivePacket"),
                     Self::SetEntityData => Some("ClientboundSetEntityDataPacket"),
                     Self::SetEntityLink => Some("ClientboundSetEntityLinkPacket"),
