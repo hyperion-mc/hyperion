@@ -22,7 +22,6 @@ serde = { version = "1.0", features = ["derive"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-valence_bytes = { workspace = true }
 valence_protocol = { workspace = true }
 valence_server = { workspace = true }
 valence_text = { workspace = true }

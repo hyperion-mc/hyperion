@@ -9,7 +9,10 @@ use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     world::{
         ContainerKind, PalettedContainer,
-        chunk::{ChunkData, ChunkSection, Heightmap, HeightmapKind, LevelChunkWithLight, LightData, light_mask},
+        chunk::{
+            ChunkData, ChunkSection, Heightmap, HeightmapKind, LevelChunkWithLight, LightData,
+            light_mask,
+        },
     },
 };
 use hyperion_nerd_font::NERD_ROCKET;

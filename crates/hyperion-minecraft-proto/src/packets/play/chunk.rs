@@ -15,12 +15,11 @@
 //! * [`SectionBlocksUpdate`] packs a state id and a position into one
 //!   `VarLong` per change, which is a loop the generator will not write.
 
-use crate::{Decode, Encode, Error, Reader, Result, Writer};
-
 pub use crate::world::chunk::{
     BlockEntity, ChunkData, ChunkSection, Heightmap, HeightmapKind, LIGHT_LAYER_LEN,
     LevelChunkWithLight, LightData, MAX_SECTION_BLOB, light_mask,
 };
+use crate::{Decode, Encode, Error, Reader, Result, Writer};
 
 /// The position of one 16-cubed section, packed into one `long`.
 ///
@@ -274,8 +273,7 @@ mod tests {
             0x00, 0x01, // block states: zero bits, single value 1
             0x00, 0x00, // biomes: zero bits, single value 0
             // no block entities
-            0x00,
-            // four empty light masks and two empty update lists
+            0x00, // four empty light masks and two empty update lists
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ]);
 

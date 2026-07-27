@@ -212,11 +212,11 @@ pub mod serverbound {
     pub struct PlayerInput(pub u8);
 
     impl PlayerInput {
-        const FORWARD: u8 = 1;
         const BACKWARD: u8 = 2;
+        const FORWARD: u8 = 1;
+        const JUMP: u8 = 16;
         const LEFT: u8 = 4;
         const RIGHT: u8 = 8;
-        const JUMP: u8 = 16;
         const SHIFT: u8 = 32;
         const SPRINT: u8 = 64;
 

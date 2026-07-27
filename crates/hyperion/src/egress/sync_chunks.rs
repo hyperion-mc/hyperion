@@ -114,10 +114,8 @@ impl Module for SyncChunksModule {
                 let mut bundle = DataBundle::new(compose);
 
                 for chunk in removed_chunks {
-                    let forget = ForgetLevelChunk(ChunkPos::new(
-                        i32::from(chunk.x),
-                        i32::from(chunk.y),
-                    ));
+                    let forget =
+                        ForgetLevelChunk(ChunkPos::new(i32::from(chunk.x), i32::from(chunk.y)));
 
                     bundle
                         .add_packet(Clientbound::new(
