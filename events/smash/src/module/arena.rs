@@ -9,9 +9,12 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::module::{
-    lives::{self, DeathCause},
-    player::{Health, Position},
+use crate::{
+    flecs_ext::WorldRefExt,
+    module::{
+        lives::{self, DeathCause, Eliminated, RespawnAt},
+        player::{Health, Player, Position},
+    },
 };
 
 /// The arena, as a singleton.
@@ -44,11 +47,12 @@ impl Default for Arena {
 impl Arena {
     /// Spawn point `index`, wrapping. Deterministic so a test can predict it.
     #[must_use]
-    pub fn spawn(&self, index: usize) -> Vec3 {
+    pub fn spawn(&self, index: u64) -> Vec3 {
         if self.spawns.is_empty() {
             return Vec3::new(0.0, 64.0, 0.0);
         }
-        self.spawns[index % self.spawns.len()]
+        let len = self.spawns.len() as u64;
+        self.spawns[usize::try_from(index % len).unwrap_or(0)]
     }
 
     #[must_use]
@@ -66,21 +70,36 @@ impl Module for ArenaModule {
         world.component::<Arena>().add_trait::<flecs::Singleton>();
         world.set(Arena::default());
 
+        // Both death checks read `Health`, and killing someone writes it from
+        // the `Died` observer. flecs catches that overlap at runtime, so the
+        // victims are collected first and killed once the query has finished.
+        // Health reaching zero is the rarer path but a real one: hunger and
+        // lava both get there.
         world
-            .system_named::<(&Position, &Health, &Arena)>("smash::void_check")
-            .each_entity(|player, (position, health, arena)| {
-                if health.is_dead() || !arena.is_out_of_bounds(position.0) {
-                    return;
-                }
-                lives::kill(player, DeathCause::Void);
-            });
+            .system_named::<()>("smash::death_checks")
+            .run(|mut it| {
+                while it.next() {
+                    let world = it.world();
+                    let arena = world.cloned::<&Arena>();
+                    let mut doomed = Vec::new();
 
-        // Health reaching zero is rare but real: hunger and lava both do it.
-        world
-            .system_named::<&Health>("smash::zero_health_check")
-            .each_entity(|player, health| {
-                if health.is_dead() {
-                    lives::kill(player, DeathCause::Damage);
+                    world
+                        .query::<(&Position, &Health)>()
+                        .with(Player::id())
+                        .without(Eliminated::id())
+                        .without(RespawnAt::id())
+                        .build()
+                        .each_entity(|player, (position, health)| {
+                            if health.is_dead() {
+                                doomed.push((player.id(), DeathCause::Damage));
+                            } else if arena.is_out_of_bounds(position.0) {
+                                doomed.push((player.id(), DeathCause::Void));
+                            }
+                        });
+
+                    for (player, cause) in doomed {
+                        lives::kill(world.entity_at(player), cause);
+                    }
                 }
             });
     }

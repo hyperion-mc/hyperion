@@ -143,7 +143,7 @@ impl Refusal {
 
 /// Find the ability a player has bound to `slot`.
 #[must_use]
-pub fn granted_in_slot<'w>(player: EntityView<'w>, slot: u8) -> Option<EntityView<'w>> {
+pub fn granted_in_slot(player: EntityView<'_>, slot: u8) -> Option<EntityView<'_>> {
     player.find_target(Grants, |ability| {
         ability.try_get::<&Slot>(|s| s.0 == slot) == Some(true)
     })
@@ -347,6 +347,19 @@ pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier
             kind: DamageKind::Ability,
         });
     }
+}
+
+/// Turn a 0..=1 charge fraction into a whole number of steps.
+///
+/// Barrage's arrow count and Slime Rocket's size are both this shape.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the value is clamped to 0..=max before the cast"
+)]
+pub fn charge_steps(charge: f32, max: u32) -> u32 {
+    (charge.clamp(0.0, 1.0) * f32::from(u16::try_from(max).unwrap_or(u16::MAX))).round() as u32
 }
 
 /// [`splash_at`] centred on the caster, with the bang.

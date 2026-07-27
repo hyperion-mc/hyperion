@@ -2,7 +2,6 @@
 
 mod harness;
 
-use flecs_ecs::prelude::*;
 use glam::Vec3;
 use harness::Game;
 use smash::{
@@ -35,7 +34,10 @@ fn a_hit_lowers_health_and_launches_the_victim_away() {
         impulse.x > 0.0,
         "victim was not launched away from the attacker"
     );
-    assert_eq!(impulse.z, 0.0, "no sideways drift from a head-on hit");
+    assert!(
+        impulse.z.abs() < 1e-6,
+        "no sideways drift from a head-on hit"
+    );
     assert!(
         impulse.y > 0.0,
         "a grounded victim should be popped upwards"
@@ -135,7 +137,11 @@ fn environmental_damage_ignores_armour() {
     });
 
     let health = game.world.entity_from_id(victim).cloned::<&Health>();
-    assert_eq!(health.current, 19.0, "hunger must be true damage");
+    assert!(
+        (health.current - 19.0).abs() < 1e-6,
+        "hunger must be true damage, got {}",
+        health.current
+    );
 
     assert!(
         game.server

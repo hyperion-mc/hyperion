@@ -79,7 +79,7 @@ impl Module for IronGolem {
             activate: earthquake,
             ..AbilitySpec::DEFAULT
         })
-        .build();
+        .register();
     }
 }
 

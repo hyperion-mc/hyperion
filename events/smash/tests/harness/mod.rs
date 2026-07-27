@@ -1,5 +1,8 @@
 //! A whole game in a test, with no Minecraft server anywhere near it.
 
+// Each test binary compiles its own copy and uses a different part of it.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use flecs_ecs::prelude::*;

@@ -74,7 +74,7 @@ impl LobbyConfig {
     /// How long the countdown should be for this many players, or `None` if
     /// there are not enough to run one.
     #[must_use]
-    pub fn countdown_for(&self, players: u32) -> Option<f32> {
+    pub const fn countdown_for(&self, players: u32) -> Option<f32> {
         if players >= self.full_players {
             Some(self.countdown_at_full)
         } else if players * 4 >= self.full_players * 3 {
@@ -102,13 +102,12 @@ pub struct Lobby {
 #[must_use]
 pub fn step(config: &LobbyConfig, state: Lobby, dt: f32, players: u32, alive: u32) -> Lobby {
     match state.phase {
-        Phase::Waiting => match config.countdown_for(players) {
-            Some(seconds) => Lobby {
+        Phase::Waiting => config
+            .countdown_for(players)
+            .map_or(state, |seconds| Lobby {
                 phase: Phase::Countdown,
                 timer: seconds,
-            },
-            None => state,
-        },
+            }),
         Phase::Countdown => {
             let Some(target) = config.countdown_for(players) else {
                 // Someone left. Back to the hub, and the clock is discarded
@@ -213,17 +212,19 @@ pub fn select_kit(world: &World, player: EntityView<'_>, name: &str) -> Result<(
 /// Everyone who has not been eliminated.
 #[must_use]
 pub fn alive_count(world: &World) -> u32 {
-    world
+    let count = world
         .query::<()>()
         .with(Player::id())
         .without(Eliminated::id())
         .build()
-        .count() as u32
+        .count();
+    u32::try_from(count).unwrap_or(0)
 }
 
 #[must_use]
 pub fn player_count(world: &World) -> u32 {
-    world.query::<()>().with(Player::id()).build().count() as u32
+    let count = world.query::<()>().with(Player::id()).build().count();
+    u32::try_from(count).unwrap_or(0)
 }
 
 #[derive(Component)]
@@ -295,7 +296,7 @@ fn announce(world: &WorldRef<'_>, text: &str) {
 /// Put everyone on a spawn point and give them their kit's hotbar.
 fn scatter(world: &WorldRef<'_>) {
     let arena = world.cloned::<&Arena>();
-    let mut index = 0usize;
+    let mut index = 0u64;
 
     let mut placed = Vec::new();
     world

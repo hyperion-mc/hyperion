@@ -80,7 +80,7 @@ impl Module for Slime {
             activate: giga_slime,
             ..AbilitySpec::DEFAULT
         })
-        .build();
+        .register();
     }
 }
 
@@ -91,8 +91,17 @@ impl Module for Slime {
 /// three. Charging past that does nothing, which is the kit's skill floor.
 #[must_use]
 pub fn rocket_size(charge: f32) -> u32 {
-    let seconds = (charge.clamp(0.0, 1.0) * MAX_CHARGE_SECONDS).floor();
-    (seconds as u32).max(1)
+    // Mineplex's `max(1, floor(chargeSeconds))` with the charge capped at three
+    // seconds. Floor, not round: two and a half seconds is still a size-two
+    // rocket, and that hard edge at each whole second is the kit's timing test.
+    let seconds = charge.clamp(0.0, 1.0) * MAX_CHARGE_SECONDS;
+    if seconds >= 3.0 {
+        3
+    } else if seconds >= 2.0 {
+        2
+    } else {
+        1
+    }
 }
 
 #[must_use]
@@ -109,7 +118,7 @@ fn slime_rocket(cast: &Cast<'_>) {
         ahead,
         1.0 + size as f32,
         rocket_damage(size),
-        1.0 + cast.charge * 1.4,
+        cast.charge.mul_add(1.4, 1.0),
     );
     cast.server.cue(ahead, Cue::Explosion);
 }

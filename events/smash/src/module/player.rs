@@ -168,14 +168,28 @@ impl Module for PlayerModule {
 /// Send a game event to one player.
 ///
 /// Every event in the game is *about a player*, and flecs matches an observer
-/// when the emitted id matches any of its terms. Tagging every event with
-/// [`Player`] and filtering every observer on [`Player`] makes that one rule
-/// instead of a per-event convention nobody can check.
+/// only when the emitted id matches one of the observer's terms — not when the
+/// observer's terms merely happen to be present on the entity. Tagging every
+/// event with [`Player`] makes that one rule.
+///
+/// The consequence for anyone writing an observer, in this crate or in a kit
+/// module outside it: **name `Player` as a term**.
+///
+/// ```ignore
+/// world
+///     .observer_named::<Damaged, &Health>("my_kit::retaliate")
+///     .with(Player::id())     // <- without this the observer never fires
+///     .each_iter(|it, _, health| { .. });
+/// ```
+///
+/// Leaving it off is silent rather than loud, which is the one sharp edge in
+/// this design; `docs/smash-design.md` records why the alternatives were worse.
 pub fn notify<E: ComponentId>(player: EntityView<'_>, event: &E) {
     player.emit_about::<Player, _>(event);
 }
 
 /// Convenience for tests and for the adapter: make a player entity.
+#[must_use]
 pub fn spawn_player<'w>(world: &'w World, id: PlayerId, name: &str) -> EntityView<'w> {
     world.entity_named(name).set(id).add(Player::id())
 }

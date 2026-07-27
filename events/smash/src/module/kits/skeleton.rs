@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash},
+        ability::{Cast, charge_steps, splash},
         kit::{self, AbilitySpec, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -87,7 +87,7 @@ impl Module for Skeleton {
             activate: arrow_storm,
             ..AbilitySpec::DEFAULT
         })
-        .build();
+        .register();
     }
 }
 
@@ -110,7 +110,7 @@ fn arrow(cast: &Cast<'_>, spread: f32) {
 /// One arrow per full fifth of charge, so a tap fires one and a full hold fires
 /// five.
 fn barrage(cast: &Cast<'_>) {
-    let arrows = 1 + (cast.charge * (MAX_BARRAGE_ARROWS - 1) as f32).round() as u32;
+    let arrows = 1 + charge_steps(cast.charge, MAX_BARRAGE_ARROWS - 1);
     for index in 0..arrows.min(MAX_BARRAGE_ARROWS) {
         arrow(cast, index as f32 * 0.02);
     }

@@ -176,7 +176,7 @@ impl Module for LivesModule {
                 });
 
                 if lives.0 == 0 {
-                    let placement = remaining_alive(world) as u32;
+                    let placement = u32::try_from(remaining_alive(world)).unwrap_or(0);
                     victim.add(Eliminated::id());
                     victim.set(Placement(placement));
                     player::notify(victim, &EliminatedEvent { placement });
@@ -196,7 +196,7 @@ impl Module for LivesModule {
                     return;
                 }
 
-                let at = arena.spawn(*player.id() as usize);
+                let at = arena.spawn(*player.id());
                 health.current = health.max;
                 position.0 = at;
                 player.remove(RespawnAt::id());
@@ -219,9 +219,10 @@ use glam::Vec3;
 /// How many players are still in the match.
 #[must_use]
 pub fn remaining_alive(world: WorldRef<'_>) -> usize {
-    world
+    let count = world
         .query::<&Lives>()
         .without(Eliminated::id())
         .build()
-        .count() as usize
+        .count();
+    usize::try_from(count).unwrap_or(0)
 }

@@ -98,7 +98,7 @@ pub struct KitBlurb(pub &'static str);
 #[derive(Component, Debug)]
 pub struct Ultimate;
 
-fn noop(_: &Cast<'_>) {}
+const fn noop(_: &Cast<'_>) {}
 
 /// One ability, as a kit file declares it.
 ///
@@ -159,6 +159,7 @@ pub struct KitBuilder<'w> {
 }
 
 /// Start a kit definition. Call from a kit module's [`Module::module`].
+#[must_use]
 pub fn define<'w>(world: &'w World, name: &'static str, stats: KitStats) -> KitBuilder<'w> {
     let kit = world
         .prefab_named(name)
@@ -197,9 +198,12 @@ impl<'w> KitBuilder<'w> {
         self
     }
 
-    /// Finish. Returns the kit prefab.
+    /// Finish the definition. Kit modules end on this.
+    pub const fn register(self) {}
+
+    /// The kit prefab, for a caller that wants to decorate it further.
     #[must_use]
-    pub fn build(self) -> EntityView<'w> {
+    pub const fn prefab(&self) -> EntityView<'w> {
         self.kit
     }
 
@@ -320,12 +324,26 @@ pub fn registry(world: &World) -> Vec<Entity> {
     kits
 }
 
-/// Look a kit up by the name its module registered it under.
+/// Look a kit up by its [`KitName`].
+///
+/// Deliberately not `world.try_lookup(name)`: a kit prefab is created inside
+/// its own module's scope, so its path is `smash::kits::Skeleton::Skeleton` and
+/// a root lookup of "Skeleton" misses it. Matching on the component instead
+/// means a kit's registered name is independent of where its module chose to
+/// live, which is one less thing a kit author can get wrong.
 #[must_use]
 pub fn by_name<'w>(world: &'w World, name: &str) -> Option<EntityView<'w>> {
+    let mut found: Option<Entity> = None;
     world
-        .try_lookup(name)
-        .filter(|entity| entity.has(Kit::id()))
+        .query::<&KitName>()
+        .with(id::<flecs::Prefab>())
+        .build()
+        .each_entity(|entity, kit_name| {
+            if found.is_none() && kit_name.0 == name {
+                found = Some(entity.id());
+            }
+        });
+    found.map(|id| world.entity_from_id(id))
 }
 
 #[derive(Component)]

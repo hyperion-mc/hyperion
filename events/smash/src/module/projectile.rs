@@ -61,7 +61,7 @@ pub struct Impact<'a> {
     pub at: Vec3,
 }
 
-pub fn no_extra_effect(_: &Impact<'_>) {}
+pub const fn no_extra_effect(_: &Impact<'_>) {}
 
 impl Payload {
     #[must_use]
@@ -80,19 +80,18 @@ impl Payload {
     }
 }
 
-/// Fire one. Returns the projectile entity so a caller can decorate it.
-pub fn fire<'w>(
-    world: WorldRef<'w>,
-    shooter: EntityView<'w>,
-    flight: Flight,
-    payload: Payload,
-) -> EntityView<'w> {
+/// Fire one.
+///
+/// Does not hand the projectile back: every caller so far sets everything it
+/// needs through [`Flight`] and [`Payload`], and returning an entity nobody
+/// uses only invites someone to hold it past the tick it dies on.
+pub fn fire(world: WorldRef<'_>, shooter: EntityView<'_>, flight: Flight, payload: Payload) {
     world
         .new_entity()
         .add(Projectile::id())
         .set(flight)
         .set(payload)
-        .add((FiredBy, shooter))
+        .add((FiredBy, shooter));
 }
 
 #[derive(Component)]

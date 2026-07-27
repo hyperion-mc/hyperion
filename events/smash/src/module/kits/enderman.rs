@@ -84,7 +84,7 @@ impl Module for Enderman {
             activate: dragon_rider,
             ..AbilitySpec::DEFAULT
         })
-        .build();
+        .register();
     }
 }
 

@@ -90,7 +90,7 @@ pub trait EntityViewExt<'a> {
 
 impl<'a> EntityViewExt<'a> for EntityView<'a> {
     #[inline]
-    fn each_target_view(self, relationship: impl IntoEntity, mut f: impl FnMut(EntityView<'a>)) {
+    fn each_target_view(self, relationship: impl IntoEntity, mut f: impl FnMut(Self)) {
         let world = self.world();
         self.each_target(relationship, |target| {
             f(world.entity_at(target.id()));
@@ -101,8 +101,8 @@ impl<'a> EntityViewExt<'a> for EntityView<'a> {
     fn find_target(
         self,
         relationship: impl IntoEntity,
-        mut predicate: impl FnMut(EntityView<'a>) -> bool,
-    ) -> Option<EntityView<'a>> {
+        mut predicate: impl FnMut(Self) -> bool,
+    ) -> Option<Self> {
         let world = self.world();
         let mut found: Option<Entity> = None;
         self.each_target(relationship, |target| {
