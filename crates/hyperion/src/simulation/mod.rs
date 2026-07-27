@@ -8,7 +8,13 @@ use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
 use hyperion_minecraft_proto::{
     Uuid as ProtoUuid,
     generated::packet_id::play::clientbound::PacketId,
-    packets::play::entity::{AddEntity, pack_degrees},
+    packets::{
+        play::{
+            entity::{AddEntity, pack_degrees},
+            player::{AbilityFlags, PlayerAbilities},
+        },
+        play_login::{PlayerPosition, PositionMoveRotation, Relative, Vec3 as LoginVec3},
+    },
     types::Vec3 as ProtoVec3,
 };
 use hyperion_utils::EntityExt;
@@ -18,17 +24,14 @@ use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
-use valence_protocol::{
-    VarInt,
-    packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-        player_position_look_s2c::PlayerPositionLookFlags,
-    },
-};
+use valence_protocol::VarInt;
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle, protocol::Clientbound},
+    net::{
+        Compose, ConnectionId, DataBundle,
+        protocol::{Clientbound, send},
+    },
     simulation::{
         command::Command,
         entity_kind::EntityKind,
@@ -845,15 +848,35 @@ impl Module for SimModule {
             &ConnectionId
         )
         .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
-            let pkt = play::PlayerPositionLookS2c {
-                position: pending_teleportation.destination.as_dvec3(),
-                yaw: **yaw,
-                pitch: **pitch,
-                flags: PlayerPositionLookFlags::default(),
-                teleport_id: VarInt(pending_teleportation.teleport_id),
+            let destination = pending_teleportation.destination.as_dvec3();
+            let pkt = PlayerPosition {
+                id: pending_teleportation.teleport_id,
+                change: PositionMoveRotation {
+                    position: LoginVec3 {
+                        x: destination.x,
+                        y: destination.y,
+                        z: destination.z,
+                    },
+                    // A correction teleport stops the player rather than
+                    // carrying their velocity into the new position.
+                    delta_movement: LoginVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    y_rot: **yaw,
+                    x_rot: **pitch,
+                },
+                relatives: Relative::NONE,
             };
 
-            compose.unicast(&pkt, *connection).unwrap();
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerPosition.to_raw(),
+                &pkt,
+            )
+            .unwrap();
         });
 
         observer!(
@@ -865,15 +888,13 @@ impl Module for SimModule {
             &Flight
         )
         .each(|(flying_speed, compose, connection, flight)| {
-            let pkt = PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.0,
-            };
-
-            compose.unicast(&pkt, *connection).unwrap();
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerAbilities.to_raw(),
+                &abilities(*flight, *flying_speed),
+            )
+            .unwrap();
         });
 
         observer!(
@@ -885,16 +906,39 @@ impl Module for SimModule {
             &FlyingSpeed
         )
         .each(|(flight, compose, connection, flying_speed)| {
-            let pkt = play::PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.,
-            };
-
-            compose.unicast(&pkt, *connection).unwrap();
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerAbilities.to_raw(),
+                &abilities(*flight, *flying_speed),
+            )
+            .unwrap();
         });
+    }
+}
+
+/// What the client should be told it may do, given the two components that say
+/// so.
+///
+/// Flight permission and flying speed live in separate components that are set
+/// independently, and the packet carries both, so either one changing has to
+/// resend the pair.
+const fn abilities(flight: Flight, flying_speed: FlyingSpeed) -> PlayerAbilities {
+    let mut flags = AbilityFlags::NONE;
+    if flight.allow {
+        flags = flags.union(AbilityFlags::CAN_FLY);
+    }
+    if flight.is_flying {
+        flags = flags.union(AbilityFlags::FLYING);
+    }
+
+    PlayerAbilities {
+        flags,
+        flying_speed: flying_speed.speed,
+        // Zero is what hyperion has always put in this slot, back when valence
+        // called it `fov_modifier`. Vanilla sends 0.1. ENG-10456 tracks
+        // whether that difference is visible.
+        walking_speed: 0.0,
     }
 }
 

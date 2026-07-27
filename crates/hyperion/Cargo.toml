@@ -69,7 +69,6 @@ valence_nbt = { workspace = true }
 valence_protocol = { workspace = true }
 valence_registry = { workspace = true }
 valence_server = { workspace = true }
-valence_text = { workspace = true }
 ordered-float = { workspace = true }
 
 [dev-dependencies]

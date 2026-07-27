@@ -1939,7 +1939,6 @@ dependencies = [
  "valence_protocol",
  "valence_registry",
  "valence_server",
- "valence_text",
 ]
 
 [[package]]

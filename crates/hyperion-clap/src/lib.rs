@@ -6,7 +6,11 @@ use flecs_ecs::{
     prelude::{Component, Module},
 };
 use hyperion::{
-    net::{Compose, ConnectionId, DataBundle, agnostic},
+    hyperion_minecraft_proto::{
+        generated::packet_id::play::clientbound::PacketId,
+        packets::play::clientbound::{CommandSuggestions, command_suggestions},
+    },
+    net::{Compose, ConnectionId, DataBundle, agnostic, protocol::Clientbound},
     simulation::{IgnMap, command::get_root_command_entity, handlers::PacketSwitchQuery},
     storage::CommandCompletionRequest,
 };
@@ -14,13 +18,7 @@ pub use hyperion_clap_macros::CommandPermission;
 pub use hyperion_command;
 use hyperion_command::{CommandHandler, CommandRegistry};
 use hyperion_permission::Group;
-use valence_protocol::{
-    VarInt,
-    packets::{
-        play,
-        play::{command_suggestions_s2c::CommandSuggestionsMatch, command_tree_s2c::StringArg},
-    },
-};
+use valence_protocol::packets::play::command_tree_s2c::StringArg;
 
 pub trait MinecraftCommand: Parser + CommandPermission {
     fn execute(self, system: EntityView<'_>, caller: Entity);
@@ -155,10 +153,10 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                         return;
                     }
 
-                    let matches = substring_matches
+                    let suggestions = substring_matches
                         .map(clap::builder::PossibleValue::get_name)
-                        .map(|name| CommandSuggestionsMatch {
-                            suggested_match: name.into(),
+                        .map(|name| command_suggestions::Entry {
+                            text: name,
                             tooltip: None,
                         })
                         .collect();
@@ -169,16 +167,19 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                     let start = i32::try_from(start).unwrap();
                     let len = i32::try_from(len).unwrap();
 
-                    let packet = play::CommandSuggestionsS2c {
-                        id: VarInt(id),
-                        start: VarInt(start),
-                        length: VarInt(len),
-                        matches,
+                    let packet = CommandSuggestions {
+                        id,
+                        start,
+                        length: len,
+                        suggestions,
                     };
 
                     packet_switch_query
                         .compose
-                        .unicast(&packet, packet_switch_query.io_ref)
+                        .unicast(
+                            Clientbound::new(PacketId::CommandSuggestions.to_raw(), &packet),
+                            packet_switch_query.io_ref,
+                        )
                         .unwrap();
 
                     // todo: send possible matches to player
@@ -196,10 +197,10 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                     .iter()
                     .map(clap::builder::PossibleValue::get_name);
 
-                let matches = names
+                let suggestions = names
                     .into_iter()
-                    .map(|name| CommandSuggestionsMatch {
-                        suggested_match: name.into(),
+                    .map(|name| command_suggestions::Entry {
+                        text: name,
                         tooltip: None,
                     })
                     .collect();
@@ -207,16 +208,19 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                 let start = full_query.len();
                 let start = i32::try_from(start).unwrap();
 
-                let packet = play::CommandSuggestionsS2c {
-                    id: VarInt(id),
-                    start: VarInt(start),
-                    length: VarInt(0),
-                    matches,
+                let packet = CommandSuggestions {
+                    id,
+                    start,
+                    length: 0,
+                    suggestions,
                 };
 
                 packet_switch_query
                     .compose
-                    .unicast(&packet, packet_switch_query.io_ref)
+                    .unicast(
+                        Clientbound::new(PacketId::CommandSuggestions.to_raw(), &packet),
+                        packet_switch_query.io_ref,
+                    )
                     .unwrap();
             },
         );

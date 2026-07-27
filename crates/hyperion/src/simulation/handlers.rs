@@ -19,8 +19,13 @@ use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
 use hyperion_minecraft_proto::{
-    generated::packet_id::play::serverbound::PacketId,
-    packets::play::serverbound::{self as c2s, client_command, player_action, player_command},
+    generated::packet_id::play::{
+        clientbound::PacketId as ClientboundPacketId, serverbound::PacketId,
+    },
+    packets::play::{
+        clientbound::OpenBook,
+        serverbound::{self as c2s, client_command, player_action, player_command},
+    },
     types::{Direction, HumanoidArm, InteractionHand},
 };
 use hyperion_utils::EntityExt;
@@ -30,7 +35,6 @@ use valence_generated::{
     item::ItemKind,
 };
 use valence_protocol::{Hand, packets::play};
-use valence_text::IntoText;
 
 use super::{
     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
@@ -42,9 +46,9 @@ use super::{
 };
 use crate::{
     net::{
-        Compose, ConnectionId, PROTOCOL_VERSION,
+        Compose, ConnectionId, PROTOCOL_VERSION, agnostic,
         decoder::BorrowedPacketFrame,
-        protocol::{decode_body, frame_body},
+        protocol::{decode_body, frame_body, send},
     },
     simulation::{
         Pitch, Yaw, aabb, event,
@@ -541,9 +545,12 @@ fn use_item(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()
 
     if !cursor.is_empty() {
         if cursor.item == ItemKind::WrittenBook {
-            query
-                .compose
-                .unicast(&play::OpenWrittenBookS2c { hand }, query.io_ref)?;
+            send(
+                query.compose,
+                query.io_ref,
+                ClientboundPacketId::OpenBook.to_raw(),
+                &OpenBook(packet.hand),
+            )?;
         }
 
         query.events.push(
@@ -651,7 +658,7 @@ const fn offset(direction: Direction) -> IVec3 {
 }
 
 /// The proto crate's hand and valence's are the same two values in the same
-/// order; the events and the clientbound packets still speak valence's.
+/// order; the simulation events still speak valence's.
 const fn hand(hand: InteractionHand) -> Hand {
     match hand {
         InteractionHand::MainHand => Hand::Main,
@@ -669,11 +676,7 @@ fn change_position_or_correct_client(
 
     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
         // Send error message to player
-        let msg = format!("§c{e}");
-        let pkt = play::GameMessageS2c {
-            chat: msg.into_cow_text(),
-            overlay: false,
-        };
+        let pkt = agnostic::chat(format!("§c{e}"));
 
         if let Err(e) = query.compose.unicast(&pkt, query.io_ref) {
             warn!("Failed to send error message to player: {e}");

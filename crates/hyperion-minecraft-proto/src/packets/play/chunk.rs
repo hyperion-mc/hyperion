@@ -1,11 +1,12 @@
-//! Terrain: the chunks a client renders, and the block changes inside them.
+//! The level: the chunks a client renders, the block changes inside them, and
+//! the particles spawned in them.
 //!
 //! Five packets carry terrain, and only two of them need writing by hand.
 //! `forget_level_chunk`, `chunk_batch_start`, `chunk_batch_finished` and
 //! `block_update` are plain field sequences, so the generator produced them
 //! into [`super::clientbound`] and they should be used from there.
 //!
-//! What is left is the two whose codecs branch on a runtime value:
+//! What is left is the three whose codecs branch on a runtime value:
 //!
 //! * `level_chunk_with_light` writes a length-prefixed blob whose length only
 //!   the sections themselves know. It lives in [`crate::world::chunk`] because
@@ -204,11 +205,184 @@ impl Decode<'_> for SectionBlocksUpdate {
     }
 }
 
+// --- particles ------------------------------------------------------------
+
+/// A particle, together with whatever its own codec writes after the type id
+/// (`ParticleTypes.STREAM_CODEC`).
+///
+/// That codec is `ByteBufCodecs.registry(Registries.PARTICLE_TYPE)
+/// .dispatch(ParticleOptions::getType, ParticleType::streamCodec)`: a `VarInt`
+/// id into `minecraft:particle_type`, then the body the dispatched type's own
+/// codec writes. 103 of the 125 types are a `SimpleParticleType`, whose
+/// `StreamCodec.unit` writes nothing at all; the other 22 carry options of
+/// eleven different shapes.
+///
+/// Only the types hyperion sends have a variant here. Nothing after the
+/// particle is length-prefixed, so a variant added without reading its Java
+/// codec first would not lose one field, it would shift every byte of the rest
+/// of the frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Particle {
+    /// `minecraft:cloud`, a `SimpleParticleType`.
+    Cloud,
+    /// `minecraft:crit`, a `SimpleParticleType`.
+    Crit,
+    /// `minecraft:dragon_breath`, a `PowerParticleOption`.
+    DragonBreath {
+        /// `PowerParticleOption.power`, which scales the puff. Vanilla's
+        /// `Codec` default is `1.0`, but the stream codec is a bare
+        /// `ByteBufCodecs.FLOAT` and always writes it.
+        power: f32,
+    },
+    /// `minecraft:explosion`, a `SimpleParticleType`.
+    Explosion,
+    /// `minecraft:portal`, a `SimpleParticleType`.
+    Portal,
+}
+
+impl Particle {
+    /// The type's `minecraft:particle_type` network id.
+    ///
+    /// Registry ids are positional, so these are indices into
+    /// [`crate::generated::registry::PARTICLE_TYPE`] and move whenever Mojang
+    /// inserts a particle. `particle_ids_match_the_registry` pins each one.
+    #[must_use]
+    pub const fn id(self) -> i32 {
+        match self {
+            Self::Cloud => 11,
+            Self::Crit => 13,
+            Self::DragonBreath { .. } => 15,
+            Self::Explosion => 30,
+            Self::Portal => 67,
+        }
+    }
+
+    /// The type's registry name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Cloud => "minecraft:cloud",
+            Self::Crit => "minecraft:crit",
+            Self::DragonBreath { .. } => "minecraft:dragon_breath",
+            Self::Explosion => "minecraft:explosion",
+            Self::Portal => "minecraft:portal",
+        }
+    }
+}
+
+impl Encode for Particle {
+    fn encode(&self, writer: &mut Writer) -> Result<()> {
+        writer.var_int(self.id());
+        match self {
+            Self::Cloud | Self::Crit | Self::Explosion | Self::Portal => {}
+            Self::DragonBreath { power } => writer.f32(*power),
+        }
+        Ok(())
+    }
+}
+
+impl Decode<'_> for Particle {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+        let id = reader.var_int()?;
+        match id {
+            11 => Ok(Self::Cloud),
+            13 => Ok(Self::Crit),
+            15 => Ok(Self::DragonBreath {
+                power: reader.f32()?,
+            }),
+            30 => Ok(Self::Explosion),
+            67 => Ok(Self::Portal),
+            // A type this server never sends is also a type whose body length
+            // is unknown, so there is nothing to skip past and the read has to
+            // stop here.
+            value => Err(Error::InvalidEnum {
+                name: "Particle",
+                value,
+            }),
+        }
+    }
+}
+
+/// `minecraft:level_particles`, clientbound
+/// (`ClientboundLevelParticlesPacket`).
+///
+/// Layout from
+/// `net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket#STREAM_CODEC`.
+/// The generator declined it because the [`Particle`] at the end is a registry
+/// dispatch: how many bytes follow is decided by the type id itself.
+///
+/// One packet spawns [`count`](Self::count) particles scattered through a box
+/// centred on the position, so a caller wanting a single particle at an exact
+/// point sends a count of one with zero distances.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelParticles {
+    /// `ClientboundLevelParticlesPacket.overrideLimiter`: show the particle
+    /// past the radius the client normally culls at.
+    pub override_limiter: bool,
+    /// `ClientboundLevelParticlesPacket.alwaysShow`, added in 1.21.4. The
+    /// client class that reads it is not in the decompiled subset, so what
+    /// exactly it overrides is taken from the name rather than from source;
+    /// vanilla passes false for ordinary effects.
+    pub always_show: bool,
+    /// Centre x of the spawn box.
+    pub x: f64,
+    /// Centre y of the spawn box.
+    pub y: f64,
+    /// Centre z of the spawn box.
+    pub z: f64,
+    /// Half-width of the spawn box on x, in blocks.
+    pub x_dist: f32,
+    /// Half-width of the spawn box on y, in blocks.
+    pub y_dist: f32,
+    /// Half-width of the spawn box on z, in blocks.
+    pub z_dist: f32,
+    /// Scale applied to each particle's starting velocity.
+    pub max_speed: f32,
+    /// How many particles to spawn. A fixed-width `int`, not a `VarInt`.
+    pub count: i32,
+    /// Which particle, and its options.
+    pub particle: Particle,
+}
+
+impl Encode for LevelParticles {
+    fn encode(&self, writer: &mut Writer) -> Result<()> {
+        writer.bool(self.override_limiter);
+        writer.bool(self.always_show);
+        writer.f64(self.x);
+        writer.f64(self.y);
+        writer.f64(self.z);
+        writer.f32(self.x_dist);
+        writer.f32(self.y_dist);
+        writer.f32(self.z_dist);
+        writer.f32(self.max_speed);
+        writer.i32(self.count);
+        self.particle.encode(writer)
+    }
+}
+
+impl Decode<'_> for LevelParticles {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+        Ok(Self {
+            override_limiter: reader.bool()?,
+            always_show: reader.bool()?,
+            x: reader.f64()?,
+            y: reader.f64()?,
+            z: reader.f64()?,
+            x_dist: reader.f32()?,
+            y_dist: reader.f32()?,
+            z_dist: reader.f32()?,
+            max_speed: reader.f32()?,
+            count: reader.i32()?,
+            particle: Particle::decode(reader)?,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         BlockChange, ChunkData, ChunkSection, Heightmap, HeightmapKind, LevelChunkWithLight,
-        LightData, SectionBlocksUpdate, SectionPos,
+        LevelParticles, LightData, Particle, SectionBlocksUpdate, SectionPos,
     };
     use crate::{
         Decode, Encode, Reader, Writer,
@@ -321,5 +495,105 @@ mod tests {
         let mut reader = Reader::new(&bytes);
         assert_eq!(SectionBlocksUpdate::decode(&mut reader).unwrap(), packet);
         reader.finish().unwrap();
+    }
+
+    /// The ids in [`Particle::id`] are positions in the generated registry, so
+    /// a Mojang insertion moves them and this is what notices.
+    #[test]
+    fn particle_ids_match_the_registry() {
+        for particle in [
+            Particle::Cloud,
+            Particle::Crit,
+            Particle::DragonBreath { power: 1.0 },
+            Particle::Explosion,
+            Particle::Portal,
+        ] {
+            let expected = crate::generated::registry::PARTICLE_TYPE
+                .id_of(particle.name())
+                .unwrap_or_else(|| panic!("{} is a vanilla particle", particle.name()));
+            assert_eq!(
+                i32::try_from(expected).unwrap(),
+                particle.id(),
+                "{}",
+                particle.name()
+            );
+        }
+    }
+
+    /// A `SimpleParticleType` is the id and nothing else, which is what makes
+    /// the count before it the last field a reader can find unaided.
+    #[test]
+    fn a_simple_particle_is_the_bare_type_id() {
+        let packet = LevelParticles {
+            override_limiter: true,
+            always_show: false,
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            x_dist: 0.5,
+            y_dist: 0.5,
+            z_dist: 0.5,
+            max_speed: 0.5,
+            count: 100,
+            particle: Particle::Crit,
+        };
+
+        assert_eq!(encoded(&packet), [
+            0x01, // override_limiter
+            0x00, // always_show
+            0x3F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // x = 1.0
+            0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // y = 2.0
+            0x40, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // z = 3.0
+            0x3F, 0x00, 0x00, 0x00, // x_dist = 0.5
+            0x3F, 0x00, 0x00, 0x00, // y_dist = 0.5
+            0x3F, 0x00, 0x00, 0x00, // z_dist = 0.5
+            0x3F, 0x00, 0x00, 0x00, // max_speed = 0.5
+            0x00, 0x00, 0x00, 0x64, // count = 100, a fixed-width int
+            0x0D, // minecraft:crit, with no options after it
+        ]);
+
+        let bytes = encoded(&packet);
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(LevelParticles::decode(&mut reader).unwrap(), packet);
+        reader.finish().unwrap();
+    }
+
+    /// `dragon_breath` is a `PowerParticleOption`, so four more bytes follow
+    /// the id that a `SimpleParticleType` would not have written.
+    #[test]
+    fn a_power_particle_writes_its_float_after_the_id() {
+        let packet = LevelParticles {
+            override_limiter: false,
+            always_show: false,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            x_dist: 0.0,
+            y_dist: 0.0,
+            z_dist: 0.0,
+            max_speed: 0.0,
+            count: 1,
+            particle: Particle::DragonBreath { power: 1.0 },
+        };
+
+        let bytes = encoded(&packet);
+        assert_eq!(
+            &bytes[bytes.len() - 5..],
+            // minecraft:dragon_breath, then power = 1.0
+            [0x0F, 0x3F, 0x80, 0x00, 0x00]
+        );
+
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(LevelParticles::decode(&mut reader).unwrap(), packet);
+        reader.finish().unwrap();
+    }
+
+    /// A type with no variant has no known body length, so decoding refuses
+    /// rather than returning a particle it would then mis-skip.
+    #[test]
+    fn an_unmodelled_particle_fails_to_decode() {
+        // minecraft:angry_villager, id 0, which nothing here models.
+        let mut reader = Reader::new(&[0x00]);
+        assert!(Particle::decode(&mut reader).is_err());
     }
 }

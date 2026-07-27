@@ -18,18 +18,21 @@ use glam::Vec3;
 use hyperion::{
     hyperion_minecraft_proto::{
         generated::packet_id::play::clientbound::PacketId,
-        packets::play::{
-            clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
-            player::{DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore},
+        packets::{
+            play::{
+                chunk::{LevelParticles, Particle},
+                clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
+                player::{
+                    DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore,
+                },
+            },
+            play_login::{GameEvent, GameType},
         },
         text::Component,
     },
     net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
     simulation::{PendingTeleportation, Velocity, metadata::living_entity::Health},
-    valence_protocol::{
-        ItemKind, ItemStack, Particle,
-        packets::play::{self, game_state_change_s2c::GameEventKind},
-    },
+    valence_protocol::{ItemKind, ItemStack},
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
@@ -305,11 +308,19 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
                 return;
             };
-            let packet = play::GameStateChangeS2c {
-                kind: GameEventKind::ChangeGameMode,
-                value: if spectating { 3.0 } else { 0.0 },
+            let mode = if spectating {
+                GameType::Spectator
+            } else {
+                GameType::Survival
             };
-            let _unused = compose.unicast(&packet, connection);
+            let packet = GameEvent {
+                event: GameEvent::CHANGE_GAME_MODE,
+                param: f32::from(mode.to_id()),
+            };
+            let _unused = compose.unicast(
+                Clientbound::new(PacketId::GameEvent.to_raw(), &packet),
+                connection,
+            );
         }
         Op::Play { at, cue } => play_cue(compose, at, cue),
     }
@@ -427,6 +438,9 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
 ///
 /// `[INFERRED]` throughout: Mineplex's own choices are not in the leaked source,
 /// which loaded them from the same spreadsheet as everything else.
+/// Half-width of the box a cue's particles are scattered through, in blocks.
+const CUE_SPREAD: f32 = 0.4;
+
 fn play_cue(compose: &Compose, at: Vec3, cue: Cue) {
     let sound = match cue {
         Cue::Explosion => "minecraft:entity.generic.explode",
@@ -453,15 +467,26 @@ fn play_cue(compose: &Compose, at: Vec3, cue: Cue) {
     let Some(particle) = particle else {
         return;
     };
-    let packet = play::ParticleS2c {
-        particle: std::borrow::Cow::Owned(particle),
-        long_distance: true,
-        position: at.as_dvec3(),
+    let packet = LevelParticles {
+        // A cue marks something that just happened to a player, so it is worth
+        // seeing from further out than the client's normal particle radius.
+        override_limiter: true,
+        // The client's particle setting is the player's own choice.
+        always_show: false,
+        x: f64::from(at.x),
+        y: f64::from(at.y),
+        z: f64::from(at.z),
+        x_dist: CUE_SPREAD,
+        y_dist: CUE_SPREAD,
+        z_dist: CUE_SPREAD,
         max_speed: 0.5,
         count: 40,
-        offset: Vec3::splat(0.4),
+        particle,
     };
-    if let Err(error) = compose.broadcast(&packet).send() {
+    if let Err(error) = compose
+        .broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &packet))
+        .send()
+    {
         tracing::warn!("dropping a smash particle: {error}");
     }
 }
