@@ -184,4 +184,3 @@ impl Encode for DataComponentPatch<'_> {
         Ok(())
     }
 }
-

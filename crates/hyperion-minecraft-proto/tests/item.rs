@@ -78,10 +78,7 @@ impl TestNbt {
             4 | 6 => fixed(8),
             7 => Self::array(bytes, 1),
             8 => {
-                let len = usize::from(u16::from_be_bytes([
-                    *bytes.first()?,
-                    *bytes.get(1)?,
-                ]));
+                let len = usize::from(u16::from_be_bytes([*bytes.first()?, *bytes.get(1)?]));
                 (bytes.len() >= 2 + len).then_some(2 + len)
             }
             9 => {
@@ -101,9 +98,8 @@ impl TestNbt {
                     if entry == 0 {
                         return Some(at);
                     }
-                    let name = usize::from(u16::from_be_bytes(
-                        bytes.get(at..at + 2)?.try_into().ok()?,
-                    ));
+                    let name =
+                        usize::from(u16::from_be_bytes(bytes.get(at..at + 2)?.try_into().ok()?));
                     at += 2 + name;
                     at += Self::payload_len(entry, bytes.get(at..)?)?;
                 }
@@ -196,7 +192,10 @@ fn damage_is_a_var_int() {
     // captured: set(DAMAGE, 42)
     let patch = round_trip("0100032a");
     assert_eq!(
-        patch.get::<Damage>(&TestNbt).expect("present").expect("parse"),
+        patch
+            .get::<Damage>(&TestNbt)
+            .expect("present")
+            .expect("parse"),
         Damage(42)
     );
 }
@@ -225,18 +224,28 @@ fn three_components_in_one_patch() {
     let patch = round_trip("03000a0d6879706572696f6e3a77616e64040101");
     assert_eq!(patch.added().len(), 3);
     assert_eq!(
-        patch.get::<ItemModel<'_>>(&TestNbt).expect("present").expect("parse").0,
+        patch
+            .get::<ItemModel<'_>>(&TestNbt)
+            .expect("present")
+            .expect("parse")
+            .0,
         "hyperion:wand"
     );
     // A marker component occupies zero bytes, so its span is empty rather than
     // absent -- the distinction the patch has to keep.
     assert_eq!(patch.raw(ComponentType::Unbreakable), Some(&[][..]));
     assert_eq!(
-        patch.get::<Unbreakable>(&TestNbt).expect("present").expect("parse"),
+        patch
+            .get::<Unbreakable>(&TestNbt)
+            .expect("present")
+            .expect("parse"),
         Unbreakable
     );
     assert_eq!(
-        patch.get::<MaxStackSize>(&TestNbt).expect("present").expect("parse"),
+        patch
+            .get::<MaxStackSize>(&TestNbt)
+            .expect("present")
+            .expect("parse"),
         MaxStackSize(1)
     );
 }
@@ -246,10 +255,10 @@ fn removals_are_a_separate_group() {
     // captured: remove(ATTRIBUTE_MODIFIERS), remove(RARITY)
     let patch = round_trip("0002100c");
     assert!(patch.added().is_empty());
-    assert_eq!(
-        patch.removed(),
-        [ComponentType::AttributeModifiers, ComponentType::Rarity]
-    );
+    assert_eq!(patch.removed(), [
+        ComponentType::AttributeModifiers,
+        ComponentType::Rarity
+    ]);
 
     // captured: set(DAMAGE, 7), remove(RARITY)
     let mixed = round_trip("010103070c");
@@ -262,7 +271,10 @@ fn holder_sets_bias_their_count_by_one() {
     // captured: set(REPAIRABLE, HolderSet.direct(diamond, emerald))
     // The marker is 3 for two entries, leaving 0 to mean "a tag name follows".
     let patch = round_trip("010021039e079f07");
-    assert_eq!(patch.raw(ComponentType::Repairable), Some(&hex("039e079f07")[..]));
+    assert_eq!(
+        patch.raw(ComponentType::Repairable),
+        Some(&hex("039e079f07")[..])
+    );
 }
 
 #[test]
@@ -320,7 +332,7 @@ fn every_component_type_has_a_usable_shape() {
         let mut reader = Reader::new(&[]);
         // Empty input: a zero-length shape succeeds, everything else must
         // report end of input rather than misbehave.
-        let _ = shape.skip(&mut reader, &TestNbt);
+        drop(shape.skip(&mut reader, &TestNbt));
     }
 }
 
@@ -346,7 +358,10 @@ fn a_slot_with_a_zero_count_is_empty() {
     // the read, with no item id or components after it.
     let bytes = hex("00");
     let mut reader = Reader::new(&bytes);
-    assert_eq!(Slot::decode(&mut reader, &TestNbt).expect("decode"), Slot::Empty);
+    assert_eq!(
+        Slot::decode(&mut reader, &TestNbt).expect("decode"),
+        Slot::Empty
+    );
     reader.finish().expect("consumed");
 
     let mut writer = Writer::new();
@@ -375,7 +390,11 @@ fn an_occupied_slot_is_count_then_item_then_patch() {
     assert_eq!(stack.count, 1);
     assert_eq!(stack.item, 961);
     assert_eq!(
-        stack.components.get::<Damage>(&TestNbt).expect("present").expect("parse"),
+        stack
+            .components
+            .get::<Damage>(&TestNbt)
+            .expect("present")
+            .expect("parse"),
         Damage(42)
     );
 
@@ -479,20 +498,30 @@ fn eighty_four_components_in_one_patch() {
     let vector = KITCHEN_SINK.concat();
     let patch = round_trip(&vector);
     assert_eq!(patch.added().len(), 84);
-    assert_eq!(
-        patch.removed(),
-        [ComponentType::Lock, ComponentType::ContainerLoot]
-    );
+    assert_eq!(patch.removed(), [
+        ComponentType::Lock,
+        ComponentType::ContainerLoot
+    ]);
 
     // Spot-check both ends, so a walk that happened to land back on its feet
     // after a mistake still shows up.
     assert_eq!(
-        patch.get::<CustomData<'_>>(&TestNbt).expect("present").expect("parse").0,
+        patch
+            .get::<CustomData<'_>>(&TestNbt)
+            .expect("present")
+            .expect("parse")
+            .0,
         hex("0a0800016b00017600")
     );
     assert_eq!(
-        patch.get::<Damage>(&TestNbt).expect("present").expect("parse"),
+        patch
+            .get::<Damage>(&TestNbt)
+            .expect("present")
+            .expect("parse"),
         Damage(3)
     );
-    assert_eq!(patch.raw(ComponentType::AxolotlVariant), Some(&hex("02")[..]));
+    assert_eq!(
+        patch.raw(ComponentType::AxolotlVariant),
+        Some(&hex("02")[..])
+    );
 }

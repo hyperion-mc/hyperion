@@ -67,10 +67,7 @@ impl DataComponentPatch<'_> {
 }
 
 /// Run `parse` over `bytes` and insist it consumed all of them.
-fn exactly<'a, T>(
-    bytes: &'a [u8],
-    parse: impl FnOnce(&mut Reader<'a>) -> Result<T>,
-) -> Result<T> {
+fn exactly<'a, T>(bytes: &'a [u8], parse: impl FnOnce(&mut Reader<'a>) -> Result<T>) -> Result<T> {
     let mut reader = Reader::new(bytes);
     let value = parse(&mut reader)?;
     reader.finish()?;
@@ -354,11 +351,10 @@ impl<'a> Payload<'a> for AttributeModifiers<'a> {
                 let id = reader.string()?;
                 let amount = reader.f64()?;
                 let operation_id = reader.var_int()?;
-                let operation =
-                    Operation::from_id(operation_id).ok_or(Error::InvalidEnum {
-                        name: "attribute modifier operation",
-                        value: operation_id,
-                    })?;
+                let operation = Operation::from_id(operation_id).ok_or(Error::InvalidEnum {
+                    name: "attribute modifier operation",
+                    value: operation_id,
+                })?;
                 let slot = reader.var_int()?;
                 let display_id = reader.var_int()?;
                 let display = match display_id {
