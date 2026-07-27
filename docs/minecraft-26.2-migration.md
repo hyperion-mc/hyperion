@@ -619,3 +619,92 @@ Mojang rename from a field that quietly stops being modelled into an error.
 The Python is stdlib-only, so it is packaged with `writers.writePython3Bin`. If
 either script ever needs a third-party dependency, the repo convention is a uv
 project with `buildUvApplication` rather than adding libraries to the writer.
+
+## The server speaks 776 now, and a client reaches play
+
+`PROTOCOL_VERSION` is `hyperion_minecraft_proto::PROTOCOL_VERSION`. There is no
+763 path left to fall back to: the four pre-play states were deleted rather than
+feature-gated, because a branch that only one of the two protocols ever takes is
+a branch nobody exercises.
+
+`crates/hyperion/src/net/protocol/` is the whole of the replacement. It is
+smaller than the valence code it replaced, because the transport did not change
+with the protocol: hyperion frames packets itself, and the proxy forwards bytes
+without reading them, so `net::encoder`, `net::decoder` and `packet_channel` are
+untouched. What changed is the packets and the state machine over them.
+
+### Registry contents did not have to be written
+
+`RegistrySynchronization.packRegistry` writes an element with an *empty* payload
+when the client reported the pack that defines it, and the client fills it in
+from its own copy. `BuiltInPackSource.CORE_PACK_INFO` is
+`KnownPack.vanilla("core")`, so offering `minecraft:core:26.2` and getting it
+back means all 397 elements of all 29 synchronised registries go out as names
+alone.
+
+That is why `net/protocol/registries.rs` is a name table and not a pile of NBT.
+The registry order is `RegistryDataLoader.SYNCHRONIZED_REGISTRIES`; the element
+names are what the vanilla data generator writes under `data/minecraft/`. Both
+were read off the jar. A client that does *not* report the core pack is refused
+with a message saying exactly that, rather than being sent entries it cannot
+resolve.
+
+### What a client actually gets
+
+```
+$ python3 tools/client-26.2.py --port 25599 --name Prober
+[Prober] -> Intention protocol=776 intent=login
+[Prober] -> Hello name=Prober
+[Prober] <- LoginCompression threshold=256
+[Prober] <- LoginFinished profile=c07403a5245bf4e124ad10d435771f55 name=Prober (authenticated, NOT yet in the world)
+[Prober] -> LoginAcknowledged
+[Prober] <- CustomPayload minecraft:brand .hyperion
+[Prober] <- UpdateEnabledFeatures ['minecraft:vanilla']
+[Prober] <- SelectKnownPacks [('minecraft', 'core', '26.2')]
+[Prober] -> SelectKnownPacks (accepting all)
+[Prober] -> ClientInformation view_distance=10 skin_parts=0x7F
+[Prober] <- UpdateTags registries=0
+[Prober] <- RegistryData x29 (397 elements): minecraft:worldgen/biome, ...
+[Prober] <- FinishConfiguration
+[Prober] -> FinishConfiguration (ack)
+[Prober] <- Login entity_id=67109860  ** REACHED PLAY STATE **
+[Prober] <- SetChunkCacheCenter (0, 0)
+[Prober] <- SetDefaultSpawnPosition
+[Prober] <- PlayerPosition (4.5, 4.0, 9.5) teleport_id=1
+[Prober] RESULT: reached play state (Login received)
+```
+
+### What is not done, and what it breaks
+
+**Play is still valence, so a real client would disconnect right after the join
+packet.** The same transcript, read past the join:
+
+```
+[Prober] summary: 0x10 x1, 0x1E x4096, 0x24 x2434, 0x4E x1, 0x65 x154, Login x1, ...
+```
+
+Those are `CommandTreeS2c`, `UnloadChunkS2c`, `ChunkDataS2c`,
+`ChunkRenderDistanceCenterS2c` and `PlayerListHeaderS2c` at their 1.20.1 ids.
+A 26.2 client reads each of them as whatever packet holds that id in 776 and
+gives up. `tools/client-26.2.py` counts them and carries on, which is what lets
+it prove the join at all; a vanilla client will not.
+
+So the next piece is not "terrain", it is the whole of clientbound play. Chunk
+data is the largest part of it, and `SetChunkCacheCenter` and `PlayerPosition`
+are already going out correctly, so the client is waiting on exactly one packet
+it never receives.
+
+Also outstanding:
+
+- **Serverbound play is still decoded as 763.** `ingress::decode::register_play`
+  dispatches through `HandlerRegistry` on valence ids, so a 776 client's
+  movement and interaction packets are read as the wrong ones.
+- **`UpdateTags` goes out empty.** Well-formed, and the client keeps the tags
+  from its own packs, but a server that ever disagrees with vanilla about a tag
+  has nowhere to say so.
+- **The chat session id in `login_finished` is zero**, which is what a server
+  that does not sign chat sends. Signed chat needs a real one.
+- **The pre-play systems are single-threaded.** The 763 path decoded in parallel
+  and acted in `OnUpdate`, which its generated queues made cheap; these decode
+  and act in one pass because they spawn entities. At 10k simultaneous joins
+  that is worth splitting again.
