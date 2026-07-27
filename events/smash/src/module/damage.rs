@@ -68,6 +68,37 @@ impl Armor {
     }
 }
 
+/// A flat addition to the attacker's melee damage, from whatever put it there.
+///
+/// Two kits raise their own melee and they raise it differently: Wolf's Ravage
+/// stacks against everybody, Guardian's Target Laser applies only to the player
+/// it marked. Both are the same shape once `against` exists, which is why this
+/// is one component in a shared module rather than two special cases in the
+/// melee path. No kit is named here and none needs to be.
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
+pub struct MeleeBonus {
+    pub flat: f32,
+    /// `None` means it applies to every victim.
+    pub against: Option<Entity>,
+    /// Match clock time after which it stops counting. Kits that want a
+    /// permanent bonus set this to infinity.
+    pub until: f32,
+}
+
+impl MeleeBonus {
+    /// The addition this bonus makes to a swing at `victim` at time `now`.
+    #[must_use]
+    pub fn applies_to(self, victim: Entity, now: f32) -> f32 {
+        if now >= self.until {
+            return 0.0;
+        }
+        match self.against {
+            Some(marked) if marked != victim => 0.0,
+            _ => self.flat,
+        }
+    }
+}
+
 /// Relationship: `(LastHitBy, attacker)` on the victim.
 ///
 /// Exclusive, because "who gets the kill" has exactly one answer. Storing it as
@@ -121,6 +152,7 @@ impl Module for DamageModule {
 
         world.component::<Armor>();
         world.component::<Damaged>();
+        world.component::<MeleeBonus>();
         // This module is what makes armour mean anything, so this module is
         // what says every player has some.
         world

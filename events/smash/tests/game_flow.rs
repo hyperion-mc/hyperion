@@ -32,9 +32,18 @@ fn everyone_starts_with_four_lives() {
 
 #[test]
 fn falling_out_of_bounds_costs_a_life_and_schedules_a_respawn() {
+    use smash::module::lobby::Lobby;
+
     let mut game = Game::new();
     let player = game.player("faller", Vec3::new(0.0, 40.0, 0.0));
     let player = game.world.entity_from_id(player);
+
+    // The void check only runs during a match. In the hub a player standing
+    // below a kill plane would otherwise die on the tick they connect.
+    game.world.set(Lobby {
+        phase: Phase::Playing,
+        timer: 1.0,
+    });
 
     let kill_y = game.world.cloned::<&Arena>().kill_y;
     player.set(Position(Vec3::new(0.0, kill_y - 5.0, 0.0)));

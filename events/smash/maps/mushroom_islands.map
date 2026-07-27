@@ -1,0 +1,81 @@
+# Mushroom Islands
+#
+# A Super Smash Mobs arena. The name and the author are the real map's;
+# the layout is not. Mineplex never published the world files, so this is a
+# reconstruction in the Mushroom Islands theme -- mycelium islands under giant
+# mushrooms -- and not a copy of the original build.
+#
+# Mineplex's own map spec for SSM (mineplex.com/threads/super-smash-mobs.20592)
+# is followed exactly where it is specific: separate islands with gaps between
+# them, height differences between islands, no camping pockets, no random water
+# or lava, sixteen green spawn points and three red Smash Crystal points.
+#
+# Coordinates are local to this map's region.
+
+name Mushroom Islands
+author Mineplex (original build; layout here is a reconstruction)
+
+kill_y 20
+
+# --- the main island ------------------------------------------------------
+cylinder 0 64 0 16 1 minecraft:mycelium
+cylinder 0 62 0 16 2 minecraft:dirt
+cone 0 61 0 15 12 minecraft:stone
+
+# --- four outer islands, each at a different height ------------------------
+cylinder 0 70 -40 10 1 minecraft:mycelium
+cylinder 0 68 -40 10 2 minecraft:dirt
+cone 0 67 -40 9 9 minecraft:stone
+
+cylinder 0 58 40 10 1 minecraft:mycelium
+cylinder 0 56 40 10 2 minecraft:dirt
+cone 0 55 40 9 9 minecraft:stone
+
+cylinder 40 66 0 11 1 minecraft:mycelium
+cylinder 40 64 0 11 2 minecraft:dirt
+cone 40 63 0 10 10 minecraft:stone
+
+cylinder -40 62 0 11 1 minecraft:mycelium
+cylinder -40 60 0 11 2 minecraft:dirt
+cone -40 59 0 10 10 minecraft:stone
+
+# --- two small high perches, reachable only by double jump ------------------
+cylinder 26 76 -26 5 1 minecraft:mycelium
+cylinder 26 74 -26 5 2 minecraft:dirt
+cone 26 73 -26 4 6 minecraft:stone
+
+cylinder -26 54 26 5 1 minecraft:mycelium
+cylinder -26 52 26 5 2 minecraft:dirt
+cone -26 51 26 4 6 minecraft:stone
+
+# --- obstacles, so the main island is not one flat circle -------------------
+cylinder -7 65 -7 1 6 minecraft:mushroom_stem
+cylinder -7 71 -7 4 1 minecraft:red_mushroom_block
+cylinder 7 65 7 1 6 minecraft:mushroom_stem
+cylinder 7 71 7 4 1 minecraft:brown_mushroom_block
+box -3 65 -12 3 66 -11 minecraft:mushroom_stem
+box -3 65 11 3 66 12 minecraft:mushroom_stem
+
+
+# --- sixteen spawn points ---------------------------------------------------
+spawn -10 66 -10
+spawn 10 66 -10
+spawn -10 66 10
+spawn 10 66 10
+spawn 0 66 -13
+spawn 0 66 13
+spawn -3 72 -40
+spawn 3 72 -40
+spawn -3 60 40
+spawn 3 60 40
+spawn 40 68 -3
+spawn 40 68 3
+spawn -40 64 -3
+spawn -40 64 3
+spawn 26 78 -26
+spawn -26 56 26
+
+# --- three Smash Crystal points ---------------------------------------------
+crystal 0 68 0
+crystal 0 74 -40
+crystal 40 70 0
