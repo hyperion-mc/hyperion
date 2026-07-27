@@ -61,12 +61,7 @@ impl Compressor {
     /// uncompressed-length header.
     ///
     /// `threshold` is the value from `login_compression`.
-    pub(super) fn write(
-        &mut self,
-        threshold: usize,
-        body: &[u8],
-        out: &mut Vec<u8>,
-    ) -> Result<()> {
+    pub(super) fn write(&mut self, threshold: usize, body: &[u8], out: &mut Vec<u8>) -> Result<()> {
         if body.len() > MAX_UNCOMPRESSED_LENGTH {
             return Err(Error::PacketTooLarge { length: body.len() });
         }
@@ -77,9 +72,8 @@ impl Compressor {
             return Ok(());
         }
 
-        let length = i32::try_from(body.len()).map_err(|_| Error::PacketTooLarge {
-            length: body.len(),
-        })?;
+        let length =
+            i32::try_from(body.len()).map_err(|_| Error::PacketTooLarge { length: body.len() })?;
         write_var_int(out, length);
 
         self.deflate.reset();

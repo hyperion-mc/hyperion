@@ -62,12 +62,12 @@ mod decoder;
 mod encoder;
 mod encryption;
 
+use std::fmt;
+
 pub use compression::{MAX_COMPRESSED_LENGTH, MAX_UNCOMPRESSED_LENGTH};
 pub use decoder::{FrameDecoder, Packet};
 pub use encoder::FrameEncoder;
 pub use encryption::{Cipher, SHARED_SECRET_LEN};
-
-use std::fmt;
 
 /// The widest frame `Varint21FrameDecoder` will accept.
 ///
@@ -140,7 +140,10 @@ impl fmt::Display for Error {
             Self::FrameLengthTooWide => f.write_str("frame length prefix wider than 21 bits"),
             Self::EmptyFrame => f.write_str("frame length was zero"),
             Self::FrameTooLarge { length } => {
-                write!(f, "frame of {length} bytes exceeds the {MAX_FRAME_LENGTH}-byte maximum")
+                write!(
+                    f,
+                    "frame of {length} bytes exceeds the {MAX_FRAME_LENGTH}-byte maximum"
+                )
             }
             Self::PacketTooLarge { length } => write!(
                 f,

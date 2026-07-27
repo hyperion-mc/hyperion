@@ -16,9 +16,8 @@
 //! * **A paletted container's storage has no length prefix.** See
 //!   [`super::palette`].
 
-use crate::{Decode, Encode, Error, Reader, Result, Writer, nbt::Tag};
-
 use super::palette::{ContainerKind, PalettedContainer};
+use crate::{Decode, Encode, Error, Reader, Result, Writer, nbt::Tag};
 
 /// Bytes in one light array (`DataLayer.SIZE`): 4096 nibbles.
 pub const LIGHT_LAYER_LEN: usize = 2048;
@@ -211,7 +210,8 @@ pub struct ChunkData<'a> {
 
 impl Encode for ChunkData<'_> {
     fn encode(&self, writer: &mut Writer) -> Result<()> {
-        writer.var_int(i32::try_from(self.heightmaps.len()).map_err(|_| Error::NegativeLength(-1))?);
+        writer
+            .var_int(i32::try_from(self.heightmaps.len()).map_err(|_| Error::NegativeLength(-1))?);
         for heightmap in &self.heightmaps {
             writer.var_int(heightmap.kind as i32);
             writer.var_int(
@@ -295,7 +295,11 @@ impl<'a> ChunkData<'a> {
         let mut blob_reader = Reader::new(blob);
         let mut sections = Vec::with_capacity(section_count);
         for _ in 0..section_count {
-            sections.push(ChunkSection::decode(block_states, biomes, &mut blob_reader)?);
+            sections.push(ChunkSection::decode(
+                block_states,
+                biomes,
+                &mut blob_reader,
+            )?);
         }
         blob_reader.finish()?;
 

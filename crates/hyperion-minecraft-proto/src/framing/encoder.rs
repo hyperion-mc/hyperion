@@ -90,7 +90,8 @@ impl FrameEncoder {
                 let mut plain = Vec::with_capacity(body.len() + 5);
                 write_var_int(&mut plain, packet_id);
                 plain.extend_from_slice(body);
-                self.compressor.write(threshold, &plain, &mut self.staging)?;
+                self.compressor
+                    .write(threshold, &plain, &mut self.staging)?;
             }
             None => {
                 write_var_int(&mut self.staging, packet_id);

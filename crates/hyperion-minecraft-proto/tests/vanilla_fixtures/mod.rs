@@ -22,10 +22,9 @@
 pub fn get(name: &str) -> &'static str {
     let text = include_str!("../fixtures/vanilla.json");
     let needle = format!("\"{name}\": \"");
-    let start = text
-        .find(&needle)
-        .unwrap_or_else(|| panic!("no fixture named {name}; regenerate tests/fixtures/vanilla.json"))
-        + needle.len();
+    let start = text.find(&needle).unwrap_or_else(|| {
+        panic!("no fixture named {name}; regenerate tests/fixtures/vanilla.json")
+    }) + needle.len();
     let end = start
         + text[start..]
             .find('"')

@@ -11,7 +11,6 @@ mod vanilla_fixtures;
 use hyperion_minecraft_proto::framing::{
     Error, FrameDecoder, FrameEncoder, MAX_FRAME_LENGTH, SHARED_SECRET_LEN,
 };
-
 use vanilla_fixtures as vanilla;
 
 /// The threshold `server.properties` ships with.
@@ -107,7 +106,10 @@ fn the_threshold_boundary_is_inclusive() {
 
     let exact = encode_one(&mut encoder, 0x2A, &[0x33; 63]);
     let theirs = vanilla::bytes("frame.compressed_64.exact");
-    assert_ne!(exact[1], 0x00, "a body of exactly the threshold is deflated");
+    assert_ne!(
+        exact[1], 0x00,
+        "a body of exactly the threshold is deflated"
+    );
     assert_ne!(theirs[1], 0x00, "and vanilla agrees");
     assert_eq!(exact[1], theirs[1], "both declare 64 uncompressed bytes");
 
@@ -279,9 +281,13 @@ fn the_threshold_can_be_turned_on_between_frames() {
     let mut decoder = FrameDecoder::new();
 
     let mut wire = Vec::new();
-    encoder.encode(0x03, b"login_compression", &mut wire).expect("encode");
+    encoder
+        .encode(0x03, b"login_compression", &mut wire)
+        .expect("encode");
     encoder.set_compression_threshold(Some(VANILLA_THRESHOLD));
-    encoder.encode(0x02, &[0x55; 1024], &mut wire).expect("encode");
+    encoder
+        .encode(0x02, &[0x55; 1024], &mut wire)
+        .expect("encode");
 
     decoder.queue(&wire);
     let first = decoder.next_packet().expect("decode").expect("a frame");
@@ -351,7 +357,9 @@ fn a_frame_that_lies_about_its_uncompressed_length_is_refused() {
     let mut encoder = FrameEncoder::new();
     encoder.set_compression_threshold(Some(8));
     let mut wire = Vec::new();
-    encoder.encode(0x2A, &[0x11; 64], &mut wire).expect("encode");
+    encoder
+        .encode(0x2A, &[0x11; 64], &mut wire)
+        .expect("encode");
 
     // Byte 0 is the frame length and byte 1 the declared uncompressed length,
     // both single-byte VarInts here. Raising the declared length leaves the

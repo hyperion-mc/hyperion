@@ -9,14 +9,12 @@
 mod vanilla_fixtures;
 
 use hyperion_minecraft_proto::{
-    Decode, Encode, Reader, Writer,
-    registry_data,
+    Decode, Encode, Reader, Writer, registry_data,
     world::{
         ChunkData, ChunkSection, ContainerKind, Heightmap, HeightmapKind, LevelChunkWithLight,
         LightData, PalettedContainer, light_mask, storage_len,
     },
 };
-
 use vanilla_fixtures as vanilla;
 
 /// `Block.BLOCK_STATE_REGISTRY.size()` only sets the width of the global
@@ -173,7 +171,10 @@ fn a_dense_section_falls_back_to_the_global_palette() {
         .collect();
 
     let container = PalettedContainer::from_values(kind, 0, &values).expect("build");
-    assert!(kind.is_global(container.bits()), "expected a global palette");
+    assert!(
+        kind.is_global(container.bits()),
+        "expected a global palette"
+    );
     assert!(container.palette().is_empty(), "no palette is written");
 
     let bytes = encoded(&container);
@@ -204,7 +205,10 @@ fn heightmaps_match_the_map_codec() {
     .expect("encode");
     // The first byte is the map's own count; the rest is the empty section
     // blob and the empty block-entity list.
-    assert_eq!(vanilla::hex(&writer.as_slice()[..1]), vanilla::get("heightmaps.empty"));
+    assert_eq!(
+        vanilla::hex(&writer.as_slice()[..1]),
+        vanilla::get("heightmaps.empty")
+    );
 
     let mut writer = Writer::new();
     ChunkData {
@@ -215,7 +219,9 @@ fn heightmaps_match_the_map_codec() {
             },
             Heightmap {
                 kind: HeightmapKind::MotionBlocking,
-                data: (0..37).map(|index| 0x0123_4567_89AB_CDEFi64 + index).collect(),
+                data: (0..37)
+                    .map(|index| 0x0123_4567_89AB_CDEFi64 + index)
+                    .collect(),
             },
         ],
         sections: Vec::new(),
@@ -225,7 +231,10 @@ fn heightmaps_match_the_map_codec() {
     .expect("encode");
 
     let expected = vanilla::bytes("heightmaps.two");
-    assert_eq!(vanilla::hex(&writer.as_slice()[..expected.len()]), vanilla::hex(&expected));
+    assert_eq!(
+        vanilla::hex(&writer.as_slice()[..expected.len()]),
+        vanilla::hex(&expected)
+    );
 }
 
 #[test]
@@ -236,7 +245,10 @@ fn only_three_heightmap_kinds_go_to_the_client() {
         ("OCEAN_FLOOR_WG", HeightmapKind::OceanFloorWg),
         ("OCEAN_FLOOR", HeightmapKind::OceanFloor),
         ("MOTION_BLOCKING", HeightmapKind::MotionBlocking),
-        ("MOTION_BLOCKING_NO_LEAVES", HeightmapKind::MotionBlockingNoLeaves),
+        (
+            "MOTION_BLOCKING_NO_LEAVES",
+            HeightmapKind::MotionBlockingNoLeaves,
+        ),
     ] {
         assert_eq!(id as i32, vanilla::number(&format!("heightmap_id.{name}")));
         assert_eq!(
@@ -265,7 +277,10 @@ fn light_masks_match_the_bitset_codec() {
     .expect("encode");
 
     let expected = vanilla::bytes("bitset.0_3_25");
-    assert_eq!(vanilla::hex(&writer.as_slice()[..expected.len()]), vanilla::hex(&expected));
+    assert_eq!(
+        vanilla::hex(&writer.as_slice()[..expected.len()]),
+        vanilla::hex(&expected)
+    );
 
     // `BitSet.toLongArray` drops trailing zero words, so an all-clear mask is
     // a zero-length array rather than a word of zeroes.
@@ -364,15 +379,19 @@ fn a_chunk_round_trips() {
 
     let bytes = encoded(&packet);
     let mut reader = Reader::new(&bytes);
-    let decoded =
-        LevelChunkWithLight::decode(24, states, biome_kind, &mut reader).expect("decode");
+    let decoded = LevelChunkWithLight::decode(24, states, biome_kind, &mut reader).expect("decode");
     reader.finish().expect("fully consumed");
     assert_eq!(decoded, packet);
 
     // Every section is uniform, so the blob is 24 sections of two shorts and
     // two three-byte containers.
     assert_eq!(
-        packet.chunk.sections.iter().map(ChunkSection::encoded_len).sum::<usize>(),
+        packet
+            .chunk
+            .sections
+            .iter()
+            .map(ChunkSection::encoded_len)
+            .sum::<usize>(),
         24 * (4 + 2 + 2)
     );
 }

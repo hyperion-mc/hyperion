@@ -84,12 +84,28 @@ fn every_element_is_valid_network_nbt() {
 #[test]
 fn the_registries_a_client_needs_are_present() {
     assert_eq!(registry_data::DIMENSION_TYPE.len(), 4);
-    assert!(registry_data::DIMENSION_TYPE.get("minecraft:overworld").is_some());
-    assert!(registry_data::DIMENSION_TYPE.get("minecraft:the_nether").is_some());
-    assert!(registry_data::DIMENSION_TYPE.get("minecraft:the_end").is_some());
+    assert!(
+        registry_data::DIMENSION_TYPE
+            .get("minecraft:overworld")
+            .is_some()
+    );
+    assert!(
+        registry_data::DIMENSION_TYPE
+            .get("minecraft:the_nether")
+            .is_some()
+    );
+    assert!(
+        registry_data::DIMENSION_TYPE
+            .get("minecraft:the_end")
+            .is_some()
+    );
 
     assert_eq!(registry_data::WORLDGEN_BIOME.len(), 66);
-    assert!(registry_data::WORLDGEN_BIOME.get("minecraft:plains").is_some());
+    assert!(
+        registry_data::WORLDGEN_BIOME
+            .get("minecraft:plains")
+            .is_some()
+    );
 
     assert_eq!(registry_data::CHAT_TYPE.len(), 7);
     assert!(registry_data::CHAT_TYPE.get("minecraft:chat").is_some());
@@ -99,10 +115,7 @@ fn the_registries_a_client_needs_are_present() {
         "minecraft:worldgen/biome",
         "minecraft:chat_type",
     ] {
-        assert_eq!(
-            registry_data::by_name(name).expect(name).registry,
-            name
-        );
+        assert_eq!(registry_data::by_name(name).expect(name).registry, name);
     }
 }
 

@@ -11,7 +11,7 @@ pub mod chunk;
 pub mod palette;
 
 pub use chunk::{
-    BlockEntity, ChunkData, ChunkSection, Heightmap, HeightmapKind, LIGHT_LAYER_LEN, LevelChunkWithLight,
-    LightData, light_mask,
+    BlockEntity, ChunkData, ChunkSection, Heightmap, HeightmapKind, LIGHT_LAYER_LEN,
+    LevelChunkWithLight, LightData, light_mask,
 };
 pub use palette::{ContainerKind, PalettedContainer, storage_len};
