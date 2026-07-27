@@ -35,3 +35,4 @@ vendor/
 .trigger-*
 valence/
 .hyperion-dev-certs/
+.dev-certs/
