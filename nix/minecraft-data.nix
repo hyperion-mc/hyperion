@@ -257,6 +257,36 @@ let
       done
     '';
 
+  # The whole tag map, as `ClientboundUpdateTagsPacket` puts it on the wire.
+  #
+  # Tags are not datapack content the way registry elements are: a client keeps
+  # the ones it loaded from its own packs only until a server tells it
+  # otherwise, and a registry element naming a tag the server never sent fails
+  # to parse. So this is not an optimisation, it is what makes a join work.
+  tagContents = pkgs.runCommand "minecraft-tag-contents-${pin.id}"
+    {
+      nativeBuildInputs = [ vanillaEncoder ];
+      meta = {
+        description = "Network tag map for Minecraft ${pin.id}";
+        license = lib.licenses.unfree; # Mojang EULA; derived from the server jar.
+      };
+    }
+    ''
+      export HOME="$PWD/home" && mkdir -p "$HOME"
+      mkdir -p $out
+      minecraft-encode tags $out
+
+      # The three registries whose tags the synchronised registry elements
+      # name. A dump missing one is well formed and still disconnects every
+      # real client at `finish_configuration`, so it is checked by name.
+      for required in item block entity_type; do
+        if [ ! -s "$out/minecraft.$required.bin" ]; then
+          echo "tag dump is missing minecraft.$required" >&2
+          exit 1
+        fi
+      done
+    '';
+
   # writePython3Bin runs flake8 over each script, which is what keeps them
   # honest without a separate lint step. Three checks are turned off, each
   # because it argues with something the code does on purpose:
@@ -283,6 +313,9 @@ let
   registryCodegen = pkgs.writers.writePython3Bin "generate-minecraft-registry-data" pythonWriterOptions
     (builtins.readFile ./generate-registry-data.py);
 
+  tagDataCodegen = pkgs.writers.writePython3Bin "generate-minecraft-tag-data" pythonWriterOptions
+    (builtins.readFile ./generate-tag-data.py);
+
   blockStateCodegen = pkgs.writers.writePython3Bin "generate-minecraft-block-states" pythonWriterOptions
     (builtins.readFile ./generate-block-states.py);
 
@@ -303,6 +336,28 @@ let
         --version ${pin.id} \
         --out $out
       find $out -name '*.rs' -exec rustfmt --edition 2024 {} +
+    '';
+
+  # Same shape as generatedRegistryData: the id lists ride along as binary
+  # files next to the Rust that `include_bytes!`es them.
+  #
+  # The repo's own rustfmt and rustfmt.toml, not nixpkgs' defaults, because the
+  # committed copy is what `cargo fmt --check` sees: formatting it any other way
+  # makes `fmt` rewrite a file nobody touched and the staleness check below then
+  # calls it stale.
+  generatedTagData = pkgs.runCommand "hyperion-minecraft-tag-data-${pin.id}"
+    {
+      nativeBuildInputs = [ tagDataCodegen rustfmt ];
+      meta.description = "Generated Rust tag map for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      generate-minecraft-tag-data \
+        --dump ${tagContents} \
+        --version ${pin.id} \
+        --out $out
+      find $out -name '*.rs' -exec \
+        rustfmt --edition 2024 --config-path ${../rustfmt.toml} {} +
     '';
 
   # blocks.json lists all 32366 states one by one; the generator collapses that
@@ -493,6 +548,20 @@ let
     '';
   };
 
+  syncTagDataScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-tag-data";
+    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      dest="$root/crates/hyperion-minecraft-proto/src/tag_data"
+      rm -rf "$dest"
+      mkdir -p "$dest"
+      cp -r ${generatedTagData}/. "$dest/"
+      chmod -R u+w "$dest"
+      echo "synced $(find "$dest" -type f | wc -l | tr -d ' ') files into $dest" >&2
+    '';
+  };
+
   syncBlockStatesScript = pkgs.writeShellApplication {
     name = "sync-minecraft-block-states";
     runtimeInputs = [ pkgs.coreutils pkgs.git ];
@@ -540,6 +609,56 @@ let
         touch $out
       else
         echo "committed registry data is stale; run: nix run .#sync-minecraft-registry-data" >&2
+        cat diff.txt >&2
+        exit 1
+      fi
+    '';
+
+  # Loads the registries with only the shipped tags bound, the way a joining
+  # client does, using Mojang's own loader and codecs. A tag set too small for
+  # a real client to join fails here rather than on a player's screen.
+  #
+  # Sending fewer tags than vanilla is the tempting optimisation and this is
+  # what makes it safe to try: trim the dump and this check names the element
+  # that stops parsing.
+  #
+  # The empty case runs too. A check nobody has watched fail is not a check,
+  # and this one would pass just as happily if `verify-tags` had quietly
+  # stopped loading anything.
+  tagsLoadForClient = pkgs.runCommand "check-minecraft-tags-load"
+    {
+      nativeBuildInputs = [ vanillaEncoder ];
+    }
+    ''
+      export HOME="$PWD/home" && mkdir -p "$HOME"
+
+      echo "loading the registries with the shipped tags bound" >&2
+      minecraft-encode verify-tags ${tagContents}
+
+      echo "loading them again with no tags bound, which must fail" >&2
+      mkdir -p empty && echo '[]' > empty/index.json
+      if minecraft-encode verify-tags empty > empty.log 2>&1; then
+        echo "the registries loaded with no tags bound, so this check proves nothing" >&2
+        exit 1
+      fi
+      if ! grep -q "Missing tag" empty.log; then
+        echo "the empty load failed for some reason other than a missing tag:" >&2
+        cat empty.log >&2
+        exit 1
+      fi
+      grep -m1 "Missing tag" empty.log >&2
+
+      touch $out
+    '';
+
+  tagDataUpToDate = pkgs.runCommand "check-minecraft-tag-data"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/src/tag_data}
+      if diff -r "$committed" ${generatedTagData} > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed tag data is stale; run: nix run .#sync-minecraft-tag-data" >&2
         cat diff.txt >&2
         exit 1
       fi
@@ -613,21 +732,27 @@ in
     vanillaEncoder
     encoderFixtures
     registryContents
+    tagContents
     generatedRegistryData
+    generatedTagData
     generatedBlockStates
     generatedEntityTypes
     extractor
     codegen
     registryCodegen
+    tagDataCodegen
     blockStateCodegen
     entityTypeCodegen
     updateScript
     syncScript
     syncRegistryDataScript
+    syncTagDataScript
     syncBlockStatesScript
     syncEntityTypesScript
     generatedUpToDate
     registryDataUpToDate
+    tagDataUpToDate
+    tagsLoadForClient
     blockStatesUpToDate
     entityTypesUpToDate
     fixturesUpToDate

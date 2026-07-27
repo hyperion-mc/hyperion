@@ -15,6 +15,8 @@ declares.
 from __future__ import annotations
 
 import argparse
+import pathlib
+import re
 import socket
 import struct
 import sys
@@ -245,6 +247,132 @@ def take_string(payload, offset=0):
     return payload[offset : offset + length].decode(), offset + length
 
 
+# Tags are the one piece of configuration data this client can check the
+# *meaning* of rather than just the framing, and the check matters: a server
+# that sends an empty update_tags looks perfectly healthy on the wire and
+# disconnects every real client. See referenced_tags below.
+REGISTRY_DATA = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "crates"
+    / "hyperion-minecraft-proto"
+    / "src"
+    / "registry_data"
+)
+
+# A HolderSet written by RegistryOps is either an element name, a list, or the
+# tag's own name with a '#' in front, and only the last is a reference. The
+# colon is what tells one from the hex colours the biome elements carry, which
+# also start with '#'.
+TAG_REFERENCE = re.compile(r"\A#([a-z0-9_.-]+:[a-z0-9_./-]+)\Z")
+
+# NBT payload sizes, by tag type, for the fixed-width ones.
+NBT_FIXED = {1: 1, 2: 2, 3: 4, 4: 8, 5: 4, 6: 8}
+
+
+def nbt_skip(buf, offset, kind, strings):
+    """Advance past one NBT payload, collecting every string it holds."""
+    if kind in NBT_FIXED:
+        return offset + NBT_FIXED[kind]
+    if kind == 7:  # byte array
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return offset + 4 + count
+    if kind == 8:  # string
+        (length,) = struct.unpack_from(">H", buf, offset)
+        strings.append(buf[offset + 2 : offset + 2 + length].decode("utf-8", "replace"))
+        return offset + 2 + length
+    if kind == 9:  # list
+        element = buf[offset]
+        (count,) = struct.unpack_from(">i", buf, offset + 1)
+        offset += 5
+        for _ in range(count):
+            offset = nbt_skip(buf, offset, element, strings)
+        return offset
+    if kind == 10:  # compound
+        while True:
+            entry = buf[offset]
+            offset += 1
+            if entry == 0:
+                return offset
+            (length,) = struct.unpack_from(">H", buf, offset)
+            offset += 2 + length
+            offset = nbt_skip(buf, offset, entry, strings)
+    if kind == 11:  # int array
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return offset + 4 + 4 * count
+    if kind == 12:  # long array
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return offset + 4 + 8 * count
+    raise ValueError("unknown NBT tag type %d at offset %d" % (kind, offset))
+
+
+def referenced_tags():
+    """Every tag the registry elements a client parses will look up.
+
+    Derived from the committed registry contents rather than listed, because a
+    list of the names that happen to matter today is exactly what stops being
+    right at the next version bump. The files are the network NBT of every
+    element, back to back, so they are walked rather than indexed.
+    """
+    if not REGISTRY_DATA.is_dir():
+        raise SystemExit("no registry contents at %s" % REGISTRY_DATA)
+
+    referenced = set()
+    for path in sorted(REGISTRY_DATA.glob("*.nbt")):
+        buf = path.read_bytes()
+        offset = 0
+        while offset < len(buf):
+            strings = []
+            kind = buf[offset]
+            offset = nbt_skip(buf, offset + 1, kind, strings)
+            for text in strings:
+                match = TAG_REFERENCE.match(text)
+                if match:
+                    referenced.add(match.group(1))
+    if not referenced:
+        raise SystemExit(
+            "found no tag references in %s, so this check is reading the "
+            "payloads wrong rather than the data being clean" % REGISTRY_DATA
+        )
+    return referenced
+
+
+def check_tags(sent, log):
+    """Fail when a tag a registry element names is not one the server sent.
+
+    What this proves: the client could parse every registry element it kept
+    from its own packs, which is the gate `finish_configuration` runs and the
+    one an empty update_tags fails.
+
+    What it does not prove: that each tag landed in the right registry, or that
+    its ids point at the right elements. The reference in the NBT is a bare
+    name and carries no registry, so presence is all that can be matched here.
+    `cargo test -p hyperion-minecraft-proto --test tag_data` checks the ids.
+    """
+    names = {tag for tags in sent.values() for tag in tags}
+    log(
+        "tag map: %d registries, %d tags (%s)"
+        % (len(sent), len(names), ", ".join(sorted(sent)) or "none")
+    )
+
+    failed = False
+    for registry in ("minecraft:item", "minecraft:block", "minecraft:entity_type"):
+        if not sent.get(registry):
+            log("RESULT: no tags for %s, which every client needs" % registry)
+            failed = True
+
+    missing = sorted(referenced_tags() - names)
+    if missing:
+        log(
+            "RESULT: %d tag(s) the registry contents reference were never sent, "
+            "so a real client fails registry loading and disconnects with "
+            "Network Protocol Error: %s" % (len(missing), ", ".join(missing[:8]))
+        )
+        failed = True
+    else:
+        log("RESULT: every referenced tag is present in UpdateTags")
+    return not failed
+
+
 def printable(payload, limit=180):
     text = "".join(chr(b) if 32 <= b < 127 else "." for b in payload)
     return text[:limit]
@@ -259,6 +387,8 @@ class Client:
         self.log = log
         self.entity_id = None
         self.joined = False
+        # {registry: {tag name: [network ids]}}, as the server sent it.
+        self.tags = {}
 
     def read_exact(self, count):
         buf = b""
@@ -385,8 +515,35 @@ class Client:
                 count, offset = take_var_int(payload, offset)
                 registries.append((name, count))
             elif packet_id == S2C_CONFIG_UPDATE_TAGS:
-                count, _ = take_var_int(payload)
-                self.log("<- UpdateTags registries=%d" % count)
+                # Decoded in full, not counted: an empty tag map is a
+                # well-formed packet and a broken join, so the number of
+                # registries is the one thing this packet cannot be judged on.
+                registries_count, offset = take_var_int(payload)
+                for _ in range(registries_count):
+                    registry, offset = take_string(payload, offset)
+                    tag_count, offset = take_var_int(payload, offset)
+                    entries = {}
+                    for _ in range(tag_count):
+                        name, offset = take_string(payload, offset)
+                        id_count, offset = take_var_int(payload, offset)
+                        ids = []
+                        for _ in range(id_count):
+                            value, offset = take_var_int(payload, offset)
+                            ids.append(value)
+                        entries[name] = ids
+                    self.tags[registry] = entries
+                if offset != len(payload):
+                    raise SystemExit(
+                        "UpdateTags has %d trailing byte(s)" % (len(payload) - offset)
+                    )
+                self.log(
+                    "<- UpdateTags %d registries, %d tags, %d bytes"
+                    % (
+                        registries_count,
+                        sum(len(t) for t in self.tags.values()),
+                        len(payload),
+                    )
+                )
             elif packet_id == S2C_CONFIG_UPDATE_ENABLED_FEATURES:
                 count, offset = take_var_int(payload)
                 names = []
@@ -463,6 +620,12 @@ def main():
     client.handshake(args.host, args.port, 2)
     client.login()
     client.configuration()
+
+    # Checked here rather than after the play loop because it is the one thing
+    # this client can say about configuration that a real client would also
+    # say: reaching play proves the server finished configuration, not that a
+    # client could have.
+    tags_ok = check_tags(client.tags, log)
 
     started = time.time()
     deadline = started + args.seconds
@@ -550,7 +713,7 @@ def main():
         "RESULT: GameEvent(LEVEL_CHUNKS_LOAD_START) %s"
         % ("sent" if loaded else "NEVER SENT - client stays on the loading screen")
     )
-    return 0 if chunks and loaded else 1
+    return 0 if chunks and loaded and tags_ok else 1
 
 
 if __name__ == "__main__":
