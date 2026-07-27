@@ -1,0 +1,17 @@
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "smash"
+publish = false
+readme = "README.md"
+version.workspace = true
+
+[dependencies]
+flecs_ecs = { workspace = true }
+glam = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

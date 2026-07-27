@@ -25,6 +25,9 @@ members = [
     'crates/hyperion-event-macros',
     'crates/hyperion-genmap',
     'crates/hyperion-gui',
+    'crates/hyperion-hot-reload',
+    'crates/hyperion-hot-reload-demo',
+    'crates/hyperion-hot-reload-demo-module',
     'crates/hyperion-inventory',
     'crates/hyperion-item',
     'crates/hyperion-minecraft-proto',
@@ -42,6 +45,7 @@ members = [
     'crates/packet-channel',
     'crates/simd-utils',
     'events/bedwars',
+    'events/smash',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
@@ -198,7 +202,11 @@ path = 'crates/hyperion-genmap'
 [workspace.dependencies.hyperion-gui]
 path = 'crates/hyperion-gui'
 
+[workspace.dependencies.hyperion-hot-reload]
+path = 'crates/hyperion-hot-reload'
+
 [workspace.dependencies.hyperion-inventory]
+
 path = 'crates/hyperion-inventory'
 
 [workspace.dependencies.hyperion-item]

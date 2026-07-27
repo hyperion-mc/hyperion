@@ -3096,6 +3096,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperion-hot-reload"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "libloading",
+]
+
+[[package]]
+name = "hyperion-hot-reload-demo"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion-hot-reload",
+]
+
+[[package]]
+name = "hyperion-hot-reload-demo-module"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion-hot-reload",
+]
+
+[[package]]
 name = "hyperion-inventory"
 version = "0.1.0"
 dependencies = [
@@ -5849,6 +5873,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "smash"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "glam 0.29.3",
+ "proptest",
 ]
 
 [[package]]
