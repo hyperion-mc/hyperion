@@ -1,0 +1,26 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-hot-reload"
+publish = false
+repository.workspace = true
+version.workspace = true
+
+# One shared instance, always. `flecs_ecs` maps a Rust type onto a flecs component id
+# through a process-global counter, and flecs itself keeps its allocator and builtin
+# component ids in C globals. A second statically-linked copy silently aliases both.
+#
+# The `rlib` is here only so integration tests can link the crate: a dylib-only crate makes
+# `cargo test` fail with "cannot satisfy dependencies so `memchr` only shows up once",
+# because the test harness wants std static while the dylib has it dynamic. Building a game
+# module without `-C prefer-dynamic` will therefore pick the rlib and get its own copy of
+# everything; `AbiToken` exists to catch exactly that. See docs/hot-reload.md.
+[lib]
+crate-type = ["dylib", "rlib"]
+
+[dependencies]
+flecs_ecs.workspace = true
+libloading = "0.8.9"
+
+[lints]
+workspace = true

@@ -1,0 +1,26 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-hot-reload-demo-module"
+publish = false
+repository.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["dylib"]
+
+[features]
+default = []
+# The `Health` field changes from `u32` to `f32`. Without `migration` the reload is
+# refused; with it, the supplied migration is applied.
+health-f32 = []
+migration = ["health-f32"]
+# A change to a system's body only, leaving every component layout alone.
+tuned = []
+
+[dependencies]
+flecs_ecs.workspace = true
+hyperion-hot-reload.workspace = true
+
+[lints]
+workspace = true
