@@ -25,12 +25,15 @@
 extern crate self as hyperion_minecraft_proto;
 
 pub mod codec;
+pub mod framing;
 pub mod generated;
 pub mod item;
 pub mod nbt;
 pub mod packets;
+pub mod registry_data;
 pub mod text;
 pub mod types;
+pub mod world;
 
 mod error;
 
