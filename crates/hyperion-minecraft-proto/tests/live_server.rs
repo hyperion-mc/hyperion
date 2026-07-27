@@ -20,12 +20,18 @@ use std::{
 };
 
 use hyperion_minecraft_proto::{
-    Decode, Encode, PROTOCOL_VERSION, Reader, Writer,
+    Decode, Encode, PROTOCOL_VERSION, Reader, VarInt, Writer,
     packets::{
-        handshake::{ClientIntent, Intention},
-        status::{PingRequest, PongResponse, StatusRequest, StatusResponse},
+        handshake::serverbound::Intention,
+        status::{
+            clientbound::{PongResponse, StatusResponse},
+            serverbound::{PingRequest, StatusRequest},
+        },
     },
 };
+
+/// `ClientIntent.STATUS`, whose id the server reads with `ClientIntent.byId`.
+const INTENT_STATUS: VarInt = VarInt(1);
 
 /// Wrap a packet body in the length-prefixed frame the server expects.
 ///
@@ -75,7 +81,7 @@ fn read_frame(stream: &mut TcpStream) -> (i32, Vec<u8>) {
 fn status_ping_against_real_server() {
     let address = env::var("HYPERION_MC_SERVER").expect("HYPERION_MC_SERVER must be set");
     let (host, port) = address.rsplit_once(':').expect("address must be host:port");
-    let port: u16 = port.parse().expect("port must be a number");
+    let port: i16 = port.parse().expect("port must be a number");
 
     let mut stream = TcpStream::connect(&address).expect("connect");
     stream
@@ -84,10 +90,10 @@ fn status_ping_against_real_server() {
 
     // Handshake, then status request, in one write the way a real client does.
     let handshake = Intention {
-        protocol_version: PROTOCOL_VERSION,
+        protocol_version: VarInt(PROTOCOL_VERSION),
         host_name: host,
         port,
-        intention: ClientIntent::Status,
+        intention: INTENT_STATUS,
     };
     stream
         .write_all(&frame(0, &handshake))
@@ -122,7 +128,7 @@ fn status_ping_against_real_server() {
     // is a big-endian i64 bug on one side or the other.
     let nonce = 0x0123_4567_89AB_CDEF_i64;
     stream
-        .write_all(&frame(1, &PingRequest { time: nonce }))
+        .write_all(&frame(1, &PingRequest(nonce)))
         .expect("send ping");
 
     let (packet_id, body) = read_frame(&mut stream);
@@ -130,7 +136,7 @@ fn status_ping_against_real_server() {
     let mut reader = Reader::new(&body);
     let pong = PongResponse::decode(&mut reader).expect("decode pong");
     reader.finish().expect("pong fully consumed");
-    assert_eq!(pong.time, nonce, "server echoed a different value");
+    assert_eq!(pong.0, nonce, "server echoed a different value");
 
-    eprintln!("pong echoed {:#x} correctly", pong.time);
+    eprintln!("pong echoed {:#x} correctly", pong.0);
 }

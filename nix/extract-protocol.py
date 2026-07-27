@@ -556,14 +556,30 @@ def split_chain(expr: str) -> list[str]:
     return [p for p in parts if p]
 
 
+def strip_getter(name: str) -> str:
+    """``getEntityId`` -> ``entityId``, leaving anything else alone.
+
+    Java's accessor prefix carries no information a field name needs, and
+    dropping it here is what stops it reaching the generated Rust. Names like
+    ``get3DDataValue`` keep the prefix because the remainder is not an
+    identifier on its own.
+    """
+    m = re.fullmatch(r"get([A-Z]\w*)", name)
+    return m.group(1)[0].lower() + m.group(1)[1:] if m else name
+
+
 def _getter_name(getter: str) -> str:
     """Field label from a composite's getter, ``Foo::bar`` or ``f -> f.bar()``."""
     getter = getter.strip()
     m = re.search(r"::(\w+)\s*$", getter)
     if m:
-        return m.group(1)
+        return strip_getter(m.group(1))
+    # A lambda projects onto one member, with or without call parentheses.
+    m = re.search(r"->\s*\w+\.(\w+)\s*(?:\(\s*\))?\s*$", getter)
+    if m:
+        return strip_getter(m.group(1))
     names = re.findall(r"\.(\w+)\s*\(\s*\)", getter)
-    return names[-1] if names else getter
+    return strip_getter(names[-1]) if names else getter
 
 
 def call_args(segment: str) -> tuple[str, str | None]:
@@ -1310,13 +1326,22 @@ class Resolver:
         """A readable field name for a written value.
 
         Only a label: the byte layout comes from the writer, never from this.
+        The field the value came out of is preferred over whatever was called
+        on it, so ``this.intention.id()`` is ``intention`` rather than ``id``.
         """
         arg = arg.strip()
+        m = re.search(r"\bthis\.(\w+)", arg)
+        if m:
+            return m.group(1)
+        m = re.search(r"->\s*\w+\.(\w+)\s*(?:\(\s*\))?\s*$", arg)
+        if m:
+            return strip_getter(m.group(1))
         matches = re.findall(r"\.(\w+)\s*\(\s*\)", arg)
         if matches:
-            return matches[-1]
+            return strip_getter(matches[-1])
         matches = re.findall(r"\b(\w+)\b", arg)
-        return matches[-1] if matches else ""
+        return strip_getter(matches[-1]) if matches else ""
+
 
 # ---------------------------------------------------------------------------
 # Packet table

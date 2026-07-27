@@ -1,17 +1,27 @@
 //! Wire-format tests.
 //!
-//! The byte vectors are not invented: each one is either a value the server's
-//! own source pins (`VarInt.java`'s limits, `ClientIntent`'s discriminants) or
-//! a frame captured from a real Minecraft 26.2 server, recorded in
-//! `handshake_frame_matches_capture`.
+//! The byte vectors are not invented: every one is a value the server's own
+//! source pins, such as `VarInt.java`'s limits or `ServerboundHelloPacket`'s
+//! 16-character name. `tests/live_server.rs` covers the other direction, by
+//! handing bytes to a real 26.2 server and reading back what it sends.
 
 use hyperion_minecraft_proto::{
-    Decode, Encode, Error, PROTOCOL_VERSION, Reader, Writer,
+    Decode, Encode, Error, Identifier, PROTOCOL_VERSION, Reader, Uuid, VarInt, Writer,
     packets::{
-        handshake::{ClientIntent, Intention},
-        login::{Hello, HelloRequest, LoginAcknowledged, LoginCompression, LoginDisconnect},
-        status::{PingRequest, PongResponse, StatusRequest, StatusResponse},
+        common::serverbound::{CookieResponse, PingRequest},
+        configuration::clientbound::SelectKnownPacks,
+        handshake::serverbound::Intention,
+        login::{
+            clientbound::{Hello as HelloRequest, LoginCompression, LoginDisconnect},
+            serverbound::{Hello, LoginAcknowledged},
+        },
+        play, status,
+        status::{
+            clientbound::{PongResponse, StatusResponse},
+            serverbound::StatusRequest,
+        },
     },
+    types::KnownPack,
 };
 
 fn encode<T: Encode>(value: &T) -> Vec<u8> {
@@ -133,15 +143,16 @@ fn truncated_input_is_an_error_not_a_default() {
     );
 }
 
-// --- handshake ------------------------------------------------------------
+// --- generated packets ----------------------------------------------------
 
 #[test]
 fn intention_round_trips() {
     let packet = Intention {
-        protocol_version: PROTOCOL_VERSION,
+        protocol_version: VarInt(PROTOCOL_VERSION),
         host_name: "localhost",
         port: 25565,
-        intention: ClientIntent::Login,
+        // `ClientIntent.LOGIN`, written as its own id rather than its ordinal.
+        intention: VarInt(2),
     };
     // 776 -> 0x88 0x06; "localhost" -> len 9; 25565 -> 0x63 0xDD; Login -> 2.
     let expected: &[u8] = &[
@@ -149,22 +160,6 @@ fn intention_round_trips() {
     ];
     round_trip(&packet, expected);
 }
-
-#[test]
-fn client_intent_rejects_zero() {
-    // ClientIntent starts at 1; byId throws on anything else.
-    assert_eq!(
-        ClientIntent::from_raw(0),
-        Err(Error::InvalidEnum {
-            name: "ClientIntent",
-            value: 0
-        })
-    );
-    assert_eq!(ClientIntent::from_raw(1), Ok(ClientIntent::Status));
-    assert_eq!(ClientIntent::from_raw(3), Ok(ClientIntent::Transfer));
-}
-
-// --- status ---------------------------------------------------------------
 
 #[test]
 fn status_request_is_empty() {
@@ -182,27 +177,23 @@ fn status_response_round_trips() {
 #[test]
 fn ping_and_pong_round_trip() {
     let bytes: &[u8] = &[0x00, 0x00, 0x01, 0x9A, 0x2B, 0x3C, 0x4D, 0x5E];
-    round_trip(
-        &PingRequest {
-            time: 0x0000_019A_2B3C_4D5E,
-        },
-        bytes,
-    );
-    round_trip(
-        &PongResponse {
-            time: 0x0000_019A_2B3C_4D5E,
-        },
-        bytes,
-    );
+    round_trip(&PingRequest(0x0000_019A_2B3C_4D5E), bytes);
+    round_trip(&PongResponse(0x0000_019A_2B3C_4D5E), bytes);
 }
 
-// --- login ----------------------------------------------------------------
+#[test]
+fn one_class_serving_two_states_is_one_type() {
+    // `ServerboundPingRequestPacket` is registered by both status and play, so
+    // a value built for one has to be the value the other accepts.
+    let ping: status::serverbound::PingRequest = play::serverbound::PingRequest(7);
+    assert_eq!(ping, PingRequest(7));
+}
 
 #[test]
 fn login_hello_round_trips() {
-    let uuid = 0x0123_4567_89AB_CDEF_0123_4567_89AB_CDEF_u128;
+    let uuid = Uuid(0x0123_4567_89AB_CDEF_0123_4567_89AB_CDEF);
     let mut expected = vec![5, b'N', b'o', b't', b'c', b'h'];
-    expected.extend_from_slice(&uuid.to_be_bytes());
+    expected.extend_from_slice(&uuid.0.to_be_bytes());
     round_trip(
         &Hello {
             name: "Notch",
@@ -214,11 +205,12 @@ fn login_hello_round_trips() {
 
 #[test]
 fn login_hello_rejects_overlong_name() {
-    // ServerboundHelloPacket reads with a 16-character limit.
+    // `ServerboundHelloPacket` writes the name with a 16-character limit, and
+    // the generated struct carries that limit as `#[proto(max_len = 16)]`.
     let mut writer = Writer::new();
     let packet = Hello {
         name: "a_seventeen_char!",
-        profile_id: 0,
+        profile_id: Uuid(0),
     };
     assert!(matches!(
         packet.encode(&mut writer),
@@ -247,19 +239,11 @@ fn login_hello_request_round_trips() {
 
 #[test]
 fn login_compression_round_trips() {
-    round_trip(
-        &LoginCompression {
-            compression_threshold: 256,
-        },
-        &[0x80, 0x02],
-    );
+    round_trip(&LoginCompression(VarInt(256)), &[0x80, 0x02]);
     // A negative threshold disables compression and needs the full five bytes.
-    round_trip(
-        &LoginCompression {
-            compression_threshold: -1,
-        },
-        &[0xFF, 0xFF, 0xFF, 0xFF, 0x0F],
-    );
+    round_trip(&LoginCompression(VarInt(-1)), &[
+        0xFF, 0xFF, 0xFF, 0xFF, 0x0F,
+    ]);
 }
 
 #[test]
@@ -273,6 +257,51 @@ fn login_disconnect_round_trips() {
 #[test]
 fn login_acknowledged_is_empty() {
     round_trip(&LoginAcknowledged, &[]);
+}
+
+#[test]
+fn optional_field_is_boolean_prefixed() {
+    // `ServerboundCookieResponsePacket.payload` is `Optional<byte[]>`, which
+    // the derive writes as a discriminant byte and then the value.
+    round_trip(
+        &CookieResponse {
+            key: Identifier::new("hyperion:seen").expect("valid identifier"),
+            payload: Some(&[0xAB]),
+        },
+        &[
+            0x0D, b'h', b'y', b'p', b'e', b'r', b'i', b'o', b'n', b':', b's', b'e', b'e', b'n',
+            0x01, 0x01, 0xAB,
+        ],
+    );
+    round_trip(
+        &CookieResponse {
+            key: Identifier::new("hyperion:seen").expect("valid identifier"),
+            payload: None,
+        },
+        &[
+            0x0D, b'h', b'y', b'p', b'e', b'r', b'i', b'o', b'n', b':', b's', b'e', b'e', b'n',
+            0x00,
+        ],
+    );
+}
+
+#[test]
+fn a_list_is_a_count_then_the_elements() {
+    round_trip(
+        &SelectKnownPacks {
+            known_packs: vec![KnownPack {
+                namespace: "minecraft",
+                id: "core",
+                version: "26.2",
+            }],
+        },
+        &[
+            0x01, // one pack
+            0x09, b'm', b'i', b'n', b'e', b'c', b'r', b'a', b'f', b't', //
+            0x04, b'c', b'o', b'r', b'e', //
+            0x04, b'2', b'6', b'.', b'2',
+        ],
+    );
 }
 
 // --- trailing bytes -------------------------------------------------------

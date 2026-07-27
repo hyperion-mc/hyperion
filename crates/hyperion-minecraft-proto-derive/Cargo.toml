@@ -1,8 +1,10 @@
-[build-dependencies]
-serde_json.workspace = true
-
 [dependencies]
-hyperion-minecraft-proto-derive.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[lib]
+proc-macro = true
 
 [lints]
 workspace = true
@@ -10,7 +12,7 @@ workspace = true
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
-name = "hyperion-minecraft-proto"
+name = "hyperion-minecraft-proto-derive"
 publish = false
 readme = "README.md"
 version.workspace = true

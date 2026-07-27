@@ -164,7 +164,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_HANDSHAKE_CLIENTINTENTIONPACKET
         wire: &crate::generated::wire::Wire::I16,
     },
     crate::generated::wire::Field {
-        name: "id",
+        name: "intention",
         wire: &crate::generated::wire::Wire::VarInt,
     },
 ]);
@@ -634,13 +634,13 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDJIGSAWGENERATEP
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDLOCKDIFFICULTYPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Bool;
 
 /// `net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "x", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "y", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "z", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "horizontalCollision", wire: &crate::generated::wire::Wire::I8 }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "x", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "y", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "z", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "onGround", wire: &crate::generated::wire::Wire::I8 }]);
 
 /// `net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$PosRot#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POSROT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "x", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "y", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "z", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "yRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "xRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "horizontalCollision", wire: &crate::generated::wire::Wire::I8 }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POSROT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "x", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "y", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "z", wire: &crate::generated::wire::Wire::F64 }, crate::generated::wire::Field { name: "yRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "xRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "onGround", wire: &crate::generated::wire::Wire::I8 }]);
 
 /// `net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Rot#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_ROT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "yRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "xRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "horizontalCollision", wire: &crate::generated::wire::Wire::I8 }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_ROT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "yRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "xRot", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "onGround", wire: &crate::generated::wire::Wire::I8 }]);
 
 /// `net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$StatusOnly#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_STATUSONLY_STREAM_CODEC: Wire = crate::generated::wire::Wire::I8;
@@ -732,7 +732,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPLAYERACTIONPAC
         wire: &crate::generated::wire::Wire::BlockPos,
     },
     crate::generated::wire::Field {
-        name: "get3DDataValue",
+        name: "direction",
         wire: &crate::generated::wire::Wire::I8,
     },
     crate::generated::wire::Field {
@@ -798,7 +798,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETGAMERULEPACK
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETGAMERULEPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "entries", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETGAMERULEPACKET_ENTRY_STREAM_CODEC, max: None } }]);
 
 /// `net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETJIGSAWBLOCKPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }, crate::generated::wire::Field { name: "name", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "target", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pool", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "finalState", wire: &crate::generated::wire::Wire::Str { max: Some(32_767) } }, crate::generated::wire::Field { name: "getSerializedName", wire: &crate::generated::wire::Wire::Str { max: Some(32_767) } }, crate::generated::wire::Field { name: "selectionPriority", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "placementPriority", wire: &crate::generated::wire::Wire::VarInt }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETJIGSAWBLOCKPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }, crate::generated::wire::Field { name: "name", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "target", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pool", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "finalState", wire: &crate::generated::wire::Wire::Str { max: Some(32_767) } }, crate::generated::wire::Field { name: "joint", wire: &crate::generated::wire::Wire::Str { max: Some(32_767) } }, crate::generated::wire::Field { name: "selectionPriority", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "placementPriority", wire: &crate::generated::wire::Wire::VarInt }]);
 
 /// `net.minecraft.world.level.block.state.properties.TestBlockMode#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_LEVEL_BLOCK_STATE_PROPERTIES_TESTBLOCKMODE_STREAM_CODEC:
@@ -824,15 +824,15 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTESTINSTANCEBLO
 pub(crate) static NET_MINECRAFT_CORE_VEC3I_STREAM_CODEC: Wire =
     crate::generated::wire::Wire::Struct(&[
         crate::generated::wire::Field {
-            name: "getX",
+            name: "x",
             wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT,
         },
         crate::generated::wire::Field {
-            name: "getY",
+            name: "y",
             wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT,
         },
         crate::generated::wire::Field {
-            name: "getZ",
+            name: "z",
             wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT,
         },
     ]);
@@ -920,7 +920,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_TRUSTED_COMPOUND_TAG
     crate::generated::wire::Wire::Nbt;
 
 /// `net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKENTITYDATAPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "getPos", wire: &crate::generated::wire::NET_MINECRAFT_CORE_BLOCKPOS_STREAM_CODEC }, crate::generated::wire::Field { name: "getType", wire: &crate::generated::wire::Wire::RegistryId { registry: "minecraft:block_entity_type" } }, crate::generated::wire::Field { name: "getTag", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_TRUSTED_COMPOUND_TAG }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKENTITYDATAPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::NET_MINECRAFT_CORE_BLOCKPOS_STREAM_CODEC }, crate::generated::wire::Field { name: "type", wire: &crate::generated::wire::Wire::RegistryId { registry: "minecraft:block_entity_type" } }, crate::generated::wire::Field { name: "tag", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_TRUSTED_COMPOUND_TAG }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundBlockEventPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKEVENTPACKET_STREAM_CODEC:
@@ -949,11 +949,11 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKEVENTPACKE
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKUPDATEPACKET_STREAM_CODEC:
     Wire = crate::generated::wire::Wire::Struct(&[
     crate::generated::wire::Field {
-        name: "getPos",
+        name: "pos",
         wire: &crate::generated::wire::NET_MINECRAFT_CORE_BLOCKPOS_STREAM_CODEC,
     },
     crate::generated::wire::Field {
-        name: "getBlockState",
+        name: "blockState",
         wire: &crate::generated::wire::Wire::VarInt,
     },
 ]);
@@ -1117,7 +1117,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDFORGETLEVELCHUN
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDGAMEEVENTPACKET_STREAM_CODEC:
     Wire = crate::generated::wire::Wire::Struct(&[
     crate::generated::wire::Field {
-        name: "id",
+        name: "event",
         wire: &crate::generated::wire::Wire::I8,
     },
     crate::generated::wire::Field {
@@ -1175,7 +1175,7 @@ pub(crate) static NET_MINECRAFT_WORLD_LEVEL_DIMENSION_DIMENSIONTYPE_STREAM_CODEC
     };
 
 /// `net.minecraft.network.protocol.game.ClientboundLoginPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLOGINPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "playerId", wire: &crate::generated::wire::Wire::I32 }, crate::generated::wire::Field { name: "hardcore", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "levels", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::Wire::Identifier, max: None } }, crate::generated::wire::Field { name: "maxPlayers", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "chunkRadius", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "simulationDistance", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "reducedDebugInfo", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "showDeathScreen", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "doLimitedCrafting", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "commonPlayerSpawnInfo", wire: &crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimensionType", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_DIMENSION_DIMENSIONTYPE_STREAM_CODEC }, crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "seed", wire: &crate::generated::wire::Wire::I64 }, crate::generated::wire::Field { name: "getId", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "previousGameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "isDebug", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "isFlat", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "lastDeathLocation", wire: &crate::generated::wire::Wire::Optional(&crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }])) }, crate::generated::wire::Field { name: "portalCooldown", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "seaLevel", wire: &crate::generated::wire::Wire::VarInt }]) }, crate::generated::wire::Field { name: "onlineMode", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "enforcesSecureChat", wire: &crate::generated::wire::Wire::Bool }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLOGINPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "playerId", wire: &crate::generated::wire::Wire::I32 }, crate::generated::wire::Field { name: "hardcore", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "levels", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::Wire::Identifier, max: None } }, crate::generated::wire::Field { name: "maxPlayers", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "chunkRadius", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "simulationDistance", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "reducedDebugInfo", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "showDeathScreen", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "doLimitedCrafting", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "commonPlayerSpawnInfo", wire: &crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimensionType", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_DIMENSION_DIMENSIONTYPE_STREAM_CODEC }, crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "seed", wire: &crate::generated::wire::Wire::I64 }, crate::generated::wire::Field { name: "gameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "previousGameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "isDebug", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "isFlat", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "lastDeathLocation", wire: &crate::generated::wire::Wire::Optional(&crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }])) }, crate::generated::wire::Field { name: "portalCooldown", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "seaLevel", wire: &crate::generated::wire::Wire::VarInt }]) }, crate::generated::wire::Field { name: "onlineMode", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "enforcesSecureChat", wire: &crate::generated::wire::Wire::Bool }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundLowDiskSpaceWarningPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLOWDISKSPACEWARNINGPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Unit;
@@ -1217,7 +1217,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENBOOKPACKET_
     crate::generated::wire::Wire::VarInt;
 
 /// `net.minecraft.network.protocol.game.ClientboundOpenScreenPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENSCREENPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "getContainerId", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_CONTAINER_ID }, crate::generated::wire::Field { name: "getType", wire: &crate::generated::wire::Wire::RegistryId { registry: "minecraft:menu" } }, crate::generated::wire::Field { name: "getTitle", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_STREAM_CODEC }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENSCREENPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "containerId", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_CONTAINER_ID }, crate::generated::wire::Field { name: "type", wire: &crate::generated::wire::Wire::RegistryId { registry: "minecraft:menu" } }, crate::generated::wire::Field { name: "title", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_STREAM_CODEC }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENSIGNEDITORPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }, crate::generated::wire::Field { name: "isFrontText", wire: &crate::generated::wire::Wire::Bool }]);
@@ -1257,7 +1257,7 @@ pub(crate) static NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_COD
     ]);
 
 /// `net.minecraft.stats.RecipeBookSettings#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "o -> o.crafting", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "o -> o.furnace", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "o -> o.blastFurnace", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "o -> o.smoker", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }]);
+pub(crate) static NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "crafting", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "furnace", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "blastFurnace", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }, crate::generated::wire::Field { name: "smoker", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_TYPESETTINGS_STREAM_CODEC }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundRecipeBookSettingsPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRECIPEBOOKSETTINGSPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "bookSettings", wire: &crate::generated::wire::NET_MINECRAFT_STATS_RECIPEBOOKSETTINGS_STREAM_CODEC }]);
@@ -1284,7 +1284,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRESETSCOREPACKE
 ]);
 
 /// `net.minecraft.network.protocol.game.ClientboundRespawnPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRESPAWNPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "commonPlayerSpawnInfo", wire: &crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimensionType", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_DIMENSION_DIMENSIONTYPE_STREAM_CODEC }, crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "seed", wire: &crate::generated::wire::Wire::I64 }, crate::generated::wire::Field { name: "getId", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "previousGameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "isDebug", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "isFlat", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "lastDeathLocation", wire: &crate::generated::wire::Wire::Optional(&crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }])) }, crate::generated::wire::Field { name: "portalCooldown", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "seaLevel", wire: &crate::generated::wire::Wire::VarInt }]) }, crate::generated::wire::Field { name: "dataToKeep", wire: &crate::generated::wire::Wire::I8 }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRESPAWNPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "commonPlayerSpawnInfo", wire: &crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimensionType", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_DIMENSION_DIMENSIONTYPE_STREAM_CODEC }, crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "seed", wire: &crate::generated::wire::Wire::I64 }, crate::generated::wire::Field { name: "gameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "previousGameType", wire: &crate::generated::wire::Wire::I8 }, crate::generated::wire::Field { name: "isDebug", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "isFlat", wire: &crate::generated::wire::Wire::Bool }, crate::generated::wire::Field { name: "lastDeathLocation", wire: &crate::generated::wire::Wire::Optional(&crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "dimension", wire: &crate::generated::wire::Wire::Identifier }, crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }])) }, crate::generated::wire::Field { name: "portalCooldown", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "seaLevel", wire: &crate::generated::wire::Wire::VarInt }]) }, crate::generated::wire::Field { name: "dataToKeep", wire: &crate::generated::wire::Wire::I8 }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundRotateHeadPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDROTATEHEADPACKET_STREAM_CODEC:
@@ -1608,7 +1608,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTE
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_ATTRIBUTESNAPSHOT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "attribute", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_ENTITY_AI_ATTRIBUTES_ATTRIBUTE_STREAM_CODEC }, crate::generated::wire::Field { name: "base", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_DOUBLE }, crate::generated::wire::Field { name: "modifiers", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_ATTRIBUTESNAPSHOT_MODIFIER_STREAM_CODEC, max: None } }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "getEntityId", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT }, crate::generated::wire::Field { name: "getValues", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_ATTRIBUTESNAPSHOT_STREAM_CODEC, max: Some(128) } }]);
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "entityId", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT }, crate::generated::wire::Field { name: "values", wire: &crate::generated::wire::Wire::List { element: &crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_ATTRIBUTESNAPSHOT_STREAM_CODEC, max: Some(128) } }]);
 
 /// `net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEMOBEFFECTPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "entityId", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "effect", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_EFFECT_MOBEFFECT_STREAM_CODEC }, crate::generated::wire::Field { name: "effectAmplifier", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "effectDurationTicks", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "flags", wire: &crate::generated::wire::Wire::I8 }]);
@@ -1658,7 +1658,7 @@ pub(crate) static NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ENCHANTMENT_STREAM_CODEC:
     };
 
 /// `net.minecraft.world.item.enchantment.ItemEnchantments#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ITEMENCHANTMENTS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "c -> c.enchantments", wire: &crate::generated::wire::Wire::Map { key: &crate::generated::wire::NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ENCHANTMENT_STREAM_CODEC, value: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT } }]);
+pub(crate) static NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ITEMENCHANTMENTS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "enchantments", wire: &crate::generated::wire::Wire::Map { key: &crate::generated::wire::NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ENCHANTMENT_STREAM_CODEC, value: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT } }]);
 
 /// `net.minecraft.world.item.component.CustomModelData#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_CUSTOMMODELDATA_STREAM_CODEC: Wire =
