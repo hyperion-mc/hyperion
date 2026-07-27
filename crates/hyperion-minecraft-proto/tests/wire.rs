@@ -21,7 +21,7 @@ use hyperion_minecraft_proto::{
             serverbound::StatusRequest,
         },
     },
-    types::KnownPack,
+    types::{ClientIntent, KnownPack},
 };
 
 fn encode<T: Encode>(value: &T) -> Vec<u8> {
@@ -151,14 +151,29 @@ fn intention_round_trips() {
         protocol_version: VarInt(PROTOCOL_VERSION),
         host_name: "localhost",
         port: 25565,
-        // `ClientIntent.LOGIN`, written as its own id rather than its ordinal.
-        intention: VarInt(2),
+        intention: ClientIntent::Login,
     };
     // 776 -> 0x88 0x06; "localhost" -> len 9; 25565 -> 0x63 0xDD; Login -> 2.
     let expected: &[u8] = &[
         0x88, 0x06, 0x09, b'l', b'o', b'c', b'a', b'l', b'h', b'o', b's', b't', 0x63, 0xDD, 0x02,
     ];
     round_trip(&packet, expected);
+}
+
+#[test]
+fn client_intent_discriminants_are_ids_not_ordinals() {
+    // `ClientIntent.byId` maps 1, 2, 3; the ordinals are 0, 1, 2, and reading
+    // one for the other would silently pick the wrong intent.
+    let mut reader = Reader::new(&[0x00]);
+    assert_eq!(
+        ClientIntent::decode(&mut reader),
+        Err(Error::InvalidEnum {
+            name: "ClientIntent",
+            value: 0
+        })
+    );
+    round_trip(&ClientIntent::Status, &[0x01]);
+    round_trip(&ClientIntent::Transfer, &[0x03]);
 }
 
 #[test]

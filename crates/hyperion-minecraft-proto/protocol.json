@@ -7,8 +7,8 @@
   },
   "coverage": {
     "packets": 256,
-    "fullyMechanical": 200,
-    "partial": 56,
+    "fullyMechanical": 202,
+    "partial": 54,
     "unrecovered": 0,
     "dataComponents": 111,
     "dataComponentsMechanical": 100,
@@ -757,8 +757,78 @@
       }
     },
     "net.minecraft.network.protocol.common.ServerboundClientInformationPacket#STREAM_CODEC": {
-      "kind": "unresolved",
-      "why": "unmodelled statement: this.information.write(output)"
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "language",
+          "wire": {
+            "kind": "string",
+            "max": 32767
+          }
+        },
+        {
+          "name": "viewDistance",
+          "wire": {
+            "kind": "i8"
+          }
+        },
+        {
+          "name": "chatVisibility",
+          "wire": {
+            "kind": "varint",
+            "note": "enum ordinal"
+          }
+        },
+        {
+          "name": "chatColors",
+          "wire": {
+            "kind": "bool"
+          }
+        },
+        {
+          "name": "modelCustomisation",
+          "wire": {
+            "kind": "i8"
+          }
+        },
+        {
+          "name": "mainHand",
+          "wire": {
+            "kind": "enum",
+            "type": "net.minecraft.world.entity.HumanoidArm",
+            "constants": [
+              {
+                "name": "LEFT",
+                "value": 0
+              },
+              {
+                "name": "RIGHT",
+                "value": 1
+              }
+            ],
+            "note": "varint ordinal"
+          }
+        },
+        {
+          "name": "textFilteringEnabled",
+          "wire": {
+            "kind": "bool"
+          }
+        },
+        {
+          "name": "allowsListing",
+          "wire": {
+            "kind": "bool"
+          }
+        },
+        {
+          "name": "particleStatus",
+          "wire": {
+            "kind": "varint",
+            "note": "enum ordinal"
+          }
+        }
+      ]
     },
     "net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -811,8 +881,43 @@
         {
           "name": "action",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.network.protocol.common.ServerboundResourcePackPacket$Action",
+            "constants": [
+              {
+                "name": "SUCCESSFULLY_LOADED",
+                "value": 0
+              },
+              {
+                "name": "DECLINED",
+                "value": 1
+              },
+              {
+                "name": "FAILED_DOWNLOAD",
+                "value": 2
+              },
+              {
+                "name": "ACCEPTED",
+                "value": 3
+              },
+              {
+                "name": "DOWNLOADED",
+                "value": 4
+              },
+              {
+                "name": "INVALID_URL",
+                "value": 5
+              },
+              {
+                "name": "FAILED_RELOAD",
+                "value": 6
+              },
+              {
+                "name": "DISCARDED",
+                "value": 7
+              }
+            ],
+            "note": "varint ordinal"
           }
         }
       ]
@@ -1374,8 +1479,23 @@
         {
           "name": "action",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.network.protocol.game.ClientboundCustomChatCompletionsPacket$Action",
+            "constants": [
+              {
+                "name": "ADD",
+                "value": 0
+              },
+              {
+                "name": "REMOVE",
+                "value": 1
+              },
+              {
+                "name": "SET",
+                "value": 2
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -1531,8 +1651,15 @@
         {
           "name": "debugSampleType",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.util.debugchart.RemoteDebugSampleType",
+            "constants": [
+              {
+                "name": "TICK_TIME",
+                "value": 0
+              }
+            ],
+            "note": "varint ordinal"
           }
         }
       ]
@@ -2414,8 +2541,19 @@
       ]
     },
     "net.minecraft.network.protocol.game.ClientboundOpenBookPacket#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "enum ordinal"
+      "kind": "enum",
+      "type": "net.minecraft.world.InteractionHand",
+      "constants": [
+        {
+          "name": "MAIN_HAND",
+          "value": 0
+        },
+        {
+          "name": "OFF_HAND",
+          "value": 1
+        }
+      ],
+      "note": "varint ordinal"
     },
     "net.minecraft.network.protocol.game.ClientboundOpenScreenPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -3289,8 +3427,55 @@
         {
           "name": "source",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.sounds.SoundSource",
+            "constants": [
+              {
+                "name": "MASTER",
+                "value": 0
+              },
+              {
+                "name": "MUSIC",
+                "value": 1
+              },
+              {
+                "name": "RECORDS",
+                "value": 2
+              },
+              {
+                "name": "WEATHER",
+                "value": 3
+              },
+              {
+                "name": "BLOCKS",
+                "value": 4
+              },
+              {
+                "name": "HOSTILE",
+                "value": 5
+              },
+              {
+                "name": "NEUTRAL",
+                "value": 6
+              },
+              {
+                "name": "PLAYERS",
+                "value": 7
+              },
+              {
+                "name": "AMBIENT",
+                "value": 8
+              },
+              {
+                "name": "VOICE",
+                "value": 9
+              },
+              {
+                "name": "UI",
+                "value": 10
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -3332,8 +3517,55 @@
         {
           "name": "source",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.sounds.SoundSource",
+            "constants": [
+              {
+                "name": "MASTER",
+                "value": 0
+              },
+              {
+                "name": "MUSIC",
+                "value": 1
+              },
+              {
+                "name": "RECORDS",
+                "value": 2
+              },
+              {
+                "name": "WEATHER",
+                "value": 3
+              },
+              {
+                "name": "BLOCKS",
+                "value": 4
+              },
+              {
+                "name": "HOSTILE",
+                "value": 5
+              },
+              {
+                "name": "NEUTRAL",
+                "value": 6
+              },
+              {
+                "name": "PLAYERS",
+                "value": 7
+              },
+              {
+                "name": "AMBIENT",
+                "value": 8
+              },
+              {
+                "name": "VOICE",
+                "value": 9
+              },
+              {
+                "name": "UI",
+                "value": 10
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -3911,8 +4143,23 @@
       "kind": "f32"
     },
     "net.minecraft.network.protocol.game.ServerboundClientCommandPacket#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "enum ordinal"
+      "kind": "enum",
+      "type": "net.minecraft.network.protocol.game.ServerboundClientCommandPacket$Action",
+      "constants": [
+        {
+          "name": "PERFORM_RESPAWN",
+          "value": 0
+        },
+        {
+          "name": "REQUEST_STATS",
+          "value": 1
+        },
+        {
+          "name": "REQUEST_GAMERULE_VALUES",
+          "value": 2
+        }
+      ],
+      "note": "varint ordinal"
     },
     "net.minecraft.network.protocol.game.ServerboundClientTickEndPacket#STREAM_CODEC": {
       "kind": "unit",
@@ -4393,8 +4640,43 @@
         {
           "name": "action",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.network.protocol.game.ServerboundPlayerActionPacket$Action",
+            "constants": [
+              {
+                "name": "START_DESTROY_BLOCK",
+                "value": 0
+              },
+              {
+                "name": "ABORT_DESTROY_BLOCK",
+                "value": 1
+              },
+              {
+                "name": "STOP_DESTROY_BLOCK",
+                "value": 2
+              },
+              {
+                "name": "DROP_ALL_ITEMS",
+                "value": 3
+              },
+              {
+                "name": "DROP_ITEM",
+                "value": 4
+              },
+              {
+                "name": "RELEASE_USE_ITEM",
+                "value": 5
+              },
+              {
+                "name": "SWAP_ITEM_WITH_OFFHAND",
+                "value": 6
+              },
+              {
+                "name": "STAB",
+                "value": 7
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -4430,8 +4712,39 @@
         {
           "name": "action",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket$Action",
+            "constants": [
+              {
+                "name": "STOP_SLEEPING",
+                "value": 0
+              },
+              {
+                "name": "START_SPRINTING",
+                "value": 1
+              },
+              {
+                "name": "STOP_SPRINTING",
+                "value": 2
+              },
+              {
+                "name": "START_RIDING_JUMP",
+                "value": 3
+              },
+              {
+                "name": "STOP_RIDING_JUMP",
+                "value": 4
+              },
+              {
+                "name": "OPEN_INVENTORY",
+                "value": 5
+              },
+              {
+                "name": "START_FALL_FLYING",
+                "value": 6
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -4464,8 +4777,27 @@
         {
           "name": "bookType",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.world.inventory.RecipeBookType",
+            "constants": [
+              {
+                "name": "CRAFTING",
+                "value": 0
+              },
+              {
+                "name": "FURNACE",
+                "value": 1
+              },
+              {
+                "name": "BLAST_FURNACE",
+                "value": 2
+              },
+              {
+                "name": "SMOKER",
+                "value": 3
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -4737,8 +5069,19 @@
       ]
     },
     "net.minecraft.network.protocol.game.ServerboundSwingPacket#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "enum ordinal"
+      "kind": "enum",
+      "type": "net.minecraft.world.InteractionHand",
+      "constants": [
+        {
+          "name": "MAIN_HAND",
+          "value": 0
+        },
+        {
+          "name": "OFF_HAND",
+          "value": 1
+        }
+      ],
+      "note": "varint ordinal"
     },
     "net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket#STREAM_CODEC": {
       "kind": "uuid",
@@ -4780,8 +5123,19 @@
         {
           "name": "hand",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.world.InteractionHand",
+            "constants": [
+              {
+                "name": "MAIN_HAND",
+                "value": 0
+              },
+              {
+                "name": "OFF_HAND",
+                "value": 1
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -4804,8 +5158,19 @@
         {
           "name": "hand",
           "wire": {
-            "kind": "varint",
-            "note": "enum ordinal"
+            "kind": "enum",
+            "type": "net.minecraft.world.InteractionHand",
+            "constants": [
+              {
+                "name": "MAIN_HAND",
+                "value": 0
+              },
+              {
+                "name": "OFF_HAND",
+                "value": 1
+              }
+            ],
+            "note": "varint ordinal"
           }
         },
         {
@@ -4853,7 +5218,23 @@
         {
           "name": "intention",
           "wire": {
-            "kind": "varint"
+            "kind": "enum",
+            "type": "net.minecraft.network.protocol.handshake.ClientIntent",
+            "constants": [
+              {
+                "name": "STATUS",
+                "value": 1
+              },
+              {
+                "name": "LOGIN",
+                "value": 2
+              },
+              {
+                "name": "TRANSFER",
+                "value": 3
+              }
+            ],
+            "note": "varint id"
           }
         }
       ]
@@ -7962,14 +8343,11 @@
       "protocolId": 0,
       "javaClass": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket",
       "layoutSource": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket#STREAM_CODEC",
-      "complete": false,
+      "complete": true,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket#STREAM_CODEC"
-      },
-      "reasons": [
-        "unmodelled statement: this.information.write(output)"
-      ]
+      }
     },
     {
       "resource": "minecraft:cookie_response",
@@ -10371,14 +10749,11 @@
       "protocolId": 14,
       "javaClass": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket",
       "layoutSource": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket#STREAM_CODEC",
-      "complete": false,
+      "complete": true,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.common.ServerboundClientInformationPacket#STREAM_CODEC"
-      },
-      "reasons": [
-        "unmodelled statement: this.information.write(output)"
-      ]
+      }
     },
     {
       "resource": "minecraft:client_tick_end",

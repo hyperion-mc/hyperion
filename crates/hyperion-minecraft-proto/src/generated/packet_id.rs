@@ -591,6 +591,7 @@ pub mod configuration {
             #[must_use]
             pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
                 match self {
+                    Self::ClientInformation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDCLIENTINFORMATIONPACKET_STREAM_CODEC),
                     Self::CookieResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_SERVERBOUNDCOOKIERESPONSEPACKET_STREAM_CODEC),
                     Self::FinishConfiguration => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_SERVERBOUNDFINISHCONFIGURATIONPACKET_STREAM_CODEC),
                     Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDKEEPALIVEPACKET_STREAM_CODEC),
@@ -1470,6 +1471,7 @@ pub mod play {
                     Self::ChunkBatchReceived => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHUNKBATCHRECEIVEDPACKET_STREAM_CODEC),
                     Self::ClientCommand => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCLIENTCOMMANDPACKET_STREAM_CODEC),
                     Self::ClientTickEnd => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCLIENTTICKENDPACKET_STREAM_CODEC),
+                    Self::ClientInformation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDCLIENTINFORMATIONPACKET_STREAM_CODEC),
                     Self::CommandSuggestion => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCOMMANDSUGGESTIONPACKET_STREAM_CODEC),
                     Self::ConfigurationAcknowledged => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONFIGURATIONACKNOWLEDGEDPACKET_STREAM_CODEC),
                     Self::ContainerButtonClick => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONTAINERBUTTONCLICKPACKET_STREAM_CODEC),

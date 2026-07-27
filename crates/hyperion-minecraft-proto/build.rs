@@ -862,6 +862,7 @@ impl Generator<'_> {
                 }
                 Ok(merged)
             }
+            "enum" => self.lower_enum(wire, at, scope),
             "map" => self.lower_map(wire, at, scope, label),
             // An anonymous struct: no Java class named it, so it takes the
             // name of the field it hangs off and sits in the packet's scope.
@@ -879,6 +880,54 @@ impl Generator<'_> {
                 .to_owned()),
             other => Err(format!("no Rust type for wire kind `{other}`")),
         }
+    }
+
+    /// A Java enum, which the server sends as a `VarInt` and which is worth
+    /// keeping as an enum: a field typed this way cannot hold a number the
+    /// server would reject.
+    fn lower_enum(&mut self, wire: &Value, at: &Place, scope: &str) -> Result<Lowered, String> {
+        let owner = wire["type"].as_str().ok_or("enum without a class")?;
+        if let Some(placed) = self.placed.get(owner).cloned() {
+            let ty = self.reference(&placed, at);
+            return Ok(Lowered::scalar(&ty, placed.traits));
+        }
+
+        let name = pascal(simple_name(owner));
+        let (place, _) = self.place_for(owner, at, scope, &name);
+        let sent = wire["note"].as_str().unwrap_or("varint");
+        let mut body = format!("/// `{owner}`, sent as a {sent}.\n");
+        body.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]\n");
+        let _unused = writeln!(body, "pub enum {name} {{");
+        for constant in wire["constants"]
+            .as_array()
+            .ok_or("enum without constants")?
+        {
+            let java = constant["name"].as_str().ok_or("constant without a name")?;
+            let value = constant["value"]
+                .as_i64()
+                .ok_or("constant without a value")?;
+            let _unused = writeln!(body, "    /// `{java}`");
+            let _unused = writeln!(body, "    {} = {value},", pascal(java));
+        }
+        body.push_str("}\n");
+
+        self.describe_scope(&place);
+        let module = self.file(&place);
+        module.imports.insert("crate::Decode".to_owned());
+        module.imports.insert("crate::Encode".to_owned());
+        module.items.insert(name.clone(), body);
+
+        let placed = Placed {
+            place,
+            name,
+            traits: Traits {
+                borrows: false,
+                copy: true,
+                eq: true,
+            },
+        };
+        self.placed.insert(owner.to_owned(), placed.clone());
+        Ok(Lowered::scalar(&self.reference(&placed, at), placed.traits))
     }
 
     /// A map is a count and then pairs. As a list of named entries it reads

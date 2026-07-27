@@ -28,10 +28,8 @@ use hyperion_minecraft_proto::{
             serverbound::{PingRequest, StatusRequest},
         },
     },
+    types::ClientIntent,
 };
-
-/// `ClientIntent.STATUS`, whose id the server reads with `ClientIntent.byId`.
-const INTENT_STATUS: VarInt = VarInt(1);
 
 /// Wrap a packet body in the length-prefixed frame the server expects.
 ///
@@ -93,7 +91,7 @@ fn status_ping_against_real_server() {
         protocol_version: VarInt(PROTOCOL_VERSION),
         host_name: host,
         port,
-        intention: INTENT_STATUS,
+        intention: ClientIntent::Status,
     };
     stream
         .write_all(&frame(0, &handshake))

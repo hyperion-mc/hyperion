@@ -104,11 +104,30 @@ let
       #                                world/item/component
       #   net/minecraft/core/registries  the registry key table, which is what
       #                                turns a registry id into a name
+      #   any enum a packet references  `writeEnum` sends an ordinal, so the
+      #                                declaration order of the constants is
+      #                                the discriminant table; enums like
+      #                                RecipeBookType carry no StreamCodec of
+      #                                their own and would otherwise be missed
       #
-      # This is 1137 of the jar's 7434 classes and costs about ten seconds;
+      # This is about a sixth of the jar's 7434 classes and costs ten seconds;
       # decompiling everything is minutes for sources nothing reads.
+      #
+      # An enum is recognised by `java/lang/Enum` in its constant pool, which
+      # is in the class file for every enum and for nothing else.
+      grep -rhoa 'net/minecraft/[A-Za-z0-9/$]*' --include='*.class' net/minecraft/network \
+        | sed 's/$/.class/' | sort -u > referenced.txt
+      : > enums.txt
+      while read -r candidate; do
+        if [ -e "$candidate" ] && grep -qa 'java/lang/Enum' "$candidate"; then
+          printf '%s\n' "$candidate" >> enums.txt
+        fi
+      done < referenced.txt
+      echo "  of which $(wc -l < enums.txt) are enums a packet names" >&2
+
       { find net/minecraft/network net/minecraft/core/registries -name '*.class'
         grep -rl StreamCodec --include='*.class' net/minecraft
+        cat enums.txt
       } | sed 's/\$[^/]*\.class$/.class/' | sort -u > outers.txt
 
       # Inner classes are decompiled into the file of their outermost class, so

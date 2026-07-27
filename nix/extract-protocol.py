@@ -1226,6 +1226,18 @@ class Resolver:
     ) -> list[dict[str, Any]] | None:
         label = self._label(argv[0] if argv else "")
 
+        # An enum is a `VarInt`, but which numbers are meaningful is knowable
+        # and worth keeping: a field typed as the enum cannot hold a value the
+        # server would reject.
+        if name == "writeEnum" and argv:
+            wire = self._enum_of_field(argv[0], scope, by_id=False)
+            if wire is not None:
+                return [{"name": label, "wire": wire}]
+        if name == "writeVarInt" and argv:
+            wire = self._enum_of_field(argv[0], scope, by_id=True)
+            if wire is not None:
+                return [{"name": label, "wire": wire}]
+
         if name == "writeUtf":
             limit = parse_int_literal(argv[1]) if len(argv) > 1 else 32767
             return [{"name": label, "wire": prim("string", max=limit)}]
@@ -1271,12 +1283,76 @@ class Resolver:
         target = self.index.resolve(m.group(1), scope.owner)
         if target is None:
             return None
-        body = self.index.body_of(target)
+        names = self._enum_constants(target)
+        return len(names) if names else None
+
+    def _enum_constants(self, owner: str) -> list[str] | None:
+        """Constant names of a Java enum, in declaration order.
+
+        Declaration order is what the wire needs: ``writeEnum`` sends
+        ``ordinal()``, so position *is* the discriminant unless the class
+        supplies its own ids.
+        """
+        body = self.index.body_of(owner)
+        span = self.index.body_span(owner)
+        if body is None or span is None:
+            return None
+        jf, start, _ = span
+        head = jf.text[max(0, start - RECORD_HEADER_WINDOW) : start]
+        fqn, nested = split_owner(owner)
+        simple = nested or fqn.rsplit(".", 1)[-1]
+        if not re.search(rf"\benum\s+{re.escape(simple)}\b", head):
+            return None
+        names = []
+        for entry in split_top_level(body.split(";", 1)[0]):
+            m = re.match(r"^([A-Z][A-Z0-9_]*)\s*(?:\(|$)", entry.strip())
+            if m is None:
+                return None
+            names.append(m.group(1))
+        return names or None
+
+    def _enum_ids(self, owner: str) -> dict[str, int] | None:
+        """Explicit ids from a ``byId`` switch, where an enum has them.
+
+        `ClientIntent` is sent as 1, 2, 3 rather than as 0, 1, 2, and the only
+        statement of that in the jar is the switch its `byId` is written as.
+        """
+        body = self.method_body(owner, "byId")
         if body is None:
             return None
-        header = body.split(";", 1)[0]
-        constants = [c for c in split_top_level(header) if re.match(r"^[A-Z][A-Z0-9_]*\b", c.strip())]
-        return len(constants) or None
+        pairs = re.findall(r"case\s+(-?\d+)\s*->\s*([A-Z][A-Z0-9_]*)\s*;", body)
+        return {name: int(value) for value, name in pairs} or None
+
+    def _enum_wire(self, owner: str, by_id: bool) -> Wire | None:
+        """A Rust-shaped enum: constant names and the number each one sends."""
+        names = self._enum_constants(owner)
+        if names is None:
+            return None
+        ids = self._enum_ids(owner) if by_id else None
+        if by_id and ids is None:
+            return None
+        constants = []
+        for index, name in enumerate(names):
+            value = index if ids is None else ids.get(name)
+            if value is None:
+                # A constant the id table does not mention would decode to the
+                # wrong variant, so the whole enum stays a plain `VarInt`.
+                return None
+            constants.append({"name": name, "value": value})
+        return {
+            "kind": "enum",
+            "type": owner,
+            "constants": constants,
+            "note": "varint id" if ids else "varint ordinal",
+        }
+
+    def _enum_of_field(self, expr: str, scope: Scope, by_id: bool) -> Wire | None:
+        """The enum behind ``this.hand`` or ``this.intention.id()``."""
+        m = re.match(r"^this\.(\w+)" + (r"\.\w+\(\s*\)$" if by_id else r"$"), expr.strip())
+        if m is None:
+            return None
+        owner = self._field_owner(scope.owner, m.group(1))
+        return None if owner is None else self._enum_wire(owner, by_id)
 
     def _element_encoder(self, expr: str, scope: Scope, buf: str) -> Wire:
         """The element writer handed to writeCollection and friends."""
