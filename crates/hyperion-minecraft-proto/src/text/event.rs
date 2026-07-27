@@ -184,10 +184,10 @@ impl<'a> HoverEvent<'a> {
                 if *count != 1 {
                     compound.insert("count", Tag::Int(*count));
                 }
-                if let Some(components) = components {
-                    if !components.is_empty() {
-                        compound.insert("components", Tag::Compound(components.clone()));
-                    }
+                if let Some(components) = components
+                    && !components.is_empty()
+                {
+                    compound.insert("components", Tag::Compound(components.clone()));
                 }
             }
             Self::ShowEntity { id, uuid, name } => {
