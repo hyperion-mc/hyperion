@@ -7,7 +7,6 @@ use std::{
 use anyhow::Result;
 use derive_more::Deref;
 use flecs_ecs::{core::Entity, macros::Component};
-use hyperion_packet_macros::for_each_state;
 use hyperion_utils::{EntityExt, Lifetime};
 use rustc_hash::FxBuildHasher;
 use valence_protocol::{DecodeBytes, Packet as PacketTrait};
@@ -54,14 +53,15 @@ impl<T> Packet<T> {
     }
 }
 
-for_each_state! {
-    #{
-        pub mod #state {
-            #for_each_packet! {
-                #{
-                    pub type #packet_name = super::Packet<#static_valence_packet>;
-                }
-            }
+/// One alias per play packet, naming the decoded body a handler receives.
+///
+/// Only play: the states before it are handled by [`crate::net::protocol`],
+/// which decodes straight into the proto crate's types rather than through a
+/// registry.
+pub mod play {
+    hyperion_packet_macros::for_each_play_c2s_packet! {
+        #{
+            pub type #packet_name = super::Packet<#static_valence_packet>;
         }
     }
 }

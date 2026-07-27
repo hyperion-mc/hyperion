@@ -126,6 +126,11 @@ pub struct RaycastTravel;
 pub struct Player;
 
 /// The state of the login process.
+///
+/// `Configuration` is the state 1.20.2 introduced between login and play. It
+/// is unreachable on protocol 763, which predates it, and exists here
+/// unconditionally only because a flecs enum component's variants are part of
+/// its registered type rather than something a cargo feature can vary.
 #[derive(Component, Debug, Eq, PartialEq)]
 #[repr(C)]
 pub enum PacketState {
@@ -134,6 +139,7 @@ pub enum PacketState {
     Login,
     Play,
     Terminate,
+    Configuration,
 }
 
 #[derive(

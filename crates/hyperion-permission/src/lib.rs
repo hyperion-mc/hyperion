@@ -70,19 +70,27 @@ impl Module for PermissionModule {
             permissions.set(**uuid, *group).unwrap();
         });
 
-        observer!(world, flecs::OnSet, &Group).each_iter(|it, row, _group| {
-            let world = it.world();
-            let entity = it.entity(row);
+        observer!(world, flecs::OnSet, &Group)
+            // A permission group is set during login, before the client has
+            // acknowledged the handover into play. The command tree is a play
+            // packet, and a client reads whatever arrives in the configuration
+            // state as a configuration packet, so sending it early does not
+            // arrive early -- it corrupts the handover. Players already in play
+            // still get the tree when their group changes.
+            .with_enum(hyperion::simulation::PacketState::Play)
+            .each_iter(|it, row, _group| {
+                let world = it.world();
+                let entity = it.entity(row);
 
-            let root_command = hyperion::simulation::command::get_root_command_entity();
+                let root_command = hyperion::simulation::command::get_root_command_entity();
 
-            let cmd_pkt = get_command_packet(&world, root_command, Some(*entity));
+                let cmd_pkt = get_command_packet(&world, root_command, Some(*entity));
 
-            entity.get::<&ConnectionId>(|stream| {
-                world.get::<&Compose>(|compose| {
-                    compose.unicast(&cmd_pkt, *stream).unwrap();
+                entity.get::<&ConnectionId>(|stream| {
+                    world.get::<&Compose>(|compose| {
+                        compose.unicast(&cmd_pkt, *stream).unwrap();
+                    });
                 });
             });
-        });
     }
 }
