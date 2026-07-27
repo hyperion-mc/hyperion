@@ -85,8 +85,10 @@ impl Module for SkySquid {
 /// window the game half does not model yet, so what lands here is the movement.
 /// `[APPROXIMATED]` impulse.
 fn super_squid(cast: &Cast<'_>) {
-    cast.server
-        .add_velocity(cast.player, cast.facing.0.normalize_or_zero() * 1.1 + Vec3::Y * 0.9);
+    cast.server.add_velocity(
+        cast.player,
+        cast.facing.0.normalize_or_zero() * 1.1 + Vec3::Y * 0.9,
+    );
     cast.server.cue(cast.position.0, Cue::Charge);
 }
 

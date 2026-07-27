@@ -85,7 +85,8 @@ fn needler(cast: &Cast<'_>) {
         // difference between an edge-guard and a coin toss, and a test can
         // predict it.
         let offset = (index as f32 - (NEEDLES as f32 - 1.0) / 2.0) * SPREAD;
-        let direction = (forward + Vec3::new(-forward.z, 0.0, forward.x) * offset).normalize_or_zero();
+        let direction =
+            (forward + Vec3::new(-forward.z, 0.0, forward.x) * offset).normalize_or_zero();
         fire(
             cast.world,
             cast.caster,

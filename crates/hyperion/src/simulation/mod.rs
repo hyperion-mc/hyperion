@@ -13,7 +13,7 @@ use hyperion_minecraft_proto::{
             entity::{AddEntity, pack_degrees},
             player::{AbilityFlags, PlayerAbilities},
         },
-        play_login::{PlayerPosition, PositionMoveRotation, Relative, Vec3 as SpawnVec3},
+        play_login::{PlayerPosition, PositionMoveRotation, Relative, Vec3 as LoginVec3},
     },
     types::Vec3 as ProtoVec3,
 };
@@ -28,7 +28,10 @@ use valence_protocol::VarInt;
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle, protocol::Clientbound},
+    net::{
+        Compose, ConnectionId, DataBundle,
+        protocol::{Clientbound, send},
+    },
     simulation::{
         command::Command,
         entity_kind::EntityKind,
@@ -846,21 +849,24 @@ impl Module for SimModule {
         )
         .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
             // The same packet the join path sends, at the same id. Sending
-            // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client
-            // with no teleport to confirm, so `AcceptTeleportation` never came
-            // back, `PendingTeleportation` was never removed, and
-            // `sync_player_entity` took its pending-teleport branch forever
-            // after: no movement, no rotation and no velocity ever reached
-            // anyone again. A mid-match teleport is the whole of respawning.
-            let packet = PlayerPosition {
+            // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client with
+            // no teleport to confirm, so `AcceptTeleportation` never came back,
+            // `PendingTeleportation` was never removed, and `sync_player_entity`
+            // took its pending-teleport branch forever after: no movement, no
+            // rotation and no velocity ever reached anyone again. A mid-match
+            // teleport is the whole of respawning.
+            let destination = pending_teleportation.destination.as_dvec3();
+            let pkt = PlayerPosition {
                 id: pending_teleportation.teleport_id,
                 change: PositionMoveRotation {
-                    position: SpawnVec3 {
-                        x: f64::from(pending_teleportation.destination.x),
-                        y: f64::from(pending_teleportation.destination.y),
-                        z: f64::from(pending_teleportation.destination.z),
+                    position: LoginVec3 {
+                        x: destination.x,
+                        y: destination.y,
+                        z: destination.z,
                     },
-                    delta_movement: SpawnVec3 {
+                    // A correction teleport stops the player rather than
+                    // carrying their velocity into the new position.
+                    delta_movement: LoginVec3 {
                         x: 0.0,
                         y: 0.0,
                         z: 0.0,
@@ -871,12 +877,13 @@ impl Module for SimModule {
                 relatives: Relative::NONE,
             };
 
-            compose
-                .unicast(
-                    Clientbound::new(PacketId::PlayerPosition.to_raw(), &packet),
-                    *connection,
-                )
-                .unwrap();
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerPosition.to_raw(),
+                &pkt,
+            )
+            .unwrap();
         });
 
         observer!(
@@ -888,7 +895,13 @@ impl Module for SimModule {
             &Flight
         )
         .each(|(flying_speed, compose, connection, flight)| {
-            send_player_abilities(compose, *connection, *flight, *flying_speed);
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerAbilities.to_raw(),
+                &abilities(*flight, *flying_speed),
+            )
+            .unwrap();
         });
 
         observer!(
@@ -900,21 +913,24 @@ impl Module for SimModule {
             &FlyingSpeed
         )
         .each(|(flight, compose, connection, flying_speed)| {
-            send_player_abilities(compose, *connection, *flight, *flying_speed);
+            send(
+                compose,
+                *connection,
+                PacketId::PlayerAbilities.to_raw(),
+                &abilities(*flight, *flying_speed),
+            )
+            .unwrap();
         });
     }
 }
 
-/// Tell one client what it is allowed to do.
+/// What the client should be told it may do, given the two components that say
+/// so.
 ///
-/// 26.2 replaced 1.20.1's `fov_modifier` with the walking speed the client
-/// applies directly, so the last field is a speed and not a multiplier.
-fn send_player_abilities(
-    compose: &Compose,
-    connection: ConnectionId,
-    flight: Flight,
-    flying_speed: FlyingSpeed,
-) {
+/// Flight permission and flying speed live in separate components that are set
+/// independently, and the packet carries both, so either one changing has to
+/// resend the pair.
+const fn abilities(flight: Flight, flying_speed: FlyingSpeed) -> PlayerAbilities {
     let mut flags = AbilityFlags::NONE;
     if flight.allow {
         flags = flags.union(AbilityFlags::CAN_FLY);
@@ -923,21 +939,14 @@ fn send_player_abilities(
         flags = flags.union(AbilityFlags::FLYING);
     }
 
-    let packet = PlayerAbilities {
+    PlayerAbilities {
         flags,
         flying_speed: flying_speed.speed,
-        // Vanilla's `Abilities.walkingSpeed`. hyperion has no per-player
-        // walking speed to send instead, and a zero here would freeze the
-        // player where they stand.
-        walking_speed: 0.1,
-    };
-
-    compose
-        .unicast(
-            Clientbound::new(PacketId::PlayerAbilities.to_raw(), &packet),
-            connection,
-        )
-        .unwrap();
+        // Zero is what hyperion has always put in this slot, back when valence
+        // called it `fov_modifier`. Vanilla sends 0.1. ENG-10456 tracks
+        // whether that difference is visible.
+        walking_speed: 0.0,
+    }
 }
 
 #[derive(Component)]

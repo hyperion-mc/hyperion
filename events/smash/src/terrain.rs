@@ -134,7 +134,9 @@ impl Module for MapModule {
     fn module(world: &World) {
         world.import::<hyperion::HyperionCore>();
 
-        world.component::<MapRotation>().add_trait::<flecs::Singleton>();
+        world
+            .component::<MapRotation>()
+            .add_trait::<flecs::Singleton>();
         world.component::<Hub>().add_trait::<flecs::Singleton>();
 
         let hub = parse(HUB_SOURCE).unwrap_or_else(|error| {
@@ -195,7 +197,9 @@ impl Module for MapModule {
             .with(id::<Uuid>())
             .without(id::<hyperion::simulation::Position>())
             .each_entity(|entity, hub| {
-                entity.set(hyperion::simulation::Position::from(hub.spawn(*entity.id())));
+                entity.set(hyperion::simulation::Position::from(
+                    hub.spawn(*entity.id()),
+                ));
             });
 
         // The map for the *next* match is chosen when the last one ends, not
@@ -289,7 +293,10 @@ fn stamp(blocks: &mut Blocks, runtime: &AsyncRuntime, map: &Loaded) {
                 return;
             };
             let position = IVec3::new(at[0], at[1], at[2]) + map.origin;
-            if blocks.set_block(position, BlockState::from_kind(kind)).is_ok() {
+            if blocks
+                .set_block(position, BlockState::from_kind(kind))
+                .is_ok()
+            {
                 placed += 1;
             }
         });
@@ -334,8 +341,8 @@ fn stand_on_something(blocks: &Blocks, map: &Loaded) {
         let solid = blocks.get_block(below).is_some_and(|block| !block.is_air());
         assert!(
             solid,
-            "map {:?} has a spawn at {spawn} with nothing under it at {below}; a \
-             player put there is airborne and cannot use a grounded ability",
+            "map {:?} has a spawn at {spawn} with nothing under it at {below}; a player put there \
+             is airborne and cannot use a grounded ability",
             map.spec.name
         );
     }

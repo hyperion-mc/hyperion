@@ -11,7 +11,7 @@ use std::{
 
 use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
-    generated::packet_id::play::clientbound::PacketId, packets::play::clientbound::RemoveEntities,
+    generated::packet_id::play::clientbound::PacketId, packets::play::entity::RemoveEntities,
 };
 use hyperion_proto::ArchivedProxyToServerMessage;
 use hyperion_utils::EntityExt;
@@ -363,8 +363,7 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
 
                         world.get::<&Compose>(|compose| {
                             query.each_entity(|channel, ()| {
-                                let packet =
-                                    RemoveEntities(vec![channel.id().minecraft_id()]);
+                                let packet = RemoveEntities(vec![channel.id().minecraft_id()]);
 
                                 let packet_buf = compose
                                     .io_buf()

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::sync::LazyLock;
 
 use flecs_ecs::{
     core::{
@@ -11,7 +11,22 @@ use flecs_ecs::{
 use glam::IVec3;
 use hyperion::{
     BlockKind, Prev,
-    net::{Compose, ConnectionId, agnostic},
+    hyperion_minecraft_proto::{
+        RegistryId,
+        generated::{packet_id::play::clientbound::PacketId, registry::ATTRIBUTE},
+        packets::play::{
+            chunk::{LevelParticles, Particle},
+            clientbound::{
+                PlayerCombatKill, UpdateAttributes, update_attributes::AttributeSnapshot,
+            },
+            entity::{DamageEvent, EntityEvent, HurtAnimation, RemoveEntities},
+        },
+        text::Component,
+    },
+    net::{
+        Compose, ConnectionId, agnostic,
+        protocol::{Clientbound, registries, send},
+    },
     runtime::AsyncRuntime,
     simulation::{
         PendingTeleportation, Player, Position, Velocity, Xp, Yaw,
@@ -23,10 +38,8 @@ use hyperion::{
     },
     storage::EventQueue,
     valence_protocol::{
-        ItemKind, ItemStack, Particle, VarInt, ident,
+        ItemKind, ItemStack, ident,
         math::{DVec3, Vec3},
-        packets::play::{self, entity_attributes_s2c::AttributeProperty},
-        text::IntoText,
     },
 };
 use hyperion_inventory::PlayerInventory;
@@ -35,6 +48,60 @@ use tracing::info_span;
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
 use crate::Team;
+
+/// `minecraft:player_attack`'s id in the damage type registry this server
+/// synchronises.
+///
+/// Positional in the registry the server sent at configuration time, so it is
+/// looked up rather than written down: a reordered [`registries::DAMAGE_TYPE`]
+/// would otherwise render a sword hit as some unrelated death message.
+static PLAYER_ATTACK: LazyLock<RegistryId> = LazyLock::new(|| {
+    RegistryId(
+        registries::DAMAGE_TYPE
+            .id_of("minecraft:player_attack")
+            .expect("minecraft:player_attack is a vanilla damage type"),
+    )
+});
+
+/// `minecraft:armor`'s id in the built-in attribute registry.
+///
+/// 1.21 renamed the attributes and dropped the `generic.` prefix, so the
+/// pre-1.21 `minecraft:generic.armor` this server used to send is now this.
+static ARMOR: LazyLock<RegistryId> = LazyLock::new(|| {
+    let id = ATTRIBUTE
+        .id_of("minecraft:armor")
+        .expect("minecraft:armor is a vanilla attribute");
+    RegistryId(i32::try_from(id).expect("a registry index fits in an i32"))
+});
+
+/// A burst of `count` particles scattered through a box centred on `at`.
+///
+/// `override_limiter` is set on every one of these: a kill or a critical hit
+/// is exactly the thing a spectator further out still wants to see, and the
+/// client would otherwise cull it at its normal particle radius.
+const fn particles(
+    at: DVec3,
+    spread: Vec3,
+    max_speed: f32,
+    count: i32,
+    particle: Particle,
+) -> LevelParticles {
+    LevelParticles {
+        override_limiter: true,
+        // The client's particle setting is the player's own choice, so a
+        // combat effect does not override it.
+        always_show: false,
+        x: at.x,
+        y: at.y,
+        z: at.z,
+        x_dist: spread.x,
+        y_dist: spread.y,
+        z_dist: spread.z,
+        max_speed,
+        count,
+        particle,
+    }
+}
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -123,12 +190,7 @@ impl Module for AttackModule {
                                     }
 
                                     if target_team == origin_team {
-                                        let msg = "§cCannot attack teammates";
-                                        let pkt_msg = play::GameMessageS2c {
-                                            chat: msg.into_cow_text(),
-                                            overlay: false,
-                                        };
-
+                                        let pkt_msg = agnostic::chat("§cCannot attack teammates");
                                         compose.unicast(&pkt_msg, *origin_connection).unwrap();
                                         return;
                                     }
@@ -148,17 +210,20 @@ impl Module for AttackModule {
 
                                     // Seems that MC generates a random delta if the damage source is too close to the target
                                     // let's ignore that for now
-                                    let pkt_hurt = play::DamageTiltS2c {
-                                        entity_id: VarInt(target.minecraft_id()),
+                                    let pkt_hurt = HurtAnimation {
+                                        id: target.minecraft_id(),
                                         yaw: delta_z.atan2(delta_x).mul_add(57.295_776_367_187_5_f64, -f64::from(**target_yaw)) as f32
                                     };
-                                    // EntityDamageS2c: display red outline when taking damage (play arrow hit sound?)
-                                    let pkt_damage_event = play::EntityDamageS2c {
-                                        entity_id: VarInt(target.minecraft_id()),
-                                        source_cause_id: VarInt(origin.minecraft_id() + 1), // this is an OptVarint
-                                        source_direct_id: VarInt(origin.minecraft_id() + 1), // if hit by a projectile, it should be the projectile's entity id
-                                        source_type_id: VarInt(31), // 31 = player_attack
-                                        source_pos: None
+                                    // Paints the red overlay on the victim and picks the hurt sound.
+                                    let pkt_damage_event = DamageEvent {
+                                        entity_id: target.minecraft_id(),
+                                        source_type: *PLAYER_ATTACK,
+                                        // `writeOptionalEntityId` adds the one that makes zero mean
+                                        // absent, so these are the plain ids.
+                                        source_cause_id: Some(origin.minecraft_id()),
+                                        // If hit by a projectile, this should be the projectile's id.
+                                        source_direct_id: Some(origin.minecraft_id()),
+                                        source_position: None
                                     };
                                     let sound = agnostic::sound(
                                         if critical_hit { ident!("minecraft:entity.player.attack.crit") } else { ident!("minecraft:entity.player.attack.knockback") },
@@ -168,86 +233,91 @@ impl Module for AttackModule {
                                     .seed(fastrand::i64(..))
                                     .build();
 
-                                    compose.unicast(&pkt_hurt, *target_connection).unwrap();
+                                    send(compose, *target_connection, PacketId::HurtAnimation.to_raw(), &pkt_hurt).unwrap();
 
                                     if critical_hit {
-                                    let particle_pkt = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::Crit),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
-                                            max_speed: 0.5,
-                                            count: 100,
-                                            offset: Vec3::new(0.5, 0.5, 0.5),
-                                        };
+                                        let particle_pkt = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            Vec3::new(0.5, 0.5, 0.5),
+                                            0.5,
+                                            100,
+                                            Particle::Crit,
+                                        );
 
                                         // origin is excluded because the crit particles are
                                         // already generated on the client side of the attacker
-                                        compose.broadcast(&particle_pkt).exclude(*origin_connection).send().unwrap();
+                                        compose
+                                            .broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt))
+                                            .exclude(*origin_connection)
+                                            .send()
+                                            .unwrap();
                                     }
 
                                     if health.is_dead() {
                                         let attacker_name = origin.name();
-                                        // Even if enable_respawn_screen is false, the client needs this to send ClientCommandC2s and initiate its respawn
-                                        let pkt_death_screen = play::DeathMessageS2c {
-                                            player_id: VarInt(target.minecraft_id()),
-                                            message: format!("You were killed by {attacker_name}").into_cow_text()
+                                        // `ClientboundPlayerCombatKillPacket`. Even with
+                                        // enable_respawn_screen false the client needs this to
+                                        // send ClientCommandC2s and initiate its respawn.
+                                        let death_message = Component::text(format!("You were killed by {attacker_name}"));
+                                        let pkt_death_screen = PlayerCombatKill {
+                                            player_id: target.minecraft_id(),
+                                            message: death_message.to_tag()
                                         };
-                                        compose.unicast(&pkt_death_screen, *target_connection).unwrap();
+                                        send(compose, *target_connection, PacketId::PlayerCombatKill.to_raw(), &pkt_death_screen).unwrap();
                                     }
                                     compose.broadcast(&sound).send().unwrap();
-                                    compose.broadcast(&pkt_damage_event).send().unwrap();
+                                    compose.broadcast(Clientbound::new(PacketId::DamageEvent.to_raw(), &pkt_damage_event)).send().unwrap();
 
                                     if health.is_dead() {
                                         // Create particle effect at the attacker's position
-                                        let particle_pkt = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::Explosion),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
-                                            max_speed: 0.5,
-                                            count: 100,
-                                            offset: Vec3::new(0.5, 0.5, 0.5),
-                                        };
+                                        let particle_pkt = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            Vec3::new(0.5, 0.5, 0.5),
+                                            0.5,
+                                            100,
+                                            Particle::Explosion,
+                                        );
 
                                         // Add a second particle effect for more visual impact
-                                        let particle_pkt2 = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::DragonBreath),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.5, 0.0),
-                                            max_speed: 0.2,
-                                            count: 75,
-                                            offset: Vec3::new(0.3, 0.3, 0.3),
-                                        };
-                                        let pkt_entity_status = play::EntityStatusS2c {
+                                        let particle_pkt2 = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.5, 0.0),
+                                            Vec3::new(0.3, 0.3, 0.3),
+                                            0.2,
+                                            75,
+                                            // `PowerParticleOption.power`, at the default the
+                                            // datapack codec would have supplied.
+                                            Particle::DragonBreath { power: 1.0 },
+                                        );
+                                        // `EntityEvent` 3 is `Entity.DEATH`, which starts the
+                                        // death animation on every client that can see the body.
+                                        let pkt_entity_status = EntityEvent {
                                             entity_id: target.minecraft_id(),
-                                            entity_status: 3
+                                            event_id: 3
                                         };
 
                                         let origin_entity_id = origin.minecraft_id();
 
                                         origin_armor.armor += 1.0;
-                                        let pkt = play::EntityAttributesS2c {
-                                            entity_id: VarInt(origin_entity_id),
-                                            properties: vec![
-                                                AttributeProperty {
-                                                    key: ident!("minecraft:generic.armor"),
-                                                    value: origin_armor.armor.into(),
+                                        let pkt = UpdateAttributes {
+                                            entity_id: origin_entity_id,
+                                            values: vec![
+                                                AttributeSnapshot {
+                                                    attribute: *ARMOR,
+                                                    base: f64::from(origin_armor.armor),
                                                     modifiers: vec![],
                                                 }
                                             ],
                                         };
 
-                                        let entities_to_remove = [VarInt(target.minecraft_id())];
-                                        let pkt_remove_entities = play::EntitiesDestroyS2c {
-                                            entity_ids: Cow::Borrowed(&entities_to_remove)
-                                        };
+                                        let pkt_remove_entities = RemoveEntities(vec![target.minecraft_id()]);
 
                                         *target_pose = Pose::Dying;
                                         target.modified(id::<Pose>());
-                                        compose.broadcast(&pkt).send().unwrap();
-                                        compose.broadcast(&particle_pkt).send().unwrap();
-                                        compose.broadcast(&particle_pkt2).send().unwrap();
-                                        compose.broadcast(&pkt_entity_status).send().unwrap();
-                                        compose.broadcast(&pkt_remove_entities).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::UpdateAttributes.to_raw(), &pkt)).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt)).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt2)).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::EntityEvent.to_raw(), &pkt_entity_status)).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::RemoveEntities.to_raw(), &pkt_remove_entities)).send().unwrap();
 
                                         target.set::<Team>(*origin_team);
 

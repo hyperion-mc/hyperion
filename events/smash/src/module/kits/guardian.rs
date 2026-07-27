@@ -79,7 +79,8 @@ impl Module for Guardian {
             name: "Target Laser",
             item: "minecraft:iron_pickaxe",
             slot: 3,
-            description: "Mark someone within ten blocks. Everything hurts them more for eight seconds.",
+            description: "Mark someone within ten blocks. Everything hurts them more for eight \
+                          seconds.",
             cooldown: 15.0,
             requires_ground: true,
             activate: target_laser,

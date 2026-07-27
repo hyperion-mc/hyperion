@@ -102,9 +102,8 @@ impl Module for ScoreboardModule {
                         });
 
                     let lines = render(phase, rows);
-                    let unchanged = world.get::<&Drawn>(|drawn| {
-                        drawn.lines == lines && drawn.viewers == viewers
-                    });
+                    let unchanged = world
+                        .get::<&Drawn>(|drawn| drawn.lines == lines && drawn.viewers == viewers);
                     if unchanged {
                         continue;
                     }

@@ -8,7 +8,7 @@ use crate::{
     net::{
         Compose, ConnectionId,
         intermediate::{IntermediateServerToProxyMessage, UpdatePlayerPositions},
-        protocol::Clientbound,
+        protocol::send,
     },
     simulation::{Position, blocks::Blocks},
 };
@@ -63,13 +63,12 @@ impl Module for EgressModule {
                 for to_confirm in mc.to_confirm.drain(..) {
                     let entity = world.entity_from_id(to_confirm.entity);
 
-                    let packet = BlockChangedAck(to_confirm.sequence);
+                    let pkt = BlockChangedAck(to_confirm.sequence);
 
                     entity.get::<&ConnectionId>(|stream| {
-                        if let Err(e) = compose.unicast(
-                            Clientbound::new(PacketId::BlockChangedAck.to_raw(), &packet),
-                            *stream,
-                        ) {
+                        if let Err(e) =
+                            send(compose, *stream, PacketId::BlockChangedAck.to_raw(), &pkt)
+                        {
                             error!("failed to send player action response: {e}");
                         }
                     });

@@ -91,44 +91,9 @@ S2C_KEEP_ALIVE = 0x2C
 S2C_LOGIN = 0x31
 S2C_PLAYER_POSITION = 0x48
 S2C_SET_ENTITY_MOTION = 0x65
+S2C_SET_HEALTH = 0x68
+S2C_SET_TITLE_TEXT = 0x72
 S2C_SYSTEM_CHAT = 0x79
-
-# Ids that arrive carrying a 1.20.1 body, because `events/smash/src/adapter.rs`
-# still builds these five out of valence's 763 packet types. Every one of them
-# decodes as a perfectly well formed 776 packet of some other kind, so a client
-# does not notice until it reads the fields: 0x57 is `SetActionBarText` in 776
-# and a 1.20.1 `HealthUpdate` on this wire, and the four bytes a 776 client
-# would read as the start of an NBT component are the big-endian float 20.0.
-#
-# The port of that file is `origin/feat/play776-scoreboard`, which another
-# branch owns. Until it lands, this table is what lets the transcript name the
-# leak instead of silently mislabelling it, and `Match.report` fails the run if
-# any of these stops arriving, because that means the exemption is stale and
-# should be deleted rather than carried.
-# 0x26 is left out on purpose. It is 1.20.1's `Particle`, which the ability
-# cues go out as, and also 776's `GameEvent`, which the join path legitimately
-# sends once per player, so a census cannot tell one from the other by id and
-# calling every 0x26 a leak would be a claim this file cannot support.
-LEAKING_763 = {
-    0x1F: "GameStateChange (spectator toggle)",
-    0x46: "OverlayMessage (an ability refusing to fire)",
-    0x51: "ScoreboardDisplay (sidebar)",
-    0x57: "HealthUpdate",
-    0x58: "ScoreboardObjectiveUpdate (sidebar)",
-    0x5B: "ScoreboardPlayerUpdate (sidebar row)",
-    0x5F: "Title (life counter and the end screen)",
-}
-
-# The three the sidebar sends on every redraw. A run in which none of them
-# arrives is a run where adapter.rs has been ported and `LEAKING_763` is dead
-# weight.
-LEAK_ALWAYS_PRESENT = (0x51, 0x58, 0x5B)
-
-# 1.20.1 `HealthUpdateS2c`: the health, then food and saturation nothing here
-# reads.
-LEAKED_HEALTH = 0x57
-# 1.20.1 `TitleS2c`: one JSON text component.
-LEAKED_TITLE = 0x5F
 
 # `ServerboundMovePlayerPacket` packs the ground flag into a bitfield; bit 0 is
 # `ON_GROUND`, which is the only bit hyperion reads.
@@ -251,28 +216,6 @@ def load_item_names():
     start = source.index('pub static ITEM: Registry = Registry {')
     end = source.index('};', start)
     return re.findall(r'"(minecraft:[a-z0-9_/]+)"', source[start:end])[1:]
-
-
-def readable(payload, limit=120):
-    """The printable runs in a payload.
-
-    Used only for the packets in `LEAKING_763`, whose bodies are 1.20.1 JSON
-    text components. Implementing that codec to read a message this file is
-    only reporting on would be work spent on a format the server is in the
-    middle of leaving.
-    """
-    out = []
-    run = []
-    for byte in payload:
-        if 32 <= byte < 127:
-            run.append(chr(byte))
-        else:
-            if len(run) >= 4:
-                out.append("".join(run))
-            run = []
-    if len(run) >= 4:
-        out.append("".join(run))
-    return " | ".join(out)[:limit]
 
 
 def stamp(started):
@@ -505,15 +448,15 @@ class Match:
             text, _ = take_nbt_string(payload, 0)
             client.log("<- chat: %s" % text)
             self.on_chat(client, text)
-        elif packet_id == LEAKED_HEALTH:
+        elif packet_id == S2C_SET_HEALTH:
+            # `ClientboundSetHealthPacket`: the health, then the food and
+            # saturation nothing here reads.
             health = struct.unpack(">f", payload[:4])[0]
             client.health = health
-            client.log("<- health %.2f/20  [1.20.1 body under a 776 id]" % health)
-        elif packet_id == LEAKED_TITLE:
-            client.log(
-                "<- title: %s  [1.20.1 body under a 776 id]"
-                % readable(payload)
-            )
+            client.log("<- health %.2f/20" % health)
+        elif packet_id == S2C_SET_TITLE_TEXT:
+            text, _ = take_nbt_string(payload, 0)
+            client.log("<- title: %s" % text)
         elif packet_id == S2C_SET_ENTITY_MOTION:
             entity, offset = take_var_int(payload)
             motion, _ = take_lp_vec3(payload, offset)
@@ -580,8 +523,8 @@ class Match:
         elif "fell out of bounds" in text or "was smashed by" in text:
             # Counted from one client only: the line is broadcast, so counting
             # every copy would say four people died. The victim's name leads
-            # the line, which is the only 776 packet that says who died: the
-            # life counter goes out as a 1.20.1 `Title`.
+            # the line, and the chat is the only place it appears: the life
+            # counter title carries a count and not a name.
             self.deaths.append(text)
             name = text.split()[0]
             self.lost_lives[name] = self.lost_lives.get(name, 0) + 1
@@ -919,11 +862,7 @@ class Match:
             if name is None:
                 unknown.append(packet_id)
                 name = "<NOT A 776 CLIENTBOUND PLAY ID>"
-            leak = LEAKING_763.get(packet_id)
-            note = "  <- 1.20.1 %s" % leak if leak else ""
-            self.log(
-                "    0x%02X %-28s x%d%s" % (packet_id, name, census[packet_id], note)
-            )
+            self.log("    0x%02X %-28s x%d" % (packet_id, name, census[packet_id]))
 
         print("", flush=True)
         self.log("=== what the match proved ===")
@@ -937,29 +876,6 @@ class Match:
                 self.log("              %s" % evidence)
 
         print("", flush=True)
-        stale = [i for i in LEAK_ALWAYS_PRESENT if i not in census]
-        if stale:
-            self.log(
-                "RESULT: the exemption for %s in LEAKING_763 is stale; nothing "
-                "sent those ids this run, so adapter.rs has been ported and "
-                "the table should be deleted"
-                % ", ".join("0x%02X" % i for i in stale)
-            )
-            return 1
-        self.log(
-            "KNOWN GAP: %d packet(s) arrived carrying a 1.20.1 body: %s. They "
-            "come from events/smash/src/adapter.rs, which "
-            "origin/feat/play776-scoreboard owns."
-            % (
-                sum(census.get(i, 0) for i in LEAKING_763),
-                ", ".join(
-                    "0x%02X %s" % (i, LEAKING_763[i])
-                    for i in sorted(LEAKING_763)
-                    if i in census
-                ),
-            )
-        )
-
         if unknown:
             self.log(
                 "RESULT: %d packet id(s) are not clientbound play ids in "

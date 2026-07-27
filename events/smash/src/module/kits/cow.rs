@@ -99,7 +99,13 @@ fn milk_spiral(cast: &Cast<'_>) {
     let forward = cast.facing.0.normalize_or_zero();
     cast.server.add_velocity(cast.player, forward * 1.3);
     for step in 1..=6 {
-        splash_at(cast, cast.position.0 + forward * (step as f32 * 1.5), 1.8, 3.0, 0.9);
+        splash_at(
+            cast,
+            cast.position.0 + forward * (step as f32 * 1.5),
+            1.8,
+            3.0,
+            0.9,
+        );
     }
     cast.server.cue(cast.position.0, Cue::Charge);
 }

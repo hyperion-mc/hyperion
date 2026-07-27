@@ -97,7 +97,10 @@ impl Module for Creeper {
 /// Whether this player is on the Creeper kit, without any module knowing the
 /// name of a kit but this one.
 fn plays_creeper(player: EntityView<'_>) -> bool {
-    use crate::{flecs_ext::EntityViewExt, module::kit::{KitName, Playing}};
+    use crate::{
+        flecs_ext::EntityViewExt,
+        module::kit::{KitName, Playing},
+    };
     player
         .find_target(Playing, |kit| {
             kit.try_get::<&KitName>(|name| name.0 == "Creeper") == Some(true)

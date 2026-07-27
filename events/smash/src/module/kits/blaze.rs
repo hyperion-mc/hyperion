@@ -60,7 +60,8 @@ impl Module for Blaze {
             name: "Firefly",
             item: "minecraft:iron_axe",
             slot: 2,
-            description: "Charge a second and a half, then ram. Four damage while charging cancels it.",
+            description: "Charge a second and a half, then ram. Four damage while charging \
+                          cancels it.",
             cooldown: 9.0,
             charge_time: Some(1.5),
             activate: firefly,
@@ -127,7 +128,9 @@ fn firefly(cast: &Cast<'_>) {
 /// half has no way to enter, so the damage pass is what is modelled.
 fn phoenix(cast: &Cast<'_>) {
     let ahead = cast.position.0 + cast.facing.0.normalize_or_zero() * 3.0;
-    cast.server
-        .add_velocity(cast.player, cast.facing.0.normalize_or_zero() * 2.4 + Vec3::Y * 0.4);
+    cast.server.add_velocity(
+        cast.player,
+        cast.facing.0.normalize_or_zero() * 2.4 + Vec3::Y * 0.4,
+    );
     splash_at(cast, ahead, 4.0, 7.0, 1.4);
 }

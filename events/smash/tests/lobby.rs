@@ -181,7 +181,10 @@ fn preparing_cannot_be_cancelled_by_a_leaver() {
 
 #[test]
 fn a_phase_change_reaches_an_observer_that_names_lobby() {
-    use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
 
     use flecs_ecs::prelude::*;
     use harness::Game;

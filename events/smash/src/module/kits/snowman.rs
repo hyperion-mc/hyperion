@@ -100,8 +100,10 @@ fn blizzard(cast: &Cast<'_>) {
 /// the path when it is made". The ice blocks themselves need host block writes,
 /// which is the one thing the seam does not carry; the hop is what lands.
 fn ice_path(cast: &Cast<'_>) {
-    cast.server
-        .add_velocity(cast.player, Vec3::Y * 0.42 + cast.facing.0.normalize_or_zero() * 0.6);
+    cast.server.add_velocity(
+        cast.player,
+        Vec3::Y * 0.42 + cast.facing.0.normalize_or_zero() * 0.6,
+    );
     cast.server.cue(cast.position.0, Cue::Charge);
 }
 

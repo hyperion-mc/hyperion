@@ -5,17 +5,19 @@ use flecs_ecs::{
 };
 use hyperion::{
     chat,
-    net::{Compose, ConnectionId},
+    hyperion_minecraft_proto::{
+        BlockPos, generated::packet_id::play::clientbound::PacketId,
+        packets::play::clientbound::BlockUpdate,
+    },
+    net::{Compose, ConnectionId, protocol::send},
     simulation::{
-        blocks::{Blocks, EntityAndSequence},
+        blocks::{Blocks, EntityAndSequence, translate},
         event,
     },
     storage::EventQueue,
     valence_protocol::{
-        BlockPos,
         block::{PropName, PropValue},
         math::IVec3,
-        packets::play,
     },
 };
 use tracing::{error, info_span};
@@ -46,16 +48,28 @@ impl Module for BlockModule {
                 let current = blocks.get_block(event.position).unwrap();
 
                 // make sure the player knows the block was placed back
-                let pkt = play::BlockUpdateS2c {
-                    position: BlockPos::new(event.position.x, event.position.y, event.position.z),
-                    block_id: current,
+                let pkt = BlockUpdate {
+                    pos: BlockPos {
+                        x: event.position.x,
+                        y: event.position.y,
+                        z: event.position.z,
+                    },
+                    // The world is stored as 1.20.1 states and 776 numbers
+                    // them differently, so this cannot be `current` raw.
+                    block_state: i32::try_from(translate::block_state(current)).unwrap(),
                 };
 
                 event
                     .from
                     .entity_view(world)
                     .get::<&ConnectionId>(|connection_id| {
-                        compose.unicast(&pkt, *connection_id).unwrap();
+                        send(
+                            compose,
+                            *connection_id,
+                            PacketId::BlockUpdate.to_raw(),
+                            &pkt,
+                        )
+                        .unwrap();
                     });
             }
         });

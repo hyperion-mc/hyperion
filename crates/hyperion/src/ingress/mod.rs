@@ -1,18 +1,17 @@
-use std::borrow::Cow;
-
 use flecs_ecs::prelude::*;
+use hyperion_minecraft_proto::{
+    Uuid as ProtoUuid,
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::clientbound::{PlayerInfoRemove, RemoveEntities},
+};
 use hyperion_utils::EntityExt;
 use sha2::Digest;
 use tracing::{error, info, info_span};
-use valence_protocol::{
-    VarInt,
-    packets::play::{EntitiesDestroyS2c, PlayerRemoveS2c},
-};
 
 use crate::{
     Shutdown,
     ingress::decode::DecodeModule,
-    net::Compose,
+    net::{Compose, protocol::Clientbound},
     simulation::{IgnMap, PacketState, Uuid},
 };
 
@@ -66,24 +65,23 @@ fn remove_player_from_visibility(world: &World) {
             };
 
             world.get::<&Compose>(|compose| {
-                let uuids = &[uuid];
-                let entity_ids = [VarInt(entity.id().minecraft_id())];
-
                 // destroy
-                let pkt = EntitiesDestroyS2c {
-                    entity_ids: Cow::Borrowed(&entity_ids),
-                };
+                let pkt = RemoveEntities(vec![entity.id().minecraft_id()]);
 
-                if let Err(e) = compose.broadcast(&pkt).send() {
+                if let Err(e) = compose
+                    .broadcast(Clientbound::new(PacketId::RemoveEntities.to_raw(), &pkt))
+                    .send()
+                {
                     error!("failed to send player remove packet: {e}");
                     return;
                 }
 
-                let pkt = PlayerRemoveS2c {
-                    uuids: Cow::Borrowed(uuids),
-                };
+                let pkt = PlayerInfoRemove(vec![ProtoUuid(uuid.as_u128())]);
 
-                if let Err(e) = compose.broadcast(&pkt).send() {
+                if let Err(e) = compose
+                    .broadcast(Clientbound::new(PacketId::PlayerInfoRemove.to_raw(), &pkt))
+                    .send()
+                {
                     error!("failed to send player remove packet: {e}");
                 }
             });

@@ -370,6 +370,7 @@
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
                 player_port="$HYPERION_PLAYER_PORT"
+                server_port="$HYPERION_SERVER_PORT"
 
                 log="$(mktemp -t hyperion-e2e.XXXXXX)"
                 echo "stack log: $log"
@@ -388,10 +389,24 @@
                 # A cold run compiles two binaries, so the bound is generous. It
                 # is a bound rather than a sleep because a warm run is ready in
                 # seconds and should not pay for the cold one.
+                # Both ports, not just the player one. The proxy binds its
+                # listener immediately and retries the game server behind it, so
+                # a probe that only checks the player port lets the client
+                # connect while the game server is still compiling. The client
+                # then dies on a read timeout that reads exactly like a protocol
+                # bug, which cost an agent a full cycle to diagnose (ENG-10450).
                 deadline=$(( SECONDS + 900 ))
-                until python3 -c "import socket,sys; s=socket.socket(); s.settimeout(1); sys.exit(s.connect_ex(('127.0.0.1', $player_port)))"; do
+                until python3 -c "
+                import socket, sys
+                for port in ($player_port, $server_port):
+                    s = socket.socket()
+                    s.settimeout(1)
+                    if s.connect_ex(('127.0.0.1', port)) != 0:
+                        sys.exit(1)
+                sys.exit(0)
+                "; do
                   if [ "$SECONDS" -ge "$deadline" ]; then
-                    echo "stack never opened 127.0.0.1:$player_port; tail of $log:" >&2
+                    echo "stack never opened both 127.0.0.1:$player_port and 127.0.0.1:$server_port; tail of $log:" >&2
                     tail -40 "$log" >&2
                     exit 1
                   fi
@@ -479,6 +494,19 @@
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
             };
           };
+          # cargoUnit names a binary derivation after its cargo target, but
+          # does not set `meta.mainProgram`, so `lib.getExe` guesses the
+          # derivation name and misses. The NixOS modules below read
+          # `meta.mainProgram` to build their ExecStart, so this is what makes
+          # them work rather than a nicety.
+          named =
+            name: drv:
+            drv.overrideAttrs (previous: {
+              meta = (previous.meta or { }) // {
+                mainProgram = name;
+              };
+            });
+
         in
         {
           devShells.default = pkgs.mkShell {
@@ -506,8 +534,10 @@
             });
 
           packages = {
-            default = workspace.binaries.bedwars;
-            inherit (workspace.binaries) bedwars hyperion-proxy rust-mc-bot;
+            default = named "bedwars" workspace.binaries.bedwars;
+            bedwars = named "bedwars" workspace.binaries.bedwars;
+            hyperion-proxy = named "hyperion-proxy" workspace.binaries.hyperion-proxy;
+            rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
 
             minecraft-server-jar = minecraft.serverJar;
             minecraft-data = minecraft.generatedData;
@@ -538,8 +568,110 @@
         };
     in
     {
+      # A NixOS system that imports both modules and nothing else, built by
+      # `nix flake check`. Without it the modules are only ever exercised by
+      # whoever deploys them, and a typo in an option name is discovered on a
+      # host rather than here.
+      nixosConfigurations.module-smoke-test = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.game-server
+          self.nixosModules.proxy
+          (
+            { lib, ... }:
+            {
+              boot.loader.grub.enable = false;
+              fileSystems."/" = {
+                device = "/dev/disk/by-label/nixos";
+                fsType = "ext4";
+              };
+              system.stateVersion = "25.05";
+              nixpkgs.hostPlatform = "x86_64-linux";
+
+              # Paths that do not exist, which is the point: the modules must
+              # not read them at evaluation time. A module that did would work
+              # on the machine that has the certificates and fail everywhere
+              # else.
+              services.hyperion-game-server = {
+                enable = true;
+                pki = {
+                  rootCaCert = "/var/lib/hyperion-pki/root_ca.crt";
+                  cert = "/var/lib/hyperion-pki/game.crt";
+                  privateKey = "/var/lib/hyperion-pki/game_private_key.pem";
+                };
+              };
+
+              services.hyperion-proxy = {
+                enable = true;
+                gameServer = "hyperion-game.internal:35565";
+                pki = {
+                  rootCaCert = "/var/lib/hyperion-pki/root_ca.crt";
+                  cert = "/var/lib/hyperion-pki/proxy.crt";
+                  privateKey = "/var/lib/hyperion-pki/proxy_private_key.pem";
+                };
+              };
+            }
+          )
+        ];
+      };
+
+      # NixOS modules for the two services, so a deployment imports them
+      # rather than reimplementing a systemd unit per host. Not per system:
+      # a module reads the host platform off the machine it lands on.
+      nixosModules = {
+        game-server = import ./nix/modules/game-server.nix {
+          hyperionPackages = self.packages;
+        };
+        proxy = import ./nix/modules/proxy.nix {
+          hyperionPackages = self.packages;
+        };
+      };
+
       apps = forAllSystems (system: (mkSystem system).apps);
-      checks = forAllSystems (system: (mkSystem system).checks);
+      checks = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        (mkSystem system).checks
+        // {
+          # Pins the command line the two modules build, so a renamed option
+          # or a reordered argument is caught here rather than on a host.
+          #
+          # The store paths are context-stripped on purpose. Keeping the
+          # context would make this check depend on the binaries, and a module
+          # check should run everywhere in seconds rather than compile a
+          # server. What a module gets wrong is the spelling of a flag or the
+          # order of the arguments, and that is what this reads.
+          nixos-modules =
+            let
+              units = self.nixosConfigurations.module-smoke-test.config.systemd.services;
+              argv = unit: builtins.unsafeDiscardStringContext units.${unit}.serviceConfig.ExecStart;
+            in
+            pkgs.runCommand "hyperion-nixos-modules" { } ''
+              cat > argv <<'ARGV'
+              ${argv "hyperion-game-server"}
+              ${argv "hyperion-proxy"}
+              ARGV
+
+              expect() {
+                grep -qF -- "$1" argv || {
+                  echo "hyperion NixOS module argv lost: $1" >&2
+                  echo "what the modules built:" >&2
+                  cat argv >&2
+                  exit 1
+                }
+              }
+
+              expect "/bin/bedwars --ip :: --port 35565"
+              expect "/bin/hyperion-proxy '[::]:25565' --server hyperion-game.internal:35565"
+              expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/game.crt --private-key /var/lib/hyperion-pki/game_private_key.pem"
+              expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/proxy.crt --private-key /var/lib/hyperion-pki/proxy_private_key.pem"
+
+              touch $out
+            '';
+        }
+      );
       devShells = forAllSystems (system: (mkSystem system).devShells);
       packages = forAllSystems (system: (mkSystem system).packages);
     };
