@@ -178,6 +178,36 @@
             '';
           };
 
+          certsDir = ".hyperion-dev-certs";
+
+          gameServerPort = 35565;
+          proxyPort = 25565;
+
+          # Generated rather than committed as YAML: the ports and cert paths
+          # then have one source of truth shared with the standalone apps above.
+          # Commands are single-line: a backslash continuation is literal in a
+          # Nix indented string, survives into the YAML, and reaches the shell
+          # as a stray argument rather than a line join.
+          processComposeConfig = (pkgs.formats.yaml { }).generate "process-compose.yaml" {
+            version = "0.5";
+            processes = {
+              game-server = {
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                availability.restart = "on_failure";
+              };
+
+              proxy = {
+                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:${toString proxyPort}";
+                # Started, not healthy: a TCP readiness probe would connect and
+                # immediately disconnect every few seconds, and the game server
+                # logs an error for each half-open connection. The proxy already
+                # retries until the game server answers.
+                depends_on.game-server.condition = "process_started";
+                availability.restart = "on_failure";
+              };
+            };
+          };
+
           runners = lib.mapAttrs mkScript {
             # Builds four successive versions of the demo game module and drives
             # one running world through all of them. Being a nix app is what
@@ -190,15 +220,70 @@
               text = ''exec ./crates/hyperion-hot-reload/demo.sh "$@"'';
             };
 
-            proxy.text = ''
-              ulimit -Sn ${fileDescriptors}
-              exec cargo run --profile release-full --bin hyperion-proxy -- \
-                --server 127.0.0.1:35565 0.0.0.0:25565
-            '';
+            # The game server and the proxy authenticate to each other with
+            # mTLS, so a fresh clone cannot run until a CA and two leaf certs
+            # exist. That is the only thing between `git clone` and a running
+            # server, so it is a command rather than a page of README.
+            certs = {
+              deps = [ pkgs.openssl pkgs.git ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                dir="$root/${certsDir}"
+                if [ -f "$dir/root_ca.crt" ] && [ "''${1:-}" != "--force" ]; then
+                  echo "dev certificates already present in ${certsDir}"
+                  echo "regenerate with: nix run .#certs -- --force"
+                  exit 0
+                fi
+                mkdir -p "$dir"
+                cd "$dir"
 
-            bedwars.text = ''
-              exec cargo run --profile release-full -p bedwars -- "$@"
-            '';
+                openssl req -new -nodes -newkey rsa:2048 -keyout root_ca.pem \
+                  -x509 -out root_ca.crt -days 365 -subj '/CN=hyperion-dev-ca'
+
+                for who in server proxy; do
+                  openssl req -nodes -newkey rsa:2048 \
+                    -keyout "''${who}_private_key.pem" -out "$who.csr" \
+                    -subj "/CN=hyperion-dev-$who"
+                  # The SAN must cover the address the peer dials or the
+                  # handshake fails with "certificate not valid for name".
+                  openssl x509 -req -in "$who.csr" -CA root_ca.crt -CAkey root_ca.pem \
+                    -CAcreateserial -out "$who.crt" -days 365 -sha256 \
+                    -extfile <(printf 'subjectAltName=DNS:localhost,IP:127.0.0.1')
+                  rm -f "$who.csr"
+                done
+                rm -f root_ca.srl
+
+                echo "wrote throwaway dev certificates to ${certsDir}"
+                echo "local development only -- never deploy these"
+              '';
+            };
+
+            proxy = {
+              deps = [ pkgs.git ];
+              text = ''
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
+                ulimit -Sn ${fileDescriptors}
+                exec cargo run --profile release-full --bin hyperion-proxy -- \
+                  --server 127.0.0.1:35565 \
+                  --root-ca-cert "$certs/root_ca.crt" \
+                  --cert "$certs/proxy.crt" \
+                  --private-key "$certs/proxy_private_key.pem" \
+                  0.0.0.0:25565
+              '';
+            };
+
+            bedwars = {
+              deps = [ pkgs.git ];
+              text = ''
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
+                exec cargo run --profile release-full -p bedwars -- \
+                  --ip 0.0.0.0 --port 35565 \
+                  --root-ca-cert "$certs/root_ca.crt" \
+                  --cert "$certs/server.crt" \
+                  --private-key "$certs/server_private_key.pem" \
+                  "$@"
+              '';
+            };
 
             # rust-mc-bot reads its whole configuration from BOT_-prefixed
             # environment variables, so the address and count cannot be passed
@@ -214,26 +299,23 @@
             # `nix run .#dev -- release-full`. One watcher rebuilds bedwars and
             # touches a trigger file; a second watches only the trigger, which is
             # what stops a restart from racing a half-written executable.
+            # process-compose supervises the two processes instead of the
+            # shell doing it: it gives dependency ordering (the proxy waits for
+            # the game server's port), per-process restart policy, a readable
+            # TUI with separated logs, and one Ctrl-C that actually stops
+            # everything. GNU parallel gave none of that -- a crashed process
+            # just vanished from an interleaved stream.
             dev = {
-              deps = [ pkgs.cargo-watch pkgs.git pkgs.parallel ];
+              deps = [ pkgs.process-compose pkgs.git ];
               text = ''
-                profile="''${1:-dev}"
-                case "$profile" in
-                  dev | debug) profile=dev; target=debug ;;
-                  *) target="$profile" ;;
-                esac
-
                 root="$(git rev-parse --show-toplevel)"
-                trigger="$root/.trigger-$target"
-                touch "$trigger"
-
-                ulimit -Sn ${fileDescriptors}
-                export RUST_BACKTRACE=full
-
-                parallel --ungroup --halt now,done=1 --jobs 3 ::: \
-                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars'" \
-                  "cargo run --profile $profile --bin hyperion-proxy -- --server 127.0.0.1:35565 0.0.0.0:25565" \
-                  "cargo watch -w '$root/crates/hyperion' -w '$root/events/bedwars' -s 'cargo build --profile $profile -p bedwars' -s 'touch $trigger'"
+                certs="$root/${certsDir}"
+                if [ ! -f "$certs/root_ca.crt" ]; then
+                  echo "no dev certificates yet; generating them" >&2
+                  "${lib.getExe runners.certs}"
+                fi
+                cd "$root"
+                exec process-compose --config ${processComposeConfig} "$@"
               '';
             };
           };
