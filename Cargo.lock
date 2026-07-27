@@ -3037,6 +3037,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperion-hot-reload"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "libloading",
+]
+
+[[package]]
+name = "hyperion-hot-reload-demo"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion-hot-reload",
+]
+
+[[package]]
+name = "hyperion-hot-reload-demo-module"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion-hot-reload",
+]
+
+[[package]]
 name = "hyperion-inventory"
 version = "0.1.0"
 dependencies = [
@@ -3564,12 +3588,12 @@ dependencies = [
 
 [[package]]
 name = "libloading"
-version = "0.8.6"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-link 0.2.1",
 ]
 
 [[package]]

@@ -1,0 +1,21 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-hot-reload"
+publish = false
+repository.workspace = true
+version.workspace = true
+
+# One shared instance, always. `flecs_ecs` maps a Rust type onto a flecs component id
+# through a process-global counter, and flecs itself keeps its allocator and builtin
+# component ids in C globals. A second statically-linked copy silently aliases both, so
+# there is deliberately no `rlib` here for a module to accidentally link against.
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+flecs_ecs.workspace = true
+libloading = "0.8.9"
+
+[lints]
+workspace = true
