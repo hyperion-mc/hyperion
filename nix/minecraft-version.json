@@ -1,0 +1,22 @@
+{
+  "id": "26.2",
+  "type": "release",
+  "releaseTime": "2026-06-16T12:03:33+00:00",
+  "protocolVersion": 776,
+  "worldVersion": 4903,
+  "packVersion": {
+    "resourceMajor": 88,
+    "resourceMinor": 0,
+    "dataMajor": 107,
+    "dataMinor": 1
+  },
+  "javaMajor": 25,
+  "manifestUrl": "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
+  "versionMetaUrl": "https://piston-meta.mojang.com/v1/packages/d98675ecc24364e90b18dbea80390b1345c3f71f/26.2.json",
+  "server": {
+    "url": "https://piston-data.mojang.com/v1/objects/823e2250d24b3ddac457a60c92a6a941943fcd6a/server.jar",
+    "sha1": "823e2250d24b3ddac457a60c92a6a941943fcd6a",
+    "sha256": "sha256-zazfsliY3l5LSw5d3MJyL3cGfkZgVwnC2IbAAOu2PsU=",
+    "size": 60894273
+  }
+}
