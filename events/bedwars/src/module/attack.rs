@@ -30,7 +30,7 @@ use hyperion::{
     },
 };
 use hyperion_inventory::PlayerInventory;
-use hyperion_utils::{EntityExt, LifetimeHandle};
+use hyperion_utils::EntityExt;
 use tracing::info_span;
 
 use super::spawn::{avoid_blocks, find_spawn_position, is_valid_spawn_block};
@@ -40,20 +40,20 @@ use crate::Team;
 pub struct AttackModule;
 
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
+#[flecs(meta)]
 pub struct ImmuneUntil {
     tick: i64,
 }
 
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
+#[flecs(meta)]
 pub struct Armor {
     pub armor: f32,
 }
 
 // Used as a component only for commands, does not include armor or weapons
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
+#[flecs(meta)]
 pub struct CombatStats {
     pub armor: f32,
     pub armor_toughness: f32,
@@ -285,7 +285,6 @@ impl Module for AttackModule {
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
                 |client_status: &ClientStatusEvent,
-                 _: &dyn LifetimeHandle<'_>,
                  query: &mut PacketSwitchQuery<'_>| {
                     if client_status.status == ClientStatusCommand::RequestStats {
                         return Ok(());

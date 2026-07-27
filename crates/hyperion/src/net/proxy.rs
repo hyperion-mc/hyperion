@@ -27,7 +27,7 @@ use crate::{
     command_channel::CommandChannel,
     net::{Channel, ChannelId, Compose, IoBuf, ProxyId},
     runtime::AsyncRuntime,
-    simulation::{EgressComm, RequestSubscribeChannelPackets, StreamLookup, packet_state},
+    simulation::{EgressComm, PacketState, StreamLookup, event::RequestSubscribeChannelPackets},
     storage::Events,
 };
 
@@ -101,7 +101,7 @@ async fn handle_proxy_messages(
                     let player = world
                         .entity()
                         .set(ConnectionId::new(stream, proxy_id))
-                        .add(id::<packet_state::Handshake>())
+                        .add_enum(PacketState::Handshake)
                         .set(PacketDecoder::default())
                         .set(receiver)
                         .id();

@@ -8,7 +8,7 @@ use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
-use hyperion_utils::{EntityExt, LifetimeHandle, RuntimeLifetime};
+use hyperion_utils::EntityExt;
 use tracing::{info, instrument, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
@@ -48,7 +48,6 @@ fn full(
         pitch,
         on_ground,
     }: &play::FullC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     // check to see if the player is moving too fast
@@ -179,7 +178,6 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
 
 fn look_and_on_ground(
     &play::LookAndOnGroundC2s { yaw, pitch, .. }: &play::LookAndOnGroundC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     **query.yaw = yaw;
@@ -193,7 +191,6 @@ fn position_and_on_ground(
         position,
         on_ground,
     }: &play::PositionAndOnGroundC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     change_position_or_correct_client(query, position.as_vec3(), on_ground);
@@ -201,16 +198,13 @@ fn position_and_on_ground(
     Ok(())
 }
 
-fn chat_command<'a>(
-    pkt: &play::CommandExecutionC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
+fn chat_command(
+    pkt: &play::CommandExecutionC2s<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let command = RuntimeLifetime::new(pkt.command.0, handle);
-
     query.events.push(
         event::Command {
-            raw: command,
+            raw: pkt.command.0.clone().into_owned(),
             by: query.id,
         },
         query.world,
@@ -221,7 +215,6 @@ fn chat_command<'a>(
 
 fn hand_swing(
     &packet: &play::HandSwingC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     match packet.hand {
@@ -239,7 +232,6 @@ fn hand_swing(
 #[instrument(skip_all)]
 fn player_interact_entity(
     packet: &play::PlayerInteractEntityC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     // attack
@@ -285,7 +277,6 @@ pub struct PacketSwitchQuery<'a> {
 // i.e., shooting a bow, digging a block, etc
 fn player_action(
     &packet: &play::PlayerActionC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     let sequence = packet.sequence.0;
@@ -330,7 +321,6 @@ fn player_action(
 // for sneaking/crouching/etc
 fn client_command(
     &packet: &play::ClientCommandC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     match packet.action {
@@ -371,7 +361,6 @@ fn client_command(
 /// - Activating items with duration effects (e.g. chorus fruit teleport)
 pub fn player_interact_item(
     &play::PlayerInteractItemC2s { hand, sequence }: &play::PlayerInteractItemC2s,
-    handle: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     let event = InteractEvent {
@@ -394,14 +383,13 @@ pub fn player_interact_item(
         query.events.push(flecs_event, query.world);
     }
 
-    query.handler_registry.trigger(&event, handle, query)?;
+    query.handler_registry.trigger(&event, query)?;
 
     Ok(())
 }
 
 pub fn player_interact_block(
     &packet: &play::PlayerInteractBlockC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     // PlayerInteractBlockC2s contains:
@@ -491,7 +479,6 @@ pub fn player_interact_block(
 
 pub fn update_selected_slot(
     &packet: &play::UpdateSelectedSlotC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     handle_update_selected_slot(packet, query);
@@ -501,7 +488,6 @@ pub fn update_selected_slot(
 
 pub fn creative_inventory_action(
     play::CreativeInventoryActionC2s { slot, clicked_item }: &play::CreativeInventoryActionC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     info!("creative inventory action: {slot} {clicked_item:?}");
@@ -519,7 +505,6 @@ pub fn creative_inventory_action(
 // keywords: inventory
 fn click_slot(
     pkt: &play::ClickSlotC2s<'_>,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     handle_click_slot(pkt, query);
@@ -527,12 +512,11 @@ fn click_slot(
     Ok(())
 }
 
-fn chat_message<'a>(
-    pkt: &play::ChatMessageC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
+fn chat_message(
+    pkt: &play::ChatMessageC2s<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let msg = RuntimeLifetime::new(pkt.message.0, handle);
+    let msg = pkt.message.0.clone().into_owned();
 
     query
         .events
@@ -541,34 +525,25 @@ fn chat_message<'a>(
     Ok(())
 }
 
-pub fn request_command_completions<'a>(
+pub fn request_command_completions(
     play::RequestCommandCompletionsC2s {
         transaction_id,
         text,
-    }: &play::RequestCommandCompletionsC2s<'a>,
-    handle: &dyn LifetimeHandle<'a>,
+    }: &play::RequestCommandCompletionsC2s<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    // TODO(flecs-port): valence's `RequestCommandCompletionsC2s::text` is now a
-    // `CowUtf8Bytes<'a>` rather than a `&'a str`, so this borrow is tied to the packet reference
-    // rather than to `'a`. `CommandCompletionRequest` in crates/hyperion/src/storage/event/sync.rs
-    // has to hold an owned (or `CowUtf8Bytes`) query before this compiles.
-    let text: &str = &text.0;
-    let transaction_id = transaction_id.0;
-
     let completion = CommandCompletionRequest {
-        query: text,
-        id: transaction_id,
+        query: text.0.clone().into_owned(),
+        id: transaction_id.0,
     };
 
-    query.handler_registry.trigger(&completion, handle, query)?;
+    query.handler_registry.trigger(&completion, query)?;
 
     Ok(())
 }
 
 pub fn client_status(
     pkt: &play::ClientStatusC2s,
-    handle: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     let command = ClientStatusEvent {
@@ -579,14 +554,13 @@ pub fn client_status(
         },
     };
 
-    query.handler_registry.trigger(&command, handle, query)?;
+    query.handler_registry.trigger(&command, query)?;
 
     Ok(())
 }
 
 pub fn confirm_teleportation(
     pkt: &play::TeleportConfirmC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     let entity = query.id.entity_view(query.world);
@@ -607,7 +581,6 @@ pub fn confirm_teleportation(
 
 pub fn player_abilities(
     pkt: &play::UpdatePlayerAbilitiesC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     let entity = query.id.entity_view(query.world);
@@ -622,7 +595,6 @@ pub fn player_abilities(
 // keywords: inventory
 fn close_handled_screen(
     _: &play::CloseHandledScreenC2s,
-    _: &dyn LifetimeHandle<'_>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
     handle_close_window(query);
@@ -652,32 +624,14 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(player_abilities));
 }
 
-// TODO(flecs-port): this still assumes the old zero-copy net layer. The ported
-// `crates/hyperion/src/net/decoder.rs` gives a lifetime-free `BorrowedPacketFrame` whose `body` is
-// an owned `Either<Bytes, RawPacket>`, and the ported `Compose` has no `bump`/`bump_tracker`, so
-// there is nothing left to hand a `LifetimeHandle` out of. Deciding whether `HandlerRegistry`
-// keeps `RuntimeLifetime` or moves to `DecodeBytes` spans net/, simulation/packet.rs and
-// hyperion-utils/src/lifetime.rs, so it is left for whoever owns that contract.
-/// # Safety
-/// The [`BorrowedPacketFrame`] must borrow data from the [`Compose::bump`] in
-/// [`PacketSwitchQuery::compose`]
-pub unsafe fn packet_switch<'a>(
-    raw: BorrowedPacketFrame<'a>,
-    query: &mut PacketSwitchQuery<'a>,
+/// Decodes `raw` and runs every handler registered for that packet type.
+///
+/// valence's `feat-bytes` packets own their payload (`Utf8Bytes` and friends are reference-counted
+/// slices of the frame), so the decoded packet is self-contained and no borrow of the frame
+/// outlives this call.
+pub fn packet_switch(
+    raw: BorrowedPacketFrame,
+    query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let packet_id = raw.id;
-    let data = raw.body;
-
-    // SAFETY: The only data that HandlerRegistry::process_packet is aware of outliving 'a is the packet bytes.
-    // The packet bytes are stored in the compose bump allocator.
-    // LifetimeTracker::assert_no_references will be called on the bump tracker before the
-    // bump allocator is cleared.
-    let handle = unsafe { query.compose.bump_tracker.handle() };
-    let handle: &dyn LifetimeHandle<'a> = &handle;
-
-    query
-        .handler_registry
-        .process_packet(packet_id, data, handle, query)?;
-
-    Ok(())
+    query.handler_registry.process_packet(raw, query)
 }

@@ -23,7 +23,7 @@ const CHAT_COOLDOWN_SECONDS: i64 = 15; // 15 seconds
 const CHAT_COOLDOWN_TICKS: i64 = CHAT_COOLDOWN_SECONDS * 20; // Convert seconds to ticks
 
 #[derive(Default, Component)]
-#[meta]
+#[flecs(meta)]
 pub struct ChatCooldown {
     pub expires: i64,
 }
@@ -46,12 +46,7 @@ impl Module for ChatModule {
             &hyperion::net::Compose
         )
         .each_iter(
-            move |it: TableIter<'_, false>,
-                  _: usize,
-                  (event_queue, compose): (
-                &mut EventQueue<event::ChatMessage>,
-                &hyperion::net::Compose,
-            )| {
+            move |it, _, (event_queue, compose)| {
                 let world = it.world();
                 let span = info_span!("handle_chat_messages");
                 let _enter = span.enter();
@@ -59,7 +54,7 @@ impl Module for ChatModule {
                 let current_tick = compose.global().tick;
 
                 for event::ChatMessage { msg, by } in event_queue.drain() {
-                    let msg = msg.get();
+                    let msg = msg.as_str();
                     let by = world.entity_from_id(by);
 
                     // todo: we should not need this; death should occur such that this is always valid

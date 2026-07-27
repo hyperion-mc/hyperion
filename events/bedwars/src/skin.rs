@@ -21,6 +21,7 @@ use hyperion::{
 };
 use hyperion_utils::EntityExt;
 use tracing::debug;
+use valence_bytes::Utf8Bytes;
 
 #[derive(Component)]
 pub struct SkinModule;
@@ -62,10 +63,10 @@ fn on_set_skin(id: Entity, compose: &Compose, uuid: Uuid, skin: PlayerSkin, io: 
         .unwrap();
 
     // todo: in future, do not clone
-    let property = valence_protocol::profile::Property {
-        name: "textures".to_string(),
-        value: skin.textures,
-        signature: Some(skin.signature),
+    let property = valence_protocol::profile::Property::<Utf8Bytes> {
+        name: "textures".into(),
+        value: skin.textures.into(),
+        signature: Some(skin.signature.into()),
     };
 
     let property = &[property];
@@ -76,7 +77,7 @@ fn on_set_skin(id: Entity, compose: &Compose, uuid: Uuid, skin: PlayerSkin, io: 
             actions: PlayerListActions::default().with_add_player(true),
             entries: Cow::Borrowed(&[PlayerListEntry {
                 player_uuid: uuid,
-                username: Cow::Borrowed("Player"),
+                username: "Player".into(),
                 properties: Cow::Borrowed(property),
                 chat_data: None,
                 listed: true,

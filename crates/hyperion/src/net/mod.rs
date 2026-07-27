@@ -160,7 +160,7 @@ impl From<Entity> for ChannelId {
 
 impl From<EntityView<'_>> for ChannelId {
     fn from(entity: EntityView<'_>) -> Self {
-        Self::from(*entity.id())
+        Self::from(entity.id())
     }
 }
 

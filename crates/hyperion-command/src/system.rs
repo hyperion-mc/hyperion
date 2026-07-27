@@ -10,7 +10,6 @@ use hyperion::{
     simulation::{event, handlers::PacketSwitchQuery, packet::HandlerRegistry},
     storage::{CommandCompletionRequest, EventQueue},
 };
-use hyperion_utils::LifetimeHandle;
 
 use crate::component::CommandRegistry;
 
@@ -30,7 +29,7 @@ impl Module for CommandSystemModule {
 
             let world = it.world();
             for event::Command { raw, by } in event_queue.drain() {
-                let raw = raw.get();
+                let raw = raw.as_str();
                 let Some(first_word) = raw.split_whitespace().next() else {
                     tracing::warn!("command is empty");
                     continue;
@@ -69,10 +68,9 @@ impl Module for CommandSystemModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |completion: &CommandCompletionRequest<'_>,
-                 _: &dyn LifetimeHandle<'_>,
+                |completion: &CommandCompletionRequest,
                  query: &mut PacketSwitchQuery<'_>| {
-                    let input = completion.query;
+                    let input = completion.query.as_str();
 
                     // should be in form "/{command}"
                     let command = input

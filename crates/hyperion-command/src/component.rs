@@ -7,7 +7,7 @@ use hyperion::{simulation::handlers::PacketSwitchQuery, storage::CommandCompleti
 use indexmap::IndexMap;
 
 pub type OnTabComplete =
-    Box<dyn Fn(&mut PacketSwitchQuery<'_>, &CommandCompletionRequest<'_>) + 'static + Send + Sync>;
+    Box<dyn Fn(&mut PacketSwitchQuery<'_>, &CommandCompletionRequest) + 'static + Send + Sync>;
 pub struct CommandHandler {
     pub on_execute: fn(input: &str, system: EntityView<'_>, caller: Entity),
     pub on_tab_complete: OnTabComplete,

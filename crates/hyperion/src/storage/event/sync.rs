@@ -1,18 +1,19 @@
 use flecs_ecs::core::Entity;
 use hyperion_utils::Lifetime;
+use valence_bytes::Utf8Bytes;
 use valence_protocol::Hand;
 
 use crate::simulation::handlers::PacketSwitchQuery;
 
 pub type EventFn<T> = Box<dyn Fn(&mut PacketSwitchQuery<'_>, &T) + 'static + Send + Sync>;
 
-pub struct CommandCompletionRequest<'a> {
-    pub query: &'a str,
+pub struct CommandCompletionRequest {
+    pub query: Utf8Bytes,
     pub id: i32,
 }
 
-unsafe impl Lifetime for CommandCompletionRequest<'_> {
-    type WithLifetime<'a> = CommandCompletionRequest<'a>;
+unsafe impl Lifetime for CommandCompletionRequest {
+    type WithLifetime<'a> = Self;
 }
 
 pub struct InteractEvent {

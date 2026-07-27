@@ -13,6 +13,7 @@ use hyperion::{
     simulation::{Owner, Position, Uuid, Velocity, entity_kind::EntityKind},
     spatial::SpatialModule,
 };
+use serial_test::serial;
 
 #[derive(Component)]
 struct TestModule;

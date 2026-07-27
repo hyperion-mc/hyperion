@@ -5,38 +5,83 @@ use std::{
 };
 
 use anyhow::Result;
-use flecs_ecs::macros::Component;
-use hyperion_utils::{Lifetime, LifetimeHandle};
+use derive_more::Deref;
+use flecs_ecs::{core::Entity, macros::Component};
+use hyperion_packet_macros::for_each_state;
+use hyperion_utils::{EntityExt, Lifetime};
 use rustc_hash::FxBuildHasher;
-use valence_protocol::{Decode, Packet};
+use valence_protocol::{DecodeBytes, Packet as PacketTrait};
 
-use crate::simulation::handlers::{PacketSwitchQuery, add_builtin_handlers};
+use crate::{
+    net::{ConnectionId, decoder::BorrowedPacketFrame},
+    simulation::handlers::{PacketSwitchQuery, add_builtin_handlers},
+};
 
-type DeserializerFn = for<'packet> fn(
-    &HandlerRegistry,
-    &'packet [u8],
-    &dyn LifetimeHandle<'packet>,
-    &mut PacketSwitchQuery<'_>,
-) -> Result<()>;
+/// A packet which has been decoded, tagged with the player who sent it.
+#[derive(Copy, Clone, Debug, Deref)]
+pub struct Packet<T> {
+    sender: Entity,
+    connection_id: ConnectionId,
+
+    #[deref]
+    body: T,
+}
+
+impl<T> Packet<T> {
+    pub const fn new(sender: Entity, connection_id: ConnectionId, body: T) -> Self {
+        Self {
+            sender,
+            connection_id,
+            body,
+        }
+    }
+
+    /// Entity of the player who sent this packet
+    pub const fn sender(&self) -> Entity {
+        self.sender
+    }
+
+    /// Connection id of the player who sent this packet. This is included for convenience; it is
+    /// the same connection id component in the [`Packet::sender`] entity.
+    pub const fn connection_id(&self) -> ConnectionId {
+        self.connection_id
+    }
+
+    /// Minecraft id of the player who sent this packet. This is included for convenience; it is
+    /// the same Minecraft id in the [`Packet::sender`] entity.
+    pub fn minecraft_id(&self) -> i32 {
+        self.sender().minecraft_id()
+    }
+}
+
+for_each_state! {
+    #{
+        pub mod #state {
+            #for_each_packet! {
+                #{
+                    pub type #packet_name = super::Packet<#static_valence_packet>;
+                }
+            }
+        }
+    }
+}
+
+type DeserializerFn =
+    fn(&HandlerRegistry, BorrowedPacketFrame, &mut PacketSwitchQuery<'_>) -> Result<()>;
 type AnyFn = Box<dyn Send + Sync>;
 type Handler<T> = Box<
-    dyn for<'packet> Fn(
-            &<T as Lifetime>::WithLifetime<'packet>,
-            &dyn LifetimeHandle<'packet>,
-            &mut PacketSwitchQuery<'_>,
-        ) -> Result<()>
+    dyn for<'packet> Fn(&<T as Lifetime>::WithLifetime<'packet>, &mut PacketSwitchQuery<'_>) -> Result<()>
         + Send
         + Sync,
 >;
 
-fn packet_deserializer<'p, P>(
+fn packet_deserializer<P>(
     registry: &HandlerRegistry,
-    mut bytes: &'p [u8],
-    handle: &dyn LifetimeHandle<'p>,
+    frame: BorrowedPacketFrame,
     query: &mut PacketSwitchQuery<'_>,
 ) -> Result<()>
 where
-    P: Packet + Decode<'static> + Lifetime + 'static,
+    P: PacketTrait + DecodeBytes + Lifetime + 'static,
 {
     // If no handler is registered for this packet, skip decoding it
     // TODO: consider moving this check out of the packet deserializer for performance
@@ -44,15 +89,9 @@ where
         return Ok(());
     }
 
-    // SAFETY: The transmute to 'static is sound because the result is immediately shortened to
-    // the original 'p lifetime. This transmute is necessary due to a technical limitation in the
-    // Decode trait; users can only use P with a concrete lifetime, meaning that Decode would
-    // decode to that lifetime, but we need to be able to decode to the 'p lifetime
-    // TODO: could be unsound if someone implemented Decode<'static> and kept the 'static references in the error
-    let packet = P::decode(unsafe { transmute::<&mut &'p [u8], &mut &'static [u8]>(&mut bytes) })?
-        .shorten_lifetime::<'p>();
+    let packet = frame.decode::<P>()?;
 
-    registry.trigger(&packet, handle, query)?;
+    registry.trigger(&packet, query)?;
 
     Ok(())
 }
@@ -67,17 +106,13 @@ pub struct HandlerRegistry {
 impl HandlerRegistry {
     // Add a handler
     // TODO: With this current system, closures infer that 'a is a specific lifetime if the type isn't specified. Unsure if there's a way to fix it while allowing P to be inferred.
-    pub fn add_handler<'a, P, F>(&mut self, handler: Box<F>)
+    pub fn add_handler<P, F>(&mut self, handler: Box<F>)
     where
         P: Lifetime,
         // Needed to allow compiler to infer type of P.
-        F: Fn(&P, &dyn LifetimeHandle<'a>, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync,
+        F: Fn(&P, &mut PacketSwitchQuery<'_>) -> Result<()> + Send + Sync,
         // Actual type bounds for Handler<P>
-        for<'packet> F: Fn(
-                &P::WithLifetime<'packet>,
-                &dyn LifetimeHandle<'packet>,
-                &mut PacketSwitchQuery<'_>,
-            ) -> Result<()>
+        for<'packet> F: Fn(&P::WithLifetime<'packet>, &mut PacketSwitchQuery<'_>) -> Result<()>
             + Send
             + Sync
             + 'static,
@@ -86,24 +121,27 @@ impl HandlerRegistry {
         self.handlers
             .entry(TypeId::of::<P::WithLifetime<'static>>())
             .or_default()
+            // SAFETY: Handler<P> and Box<dyn Send + Sync> are both thin boxed trait objects of the
+            // same size, and the value is only ever read back through the matching Handler<P> type
+            // in HandlerRegistry::trigger.
             .push(unsafe { transmute::<Handler<P>, AnyFn>(handler) });
     }
 
     // Process a packet, calling all registered handlers
-    pub fn process_packet<'p>(
+    pub fn process_packet(
         &self,
-        id: i32,
-        bytes: &'p [u8],
-        handle: &dyn LifetimeHandle<'p>,
+        frame: BorrowedPacketFrame,
         query: &mut PacketSwitchQuery<'_>,
     ) -> Result<()> {
+        let id = frame.id;
+
         // Get the deserializer
         let deserializer = self
             .deserializers
             .get(&id)
             .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {}", id))?;
 
-        deserializer(self, bytes, handle, query)
+        deserializer(self, frame, query)
     }
 
     #[must_use]
@@ -115,14 +153,9 @@ impl HandlerRegistry {
             .contains_key(&TypeId::of::<T::WithLifetime<'static>>())
     }
 
-    pub fn trigger<'packet, T>(
-        &self,
-        value: &T,
-        handle: &dyn LifetimeHandle<'packet>,
-        query: &mut PacketSwitchQuery<'_>,
-    ) -> Result<()>
+    pub fn trigger<T>(&self, value: &T, query: &mut PacketSwitchQuery<'_>) -> Result<()>
     where
-        T: Lifetime + 'packet,
+        T: Lifetime,
     {
         // Get all handlers for this type
         let handlers = self
@@ -141,7 +174,7 @@ impl HandlerRegistry {
             let handler = unsafe { &*std::ptr::from_ref(handler).cast::<Handler<T>>() };
 
             // shorten_lifetime is only needed because the handler accepts T::WithLifetime
-            handler(value.shorten_lifetime_ref(), handle, query)?;
+            handler(value.shorten_lifetime_ref(), query)?;
         }
 
         Ok(())
@@ -158,7 +191,7 @@ impl Default for HandlerRegistry {
             registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET>);
         }
         hyperion_packet_macros::for_each_lifetime_play_c2s_packet! {
-            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET<'_>>);
+            registry.deserializers.insert(PACKET::ID, packet_deserializer::<PACKET<'static>>);
         }
         add_builtin_handlers(&mut registry);
         registry

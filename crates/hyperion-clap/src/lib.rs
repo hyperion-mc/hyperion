@@ -31,7 +31,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         Self::pre_register(world);
 
         let cmd = Self::command();
-        let name = cmd.get_name();
+        let name = cmd.get_name().to_owned();
 
         let has_permissions = |world: &World, caller: Entity| {
             caller
@@ -40,7 +40,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         };
 
         let node_to_register =
-            hyperion::simulation::command::Command::literal(name, has_permissions);
+            hyperion::simulation::command::Command::literal(name.clone(), has_permissions);
 
         let mut on = world
             .entity()
@@ -113,8 +113,8 @@ pub trait MinecraftCommand: Parser + CommandPermission {
 
         let on_tab_complete = Box::new(
             |packet_switch_query: &mut PacketSwitchQuery<'_>,
-             completion: &CommandCompletionRequest<'_>| {
-                let full_query = completion.query;
+             completion: &CommandCompletionRequest| {
+                let full_query = completion.query.as_str();
                 let id = completion.id;
 
                 let Some(query) = full_query.strip_prefix('/') else {
@@ -158,7 +158,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                     let matches = substring_matches
                         .map(clap::builder::PossibleValue::get_name)
                         .map(|name| CommandSuggestionsMatch {
-                            suggested_match: name,
+                            suggested_match: name.into(),
                             tooltip: None,
                         })
                         .collect();
@@ -199,7 +199,7 @@ pub trait MinecraftCommand: Parser + CommandPermission {
                 let matches = names
                     .into_iter()
                     .map(|name| CommandSuggestionsMatch {
-                        suggested_match: name,
+                        suggested_match: name.into(),
                         tooltip: None,
                     })
                     .collect();

@@ -15,7 +15,7 @@ use tracing::info_span;
 pub struct RegenerationModule;
 
 #[derive(Component, Default, Copy, Clone, Debug)]
-#[meta]
+#[flecs(meta)]
 pub struct LastDamaged {
     pub tick: i64,
 }

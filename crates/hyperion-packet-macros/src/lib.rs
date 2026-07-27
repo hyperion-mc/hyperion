@@ -36,6 +36,12 @@ pub fn for_each_state(input: TokenStream) -> TokenStream {
     state::for_each_state(input)
 }
 
+/// Same as [`macro@for_each_state`], but skips the `play` state.
+#[proc_macro]
+pub fn for_each_pre_play_state(input: TokenStream) -> TokenStream {
+    state::for_each_pre_play_state(input)
+}
+
 /// Repeats `input` once per play C2S packet that does not borrow, substituting `PACKET`.
 #[proc_macro]
 pub fn for_each_static_play_c2s_packet(input: TokenStream) -> TokenStream {

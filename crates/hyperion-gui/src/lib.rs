@@ -13,7 +13,6 @@ use hyperion::{
     },
 };
 use hyperion_inventory::{Inventory, InventoryState, OpenInventory};
-use hyperion_utils::LifetimeHandle;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -69,7 +68,6 @@ impl Gui {
             let items = self.items.clone();
             registry.add_handler(Box::new(
                 move |event: &ClickSlotC2s<'_>,
-                      _: &dyn LifetimeHandle<'_>,
                       query: &mut PacketSwitchQuery<'_>| {
                     let world = query.world;
                     let button = event.mode;

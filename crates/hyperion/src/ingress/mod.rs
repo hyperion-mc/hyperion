@@ -24,12 +24,11 @@ use crate::{
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
     runtime::AsyncRuntime,
     simulation::{
-        AiTargetable, ChunkPosition, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name, Player,
-        Uuid, Velocity, Xp,
+        AiTargetable, ChunkPosition, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name, PacketState,
+        Player, Uuid, Velocity, Xp,
         animation::ActiveAnimation,
         entity_kind::EntityKind,
         metadata::MetadataPrefabs,
-        packet_state,
         skin::PlayerSkin,
     },
     storage::SkinHandler,
@@ -83,15 +82,15 @@ fn process_handshake(world: &World) {
             for packet in std::mem::take(&mut queue.Handshake) {
                 let entity = world.entity_from_id(packet.sender());
 
-                entity.remove(id::<packet_state::Handshake>());
-
                 // todo: check version is correct
+                // PacketState is an exclusive relationship, so adding the next state removes the
+                // handshake state.
                 match packet.next_state {
                     HandshakeNextState::Status => {
-                        entity.add(id::<packet_state::Status>());
+                        entity.add_enum(PacketState::Status);
                     }
                     HandshakeNextState::Login => {
-                        entity.add(id::<packet_state::Login>());
+                        entity.add_enum(PacketState::Login);
                     }
                 }
             }
@@ -135,7 +134,7 @@ fn process_status_request(world: &World) {
                     serde_json::to_string_pretty(&json).expect("json serialization should succeed");
 
                 let send = QueryResponseS2c {
-                    json: json.as_str(),
+                    json: json.as_str().into(),
                 };
 
                 info!("sent query response: {packet:?}");
@@ -187,7 +186,7 @@ fn process_login_hello(world: &World) {
                     let connection_id = packet.connection_id();
                     let entity = world.entity_from_id(sender);
 
-                    let username: Arc<str> = Arc::from(packet.username.0);
+                    let username: Arc<str> = Arc::from(packet.username.0.as_str());
                     let profile_id = packet.profile_id;
 
                     // Set compression
@@ -212,7 +211,7 @@ fn process_login_hello(world: &World) {
 
                     let pkt = LoginSuccessS2c {
                         uuid,
-                        username: Bounded(&username),
+                        username: Bounded(username.as_ref().into()),
                         properties: Cow::default(),
                     };
 
@@ -291,8 +290,7 @@ fn process_login_hello(world: &World) {
                         entity.set(skin);
                     }
 
-                    entity.remove(id::<packet_state::Login>());
-                    entity.add(id::<packet_state::Play>());
+                    entity.add_enum(PacketState::Play);
 
                     compose.io_buf().set_receive_broadcasts(connection_id);
                 }
@@ -303,7 +301,7 @@ fn process_login_hello(world: &World) {
 fn remove_player_from_visibility(world: &World) {
     world
         .observer::<flecs::OnRemove, ()>()
-        .with(id::<packet_state::Play>())
+        .with_enum(PacketState::Play)
         .each_entity(|entity, ()| {
             let world = entity.world();
 

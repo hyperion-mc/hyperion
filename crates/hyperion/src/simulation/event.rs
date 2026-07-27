@@ -2,7 +2,8 @@
 
 use flecs_ecs::{core::Entity, macros::Component};
 use glam::{IVec3, Vec3};
-use hyperion_utils::{Lifetime, RuntimeLifetime};
+use hyperion_utils::Lifetime;
+use valence_bytes::Utf8Bytes;
 use valence_generated::block::BlockState;
 use valence_protocol::{
     Hand, ItemStack,
@@ -27,7 +28,7 @@ pub struct ItemInteract {
 }
 
 pub struct ChatMessage {
-    pub msg: RuntimeLifetime<&'static str>,
+    pub msg: Utf8Bytes,
     pub by: Entity,
 }
 
@@ -116,7 +117,7 @@ pub struct PostureUpdate {
 }
 
 pub struct Command {
-    pub raw: RuntimeLifetime<&'static str>,
+    pub raw: Utf8Bytes,
     pub by: Entity,
 }
 

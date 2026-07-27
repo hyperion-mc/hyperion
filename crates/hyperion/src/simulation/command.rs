@@ -3,6 +3,7 @@ use flecs_ecs::{
     macros::Component,
 };
 use tracing::warn;
+use valence_bytes::Utf8Bytes;
 pub use valence_protocol::packets::play::command_tree_s2c::Parser;
 use valence_protocol::{
     VarInt,
@@ -30,7 +31,7 @@ impl Command {
 
     #[must_use]
     pub fn literal(
-        name: impl Into<String>,
+        name: impl Into<Utf8Bytes>,
         has_permission: fn(world: &World, caller: Entity) -> bool,
     ) -> Self {
         let name = name.into();
@@ -41,7 +42,7 @@ impl Command {
     }
 
     #[must_use]
-    pub fn argument(name: impl Into<String>, parser: Parser) -> Self {
+    pub fn argument(name: impl Into<Utf8Bytes>, parser: Parser) -> Self {
         let name = name.into();
         Self {
             data: NodeData::Argument {
@@ -159,7 +160,7 @@ mod tests {
             .entity()
             .set(Command {
                 data: NodeData::Literal {
-                    name: "test".to_string(),
+                    name: "test".into(),
                 },
                 has_permission: |_: _, _: _| true,
             })
@@ -171,7 +172,7 @@ mod tests {
         assert_eq!(packet.root_index, VarInt(0));
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "test".to_string(),
+            name: "test".into(),
         });
     }
 
@@ -187,7 +188,7 @@ mod tests {
             .entity()
             .set(Command {
                 data: NodeData::Literal {
-                    name: "parent".to_string(),
+                    name: "parent".into(),
                 },
                 has_permission: |_: _, _: _| true,
             })
@@ -197,7 +198,7 @@ mod tests {
             .entity()
             .set(Command {
                 data: NodeData::Literal {
-                    name: "child".to_string(),
+                    name: "child".into(),
                 },
                 has_permission: |_: _, _: _| true,
             })
@@ -210,10 +211,10 @@ mod tests {
         assert_eq!(packet.commands[0].children, vec![VarInt(1)]);
         assert_eq!(packet.commands[1].children, vec![VarInt(2)]);
         assert_eq!(packet.commands[1].data, NodeData::Literal {
-            name: "parent".to_string(),
+            name: "parent".into(),
         });
         assert_eq!(packet.commands[2].data, NodeData::Literal {
-            name: "child".to_string(),
+            name: "child".into(),
         });
     }
 
@@ -230,7 +231,7 @@ mod tests {
                 .entity()
                 .set(Command {
                     data: NodeData::Literal {
-                        name: format!("command_{i}"),
+                        name: format!("command_{i}").into(),
                     },
                     has_permission: |_: _, _: _| true,
                 })
