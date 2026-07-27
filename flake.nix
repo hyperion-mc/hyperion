@@ -192,7 +192,7 @@
             version = "0.5";
             processes = {
               game-server = {
-                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p \"$\{HYPERION_EVENT:-bedwars}\" -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
                 availability.restart = "on_failure";
               };
 
@@ -285,6 +285,22 @@
               '';
             };
 
+            # Super Smash Mobs, the second event. Same shape as bedwars: one
+            # game server per process, each binding its own port, so the two
+            # are selected at run time rather than sharing anything.
+            smash = {
+              deps = [ pkgs.git ];
+              text = ''
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
+                exec cargo run --profile release-full -p smash -- \
+                  --ip 0.0.0.0 --port 35565 \
+                  --root-ca-cert "$certs/root_ca.crt" \
+                  --cert "$certs/server.crt" \
+                  --private-key "$certs/server_private_key.pem" \
+                  "$@"
+              '';
+            };
+
             # rust-mc-bot reads its whole configuration from BOT_-prefixed
             # environment variables, so the address and count cannot be passed
             # positionally to the binary.
@@ -316,6 +332,15 @@
                 fi
                 cd "$root"
                 exec process-compose --config ${processComposeConfig} "$@"
+              '';
+            };
+
+            # `nix run .#dev` runs bedwars; this runs the same stack on smash.
+            smash-dev = {
+              deps = [ pkgs.process-compose pkgs.git ];
+              text = ''
+                export HYPERION_EVENT=smash
+                exec "${lib.getExe runners.dev}" "$@"
               '';
             };
           };

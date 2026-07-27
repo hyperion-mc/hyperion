@@ -560,7 +560,8 @@ pub mod configuration {
                         Some("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket")
                     }
                     Self::FinishConfiguration => Some(
-                        "net.minecraft.network.protocol.configuration.ServerboundFinishConfigurationPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ServerboundFinishConfigurationPacket",
                     ),
                     Self::KeepAlive => {
                         Some("net.minecraft.network.protocol.common.ServerboundKeepAlivePacket")
@@ -578,7 +579,8 @@ pub mod configuration {
                         "net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket",
                     ),
                     Self::AcceptCodeOfConduct => Some(
-                        "net.minecraft.network.protocol.configuration.ServerboundAcceptCodeOfConductPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ServerboundAcceptCodeOfConductPacket",
                     ),
                 }
             }
@@ -758,7 +760,8 @@ pub mod configuration {
                         Some("net.minecraft.network.protocol.common.ClientboundDisconnectPacket")
                     }
                     Self::FinishConfiguration => Some(
-                        "net.minecraft.network.protocol.configuration.ClientboundFinishConfigurationPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundFinishConfigurationPacket",
                     ),
                     Self::KeepAlive => {
                         Some("net.minecraft.network.protocol.common.ClientboundKeepAlivePacket")
@@ -770,7 +773,8 @@ pub mod configuration {
                         "net.minecraft.network.protocol.configuration.ClientboundResetChatPacket",
                     ),
                     Self::RegistryData => Some(
-                        "net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundRegistryDataPacket",
                     ),
                     Self::ResourcePackPop => Some(
                         "net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket",
@@ -785,7 +789,8 @@ pub mod configuration {
                         Some("net.minecraft.network.protocol.common.ClientboundTransferPacket")
                     }
                     Self::UpdateEnabledFeatures => Some(
-                        "net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundUpdateEnabledFeaturesPacket",
                     ),
                     Self::UpdateTags => {
                         Some("net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket")
@@ -794,7 +799,8 @@ pub mod configuration {
                         "net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks",
                     ),
                     Self::CustomReportDetails => Some(
-                        "net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket",
+                        "net.minecraft.network.protocol.common.\
+                         ClientboundCustomReportDetailsPacket",
                     ),
                     Self::ServerLinks => {
                         Some("net.minecraft.network.protocol.common.ClientboundServerLinksPacket")
@@ -806,7 +812,8 @@ pub mod configuration {
                         Some("net.minecraft.network.protocol.common.ClientboundShowDialogPacket")
                     }
                     Self::CodeOfConduct => Some(
-                        "net.minecraft.network.protocol.configuration.ClientboundCodeOfConductPacket",
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundCodeOfConductPacket",
                     ),
                 }
             }
@@ -1279,7 +1286,8 @@ pub mod play {
                         "net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket",
                     ),
                     Self::ConfigurationAcknowledged => Some(
-                        "net.minecraft.network.protocol.game.ServerboundConfigurationAcknowledgedPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundConfigurationAcknowledgedPacket",
                     ),
                     Self::ContainerButtonClick => Some(
                         "net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket",
@@ -1291,7 +1299,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ServerboundContainerClosePacket")
                     }
                     Self::ContainerSlotStateChanged => Some(
-                        "net.minecraft.network.protocol.game.ServerboundContainerSlotStateChangedPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundContainerSlotStateChangedPacket",
                     ),
                     Self::CookieResponse => Some(
                         "net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket",
@@ -1300,7 +1309,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket")
                     }
                     Self::DebugSubscriptionRequest => Some(
-                        "net.minecraft.network.protocol.game.ServerboundDebugSubscriptionRequestPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundDebugSubscriptionRequestPacket",
                     ),
                     Self::EditBook => {
                         Some("net.minecraft.network.protocol.game.ServerboundEditBookPacket")
@@ -1330,7 +1340,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Rot")
                     }
                     Self::MovePlayerStatusOnly => Some(
-                        "net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$StatusOnly",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundMovePlayerPacket$StatusOnly",
                     ),
                     Self::MoveVehicle => {
                         Some("net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket")
@@ -1369,7 +1380,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.common.ServerboundPongPacket")
                     }
                     Self::RecipeBookChangeSettings => Some(
-                        "net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundRecipeBookChangeSettingsPacket",
                     ),
                     Self::RecipeBookSeenRecipe => Some(
                         "net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket",
@@ -1426,7 +1438,8 @@ pub mod play {
                         "net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket",
                     ),
                     Self::TestInstanceBlockAction => Some(
-                        "net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundTestInstanceBlockActionPacket",
                     ),
                     Self::UseItemOn => {
                         Some("net.minecraft.network.protocol.game.ServerboundUseItemOnPacket")
@@ -2328,7 +2341,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ClientboundCooldownPacket")
                     }
                     Self::CustomChatCompletions => Some(
-                        "net.minecraft.network.protocol.game.ClientboundCustomChatCompletionsPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundCustomChatCompletionsPacket",
                     ),
                     Self::CustomPayload => {
                         Some("net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket")
@@ -2514,7 +2528,8 @@ pub mod play {
                         "net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket",
                     ),
                     Self::SelectAdvancementsTab => Some(
-                        "net.minecraft.network.protocol.game.ClientboundSelectAdvancementsTabPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSelectAdvancementsTabPacket",
                     ),
                     Self::ServerData => {
                         Some("net.minecraft.network.protocol.game.ClientboundServerDataPacket")
@@ -2532,10 +2547,12 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ClientboundSetBorderSizePacket")
                     }
                     Self::SetBorderWarningDelay => Some(
-                        "net.minecraft.network.protocol.game.ClientboundSetBorderWarningDelayPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetBorderWarningDelayPacket",
                     ),
                     Self::SetBorderWarningDistance => Some(
-                        "net.minecraft.network.protocol.game.ClientboundSetBorderWarningDistancePacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetBorderWarningDistancePacket",
                     ),
                     Self::SetCamera => {
                         Some("net.minecraft.network.protocol.game.ClientboundSetCameraPacket")
@@ -2550,7 +2567,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket")
                     }
                     Self::SetDefaultSpawnPosition => Some(
-                        "net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetDefaultSpawnPositionPacket",
                     ),
                     Self::SetDisplayObjective => Some(
                         "net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket",
@@ -2592,7 +2610,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ClientboundSetScorePacket")
                     }
                     Self::SetSimulationDistance => Some(
-                        "net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket",
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetSimulationDistancePacket",
                     ),
                     Self::SetSubtitleText => {
                         Some("net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket")
@@ -2667,7 +2686,8 @@ pub mod play {
                         Some("net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket")
                     }
                     Self::CustomReportDetails => Some(
-                        "net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket",
+                        "net.minecraft.network.protocol.common.\
+                         ClientboundCustomReportDetailsPacket",
                     ),
                     Self::ServerLinks => {
                         Some("net.minecraft.network.protocol.common.ClientboundServerLinksPacket")

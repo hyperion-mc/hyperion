@@ -5681,9 +5681,26 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 name = "smash"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "dotenvy",
+ "envy",
  "flecs_ecs",
  "glam 0.29.3",
+ "hyperion",
+ "hyperion-clap",
+ "hyperion-genmap",
+ "hyperion-inventory",
+ "hyperion-item",
+ "hyperion-permission",
+ "hyperion-utils",
  "proptest",
+ "rayon",
+ "serde",
+ "tikv-jemallocator",
+ "tracing",
+ "tracing-subscriber",
+ "valence_nbt 0.8.0 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
+ "valence_protocol 0.2.0-alpha.1+mc.1.20.1 (git+https://github.com/TestingPlant/valence?branch=feat-bytes)",
 ]
 
 [[package]]
