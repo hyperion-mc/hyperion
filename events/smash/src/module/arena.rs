@@ -13,6 +13,7 @@ use crate::{
     flecs_ext::WorldRefExt,
     module::{
         lives::{self, DeathCause, Eliminated, RespawnAt},
+        lobby::{Lobby, Phase},
         player::{Health, Player, Position},
     },
 };
@@ -80,6 +81,20 @@ impl Module for ArenaModule {
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();
+                    // The arena is only lethal while a match is running.
+                    // Mineplex got this for free because its hub was a separate
+                    // world; hyperion serves one set of chunks, so the hub is a
+                    // region of the same world and the kill plane would
+                    // otherwise reach it. Without this gate a player standing in
+                    // the lobby with a kill plane above them dies on the tick
+                    // they connect, four times, and is eliminated before the
+                    // game starts.
+                    if !matches!(
+                        world.cloned::<&Lobby>().phase,
+                        Phase::Preparing | Phase::Playing
+                    ) {
+                        continue;
+                    }
                     let arena = world.cloned::<&Arena>();
                     let mut doomed = Vec::new();
 

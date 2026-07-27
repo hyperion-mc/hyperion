@@ -6,7 +6,9 @@
 
 use flecs_ecs::prelude::*;
 use hyperion::{
-    simulation::{Uuid, event, metadata::living_entity::Health as HyperionHealth},
+    simulation::{
+        MovementTracking, Name, event, metadata::living_entity::Health as HyperionHealth,
+    },
     storage::EventQueue,
 };
 use hyperion_inventory::PlayerInventory;
@@ -16,7 +18,6 @@ use crate::{
     flecs_ext::EntityViewExt,
     module::{
         ability,
-        arena::Arena,
         damage::{self, DamageKind, Damaged},
         kit::{self, KitStats, Playing},
         knockback::Knockback,
@@ -35,21 +36,6 @@ pub struct InputModule;
 
 impl Module for InputModule {
     fn module(world: &World) {
-        // hyperion's join path reads `Position` with a hard `get`, so a player
-        // with none never reaches the Login packet and sits on "Joining
-        // world..." while the proxy happily reports them connected. Handing out
-        // an arena spawn point before the join runs is what makes the game
-        // joinable at all.
-        world
-            .observer::<flecs::OnSet, &Arena>()
-            .with(id::<Uuid>())
-            .without(id::<hyperion::simulation::Position>())
-            .each_entity(|entity, arena| {
-                entity.set(hyperion::simulation::Position::from(
-                    arena.spawn(*entity.id()),
-                ));
-            });
-
         // A hyperion player becomes a smash player. `Player` carries `With`
         // traits for every mirrored component, so this one add is what gives the
         // entity its Position, Facing, Health and the rest.
@@ -58,6 +44,43 @@ impl Module for InputModule {
             .with(id::<hyperion::simulation::Player>())
             .each_entity(|entity, ()| {
                 entity.set(player_id(entity.id())).add(Player::id());
+            });
+
+        // hyperion registers `MovementTracking` but never adds it to a player.
+        // Two things break as a result, and both look like something else:
+        // hyperion's own movement handler does a hard `get` on it and aborts the
+        // process on the first position packet, and `mirror.rs` names it as a
+        // query term, so the mirror matches nobody and every mirrored position
+        // stays at the origin.
+        //
+        // It has to be seeded with the player's real position, not `default()`.
+        // The movement handler treats a large step from `last_tick_position` as
+        // a cheat and teleports the player back to it, so a zeroed tracker drags
+        // everyone to (0, 0, 0) a tick after they join -- under the kill plane,
+        // which then reads as "fell out of bounds" the moment a match starts.
+        //
+        // This is a workaround for a hyperion bug, not a smash concern. The fix
+        // belongs in hyperion's join path; the diff is in the report.
+        world
+            .observer::<flecs::OnSet, &hyperion::simulation::Position>()
+            .without(id::<MovementTracking>())
+            .each_entity(|entity, position| {
+                entity.set(MovementTracking {
+                    last_tick_position: **position,
+                    was_on_ground: true,
+                    ..MovementTracking::default()
+                });
+            });
+
+        // The scoreboard and the death messages are built from `EntityView::name`,
+        // and an unnamed entity renders as an empty string, so a whole sidebar
+        // reads as bare life counts. hyperion learns the username during login;
+        // copying it onto the flecs name is what makes those lines legible.
+        world
+            .observer::<flecs::OnSet, &Name>()
+            .with(Player::id())
+            .each_entity(|entity, name| {
+                entity.set_name(name);
             });
 
         world

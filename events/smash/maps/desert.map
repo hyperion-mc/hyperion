@@ -1,0 +1,79 @@
+# Desert
+#
+# A Super Smash Mobs arena. The name and the author are the real map's;
+# the layout is not. Mineplex never published the world files, so this is a
+# reconstruction in the Desert theme -- sandstone terraces over sand -- and not
+# a copy of Genocide604's build.
+#
+# Mineplex's own map spec for SSM (mineplex.com/threads/super-smash-mobs.20592)
+# is followed exactly where it is specific: separate islands with gaps between
+# them, height differences between islands, no camping pockets, no random water
+# or lava, sixteen green spawn points and three red Smash Crystal points.
+#
+# Coordinates are local to this map's region.
+
+name Desert
+author Genocide604 (original build; layout here is a reconstruction)
+
+kill_y 20
+
+# --- the main island ------------------------------------------------------
+cylinder 0 64 0 16 1 minecraft:sand
+cylinder 0 62 0 16 2 minecraft:sandstone
+cone 0 61 0 15 12 minecraft:smooth_sandstone
+
+# --- four outer islands, each at a different height ------------------------
+cylinder 0 70 -40 10 1 minecraft:sand
+cylinder 0 68 -40 10 2 minecraft:sandstone
+cone 0 67 -40 9 9 minecraft:smooth_sandstone
+
+cylinder 0 58 40 10 1 minecraft:sand
+cylinder 0 56 40 10 2 minecraft:sandstone
+cone 0 55 40 9 9 minecraft:smooth_sandstone
+
+cylinder 40 66 0 11 1 minecraft:sand
+cylinder 40 64 0 11 2 minecraft:sandstone
+cone 40 63 0 10 10 minecraft:smooth_sandstone
+
+cylinder -40 62 0 11 1 minecraft:sand
+cylinder -40 60 0 11 2 minecraft:sandstone
+cone -40 59 0 10 10 minecraft:smooth_sandstone
+
+# --- two small high perches, reachable only by double jump ------------------
+cylinder 26 76 -26 5 1 minecraft:sand
+cylinder 26 74 -26 5 2 minecraft:sandstone
+cone 26 73 -26 4 6 minecraft:smooth_sandstone
+
+cylinder -26 54 26 5 1 minecraft:sand
+cylinder -26 52 26 5 2 minecraft:sandstone
+cone -26 51 26 4 6 minecraft:smooth_sandstone
+
+# --- obstacles, so the main island is not one flat circle -------------------
+box -9 65 -3 -7 68 3 minecraft:cut_sandstone
+box 7 65 -3 9 68 3 minecraft:cut_sandstone
+cylinder 0 65 -10 2 3 minecraft:chiseled_sandstone
+cylinder 0 65 10 2 3 minecraft:chiseled_sandstone
+
+
+# --- sixteen spawn points ---------------------------------------------------
+spawn -10 66 -10
+spawn 10 66 -10
+spawn -10 66 10
+spawn 10 66 10
+spawn 0 66 -13
+spawn 0 66 13
+spawn -3 72 -40
+spawn 3 72 -40
+spawn -3 60 40
+spawn 3 60 40
+spawn 40 68 -3
+spawn 40 68 3
+spawn -40 64 -3
+spawn -40 64 3
+spawn 26 78 -26
+spawn -26 56 26
+
+# --- three Smash Crystal points ---------------------------------------------
+crystal 0 68 0
+crystal 0 74 -40
+crystal 40 70 0
