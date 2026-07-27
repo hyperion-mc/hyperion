@@ -65,7 +65,8 @@ impl AbiToken {
                 "module linked its own copy of hyperion-hot-reload (anchor {:p} vs host \
                  {:p}). It therefore has its own flecs component-index counter and its own \
                  flecs C globals, which alias the host's silently. Build the module with \
-                 `-C prefer-dynamic` against hyperion-hot-reload-runtime.",
+                 `-C prefer-dynamic` so it links the hyperion-hot-reload dylib \
+                 rather than its rlib.",
                 self.anchor, host.anchor
             ));
         }
@@ -75,7 +76,7 @@ impl AbiToken {
 
 /// One developer-written migration: the old layout it accepts, and the reinterpretation.
 pub struct Migration {
-    /// Flecs path of the component, e.g. `demo_module::Health`.
+    /// Flecs symbol of the component, e.g. `demo_module::Health`.
     pub component: String,
     /// The layout the developer says the old bytes have. Checked against what the running
     /// world actually reports before a single byte is read.
@@ -94,7 +95,7 @@ pub struct ModuleDescriptor {
     pub register: fn(&World),
     pub migrations: Vec<Migration>,
     /// Components the developer vouches for by hand because they carry no reflection:
-    /// `(flecs path, version the developer bumps on every layout change)`.
+    /// `(flecs symbol, version the developer bumps on every layout change)`.
     pub opaque_versions: Vec<(String, u32)>,
 }
 

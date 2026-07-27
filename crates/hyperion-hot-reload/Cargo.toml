@@ -14,7 +14,7 @@ version.workspace = true
 # `cargo test` fail with "cannot satisfy dependencies so `memchr` only shows up once",
 # because the test harness wants std static while the dylib has it dynamic. Building a game
 # module without `-C prefer-dynamic` will therefore pick the rlib and get its own copy of
-# everything; `AbiToken` exists to catch exactly that, and `tests/abi.rs` proves it does.
+# everything; `AbiToken` exists to catch exactly that. See docs/hot-reload.md.
 [lib]
 crate-type = ["dylib", "rlib"]
 

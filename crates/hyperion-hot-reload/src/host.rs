@@ -61,14 +61,19 @@ pub struct Applied {
 /// Owns the live world's hot-reloadable modules.
 pub struct HotReloader {
     loaded: BTreeMap<String, Loaded>,
-    /// Every dylib ever loaded, deliberately never closed.
+    /// Paths of every dylib ever loaded. The libraries themselves are leaked, never closed.
     ///
-    /// flecs stores `dtor`/`move_dtor` function pointers into the module's text segment in
-    /// each component's type info, and there is no API to unset them. `dlclose` is in any
-    /// case a no-op on macOS and a deferred leak on glibc once a Rust dylib has registered
-    /// a thread-local destructor. Keeping the mapping alive turns a latent jump-into-
-    /// unmapped-memory into bounded address-space growth.
-    retained: Vec<libloading::Library>,
+    /// flecs stores `dtor` and `move_dtor` function pointers into a module's text segment
+    /// in each component's type info, and offers no API to unset them, so those pointers
+    /// outlive any teardown this crate can perform. Holding a `libloading::Library` is not
+    /// enough: its `Drop` calls `dlclose`, and a `HotReloader` dropped before the `World`
+    /// unmaps the images that the world's teardown is about to call into. That is not
+    /// theoretical -- it segfaulted at process exit with `EXC_BAD_ACCESS` on an unmapped
+    /// address, after a demo run whose output looked completely correct.
+    ///
+    /// So the handles are forgotten rather than stored. The cost is address-space growth
+    /// proportional to the number of reloads.
+    retained: Vec<std::path::PathBuf>,
 }
 
 impl Default for HotReloader {
@@ -110,9 +115,10 @@ impl HotReloader {
             let raw = unsafe { entry() };
             *unsafe { Box::from_raw(raw) }
         };
-        // Retained before any of its code runs, so an early return still leaves the
-        // mapping alive for whatever already holds a pointer into it.
-        self.retained.push(lib);
+        // Leaked before any of its code runs, so an early return still leaves the mapping
+        // alive for whatever already holds a pointer into it.
+        core::mem::forget(lib);
+        self.retained.push(path.to_owned());
 
         if let Some(reason) = descriptor.token.incompatibility() {
             return Err(LoadError::Abi(reason));
