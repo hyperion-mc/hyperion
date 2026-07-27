@@ -313,11 +313,12 @@ output that looks entirely correct, with the corruption one stack frame later.
 - **Semantic changes at identical layout.** `Health(u32)` in half-hearts becoming
   `Health(u32)` in whole hearts is invisible. No layout detector can see this; it needs a
   version bump the developer chooses to make.
-- **Data-carrying enums.** `#[flecs(meta)]` reflects a fieldless enum as its constants and
-  a payload enum as nothing useful. A payload type changing at constant size and unchanged
-  variant names would not be caught if such an enum ever reflected as `Enum`. Payload enums
-  in practice land in `Unknown` and are refused, but this rests on flecs' behaviour rather
-  than on a check of ours.
+- **Data-carrying enums — untested.** Only fieldless enums were tried. `Layout::Enum`
+  records constant names and order, which for a payload enum would not describe the payload
+  at all: a variant's payload type changing at constant size and unchanged variant names
+  would compare equal. Whether `#[flecs(meta)]` even accepts a payload enum, and whether one
+  reflects as `Enum` or falls through to `Unknown`, was not checked. Until it is, treat a
+  payload enum as unprotected and give it an `opaque_versions` entry.
 - **Explicit discriminant values.** `enum Mode { Idle, Busy }` to `{ Idle, Busy = 5 }` has
   the same constant names in the same order. flecs 0.2.1 does not tag those child entities
   with `EcsConstant` in a way this crate reads, so only names and order are compared.
