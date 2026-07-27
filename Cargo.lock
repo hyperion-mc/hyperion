@@ -3145,6 +3145,19 @@ dependencies = [
 [[package]]
 name = "hyperion-minecraft-proto"
 version = "0.1.0"
+dependencies = [
+ "hyperion-minecraft-proto-derive",
+ "serde_json",
+]
+
+[[package]]
+name = "hyperion-minecraft-proto-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
 
 [[package]]
 name = "hyperion-nerd-font"

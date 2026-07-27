@@ -16,4 +16,4 @@ pub mod wire;
 
 pub use data_component::DataComponent;
 pub use version::{MINECRAFT_VERSION, PROTOCOL_VERSION, WORLD_VERSION};
-pub use wire::{Field, Wire};
+pub use wire::{Constant, Field, Wire};

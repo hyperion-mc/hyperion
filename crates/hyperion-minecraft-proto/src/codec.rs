@@ -207,6 +207,22 @@ impl<'a> Reader<'a> {
         self.take(length)
     }
 
+    /// Read a length-prefixed byte array no longer than `max` bytes.
+    ///
+    /// # Errors
+    /// Returns [`Error::ListTooLong`] past `max`, and otherwise as
+    /// [`Reader::byte_array`].
+    pub fn byte_array_with_limit(&mut self, max: usize) -> Result<&'a [u8]> {
+        let bytes = self.byte_array()?;
+        if bytes.len() > max {
+            return Err(Error::ListTooLong {
+                length: bytes.len(),
+                max,
+            });
+        }
+        Ok(bytes)
+    }
+
     /// Read a UTF-8 string limited to [`MAX_STRING_LENGTH`] characters.
     ///
     /// # Errors
@@ -387,6 +403,20 @@ impl Writer {
         Ok(())
     }
 
+    /// Append a length-prefixed byte array no longer than `max` bytes.
+    ///
+    /// # Errors
+    /// Returns [`Error::ListTooLong`] past `max`.
+    pub fn byte_array_with_limit(&mut self, bytes: &[u8], max: usize) -> Result<()> {
+        if bytes.len() > max {
+            return Err(Error::ListTooLong {
+                length: bytes.len(),
+                max,
+            });
+        }
+        self.byte_array(bytes)
+    }
+
     /// Append a string limited to [`MAX_STRING_LENGTH`] characters.
     ///
     /// # Errors
@@ -415,4 +445,48 @@ impl Writer {
     pub fn uuid(&mut self, value: u128) {
         self.raw(&value.to_be_bytes());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Counts
+// ---------------------------------------------------------------------------
+
+/// Write a collection's element count, refusing one the reader would reject.
+///
+/// The server checks the count only on read (`ByteBufCodecs.writeCount`
+/// asserts, `readCount` throws). Checking on write as well turns a value that
+/// could never be delivered into an error here rather than a disconnect at the
+/// far end.
+///
+/// # Errors
+/// Returns [`Error::ListTooLong`] past `max`, or when the count does not fit
+/// in a `VarInt`.
+pub fn write_count(writer: &mut Writer, count: usize, max: Option<usize>) -> Result<()> {
+    if let Some(max) = max
+        && count > max
+    {
+        return Err(Error::ListTooLong { length: count, max });
+    }
+    let count = i32::try_from(count).map_err(|_| Error::ListTooLong {
+        length: count,
+        max: i32::MAX as usize,
+    })?;
+    writer.var_int(count);
+    Ok(())
+}
+
+/// Read a collection's element count.
+///
+/// # Errors
+/// Returns [`Error::NegativeLength`] for a negative count and
+/// [`Error::ListTooLong`] for one past `max`.
+pub fn read_count(reader: &mut Reader<'_>, max: Option<usize>) -> Result<usize> {
+    let count = reader.var_int()?;
+    let count = usize::try_from(count).map_err(|_| Error::NegativeLength(count))?;
+    if let Some(max) = max
+        && count > max
+    {
+        return Err(Error::ListTooLong { length: count, max });
+    }
+    Ok(count)
 }

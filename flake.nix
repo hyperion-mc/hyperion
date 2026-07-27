@@ -66,11 +66,14 @@
               pkg: nixpkgs.lib.hasPrefix "minecraft-" (nixpkgs.lib.getName pkg);
           };
 
-          minecraft = import ./nix/minecraft-data.nix { pkgs = minecraftPkgs; };
-
           rustToolchain = rustWith [ "rustfmt" "clippy" "rust-src" ];
           rustWithMiri = rustWith [ "rustfmt" "clippy" "rust-src" "miri" ];
           rustWithCoverage = rustWith [ "rustfmt" "clippy" "rust-src" "llvm-tools-preview" ];
+
+          minecraft = import ./nix/minecraft-data.nix {
+            pkgs = minecraftPkgs;
+            rustfmt = rustToolchain;
+          };
 
           cargoTools = [
             pkgs.cargo-deny
@@ -420,6 +423,7 @@
             # The committed generated sources must match what the pipeline
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
+            minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;
           };
 
