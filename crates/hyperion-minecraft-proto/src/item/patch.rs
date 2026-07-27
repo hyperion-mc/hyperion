@@ -39,7 +39,7 @@ impl<'a> DataComponentPatch<'a> {
 
     /// True when the patch neither adds nor removes anything.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 

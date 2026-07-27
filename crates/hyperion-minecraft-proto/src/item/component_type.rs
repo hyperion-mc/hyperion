@@ -774,128 +774,120 @@ impl ComponentType {
     #[must_use]
     pub fn shape(self) -> Shape {
         match self {
-            // no network codec; the persistent codec writes a tag
-            Self::CustomData => Shape::Nbt,
-            Self::MaxStackSize => Shape::VarInt,
-            Self::MaxDamage => Shape::VarInt,
-            Self::Damage => Shape::VarInt,
-            Self::Unbreakable => Shape::Unit,
+            // `custom_data`: no network codec; the persistent codec writes a tag
+            // `custom_name`: a text component, which is a tag on the wire
+            // `intangible_projectile`: no network codec; `Unit.CODEC` becomes an empty compound
+            // `map_decorations`: no network codec; the persistent codec writes a tag
+            // `debug_stick_state`: no network codec; the persistent codec writes a tag
+            // `bucket_entity_data`: `CustomData.STREAM_CODEC` is a bare compound tag
+            // `recipes`: no network codec; the persistent codec writes a tag
+            // `lock`: no network codec; the persistent codec writes a tag
+            // `container_loot`: no network codec; the persistent codec writes a tag
+            
+            Self::CustomData
+            | Self::CustomName
+            | Self::ItemName
+            | Self::IntangibleProjectile
+            | Self::MapDecorations
+            | Self::DebugStickState
+            | Self::BucketEntityData
+            | Self::Recipes
+            | Self::Lock
+            | Self::ContainerLoot => Shape::Nbt,
+            // `additional_trade_cost`: network-only; it has no persistent codec at all
+            
+            Self::MaxStackSize
+            | Self::MaxDamage
+            | Self::Damage
+            | Self::DamageType
+            | Self::Rarity
+            | Self::RepairCost
+            | Self::Enchantable
+            | Self::AdditionalTradeCost
+            | Self::Dye
+            | Self::MapId
+            | Self::MapPostProcessing
+            | Self::OminousBottleAmplifier
+            | Self::BaseColor
+            | Self::VillagerVariant
+            | Self::WolfVariant
+            | Self::WolfSoundVariant
+            | Self::WolfCollar
+            | Self::FoxVariant
+            | Self::SalmonSize
+            | Self::ParrotVariant
+            | Self::TropicalFishPattern
+            | Self::TropicalFishBaseColor
+            | Self::TropicalFishPatternColor
+            | Self::MooshroomVariant
+            | Self::RabbitVariant
+            | Self::PigVariant
+            | Self::PigSoundVariant
+            | Self::CowVariant
+            | Self::CowSoundVariant
+            | Self::ChickenVariant
+            | Self::ChickenSoundVariant
+            | Self::ZombieNautilusVariant
+            | Self::FrogVariant
+            | Self::HorseVariant
+            | Self::LlamaVariant
+            | Self::AxolotlVariant
+            | Self::CatVariant
+            | Self::CatSoundVariant
+            | Self::CatCollar
+            | Self::SheepColor
+            | Self::ShulkerColor => Shape::VarInt,
+            Self::Unbreakable | Self::CreativeSlotLock | Self::Glider => Shape::Unit,
             Self::UseEffects => USE_EFFECTS,
-            // a text component, which is a tag on the wire
-            Self::CustomName => Shape::Nbt,
-            Self::MinimumAttackCharge => Shape::Int,
-            Self::DamageType => Shape::VarInt,
-            Self::ItemName => Shape::Nbt,
-            Self::ItemModel => Shape::Str,
+            
+            Self::MinimumAttackCharge
+            | Self::DyedColor
+            | Self::MapColor
+            | Self::PotionDurationScale => Shape::Int,
+            Self::ItemModel | Self::TooltipStyle | Self::NoteBlockSound => Shape::Str,
             Self::Lore => Shape::List(&Shape::Nbt),
-            Self::Rarity => Shape::VarInt,
-            // enchantment id to level
-            Self::Enchantments => Shape::Map(&Shape::VarInt, &Shape::VarInt),
-            Self::CanPlaceOn => ADVENTURE_PREDICATE,
-            Self::CanBreak => ADVENTURE_PREDICATE,
+            // `enchantments`: enchantment id to level
+            Self::Enchantments | Self::StoredEnchantments => Shape::Map(&Shape::VarInt, &Shape::VarInt),
+            Self::CanPlaceOn | Self::CanBreak => ADVENTURE_PREDICATE,
             Self::AttributeModifiers => ATTRIBUTE_MODIFIERS,
             Self::CustomModelData => CUSTOM_MODEL_DATA,
             Self::TooltipDisplay => TOOLTIP_DISPLAY,
-            Self::RepairCost => Shape::VarInt,
-            Self::CreativeSlotLock => Shape::Unit,
             Self::EnchantmentGlintOverride => Shape::Byte,
-            // no network codec; `Unit.CODEC` becomes an empty compound
-            Self::IntangibleProjectile => Shape::Nbt,
             Self::Food => FOOD,
             Self::Consumable => CONSUMABLE,
-            Self::UseRemainder => STACK_TEMPLATE,
+            Self::UseRemainder | Self::SulfurCubeContent => STACK_TEMPLATE,
             Self::UseCooldown => USE_COOLDOWN,
-            Self::DamageResistant => Shape::HolderSet,
+            Self::DamageResistant | Self::Repairable | Self::ProvidesBannerPatterns => Shape::HolderSet,
             Self::Tool => TOOL,
             Self::Weapon => WEAPON,
             Self::AttackRange => ATTACK_RANGE,
-            Self::Enchantable => Shape::VarInt,
             Self::Equippable => EQUIPPABLE,
-            Self::Repairable => Shape::HolderSet,
-            Self::Glider => Shape::Unit,
-            Self::TooltipStyle => Shape::Str,
             Self::DeathProtection => Shape::List(&CONSUME_EFFECT),
             Self::BlocksAttacks => BLOCKS_ATTACKS,
             Self::PiercingWeapon => PIERCING_WEAPON,
             Self::KineticWeapon => KINETIC_WEAPON,
             Self::SwingAnimation => SWING_ANIMATION,
-            // network-only; it has no persistent codec at all
-            Self::AdditionalTradeCost => Shape::VarInt,
-            Self::StoredEnchantments => Shape::Map(&Shape::VarInt, &Shape::VarInt),
-            Self::Dye => Shape::VarInt,
-            Self::DyedColor => Shape::Int,
-            Self::MapColor => Shape::Int,
-            Self::MapId => Shape::VarInt,
-            // no network codec; the persistent codec writes a tag
-            Self::MapDecorations => Shape::Nbt,
-            Self::MapPostProcessing => Shape::VarInt,
-            Self::ChargedProjectiles => Shape::List(&STACK_TEMPLATE),
-            Self::BundleContents => Shape::List(&STACK_TEMPLATE),
+            Self::ChargedProjectiles | Self::BundleContents => Shape::List(&STACK_TEMPLATE),
             Self::PotionContents => POTION_CONTENTS,
-            Self::PotionDurationScale => Shape::Int,
             Self::SuspiciousStewEffects => SUSPICIOUS_STEW_EFFECTS,
             Self::WritableBookContent => Shape::List(&FILTERABLE_STR),
             Self::WrittenBookContent => WRITTEN_BOOK_CONTENT,
             Self::Trim => TRIM,
-            // no network codec; the persistent codec writes a tag
-            Self::DebugStickState => Shape::Nbt,
-            Self::EntityData => TYPED_ENTITY_DATA,
-            // `CustomData.STREAM_CODEC` is a bare compound tag
-            Self::BucketEntityData => Shape::Nbt,
-            Self::BlockEntityData => TYPED_ENTITY_DATA,
+            Self::EntityData | Self::BlockEntityData => TYPED_ENTITY_DATA,
             Self::Instrument => INSTRUMENT,
             Self::ProvidesTrimMaterial => TRIM_MATERIAL,
-            Self::OminousBottleAmplifier => Shape::VarInt,
             Self::JukeboxPlayable => JUKEBOX_PLAYABLE,
-            Self::ProvidesBannerPatterns => Shape::HolderSet,
-            // no network codec; the persistent codec writes a tag
-            Self::Recipes => Shape::Nbt,
             Self::LodestoneTracker => LODESTONE_TRACKER,
             Self::FireworkExplosion => FIREWORK_EXPLOSION,
             Self::Fireworks => FIREWORKS,
             Self::Profile => PROFILE,
-            Self::NoteBlockSound => Shape::Str,
             Self::BannerPatterns => BANNER_PATTERNS,
-            Self::BaseColor => Shape::VarInt,
             Self::PotDecorations => Shape::List(&Shape::VarInt),
             Self::Container => CONTAINER,
             Self::BlockState => Shape::Map(&Shape::Str, &Shape::Str),
             Self::Bees => BEES,
-            Self::SulfurCubeContent => STACK_TEMPLATE,
-            // no network codec; the persistent codec writes a tag
-            Self::Lock => Shape::Nbt,
-            // no network codec; the persistent codec writes a tag
-            Self::ContainerLoot => Shape::Nbt,
             Self::BreakSound => SOUND_EVENT,
-            Self::VillagerVariant => Shape::VarInt,
-            Self::WolfVariant => Shape::VarInt,
-            Self::WolfSoundVariant => Shape::VarInt,
-            Self::WolfCollar => Shape::VarInt,
-            Self::FoxVariant => Shape::VarInt,
-            Self::SalmonSize => Shape::VarInt,
-            Self::ParrotVariant => Shape::VarInt,
-            Self::TropicalFishPattern => Shape::VarInt,
-            Self::TropicalFishBaseColor => Shape::VarInt,
-            Self::TropicalFishPatternColor => Shape::VarInt,
-            Self::MooshroomVariant => Shape::VarInt,
-            Self::RabbitVariant => Shape::VarInt,
-            Self::PigVariant => Shape::VarInt,
-            Self::PigSoundVariant => Shape::VarInt,
-            Self::CowVariant => Shape::VarInt,
-            Self::CowSoundVariant => Shape::VarInt,
-            Self::ChickenVariant => Shape::VarInt,
-            Self::ChickenSoundVariant => Shape::VarInt,
-            Self::ZombieNautilusVariant => Shape::VarInt,
-            Self::FrogVariant => Shape::VarInt,
-            Self::HorseVariant => Shape::VarInt,
             Self::PaintingVariant => PAINTING_VARIANT,
-            Self::LlamaVariant => Shape::VarInt,
-            Self::AxolotlVariant => Shape::VarInt,
-            Self::CatVariant => Shape::VarInt,
-            Self::CatSoundVariant => Shape::VarInt,
-            Self::CatCollar => Shape::VarInt,
-            Self::SheepColor => Shape::VarInt,
-            Self::ShulkerColor => Shape::VarInt,
         }
     }
 }
