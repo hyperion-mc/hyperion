@@ -383,8 +383,6 @@
                 "sha256-3qUAXDHkeRFVfovZT+fW7VXW6aDteAiqCrLeCG/jd40=";
               "git+https://github.com/TestingPlant/valence?branch=feat-bytes#fb792dcb6669b64c5dc2366eb3d074b293def046" =
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
-              "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5" =
-                "sha256-BV6QgM5d5qanEGonbAV7iOhNDk4aW3ub3++DH7/DY5E=";
             };
           };
         in
