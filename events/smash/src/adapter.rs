@@ -19,17 +19,15 @@ use hyperion::{
     hyperion_minecraft_proto::{
         generated::packet_id::play::clientbound::PacketId,
         packets::play::{
-            clientbound::{SetActionBarText, SetDisplayObjective, SetTitleText},
-            player::{
-                DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore,
-            },
+            clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
+            player::{DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore},
         },
         text::Component,
     },
-    net::{Compose, ConnectionId, agnostic, protocol::Clientbound},
+    net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
     simulation::{PendingTeleportation, Velocity, metadata::living_entity::Health},
     valence_protocol::{
-        ItemKind, ItemStack, Particle, VarInt,
+        ItemKind, ItemStack, Particle,
         packets::play::{self, game_state_change_s2c::GameEventKind},
     },
 };
@@ -222,7 +220,7 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
                 return;
             }
             // hyperion's `sync_player_entity` turns a non-zero Velocity into one
-            // EntityVelocityUpdateS2c and zeroes it again, which is exactly the
+            // SetEntityMotion and zeroes it again, which is exactly the
             // "send one velocity packet" contract that file asks for.
             entity.get::<&mut Velocity>(|velocity| velocity.0 += delta);
         }
@@ -244,18 +242,19 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             }
             // Two writes, because they reach different audiences: the metadata
             // component is what other players see over the victim's head, and
-            // HealthUpdateS2c is the only thing that moves the victim's own bar.
+            // SetHealth is the only thing that moves the victim's own bar.
             entity.set(Health::new(health));
             let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
                 return;
             };
             let scaled = if max > 0.0 { health * 20.0 / max } else { 0.0 };
-            let packet = play::HealthUpdateS2c {
+            let packet = SetHealth {
                 health: scaled,
-                food: VarInt(20),
-                food_saturation: 5.0,
+                food: 20,
+                saturation: 5.0,
             };
-            let _unused = compose.unicast(&packet, connection);
+            let _unused =
+                protocol::send(compose, connection, PacketId::SetHealth.to_raw(), &packet);
         }
         Op::SetHotbar { player, items } => {
             let entity = world.entity_from_id(player);

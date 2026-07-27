@@ -363,6 +363,7 @@
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
                 player_port="$HYPERION_PLAYER_PORT"
+                server_port="$HYPERION_SERVER_PORT"
 
                 log="$(mktemp -t hyperion-e2e.XXXXXX)"
                 echo "stack log: $log"
@@ -381,10 +382,24 @@
                 # A cold run compiles two binaries, so the bound is generous. It
                 # is a bound rather than a sleep because a warm run is ready in
                 # seconds and should not pay for the cold one.
+                # Both ports, not just the player one. The proxy binds its
+                # listener immediately and retries the game server behind it, so
+                # a probe that only checks the player port lets the client
+                # connect while the game server is still compiling. The client
+                # then dies on a read timeout that reads exactly like a protocol
+                # bug, which cost an agent a full cycle to diagnose (ENG-10450).
                 deadline=$(( SECONDS + 900 ))
-                until python3 -c "import socket,sys; s=socket.socket(); s.settimeout(1); sys.exit(s.connect_ex(('127.0.0.1', $player_port)))"; do
+                until python3 -c "
+                import socket, sys
+                for port in ($player_port, $server_port):
+                    s = socket.socket()
+                    s.settimeout(1)
+                    if s.connect_ex(('127.0.0.1', port)) != 0:
+                        sys.exit(1)
+                sys.exit(0)
+                "; do
                   if [ "$SECONDS" -ge "$deadline" ]; then
-                    echo "stack never opened 127.0.0.1:$player_port; tail of $log:" >&2
+                    echo "stack never opened both 127.0.0.1:$player_port and 127.0.0.1:$server_port; tail of $log:" >&2
                     tail -40 "$log" >&2
                     exit 1
                   fi

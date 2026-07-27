@@ -88,6 +88,7 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.RegistryDataLoader;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.item.ItemStack;
@@ -350,7 +351,7 @@ public final class VanillaEncoder {
     }
 
     private void addEntity(RegistryAccess registries) {
-        put("entity_type_id.pig", Integer.toString(BuiltInRegistries.ENTITY_TYPE.getId(EntityType.PIG)));
+        put("entity_type_id.pig", Integer.toString(BuiltInRegistries.ENTITY_TYPE.getId(EntityTypes.PIG)));
 
         // The three rotations are `Mth.packDegrees` bytes on the wire, not
         // floats, so the packing is pinned separately from the packet: a Rust
@@ -370,7 +371,7 @@ public final class VanillaEncoder {
                 -2.25,
                 12.5f,
                 -45.5f,
-                EntityType.PIG,
+                EntityTypes.PIG,
                 7,
                 new Vec3(0.25, -0.5, 0.125),
                 179.9);
