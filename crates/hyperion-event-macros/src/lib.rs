@@ -71,8 +71,8 @@ impl EventType {
                 if let syn::GenericArgument::Lifetime(l) = generic_arg {
                     return Err(syn::Error::new(
                         l.span(),
-                        "lifetimes are not allowed in events, consider using \
-                         hyperion_utils::RuntimeLifetime to store references",
+                        "lifetimes are not allowed in events, store owned data (such as \
+                         valence_bytes::Utf8Bytes) instead of references",
                     ));
                 }
             }
