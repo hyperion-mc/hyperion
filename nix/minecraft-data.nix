@@ -281,6 +281,9 @@ let
   registryCodegen = pkgs.writers.writePython3Bin "generate-minecraft-registry-data" pythonWriterOptions
     (builtins.readFile ./generate-registry-data.py);
 
+  blockStateCodegen = pkgs.writers.writePython3Bin "generate-minecraft-block-states" pythonWriterOptions
+    (builtins.readFile ./generate-block-states.py);
+
   # The NBT blobs live next to the Rust that `include_bytes!`es them, so this
   # output is a whole directory rather than a single file.
   generatedRegistryData = pkgs.runCommand "hyperion-minecraft-registry-data-${pin.id}"
@@ -295,6 +298,25 @@ let
         --version ${pin.id} \
         --out $out
       find $out -name '*.rs' -exec rustfmt --edition 2024 {} +
+    '';
+
+  # blocks.json lists all 32366 states one by one; the generator collapses that
+  # to one row per block, which is only sound because it re-proves the two facts
+  # that make it sound on every run. A single file rather than a directory, so
+  # the staleness check below is a plain diff.
+  generatedBlockStates = pkgs.runCommand "hyperion-minecraft-block-states-${pin.id}"
+    {
+      nativeBuildInputs = [ blockStateCodegen rustfmt ];
+      meta.description = "Generated Rust block state table for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      generate-minecraft-block-states \
+        --blocks ${generatedData}/reports/blocks.json \
+        --version ${pin.id} \
+        --protocol ${toString pin.protocolVersion} \
+        --out $out/block_state.rs
+      rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/block_state.rs
     '';
 
   protocolJson = pkgs.runCommand "minecraft-protocol-${pin.id}.json"
@@ -449,6 +471,17 @@ let
     '';
   };
 
+  syncBlockStatesScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-block-states";
+    runtimeInputs = [ pkgs.coreutils pkgs.git ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      dest="$root/crates/hyperion-minecraft-proto/src/block_state.rs"
+      install -m 644 ${generatedBlockStates}/block_state.rs "$dest"
+      echo "synced $dest" >&2
+    '';
+  };
+
   # The fixtures are committed so `cargo test` runs without nix. That only
   # stays honest if something notices when the jar stops producing them.
   fixturesUpToDate = pkgs.runCommand "check-minecraft-encoder-fixtures"
@@ -494,6 +527,19 @@ let
       fi
     '';
 
+  blockStatesUpToDate = pkgs.runCommand "check-minecraft-block-states"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/src/block_state.rs}
+      if diff -u "$committed" ${generatedBlockStates}/block_state.rs > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed block state table is stale; run: nix run .#sync-minecraft-block-states" >&2
+        head -n 200 diff.txt >&2
+        exit 1
+      fi
+    '';
+
   # protocol.json is the input build.rs reads, so a stale copy is a stale
   # packet struct in every build that does not go through nix. Guarding it is
   # what lets the structs live in OUT_DIR instead of in the tree.
@@ -522,14 +568,18 @@ in
     encoderFixtures
     registryContents
     generatedRegistryData
+    generatedBlockStates
     extractor
     codegen
     registryCodegen
+    blockStateCodegen
     updateScript
     syncScript
     syncRegistryDataScript
+    syncBlockStatesScript
     generatedUpToDate
     registryDataUpToDate
+    blockStatesUpToDate
     fixturesUpToDate
     protocolJsonUpToDate
     ;

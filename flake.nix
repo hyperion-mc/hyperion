@@ -404,6 +404,7 @@
               update-minecraft-data = minecraft.updateScript;
               sync-minecraft-proto = minecraft.syncScript;
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
+              sync-minecraft-block-states = minecraft.syncBlockStatesScript;
               extract-minecraft-protocol = minecraft.extractor;
               # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
               # from the server's own codecs, so a new codec can be checked
@@ -423,6 +424,7 @@
             minecraft-encoder-fixtures = minecraft.encoderFixtures;
             minecraft-registry-contents = minecraft.registryContents;
             minecraft-registry-data-rust = minecraft.generatedRegistryData;
+            minecraft-block-states-rust = minecraft.generatedBlockStates;
           };
 
           # `nix flake check` builds every app, which is what proves each one
@@ -432,6 +434,7 @@
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
+            minecraft-block-states = minecraft.blockStatesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;
