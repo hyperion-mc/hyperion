@@ -463,6 +463,50 @@ impl Payload<'_> for Unbreakable {
     }
 }
 
+/// `minecraft:dyed_color`: the tint on leather armour.
+///
+/// `DyedItemColor.STREAM_CODEC` is a bare `ByteBufCodecs.INT`, four big-endian
+/// bytes of packed `0xRRGGBB`. The `show_in_tooltip` flag that used to ride
+/// alongside it moved into `minecraft:tooltip_display` in 1.21.5, so a value
+/// carried over from an older format has one field too many.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DyedColor(pub i32);
+
+impl Payload<'_> for DyedColor {
+    const TYPE: ComponentType = ComponentType::DyedColor;
+
+    fn from_value(bytes: &[u8], _nbt: &dyn NbtScan) -> Result<Self> {
+        exactly(bytes, |reader| reader.i32().map(Self))
+    }
+
+    fn to_value(&self, writer: &mut Writer) -> Result<()> {
+        writer.i32(self.0);
+        Ok(())
+    }
+}
+
+/// `minecraft:enchantment_glint_override`: force the enchanted shimmer on or
+/// off, whatever the item's enchantments say.
+///
+/// One byte, `ByteBufCodecs.BOOL`. This is the supported way to make a plain
+/// item glow; the older trick of attaching an empty enchantment list stopped
+/// working when enchantments became a component keyed by registry id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnchantmentGlintOverride(pub bool);
+
+impl Payload<'_> for EnchantmentGlintOverride {
+    const TYPE: ComponentType = ComponentType::EnchantmentGlintOverride;
+
+    fn from_value(bytes: &[u8], _nbt: &dyn NbtScan) -> Result<Self> {
+        exactly(bytes, |reader| reader.bool().map(Self))
+    }
+
+    fn to_value(&self, writer: &mut Writer) -> Result<()> {
+        writer.bool(self.0);
+        Ok(())
+    }
+}
+
 /// Matches the server's own clamp on collection preallocation
 /// (`ByteBufCodecs.collection`), so a bogus count cannot force a large
 /// allocation before the truncated read is noticed.
