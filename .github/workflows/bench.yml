@@ -71,7 +71,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run cargo bench
         if: steps.download.outcome == 'success'
-        run: cargo bench --bench=${{ matrix.benchmark }} -- compare /tmp/bench/${{ matrix.benchmark }} > bench_output_${{ matrix.benchmark }}.txt
+        # tee, not >: redirecting stdout to the file alone means a failure shows
+        # up in the log as a bare exit code with nothing to diagnose it.
+        run: |
+          set -o pipefail
+          cargo bench --bench=${{ matrix.benchmark }} -- \
+            compare /tmp/bench/${{ matrix.benchmark }} \
+            | tee bench_output_${{ matrix.benchmark }}.txt
       - name: remove /tmp/bench
         if: steps.download.outcome == 'success'
         run: rm -rf /tmp/bench
