@@ -190,7 +190,9 @@ enum Shape<'a> {
     Str,
     /// `&[u8]`, whose limit is a byte count rather than a character count.
     Bytes,
-    /// Anything else, which carries its own `Encode`/`Decode`.
+    /// Anything else. This is where the walk stops, so it is both the type
+    /// that carries its own `Encode`/`Decode` and the integer an encoding
+    /// attribute was reaching for.
     Opaque,
 }
 
@@ -312,6 +314,8 @@ fn decode_value(ty: &Type, options: &attr::Field) -> Result<TokenStream> {
     decode_reaching(ty, options.reach)
 }
 
+/// Decode a field by the same walk [`encode_reaching`] makes, so that the two
+/// stop at the same type and read what the other wrote.
 fn decode_reaching(ty: &Type, reach: attr::Reach) -> Result<TokenStream> {
     let krate = krate();
     match shape(ty) {
