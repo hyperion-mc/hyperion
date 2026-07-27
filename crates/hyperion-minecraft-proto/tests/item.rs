@@ -23,6 +23,29 @@
 //! `stone` 1, `gold_ingot` 936, `iron_pickaxe` 961, `diamond_sword` 964,
 //! `stick` 974, `paper` 1057, `bundle` 1065, `diamond` 926, `emerald` 927,
 //! `brick` 1054.
+//!
+//! # What is not covered
+//!
+//! 85 of the 111 component types have a captured value here. The other 26 are
+//! ones the harness cannot build, because their codecs reach a registry that
+//! only exists once a datapack is loaded:
+//!
+//! `enchantments`, `stored_enchantments`, `damage_type`, `trim`,
+//! `provides_trim_material`, `instrument`, `jukebox_playable`,
+//! `banner_patterns`, `provides_banner_patterns`, `painting/variant`,
+//! `villager/variant`, `wolf/variant`, `wolf/sound_variant`, `pig/variant`,
+//! `pig/sound_variant`, `cow/variant`, `cow/sound_variant`,
+//! `chicken/variant`, `chicken/sound_variant`, `zombie_nautilus/variant`,
+//! `frog/variant`, `cat/variant`, `cat/sound_variant`, plus `can_break`,
+//! `lock` and `container_loot`.
+//!
+//! Some of those are safer than the list suggests. `can_break` shares its
+//! shape with the captured `can_place_on`, `stored_enchantments` shares its
+//! shape with `enchantments`, `lock` and `container_loot` are plain tags like
+//! the captured `map_decorations`, and the twelve animal variants are bare
+//! registry ids identical to the fifteen that are captured. The ones with real
+//! residual risk are the holder-with-inline-value shapes: `trim`, `instrument`,
+//! `jukebox_playable`, `banner_patterns` and `painting/variant`.
 
 use hyperion_minecraft_proto::{
     Encode, Error, Reader, Writer,
@@ -417,4 +440,59 @@ fn a_count_larger_than_the_buffer_is_refused_immediately() {
         DataComponentPatch::decode(&mut reader, &TestNbt),
         Err(Error::UnexpectedEof { .. })
     ));
+}
+
+/// Every component the harness could build from built-in registries, in one
+/// patch: 84 set and 2 removed.
+///
+/// captured: a second Java program that sets each of these through
+/// `DataComponentPatch.Builder` and encodes the result once.
+///
+/// This is the strongest check in the file. Component values are not
+/// length-prefixed, so one wrong shape does not mislabel one value -- it moves
+/// the read head and every component after it decodes as nonsense or fails.
+/// Getting 84 in a row right, and re-encoding to the same 627 bytes, is hard to
+/// do by accident.
+const KITCHEN_SINK: &[&str] = &[
+    "5402000a0800016b00017600011002fa010303040501003f000000060800046e616d6507",
+    "3f666666090800046974656d0a03613a620b010800016c0c030e01010301090000000011",
+    "013fc000000201000101730100112233120002030c1304141501160a0017043e99999a01",
+    "183fcccccd01bb0501030341000000048f070219a8070300001a402000000103613a631c",
+    "010201014080000001013f80000002001d013ecccccd1f0a21029e07222303613a642401",
+    "034000000028010629052b052c004455662d007788992e0c30003101a8070300003201a8",
+    "0703000033000100aabbcc010901c80100010100010462726577343fa000003501003c36",
+    "0104706167650037057469746c650006617574686f720101080001700001390a003a640a",
+    "0800016b000176003b0a0800016b000176003f024301136d696e6563726166743a6f7665",
+    "72776f726c64000000400000300201440202000000010000000201000000030100450201",
+    "04010000000900000146000106706c617965720000000000004703613a65490e4a049e08",
+    "9e089e089e074b020001a8070300004c01046178697301794d01640a0800016b00017600",
+    "0a144ea807030000518f076d096e0a6c06550b5601570258015980025a055b075c015d63",
+    "6602680369021e3f000000404000003f80000040a000003dcccccd3e80000020048f0700",
+    "0103613a6601026400000001018f07253e4ccccd3f4000000142b40000003f8000003f00",
+    "00003f800000400000003f00000000018f0700260100018f0700270502010a3f80000040",
+    "0000000001033f0000003e8000003fc0000040200000018f07003c010a0800016b000176",
+    "001b012f0a00420900000000004f50",
+];
+
+#[test]
+fn eighty_four_components_in_one_patch() {
+    let vector = KITCHEN_SINK.concat();
+    let patch = round_trip(&vector);
+    assert_eq!(patch.added().len(), 84);
+    assert_eq!(
+        patch.removed(),
+        [ComponentType::Lock, ComponentType::ContainerLoot]
+    );
+
+    // Spot-check both ends, so a walk that happened to land back on its feet
+    // after a mistake still shows up.
+    assert_eq!(
+        patch.get::<CustomData<'_>>(&TestNbt).expect("present").expect("parse").0,
+        hex("0a0800016b00017600")
+    );
+    assert_eq!(
+        patch.get::<Damage>(&TestNbt).expect("present").expect("parse"),
+        Damage(3)
+    );
+    assert_eq!(patch.raw(ComponentType::AxolotlVariant), Some(&hex("02")[..]));
 }
