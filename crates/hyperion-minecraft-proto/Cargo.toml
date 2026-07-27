@@ -2,6 +2,15 @@
 serde_json.workspace = true
 
 [dependencies]
+# Framing needs a block cipher and a deflate implementation, and nothing else.
+# The protocol layouts stay hand-written against the jar; these two are the
+# standards the jar itself calls into (`AES/CFB8/NoPadding`, `java.util.zip`).
+aes = { workspace = true }
+cfb8 = { workspace = true }
+# `rust_backend` rather than a C one so this crate alone builds and tests with
+# no toolchain beyond cargo. `hyperion` asks for `zlib-ng`, and cargo's feature
+# unification means a workspace build gets that backend for both.
+flate2 = { workspace = true, features = ["rust_backend"] }
 hyperion-minecraft-proto-derive.workspace = true
 
 [lints]
