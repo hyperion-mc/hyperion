@@ -1,11 +1,18 @@
 use std::fmt::Debug;
 
-use bevy::prelude::*;
-use hyperion_utils::{Prev, track_prev};
-use tracing::error;
+use flecs_ecs::{
+    core::{
+        ComponentId, Entity, EntityView, EntityViewGet, IdOperations, SystemAPI, World,
+        WorldProvider, flecs, id,
+    },
+    macros::Component,
+};
 use valence_protocol::{Encode, VarInt};
 
-use crate::simulation::metadata::entity::{EntityFlags, Pose};
+use crate::{
+    Prev,
+    simulation::metadata::entity::{EntityFlags, Pose},
+};
 
 pub mod block_display;
 pub mod display;
@@ -14,83 +21,112 @@ pub mod item;
 pub mod living_entity;
 pub mod player;
 
-/// Set up a system to track metadata changes
-fn component_and_track<T>(app: &mut App)
-where
-    T: Component + Clone + PartialEq + Metadata + Default + Debug,
-{
-    track_prev::<T>(app);
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub struct MetadataPrefabs {
+    pub entity_base: Entity,
 
-    // TODO: This will silently ignore changes to the metadata between this system's execution and
-    // the time that Prev is updated. There should be a warning for this.
-    app.add_systems(
-        FixedPostUpdate,
-        |mut query: Query<'_, '_, (&Prev<T>, &T, &mut MetadataChanges)>| {
-            for (prev, current, mut metadata_changes) in &mut query {
-                if **prev != *current {
-                    metadata_changes.encode(current.clone());
-                }
-            }
-        },
-    );
+    pub display_base: Entity,
+    pub block_display_base: Entity,
+
+    pub item_base: Entity,
+
+    pub living_entity_base: Entity,
+    pub player_base: Entity,
 }
 
-fn initialize_entity(
-    trigger: Trigger<'_, OnInsert, EntityKind>,
-    query: Query<'_, '_, &EntityKind>,
-    mut commands: Commands<'_, '_>,
-) {
-    let kind = match query.get(trigger.target()) {
-        Ok(kind) => *kind,
-        Err(e) => {
-            error!("failed to initialize entity: query failed: {e}");
-            return;
-        }
+fn component_and_track<T>(world: &World) -> fn(&mut EntityView<'_>)
+where
+    T: ComponentId + Clone + PartialEq + Metadata + Default + flecs_ecs::core::DataComponent + Debug,
+{
+    world.component::<T>();
+    let type_name = core::any::type_name::<T>();
+
+    let system_name = format!("exchange_{type_name}").leak();
+
+    world
+        .system_named::<(
+            &mut (Prev, T),       //            (0)
+            &mut T,               //                  (1)
+            &mut MetadataChanges, //     (2)
+        )>(system_name)
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each(|(prev, current, metadata_changes)| {
+            if prev != current {
+                metadata_changes.encode(current.clone());
+                prev.clone_from(current);
+            }
+        });
+
+    let register = |view: &mut EntityView<'_>| {
+        view.set_pair::<Prev, _>(T::default()).set(T::default());
     };
 
-    let mut entity = commands.entity(trigger.target());
+    register
+}
 
-    entity.insert((
-        MetadataChanges::default(),
-        EntityFlags::default(),
-        Pose::default(),
-        entity::default_components(),
-    ));
+trait EntityViewExt {
+    fn component_and_track<T>(self) -> Self
+    where
+        T: ComponentId
+            + Clone
+            + PartialEq
+            + Metadata
+            + Default
+            + flecs_ecs::core::DataComponent
+            + Debug;
+}
 
-    match kind {
-        EntityKind::BlockDisplay => {
-            entity.insert((
-                display::default_components(),
-                block_display::default_components(),
-            ));
-        }
-        EntityKind::Player => {
-            entity.insert((
-                living_entity::default_components(),
-                player::default_components(),
-            ));
-        }
-        EntityKind::Item => {
-            entity.insert(item::default_components());
-        }
-        _ => {}
+impl EntityViewExt for EntityView<'_> {
+    fn component_and_track<T>(mut self) -> Self
+    where
+        T: ComponentId
+            + Clone
+            + PartialEq
+            + Metadata
+            + Default
+            + flecs_ecs::core::DataComponent
+            + Debug,
+    {
+        let world = self.world();
+        // todo: how this possible exclusive mut
+        component_and_track::<T>(&world)(&mut self);
+        self
     }
 }
 
-pub struct MetadataPlugin;
+#[must_use]
+pub fn register_prefabs(world: &World) -> MetadataPrefabs {
+    world.component::<MetadataChanges>();
 
-impl Plugin for MetadataPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_observer(initialize_entity);
-        component_and_track::<EntityFlags>(app);
-        component_and_track::<Pose>(app);
+    // these two are hand-written (not produced by `define_and_register_components!`) and their
+    // field types are all registered, so they can carry flecs reflection data.
+    world.component::<EntityFlags>().meta();
+    world.component::<Pose>().meta();
 
-        entity::register(app);
-        display::register(app);
-        block_display::register(app);
-        item::register(app);
-        living_entity::register(app);
-        player::register(app);
+    let entity_base = entity::register_prefab(world, None)
+        .add(id::<MetadataChanges>())
+        .component_and_track::<EntityFlags>()
+        .component_and_track::<Pose>()
+        .id();
+
+    let display_base = display::register_prefab(world, Some(entity_base)).id();
+    let block_display_base = block_display::register_prefab(world, Some(display_base)).id();
+
+    let item_base = item::register_prefab(world, Some(entity_base)).id();
+
+    let living_entity_base = living_entity::register_prefab(world, Some(entity_base)).id();
+    let player_base = player::register_prefab(world, Some(living_entity_base))
+        // .add(id::<Player>())
+        .add_enum(EntityKind::Player)
+        .id();
+
+    MetadataPrefabs {
+        entity_base,
+        display_base,
+        block_display_base,
+        item_base,
+        living_entity_base,
+        player_base,
     }
 }
 
@@ -103,6 +139,11 @@ use crate::simulation::metadata::r#type::MetadataType;
 ///
 /// Tracks updates within a gametick for the metadata
 pub struct MetadataChanges(Vec<u8>);
+
+unsafe impl Send for MetadataChanges {}
+
+// technically not Sync but I mean do we really care? todo: Indra
+unsafe impl Sync for MetadataChanges {}
 
 mod status;
 
@@ -154,6 +195,20 @@ macro_rules! define_metadata_component {
 }
 
 #[macro_export]
+macro_rules! register_component_ids {
+    ($world:expr, $entity:ident, $($name:ident),* $(,)?) => {
+        {
+            $(
+                let reg = $crate::simulation::metadata::component_and_track::<$name>($world);
+                reg(&mut $entity);
+            )*
+
+            $entity
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! define_and_register_components {
     {
         $(
@@ -165,26 +220,34 @@ macro_rules! define_and_register_components {
             $crate::define_metadata_component!($index, $name -> $type);
         )*
 
-        pub fn register(app: &mut App) {
-            $(
-                $crate::simulation::metadata::component_and_track::<$name>(app);
-            )*
-        }
-
+        // Create the registration function
         #[must_use]
-        pub fn default_components() -> impl bevy::ecs::bundle::Bundle {
-            (
-                $(
-                    $name::default(),
-                )*
+        pub fn register_prefab(world: &World, entity_base: Option<Entity>) -> EntityView<'_> {
+            // todo: add name
+            let mut entity = world.prefab();
+
+            if let Some(entity_base) = entity_base {
+                entity = entity.is_a(entity_base);
+            }
+
+            $crate::register_component_ids!(
+                world,
+                entity,
+                $($name),*
             )
         }
 
-        pub fn encode_non_default_components(entity: EntityRef<'_>, metadata: &mut $crate::simulation::metadata::MetadataChanges) {
+        /// Encodes every component of this group which is set on `entity` and differs from its
+        /// default. Used when a player subscribes to a channel and needs the full current state.
+        pub fn encode_non_default_components(
+            entity: flecs_ecs::core::EntityView<'_>,
+            metadata: &mut $crate::simulation::metadata::MetadataChanges,
+        ) {
+            use flecs_ecs::core::EntityViewGet;
             $(
-                if let Some(component) = entity.get::<$name>() {
+                entity.try_get::<&$name>(|component| {
                     metadata.encode_if_not_default(component.clone());
-                }
+                });
             )*
         }
     };
@@ -215,18 +278,20 @@ impl MetadataChanges {
         r#type.encode(&mut self.0).unwrap();
     }
 
-    pub fn encode_non_default_components(&mut self, entity: EntityRef<'_>) {
+    /// Encodes the full non-default metadata state of `entity`, so that a player who has just
+    /// started observing the entity sees it in its current state rather than its default one.
+    pub fn encode_non_default_components(&mut self, entity: EntityView<'_>) {
         let kind = entity
-            .get::<EntityKind>()
+            .try_get::<&EntityKind>(|kind| *kind)
             .expect("entity must have EntityKind component");
 
-        if let Some(component) = entity.get::<EntityFlags>() {
+        entity.try_get::<&EntityFlags>(|component| {
             self.encode_if_not_default(*component);
-        }
+        });
 
-        if let Some(component) = entity.get::<Pose>() {
+        entity.try_get::<&Pose>(|component| {
             self.encode_if_not_default(*component);
-        }
+        });
 
         entity::encode_non_default_components(entity, self);
 

@@ -13,7 +13,7 @@
 //! 7 -> VarInt (1)           TicksFrozenInPowderSnow(0)
 //! ```
 
-use bevy::prelude::*;
+use flecs_ecs::prelude::*;
 use valence_protocol::{Encode, VarInt};
 use valence_text::Text;
 
@@ -70,6 +70,7 @@ impl Default for TicksFrozenInPowderSnow {
 
 #[derive(Encode, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[derive(Component)]
+#[meta]
 #[repr(C)] // ideally this would be u8
 pub enum Pose {
     #[default]

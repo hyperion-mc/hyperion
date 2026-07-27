@@ -1,11 +1,12 @@
-use std::{borrow::Cow, collections::BTreeSet};
+use std::{borrow::Cow, collections::BTreeSet, ops::Index};
 
 use anyhow::Context;
-use bevy::prelude::*;
+use flecs_ecs::prelude::*;
 use glam::DVec3;
 use hyperion_crafting::{Action, CraftingRegistry, RecipeBookState};
 use hyperion_utils::EntityExt;
-use tracing::{error, info};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tracing::{info, instrument, warn};
 use valence_bytes::{CowBytes, CowUtf8Bytes, Utf8Bytes};
 use valence_protocol::{
     GameMode, Ident, PacketEncoder, RawBytes, VarInt,
@@ -13,13 +14,14 @@ use valence_protocol::{
     ident,
     packets::play::{
         self, GameJoinS2c,
+        player_position_look_s2c::PlayerPositionLookFlags,
         team_s2c::{CollisionRule, Mode, NameTagVisibility, TeamColor, TeamFlags},
     },
 };
 use valence_registry::{BiomeRegistry, RegistryCodec};
 use valence_text::IntoText;
 
-use crate::simulation::{MovementTracking, packet_state};
+use crate::simulation::{MovementTracking, PacketState, Pitch};
 
 mod list;
 pub use list::*;
@@ -28,258 +30,269 @@ use crate::{
     config::Config,
     net::{Channel, Compose, ConnectionId, DataBundle},
     simulation::{
-        PendingTeleportation, Position, Uuid, Yaw, skin::PlayerSkin, util::registry_codec_raw,
+        Comms, Name, Position, Uuid, Yaw,
+        command::{Command, ROOT_COMMAND, get_command_packet},
+        skin::PlayerSkin,
+        util::registry_codec_raw,
     },
+    util::{SendableQuery, SendableRef},
 };
 
-#[derive(Event)]
-struct ProcessPlayerJoin(Entity);
-
-fn add_process_player_join(
-    trigger: Trigger<'_, OnAdd, PlayerSkin>,
-    mut events: EventWriter<'_, ProcessPlayerJoin>,
-) {
-    events.write(ProcessPlayerJoin(trigger.target()));
-}
-
-fn process_player_join(
-    mut events: EventReader<'_, '_, ProcessPlayerJoin>,
-    compose: Res<'_, Compose>,
-    crafting_registry: Res<'_, CraftingRegistry>,
-    config: Res<'_, Config>,
-    target_query: Query<'_, '_, (&Uuid, &Name, &ConnectionId, &Position, &Yaw, &PlayerSkin)>,
-    others_query: Query<'_, '_, (Entity, &Uuid, &Name)>,
-    commands: ParallelCommands<'_, '_>,
-) {
+#[expect(
+    clippy::too_many_arguments,
+    reason = "todo: we should refactor at some point"
+)]
+#[instrument(skip_all, fields(name = name))]
+pub fn player_join_world(
+    entity: &EntityView<'_>,
+    compose: &Compose,
+    uuid: uuid::Uuid,
+    name: &str,
+    io: ConnectionId,
+    position: &Position,
+    yaw: &Yaw,
+    pitch: &Pitch,
+    world: &WorldRef<'_>,
+    skin: &PlayerSkin,
+    root_command: Entity,
+    query: &Query<(&Uuid, &Name)>,
+    crafting_registry: &CraftingRegistry,
+    config: &Config,
+) -> anyhow::Result<()> {
     static CACHED_DATA: once_cell::sync::OnceCell<bytes::Bytes> = once_cell::sync::OnceCell::new();
 
-    let crafting_registry = &crafting_registry;
+    let mut bundle = DataBundle::new(compose);
 
-    events.par_read().for_each(|event| {
-        let mut bundle = DataBundle::new(&compose);
+    let id = entity.minecraft_id();
 
-        let entity_id = event.0;
-        let id = entity_id.minecraft_id();
+    entity.set(MovementTracking {
+        received_movement_packets: 0,
+        last_tick_flying: false,
+        last_tick_position: **position,
+        fall_start_y: position.y,
+        server_velocity: DVec3::ZERO,
+        sprinting: false,
+        was_on_ground: false,
+    });
 
-        let (uuid, name, &connection_id, position, yaw, skin) = match target_query.get(entity_id) {
-            Ok(components) => components,
-            Err(e) => {
-                error!("player_join_world failed: {e}");
-                return;
-            }
-        };
+    let registry_codec = registry_codec_raw();
+    let codec = RegistryCodec::default();
 
-        let registry_codec = registry_codec_raw();
-        let codec = RegistryCodec::default();
+    let dimension_names: BTreeSet<Ident> = codec
+        .registry(BiomeRegistry::KEY)
+        .iter()
+        .map(|value| value.name.clone())
+        .collect();
 
-        let dimension_names: BTreeSet<Ident> = codec
-            .registry(BiomeRegistry::KEY)
-            .iter()
-            .map(|value| value.name.clone())
-            .collect();
+    let dimension_name = ident!("overworld");
+    // let dimension_name: Ident<Cow<str>> = chunk_layer.dimension_type_name().into();
 
-        let dimension_name = ident!("overworld");
-        // let dimension_name: Ident<Cow<str>> = chunk_layer.dimension_type_name().into();
+    let pkt = GameJoinS2c {
+        entity_id: id,
+        is_hardcore: false,
+        dimension_names: Cow::Owned(dimension_names),
+        registry_codec: Cow::Borrowed(registry_codec),
+        max_players: config.max_players.into(),
+        view_distance: VarInt(i32::from(config.view_distance)),
+        simulation_distance: config.simulation_distance.into(),
+        reduced_debug_info: false,
+        enable_respawn_screen: false,
+        dimension_name,
+        hashed_seed: 0,
+        game_mode: GameMode::Survival,
+        is_flat: false,
+        last_death_location: None,
+        portal_cooldown: 60.into(),
+        previous_game_mode: OptGameMode(Some(GameMode::Survival)),
+        dimension_type_name: ident!("minecraft:overworld"),
+        is_debug: false,
+    };
 
-        let pkt = GameJoinS2c {
-            entity_id: id,
-            is_hardcore: false,
-            dimension_names: Cow::Owned(dimension_names),
-            registry_codec: Cow::Borrowed(registry_codec),
-            max_players: config.max_players.into(),
-            view_distance: VarInt(i32::from(config.view_distance)),
-            simulation_distance: config.simulation_distance.into(),
-            reduced_debug_info: false,
-            enable_respawn_screen: false,
-            dimension_name,
-            hashed_seed: 0,
-            game_mode: GameMode::Survival,
-            is_flat: false,
-            last_death_location: None,
-            portal_cooldown: 60.into(),
-            previous_game_mode: OptGameMode(Some(GameMode::Survival)),
-            dimension_type_name: ident!("minecraft:overworld"),
-            is_debug: false,
-        };
+    bundle
+        .add_packet(&pkt)
+        .context("failed to send player spawn packet")?;
 
-        bundle.add_packet(&pkt).unwrap();
+    let center_chunk = position.to_chunk();
 
-        let center_chunk = position.to_chunk();
+    let pkt = play::ChunkRenderDistanceCenterS2c {
+        chunk_x: VarInt(i32::from(center_chunk.x)),
+        chunk_z: VarInt(i32::from(center_chunk.y)),
+    };
 
-        let pkt = play::ChunkRenderDistanceCenterS2c {
-            chunk_x: VarInt(i32::from(center_chunk.x)),
-            chunk_z: VarInt(i32::from(center_chunk.y)),
-        };
+    bundle.add_packet(&pkt)?;
 
-        bundle.add_packet(&pkt).unwrap();
+    let pkt = play::PlayerSpawnPositionS2c {
+        position: position.as_dvec3().into(),
+        angle: **yaw,
+    };
 
-        let pkt = play::PlayerSpawnPositionS2c {
-            position: position.as_dvec3().into(),
-            angle: **yaw,
-        };
+    bundle.add_packet(&pkt)?;
 
-        bundle.add_packet(&pkt).unwrap();
+    let cached_data = CACHED_DATA
+        .get_or_init(|| {
+            let compression_level = compose.global().shared.compression_threshold;
+            let mut encoder = PacketEncoder::new();
+            encoder.set_compression(compression_level);
 
-        let cached_data = CACHED_DATA
-            .get_or_init(|| {
-                let compression_level = compose.global().shared.compression_threshold;
-                let mut encoder = PacketEncoder::new();
-                encoder.set_compression(compression_level);
+            info!(
+                "caching world data for new players with compression level {compression_level:?}"
+            );
 
-                info!(
-                    "caching world data for new players with compression level \
-                     {compression_level:?}"
-                );
+            #[expect(
+                clippy::unwrap_used,
+                reason = "this is only called once on startup; it should be fine. we mostly care \
+                          about crashing during server execution"
+            )]
+            generate_cached_packet_bytes(&mut encoder, crafting_registry).unwrap();
 
-                #[expect(
-                    clippy::unwrap_used,
-                    reason = "this is only called once on startup; it should be fine. we mostly \
-                              care about crashing during server execution"
-                )]
-                generate_cached_packet_bytes(&mut encoder, crafting_registry).unwrap();
+            let bytes = encoder.take();
+            bytes.freeze()
+        })
+        .clone();
 
-                let bytes = encoder.take();
-                bytes.freeze()
-            })
-            .clone();
+    bundle.add_raw(&cached_data);
 
-        bundle.add_raw(&cached_data);
+    let text = play::GameMessageS2c {
+        chat: format!("{name} joined the world").into_cow_text(),
+        overlay: false,
+    };
 
-        let text = play::GameMessageS2c {
-            chat: format!("{name} joined the world").into_cow_text(),
-            overlay: false,
-        };
+    compose
+        .broadcast(&text)
+        .send()
+        .context("failed to send player join message")?;
 
-        compose.broadcast(&text).send().unwrap();
+    bundle.add_packet(&play::PlayerPositionLookS2c {
+        position: position.as_dvec3(),
+        yaw: **yaw,
+        pitch: **pitch,
+        flags: PlayerPositionLookFlags::default(),
+        teleport_id: 1.into(),
+    })?;
 
-        // Subtracts one to exclude current player
-        let others_len = others_query.iter().len() - 1;
-        let mut entries = Vec::with_capacity(others_len);
-        let mut all_player_names = Vec::with_capacity(others_len);
+    let mut entries = Vec::new();
+    let mut all_player_names = Vec::new();
 
-        let scope = tracing::info_span!("collect_others").entered();
-        for (current_entity, uuid, name) in others_query {
-            if entity_id == current_entity {
-                continue;
-            }
+    let count = query.iter_stage(world).count();
 
-            // Update player list entries
+    info!("sending skins for {count} players");
+
+    {
+        let scope = tracing::info_span!("generating_skins");
+        let _enter = scope.enter();
+        query.iter_stage(world).each(|(uuid, name)| {
+            // todo: in future, do not clone
+            let name = name.to_string();
+
             let entry = PlayerListEntry {
                 player_uuid: uuid.0,
-                username: CowUtf8Bytes::Borrowed(name),
-                properties: Cow::Owned(Vec::new()),
+                username: Utf8Bytes::from(name.clone()).into(),
+                // todo: eliminate alloc
+                properties: Cow::Owned(vec![]),
                 chat_data: None,
                 listed: true,
                 ping: 20,
                 game_mode: GameMode::Creative,
-                display_name: Some(name.to_string().into_cow_text()),
+                display_name: Some(name.clone().into_cow_text()),
             };
 
             entries.push(entry);
-            all_player_names.push(name.to_string());
-        }
-        scope.exit();
-
-        let all_player_names = all_player_names
-            .iter()
-            .map(String::as_str)
-            .map(Into::into)
-            .collect();
-
-        let actions = PlayerListActions::default()
-            .with_add_player(true)
-            .with_update_listed(true)
-            .with_update_display_name(true);
-
-        {
-            let _scope = tracing::info_span!("unicasting_player_list").entered();
-            bundle
-                .add_packet(&PlayerListS2c {
-                    actions,
-                    entries: Cow::Owned(entries),
-                })
-                .unwrap();
-        }
-
-        let PlayerSkin {
-            textures,
-            signature,
-        } = skin.clone();
-
-        // todo: in future, do not clone
-        let property = valence_protocol::profile::Property {
-            name: Utf8Bytes::from_static("textures"),
-            value: textures.into(),
-            signature: Some(signature.into()),
-        };
-
-        let property = &[property];
-
-        let singleton_entry = &[PlayerListEntry {
-            player_uuid: **uuid,
-            username: CowUtf8Bytes::Borrowed(name),
-            properties: Cow::Borrowed(property),
-            chat_data: None,
-            listed: true,
-            ping: 20,
-            game_mode: GameMode::Survival,
-            display_name: Some(name.to_string().into_cow_text()),
-        }];
-
-        let pkt = PlayerListS2c {
-            actions,
-            entries: Cow::Borrowed(singleton_entry),
-        };
-
-        compose.broadcast(&pkt).send().unwrap();
-        bundle.add_packet(&pkt).unwrap();
-
-        let player_name = vec![CowUtf8Bytes::Borrowed(name.as_str())];
-
-        compose
-            .broadcast(&play::TeamS2c {
-                team_name: Utf8Bytes::from_static("no_tag").into(),
-                mode: Mode::AddEntities {
-                    entities: player_name,
-                },
-            })
-            .exclude(connection_id)
-            .send()
-            .unwrap();
-
-        bundle
-            .add_packet(&play::TeamS2c {
-                team_name: Utf8Bytes::from_static("no_tag").into(),
-                mode: Mode::AddEntities {
-                    entities: all_player_names,
-                },
-            })
-            .unwrap();
-
-        bundle.unicast(connection_id).unwrap();
-
-        compose.io_buf().set_receive_broadcasts(connection_id);
-
-        let position = **position;
-        commands.command_scope(move |mut commands| {
-            commands.entity(entity_id).insert((
-                Channel,
-                MovementTracking {
-                    received_movement_packets: 0,
-                    last_tick_flying: false,
-                    last_tick_position: position,
-                    fall_start_y: position.y,
-                    server_velocity: DVec3::ZERO,
-                    sprinting: false,
-                    was_on_ground: false,
-                },
-                PendingTeleportation::new(position),
-                packet_state::Play(()),
-            ));
+            all_player_names.push(name);
         });
+    }
 
-        info!("{name} joined the world");
-    });
+    let all_player_names = all_player_names
+        .iter()
+        .map(String::as_str)
+        .map(CowUtf8Bytes::Borrowed)
+        .collect();
+
+    let actions = PlayerListActions::default()
+        .with_add_player(true)
+        .with_update_listed(true)
+        .with_update_display_name(true);
+
+    {
+        let scope = tracing::info_span!("unicasting_player_list");
+        let _enter = scope.enter();
+        bundle.add_packet(&PlayerListS2c {
+            actions,
+            entries: Cow::Owned(entries),
+        })?;
+    }
+
+    let PlayerSkin {
+        textures,
+        signature,
+    } = skin.clone();
+
+    // todo: in future, do not clone
+    let property = valence_protocol::profile::Property {
+        name: Utf8Bytes::from_static("textures"),
+        value: textures.into(),
+        signature: Some(signature.into()),
+    };
+
+    let property = &[property];
+
+    let singleton_entry = &[PlayerListEntry {
+        player_uuid: uuid,
+        username: CowUtf8Bytes::Borrowed(name),
+        properties: Cow::Borrowed(property),
+        chat_data: None,
+        listed: true,
+        ping: 20,
+        game_mode: GameMode::Survival,
+        display_name: Some(name.to_string().into_cow_text()),
+    }];
+
+    let pkt = PlayerListS2c {
+        actions,
+        entries: Cow::Borrowed(singleton_entry),
+    };
+
+    // todo: fix broadcasting on first tick; and this duplication can be removed!
+    compose
+        .broadcast(&pkt)
+        .send()
+        .context("failed to send player list packet")?;
+    bundle
+        .add_packet(&pkt)
+        .context("failed to send player list packet")?;
+
+    let player_name = vec![CowUtf8Bytes::Borrowed(name)];
+
+    compose
+        .broadcast(&play::TeamS2c {
+            team_name: Utf8Bytes::from_static("no_tag").into(),
+            mode: Mode::AddEntities {
+                entities: player_name,
+            },
+        })
+        .exclude(io)
+        .send()
+        .context("failed to send team packet")?;
+
+    bundle
+        .add_packet(&play::TeamS2c {
+            team_name: Utf8Bytes::from_static("no_tag").into(),
+            mode: Mode::AddEntities {
+                entities: all_player_names,
+            },
+        })
+        .context("failed to send team packet")?;
+
+    let command_packet = get_command_packet(world, root_command, Some(**entity));
+
+    bundle.add_packet(&command_packet)?;
+
+    bundle.unicast(io)?;
+
+    compose.io_buf().set_receive_broadcasts(io);
+
+    info!("{name} joined the world");
+
+    Ok(())
 }
 
 fn send_sync_tags(encoder: &mut PacketEncoder) -> anyhow::Result<()> {
@@ -365,12 +378,129 @@ fn generate_cached_packet_bytes(
 }
 
 #[derive(Component)]
-pub struct PlayerJoinPlugin;
+pub struct PlayerJoinModule;
 
-impl Plugin for PlayerJoinPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<ProcessPlayerJoin>();
-        app.add_observer(add_process_player_join);
-        app.add_systems(FixedUpdate, process_player_join);
+#[derive(Component)]
+pub struct RayonWorldStages {
+    stages: Vec<SendableRef<'static>>,
+}
+
+impl Index<usize> for RayonWorldStages {
+    type Output = WorldRef<'static>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.stages[index].0
+    }
+}
+
+impl Module for PlayerJoinModule {
+    fn module(world: &World) {
+        let query = world.new_query::<(&Uuid, &Name)>();
+
+        let query = SendableQuery(query);
+
+        let rayon_threads = rayon::current_num_threads();
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "realistically, this should never fail; 2^31 is very large"
+        )]
+        let rayon_threads = i32::try_from(rayon_threads).unwrap();
+
+        let stages = (0..rayon_threads)
+            // SAFETY: promoting world to static lifetime, system won't outlive world
+            .map(|i| unsafe { std::mem::transmute(world.stage(i)) })
+            .map(SendableRef)
+            .collect::<Vec<_>>();
+
+        world
+            .component::<RayonWorldStages>()
+            .add_trait::<flecs::Singleton>();
+        world.set(RayonWorldStages { stages });
+
+        let root_command = world.entity().set(Command::ROOT);
+
+        #[expect(
+            clippy::unwrap_used,
+            reason = "this is only called once on startup. We mostly care about crashing during \
+                      server execution"
+        )]
+        ROOT_COMMAND.set(root_command.id()).unwrap();
+
+        let root_command = root_command.id();
+
+        system!(
+            "player_joins",
+            world,
+            &Comms,
+            &Compose,
+            &CraftingRegistry,
+            &Config,
+            &RayonWorldStages,
+        )
+        .kind(id::<flecs::pipeline::PreUpdate>())
+        .each_iter(
+            move |_it, _, (comms, compose, crafting_registry, config, stages)| {
+                let span = tracing::info_span!("joins");
+                let _enter = span.enter();
+
+                let mut skins = Vec::new();
+
+                while let Ok(Some((entity, skin))) = comms.skins_rx.try_recv() {
+                    skins.push((entity, skin.clone()));
+                }
+
+                // todo: par_iter but bugs...
+                // for (entity, skin) in skins {
+                skins.into_par_iter().for_each(|(entity, skin)| {
+                    // if we are not in rayon context that means we are in a single-threaded context and 0 will work
+                    let idx = rayon::current_thread_index().unwrap_or(0);
+                    let world = &stages[idx];
+
+                    if !world.is_alive(entity) {
+                        return;
+                    }
+
+                    let entity = world.entity_from_id(entity);
+
+                    entity.get::<(&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>(
+                        |(uuid, name, position, yaw, pitch, &stream_id)| {
+                            let query = &query;
+                            let query = &query.0;
+                            entity.set_name(name);
+
+                            // if we get an error joining, we should kick the player
+                            if let Err(e) = player_join_world(
+                                &entity,
+                                compose,
+                                uuid.0,
+                                name,
+                                stream_id,
+                                position,
+                                yaw,
+                                pitch,
+                                world,
+                                &skin,
+                                root_command,
+                                query,
+                                crafting_registry,
+                                config,
+                            ) {
+                                warn!("player_join_world error: {e:?}");
+                                compose.io_buf().shutdown(stream_id);
+                            }
+                        },
+                    );
+
+                    let entity = world.entity_from_id(entity);
+                    entity.set(skin);
+
+                    // the player is now visible to other players through its own packet channel
+                    entity.add(id::<Channel>());
+
+                    entity.add_enum(PacketState::Play);
+                });
+            },
+        );
     }
 }

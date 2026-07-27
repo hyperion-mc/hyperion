@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use flecs_ecs::core::Entity;
 use valence_protocol::{ItemKind, ItemStack, nbt, nbt::Value};
 
 mod book;
@@ -152,7 +152,7 @@ impl ItemBuilder {
 
     pub fn handler(mut self, handler: Entity) -> Self {
         let nbt = self.nbt.get_or_insert_with(nbt::Compound::new);
-        let id = handler.to_bits();
+        let id = handler.0;
 
         // we are explicitly casting to i64 because although sign might be lost, when we read it back,
         // we will revert it back to a u64.

@@ -1,10 +1,12 @@
-use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
+use flecs_ecs::{
+    core::{Entity, EntityView, EntityViewGet, WorldProvider},
+    prelude::*,
+};
 use hyperion::net::{Compose, ConnectionId};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
-use tracing::error;
 
-use crate::plugin::vanish::Vanished;
+use crate::module::vanish::Vanished;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "vanish")]
@@ -12,39 +14,31 @@ use crate::plugin::vanish::Vanished;
 pub struct VanishCommand;
 
 impl MinecraftCommand for VanishCommand {
-    type State = SystemState<(
-        Query<
-            'static,
-            'static,
-            (
-                &'static ConnectionId,
-                &'static Name,
-                Option<&'static Vanished>,
-            ),
-        >,
-        Res<'static, Compose>,
-        Commands<'static, 'static>,
-    )>;
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
+        let world = system.world();
 
-    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
-        let (query, compose, mut commands) = state.get(world);
-
-        let (&connection_id, name, vanished) = match query.get(caller) {
-            Ok(data) => data,
-            Err(e) => {
-                error!("vanish command failed: query failed: {e}");
-                return;
-            }
-        };
-
-        let is_vanished = !vanished.is_some_and(Vanished::is_vanished);
-
-        commands.entity(caller).insert(Vanished::new(is_vanished));
-
-        let packet = hyperion::net::agnostic::chat(format!(
-            "§7[Admin] §f{name} §7is now {}",
-            if is_vanished { "vanished" } else { "visible" }
-        ));
-        compose.unicast(&packet, connection_id).unwrap();
+        world.get::<&Compose>(|compose| {
+            caller.entity_view(world).get::<(
+                Option<&Vanished>,
+                &ConnectionId,
+                &hyperion::simulation::Name,
+            )>(|(vanished, stream, name)| {
+                let is_vanished = vanished.is_some_and(Vanished::is_vanished);
+                let caller = caller.entity_view(world);
+                if is_vanished {
+                    caller.set(Vanished::new(false));
+                    let packet = hyperion::net::agnostic::chat(format!(
+                        "§7[Admin] §f{name} §7is now visible",
+                    ));
+                    compose.unicast(&packet, *stream).unwrap();
+                } else {
+                    caller.set(Vanished::new(true));
+                    let packet = hyperion::net::agnostic::chat(format!(
+                        "§7[Admin] §f{name} §7is now vanished",
+                    ));
+                    compose.unicast(&packet, *stream).unwrap();
+                }
+            });
+        });
     }
 }

@@ -1,11 +1,8 @@
 //! All the networking related code.
 
-use std::{
-    cell::{Cell, RefCell},
-    fmt::Debug,
-};
+use std::{cell::RefCell, fmt::Debug};
 
-use bevy::prelude::*;
+use flecs_ecs::prelude::*;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
@@ -157,12 +154,18 @@ impl ChannelId {
 
 impl From<Entity> for ChannelId {
     fn from(entity: Entity) -> Self {
-        Self::new(entity.id())
+        Self::new(bytemuck::cast(entity.minecraft_id()))
+    }
+}
+
+impl From<EntityView<'_>> for ChannelId {
+    fn from(entity: EntityView<'_>) -> Self {
+        Self::from(*entity.id())
     }
 }
 
 /// A singleton that can be used to compose and encode packets.
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Compose {
     compression_lvl: CompressionLvl,
     compressor: ThreadLocal<RefCell<libdeflater::Compressor>>,
@@ -375,18 +378,10 @@ pub struct IoBuf {
     // system_on: ThreadLocal<Cell<u32>>,
     // broadcast_buffer: ThreadLocal<RefCell<BytesMut>>,
     temp_buffer: ThreadLocal<RefCell<BytesMut>>,
-    idx: ThreadLocal<Cell<u16>>,
     egress_comms: FxHashMap<ProxyId, EgressComm>,
 }
 
 impl IoBuf {
-    pub fn fetch_add_idx(&self) -> u16 {
-        let cell = self.idx.get_or_default();
-        let result = cell.get();
-        cell.set(result + 1);
-        result
-    }
-
     pub(crate) fn add_proxy(&mut self, proxy_id: ProxyId, egress_comm: EgressComm) {
         let already_exists = self.egress_comms.insert(proxy_id, egress_comm).is_some();
 

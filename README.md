@@ -8,7 +8,8 @@
 Hyperion is a **Minecraft game engine** that can have 10,000+ players in one world. Our pilot event hopes to break the PvP Guinness World
 Record of ([8825 by
 EVE Online](https://www.guinnessworldrecords.com/world-records/105603-largest-videogame-pvp-battle)). The
-architecture is ECS-driven using [Bevy](https://bevy.org/).
+architecture is ECS-driven using [flecs](https://www.flecs.dev/flecs/) via
+[Flecs-Rust](https://github.com/Indra-db/Flecs-Rust).
 
 > [!NOTE]  
 > You can join the test server in 1.20.1 at `hyperion-test.duckdns.org`

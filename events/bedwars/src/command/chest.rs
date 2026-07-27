@@ -1,6 +1,9 @@
-use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
-use hyperion::{ItemKind, ItemStack, simulation::entity_kind::EntityKind};
+use flecs_ecs::core::{Builder, Entity, EntityView, QueryAPI, WorldProvider};
+use hyperion::{
+    ItemKind, ItemStack,
+    simulation::{Spawn, entity_kind::EntityKind},
+};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use hyperion_gui::Gui;
 use hyperion_inventory::{Inventory, ItemSlot};
@@ -13,53 +16,54 @@ use valence_protocol::packets::play::open_screen_s2c::WindowType;
 pub struct ChestCommand;
 
 impl MinecraftCommand for ChestCommand {
-    type State = SystemState<(
-        Query<'static, 'static, &'static Gui>,
-        Commands<'static, 'static>,
-    )>;
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
+        let world = system.world();
 
-    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
-        let (query, mut commands) = state.get(world);
-
-        for gui in &query {
+        let gui = world.query::<&Gui>().build();
+        let mut found = false;
+        gui.each_iter(|_it, _, gui| {
             if gui.id == 28 {
-                gui.open_deferred(&mut commands, caller);
-                return;
+                gui.open(system, caller);
+                found = true;
             }
-        }
-
-        debug!("Creating new GUI");
-        let mut gui_inventory =
-            Inventory::new(27, "Test Chest".to_string(), WindowType::Generic9x3, false);
-
-        let item = ItemStack::new(ItemKind::GoldIngot, 64, None);
-
-        gui_inventory.set(13, item).unwrap();
-        gui_inventory
-            .set(14, ItemStack::new(ItemKind::Diamond, 64, None))
-            .unwrap();
-        gui_inventory
-            .set(15, ItemStack::new(ItemKind::IronIngot, 64, None))
-            .unwrap();
-        gui_inventory
-            .set(16, ItemStack::new(ItemKind::Coal, 64, None))
-            .unwrap();
-        gui_inventory
-            .set(17, ItemStack::new(ItemKind::Emerald, 64, None))
-            .unwrap();
-        gui_inventory
-            .set(18, ItemStack::new(ItemKind::GoldIngot, 64, None))
-            .unwrap();
-        gui_inventory
-            .set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)))
-            .unwrap();
-
-        commands.queue(move |world: &mut World| {
-            let gui = Gui::new(gui_inventory, world, 28);
-
-            gui.open(world, caller);
-
-            world.spawn((EntityKind::Gui, gui));
         });
+
+        if !found {
+            debug!("Creating new GUI");
+            let mut gui_inventory =
+                Inventory::new(27, "Test Chest".to_string(), WindowType::Generic9x3, false);
+
+            let item = ItemStack::new(ItemKind::GoldIngot, 64, None);
+
+            gui_inventory.set(13, item).unwrap();
+            gui_inventory
+                .set(14, ItemStack::new(ItemKind::Diamond, 64, None))
+                .unwrap();
+            gui_inventory
+                .set(15, ItemStack::new(ItemKind::IronIngot, 64, None))
+                .unwrap();
+            gui_inventory
+                .set(16, ItemStack::new(ItemKind::Coal, 64, None))
+                .unwrap();
+            gui_inventory
+                .set(17, ItemStack::new(ItemKind::Emerald, 64, None))
+                .unwrap();
+            gui_inventory
+                .set(18, ItemStack::new(ItemKind::GoldIngot, 64, None))
+                .unwrap();
+            gui_inventory
+                .set_slot(19, ItemSlot::new(ItemKind::Diamond, 64, None, Some(true)))
+                .unwrap();
+
+            let gui = Gui::new(gui_inventory, &world, 28);
+
+            gui.open(system, caller);
+            // add the gui to the world
+            world
+                .entity()
+                .add_enum(EntityKind::Gui)
+                .set(gui)
+                .enqueue(Spawn);
+        }
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::{Context, ensure};
-use bevy::prelude::*;
+use flecs_ecs::macros::Component;
 use bytes::{Bytes, BytesMut};
 use itertools::Either;
 use packet_channel::RawPacket;

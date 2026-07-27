@@ -6,7 +6,7 @@
               casing"
 )]
 
-use bevy::{ecs::batching::BatchingStrategy, prelude::*};
+use flecs_ecs::prelude::*;
 use paste::paste;
 use tracing::error;
 use valence_protocol::Packet as _;
@@ -22,11 +22,11 @@ mod __private {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use bevy::prelude::*;
+    use flecs_ecs::macros::Component;
     use thread_local::ThreadLocal;
     use tracing::warn;
 
-    #[derive(Default, Resource)]
+    #[derive(Default, Component)]
     pub struct PacketIdGenerator(AtomicU64);
 
     impl PacketIdGenerator {
@@ -42,36 +42,31 @@ mod __private {
         }
     }
 
-    #[derive(Default, Resource)]
+    #[derive(Default, Component)]
     pub struct Decompressor(pub ThreadLocal<RefCell<libdeflater::Decompressor>>);
 }
 
-mod buffers {
+/// The decoded packets of each protocol state, waiting to be processed.
+///
+/// There is one singleton per protocol state. Decoding systems append to them concurrently
+/// ([`boxcar::Vec::push`] only needs `&self`) during [`flecs::pipeline::PreUpdate`], and the
+/// systems which act on the packets take the contents with [`std::mem::take`] during
+/// [`flecs::pipeline::OnUpdate`].
+///
+/// hyperion's own [`crate::storage::Events`] queue is not usable here because its
+/// `define_events!` registration cannot express the `packet::<state>::<packet>` paths generated
+/// below.
+pub mod queues {
+    use flecs_ecs::macros::Component;
+
     use crate::simulation::packet;
 
     hyperion_packet_macros::for_each_state! {
         #{
             #for_each_packet! {
-                #[derive(Default)]
+                #[derive(Default, Component)]
                 pub struct #state {
                     #{pub #packet_name: boxcar::Vec<packet::#state::#packet_name>,}
-                }
-            }
-        }
-    }
-}
-
-mod writers {
-    use bevy::{ecs::system::SystemParam, prelude::*};
-
-    use crate::simulation::packet;
-
-    hyperion_packet_macros::for_each_state! {
-        #{
-            #for_each_packet! {
-                #[derive(SystemParam)]
-                pub struct #state<'w> {
-                    #{pub #packet_name: EventWriter<'w, packet::#state::#packet_name>,}
                 }
             }
         }
@@ -107,118 +102,120 @@ fn try_next_frame(
 
 hyperion_packet_macros::for_each_state! {
     #{
-        pub fn #state(
-            mut query: Query<
-            '_,
-            '_,
-            (
-                Entity,
-                &ConnectionId,
-                &PacketDecoder,
-                &mut packet_channel::Receiver,
-            ),
-            paste! { With<packet_state::[< #state:camel >]> }
-            >,
-            compose: Res<'_, Compose>,
-            packet_id_generator: Res<'_, __private::PacketIdGenerator>,
-            decompressor: Res<'_, __private::Decompressor>,
-            mut writers: writers::#state<'_>,
-        ) {
-            let compose = &compose;
-            let packet_id_generator = &packet_id_generator;
-            let buffers = buffers::#state::default();
+        paste! {
+            fn [<register_ #state>](world: &World) {
+                world
+                    .component::<queues::#state>()
+                    .add_trait::<flecs::Singleton>();
+                world.set(queues::#state::default());
 
-            // Fill buffers
-            let scope = tracing::info_span!("fill_buffers").entered();
-            query.par_iter_mut().batching_strategy(BatchingStrategy {
-                batch_size_limits: 1..128,
-                batches_per_thread: 1,
-            }).for_each(|(sender, &connection_id, decoder, receiver)| {
-                let receiver = receiver.into_inner();
-                let mut decompressor = decompressor.0.get_or_default().borrow_mut();
-
-                loop {
-                    let Some(frame) = try_next_frame(
+                world
+                    .system_named::<(
+                        &Compose,
+                        &__private::PacketIdGenerator,
+                        &__private::Decompressor,
+                        &queues::#state,
+                        &ConnectionId,
+                        &PacketDecoder,
+                        &mut packet_channel::Receiver,
+                    )>(stringify!([<decode_ #state>]))
+                    .with(id::<packet_state::[<#state:camel>]>())
+                    .kind(id::<flecs::pipeline::PreUpdate>())
+                    .par_each_entity(|entity, (
                         compose,
+                        packet_id_generator,
+                        decompressor,
+                        queue,
                         connection_id,
                         decoder,
-                        &mut decompressor,
                         receiver,
-                    ) else {
-                        break;
-                    };
+                    )| {
+                        let sender = entity.id();
+                        let connection_id = *connection_id;
+                        let mut decompressor = decompressor.0.get_or_default().borrow_mut();
 
-                    let frame_id = frame.id;
+                        loop {
+                            let Some(frame) = try_next_frame(
+                                compose,
+                                connection_id,
+                                decoder,
+                                &mut decompressor,
+                                receiver,
+                            ) else {
+                                break;
+                            };
 
-                    #for_each_packet! {
-                        let result: anyhow::Result<()> = match frame_id {
-                            #{
-                                #valence_packet::ID => {
-                                    match frame.decode::<#static_valence_packet>() {
-                                        Ok(data) => {
-                                            buffers.#packet_name.push(Packet::new(
-                                                sender,
-                                                connection_id,
-                                                packet_id_generator.next(),
-                                                data
-                                            ));
-                                            Ok(())
+                            let frame_id = frame.id;
+
+                            #for_each_packet! {
+                                let result: anyhow::Result<()> = match frame_id {
+                                    #{
+                                        #valence_packet::ID => {
+                                            match frame.decode::<#static_valence_packet>() {
+                                                Ok(data) => {
+                                                    queue.#packet_name.push(Packet::new(
+                                                        sender,
+                                                        connection_id,
+                                                        packet_id_generator.next(),
+                                                        data
+                                                    ));
+                                                    Ok(())
+                                                },
+                                                Err(e) => Err(e)
+                                            }
                                         },
-                                        Err(e) => Err(e)
                                     }
-                                },
+                                    _ => {
+                                        Err(anyhow::Error::msg("invalid packet id"))
+                                    }
+                                };
                             }
-                            _ => {
-                                Err(anyhow::Error::msg("invalid packet id"))
+
+                            if let Err(e) = result {
+                                // The call to error! is placed outside of the match statement to help reduce
+                                // compile times by reducing code duplication from the expansion of the error!
+                                // macro
+                                error!("error while decoding packet (id: {frame_id}): {e}");
+                                compose.io_buf().shutdown(connection_id);
+                                break;
                             }
-                        };
-                    }
 
-                    if let Err(e) = result {
-                        // The call to error! is placed outside of the match statement to help reduce
-                        // compile times by reducing code duplication from the expansion of the error!
-                        // macro
-                        error!("error while decoding packet (id: {frame_id}): {e}");
-                        compose.io_buf().shutdown(connection_id);
-                        break;
-                    }
-
-                    if may_transition::#state {
-                        // The packet handler for this packet might change the player to
-                        // another packet state, so more packets cannot be decoded at this
-                        // moment
-                        break;
-                    }
-                }
-            });
-            scope.exit();
-
-            // Copy buffers to the EventWriters
-            let scope = tracing::info_span!("write_events").entered();
-            #for_each_packet! {
-                #{
-                    writers.#packet_name.write_batch(buffers.#packet_name);
-                }
+                            if may_transition::#state {
+                                // The packet handler for this packet might change the player to
+                                // another packet state, so more packets cannot be decoded at this
+                                // moment
+                                break;
+                            }
+                        }
+                    });
             }
-            scope.exit();
         }
     }
 }
 
-pub struct DecodePlugin;
+#[derive(Component)]
+pub struct DecodeModule;
 
-impl Plugin for DecodePlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(__private::PacketIdGenerator::default());
-        app.insert_resource(__private::Decompressor::default());
+impl Module for DecodeModule {
+    fn module(world: &World) {
+        world.component::<packet_channel::Receiver>();
+
+        world
+            .component::<__private::PacketIdGenerator>()
+            .add_trait::<flecs::Singleton>();
+        world.set(__private::PacketIdGenerator::default());
+
+        world
+            .component::<__private::Decompressor>()
+            .add_trait::<flecs::Singleton>();
+        world.set(__private::Decompressor::default());
+
         hyperion_packet_macros::for_each_state! {
-            app.add_systems(
-                FixedUpdate, (
-                    #{
-                        #state,
-                    }
-                )
-            );
+            #{
+                paste! {
+                    [<register_ #state>](world);
+                }
+            }
         }
     }
 }
