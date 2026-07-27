@@ -6,7 +6,12 @@ on:
     branches: [ main ]
 
 env:
-  RUSTFLAGS: -Clinker=/usr/bin/clang -Clink-arg=--ld-path=/usr/local/bin/mold -Ctarget-cpu=native -Zshare-generics=y -Zthreads=0
+  # No -Ctarget-cpu=native: the compare job runs a baseline binary built by the
+  # export job on a different runner, and hosted runners are not a uniform CPU
+  # pool, so a baseline compiled for one microarchitecture dies with SIGILL on
+  # another. x86-64-v3 is the common floor across the current fleet and keeps
+  # the two builds comparing like with like.
+  RUSTFLAGS: -Clinker=/usr/bin/clang -Clink-arg=--ld-path=/usr/local/bin/mold -Ctarget-cpu=x86-64-v3 -Zshare-generics=y -Zthreads=0
 
 jobs:
   export:
