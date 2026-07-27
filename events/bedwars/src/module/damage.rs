@@ -1,16 +1,38 @@
+use std::sync::LazyLock;
+
 use flecs_ecs::{
     core::{EntityViewGet, World},
     macros::{Component, system},
     prelude::{Module, SystemAPI},
 };
 use hyperion::{
-    net::{Compose, ConnectionId, agnostic},
+    net::{
+        Compose, ConnectionId, agnostic,
+        protocol::{registries, send},
+    },
     simulation::{Position, event::HitGroundEvent, metadata::living_entity::Health},
     storage::EventQueue,
 };
+use hyperion_minecraft_proto::{
+    RegistryId, generated::packet_id::play::clientbound::PacketId,
+    packets::play::entity::DamageEvent,
+};
 use hyperion_utils::EntityExt;
-use valence_protocol::{VarInt, packets::play};
 use valence_server::ident;
+
+/// `minecraft:fall`'s id in the damage type registry this server synchronises.
+///
+/// The id is positional in the registry the server sent at configuration time,
+/// so it is looked up rather than written down: a reordered
+/// [`registries::DAMAGE_TYPE`] would otherwise silently start rendering fall
+/// damage as something else.
+static FALL: LazyLock<RegistryId> = LazyLock::new(|| {
+    RegistryId(
+        registries::DAMAGE_TYPE
+            .id_of("minecraft:fall")
+            .expect("minecraft:fall is a vanilla damage type"),
+    )
+});
 
 #[derive(Component)]
 pub struct DamageModule {}
@@ -43,12 +65,15 @@ impl Module for DamageModule {
                     |(health, connection, position)| {
                         health.damage(damage);
 
-                        let pkt_damage_event = play::EntityDamageS2c {
-                            entity_id: VarInt(entity.minecraft_id()),
-                            source_cause_id: VarInt(0),
-                            source_direct_id: VarInt(0),
-                            source_type_id: VarInt(10), // 10 = fall damage
-                            source_pos: Option::None,
+                        // No cause and no direct entity: the ground is not an
+                        // entity, and `writeOptionalEntityId` puts absence on
+                        // the wire as the zero this `None` becomes.
+                        let pkt_damage_event = DamageEvent {
+                            entity_id: entity.minecraft_id(),
+                            source_type: *FALL,
+                            source_cause_id: None,
+                            source_direct_id: None,
+                            source_position: None,
                         };
 
                         let sound = agnostic::sound(
@@ -64,7 +89,13 @@ impl Module for DamageModule {
                         .seed(fastrand::i64(..))
                         .build();
 
-                        compose.unicast(&pkt_damage_event, *connection).unwrap();
+                        send(
+                            compose,
+                            *connection,
+                            PacketId::DamageEvent.to_raw(),
+                            &pkt_damage_event,
+                        )
+                        .unwrap();
                         compose
                             .broadcast_local(&sound, position.to_chunk())
                             .send()
