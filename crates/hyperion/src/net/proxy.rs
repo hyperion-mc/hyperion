@@ -34,6 +34,15 @@ use crate::{
 // TODO: Determine a better default
 const DEFAULT_FRAGMENT_SIZE: usize = 4096;
 
+/// Removes a disconnected proxy's channel from the compose egress comms list.
+fn remove_proxy_from_compose(world: &World, proxy_id: ProxyId) {
+    world.get::<&mut Compose>(|compose| {
+        if compose.io_buf_mut().remove_proxy(proxy_id).is_none() {
+            error!("failed to remove proxy from compose egress comms");
+        }
+    });
+}
+
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     let output = if cfg!(target_os = "windows") {
         // todo: untested
@@ -324,13 +333,7 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
                         warn!("proxy shut down");
 
                         command_channel_clone.push(move |world: &World| {
-                            // Remove this channel from the compose egress comms list
-                            world.get::<&mut Compose>(|compose| {
-                                let removed = compose.io_buf_mut().remove_proxy(proxy_id).is_some();
-                                if !removed {
-                                    error!("failed to remove proxy from compose egress comms");
-                                }
-                            });
+                            remove_proxy_from_compose(world, proxy_id);
 
                             // Explicitly close this receiver. This ensures that the channel isn't
                             // closed before this, which would lead to an error on the sender side

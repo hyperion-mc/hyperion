@@ -1,6 +1,6 @@
 use clap::ValueEnum;
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, WorldGet, id},
+    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, World, WorldGet, id},
     macros::{Component, observer},
     prelude::{Module, flecs},
 };

@@ -57,11 +57,9 @@ where
             }
         });
 
-    let register = |view: &mut EntityView<'_>| {
+    |view: &mut EntityView<'_>| {
         view.set_pair::<Prev, _>(T::default()).set(T::default());
-    };
-
-    register
+    }
 }
 
 trait EntityViewExt {
@@ -255,7 +253,7 @@ macro_rules! define_and_register_components {
 
 impl MetadataChanges {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 

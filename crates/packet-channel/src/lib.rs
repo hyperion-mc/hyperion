@@ -417,7 +417,6 @@ impl RawPacket {
         Self { fragment, range }
     }
 
-    #[expect(clippy::missing_const_for_fn, reason = "false positive")]
     #[must_use]
     pub fn fragment_id(&self) -> usize {
         self.fragment.id

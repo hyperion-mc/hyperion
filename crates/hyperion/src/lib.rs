@@ -38,7 +38,6 @@ use std::{
 };
 
 use anyhow::Context;
-use derive_more::{Deref, DerefMut};
 use egress::EgressModule;
 pub use flecs_ecs;
 use flecs_ecs::prelude::*;
@@ -118,7 +117,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
         rlim_max: 0, // Initialize hard limit to 0
     };
 
-    if unsafe { getrlimit(RLIMIT_NOFILE, &mut limits) } == 0 {
+    if unsafe { getrlimit(RLIMIT_NOFILE, &raw mut limits) } == 0 {
         // Create a stack-allocated buffer...
 
         info!("current soft limit: {}", limits.rlim_cur);
@@ -139,7 +138,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
 
     info!("setting soft limit to: {}", limits.rlim_cur);
 
-    if unsafe { setrlimit(RLIMIT_NOFILE, &limits) } != 0 {
+    if unsafe { setrlimit(RLIMIT_NOFILE, &raw const limits) } != 0 {
         error!("Failed to set the file handle limits");
         return Err(std::io::Error::last_os_error());
     }

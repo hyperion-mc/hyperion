@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use flecs_ecs::{
-    core::{QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs, id},
+    core::{QueryBuilderImpl, SystemAPI, World, flecs, id},
     macros::{Component, observer},
     prelude::Module,
 };

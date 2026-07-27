@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use flecs_ecs::{
-    core::{Entity, EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World},
+    core::{Entity, EntityViewGet, SystemAPI, World},
     macros::{Component, system},
     prelude::Module,
 };
@@ -91,8 +91,8 @@ fn on_set_skin(id: Entity, compose: &Compose, uuid: Uuid, skin: PlayerSkin, io: 
     // // Respawn player
     bundle
         .add_packet(&PlayerRespawnS2c {
-            dimension_type_name: ident!("minecraft:overworld").into(),
-            dimension_name: ident!("minecraft:overworld").into(),
+            dimension_type_name: ident!("minecraft:overworld"),
+            dimension_name: ident!("minecraft:overworld"),
             hashed_seed: 0,
             game_mode: GameMode::Survival,
             previous_game_mode: OptGameMode::default(),

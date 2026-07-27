@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, WorldGet},
+    core::{EntityViewGet, SystemAPI, World, WorldGet},
     macros::{Component, system},
     prelude::Module,
 };

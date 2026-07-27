@@ -1,6 +1,6 @@
 use flecs_ecs::{
     core::{
-        ComponentOrPairId, EntityViewGet, QueryBuilderImpl, SystemAPI, TableIter, TermBuilderImpl,
+        ComponentOrPairId, EntityViewGet, SystemAPI,
         World, flecs,
     },
     macros::{Component, system},

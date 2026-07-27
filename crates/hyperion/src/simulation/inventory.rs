@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use flecs_ecs::{
     core::{
-        EntityViewGet, QueryBuilderImpl, SystemAPI, TermBuilderImpl, World, flecs, id,
+        EntityViewGet, SystemAPI, World, flecs, id,
     },
     macros::{Component, observer, system},
     prelude::Module,

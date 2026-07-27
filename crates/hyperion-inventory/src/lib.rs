@@ -418,12 +418,10 @@ impl PlayerInventory {
             stack.item
         });
 
-        let result = registry
+        registry
             .get_result_2x2(items)
             .cloned()
-            .unwrap_or(ItemStack::EMPTY);
-
-        result
+            .unwrap_or(ItemStack::EMPTY)
     }
 
     #[must_use]

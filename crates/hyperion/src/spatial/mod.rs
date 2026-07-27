@@ -1,7 +1,7 @@
 use flecs_ecs::{
     core::{
         Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI, QueryBuilderImpl,
-        SystemAPI, TermBuilderImpl, World, WorldGet, flecs, id,
+        SystemAPI, World, WorldGet, flecs, id,
     },
     macros::{Component, system},
     prelude::Module,

@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use flecs_ecs::{
     core::{
-        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, QueryBuilderImpl,
-        SystemAPI, TableIter, TermBuilderImpl, World, WorldGet, flecs, id,
+        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI,
+        SystemAPI, TableIter, World, WorldGet, flecs, id,
     },
     macros::{Component, system},
     prelude::Module,
@@ -229,7 +229,7 @@ impl Module for AttackModule {
                                             entity_id: VarInt(origin_entity_id),
                                             properties: vec![
                                                 AttributeProperty {
-                                                    key: ident!("minecraft:generic.armor").into(),
+                                                    key: ident!("minecraft:generic.armor"),
                                                     value: origin_armor.armor.into(),
                                                     modifiers: vec![],
                                                 }

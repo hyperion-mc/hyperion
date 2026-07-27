@@ -24,8 +24,7 @@ unsafe impl Buf for bytes::BytesMut {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { cap.assume_init_mut() };
-        cap
+        unsafe { cap.assume_init_mut() }
     }
 
     fn advance(&mut self, len: usize) -> Self::Output {
@@ -42,8 +41,7 @@ unsafe impl Buf for Vec<u8> {
         // self
         self.reserve(len);
         let cap = self.spare_capacity_mut();
-        let cap = unsafe { cap.assume_init_mut() };
-        cap
+        unsafe { cap.assume_init_mut() }
     }
 
     fn advance(&mut self, len: usize) -> Self::Output {

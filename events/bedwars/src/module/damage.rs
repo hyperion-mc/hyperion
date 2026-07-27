@@ -1,5 +1,5 @@
 use flecs_ecs::{
-    core::{EntityViewGet, QueryBuilderImpl, TermBuilderImpl, World},
+    core::{EntityViewGet, World},
     macros::{Component, system},
     prelude::{Module, SystemAPI},
 };
