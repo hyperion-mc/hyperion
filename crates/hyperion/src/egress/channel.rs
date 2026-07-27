@@ -5,7 +5,7 @@ use hyperion_minecraft_proto::{
 use hyperion_proto::UpdateChannelPosition;
 use hyperion_utils::EntityExt;
 use tracing::error;
-use valence_protocol::{ByteAngle, VarInt, packets::play};
+use valence_protocol::{VarInt, packets::play};
 
 use crate::{
     egress::metadata::show_all,
@@ -15,7 +15,7 @@ use crate::{
         protocol::Clientbound,
     },
     simulation::{
-        Pitch, Position, Uuid, Velocity, Yaw,
+        Pitch, Position, Uuid, Velocity, Yaw, add_entity,
         entity_kind::EntityKind,
         event::RequestSubscribeChannelPackets,
         metadata::{MetadataChanges, get_and_clear_metadata},
@@ -110,66 +110,39 @@ impl Module for ChannelModule {
                     Option<&ConnectionId>,
                 )>(
                     |(uuid, position, pitch, yaw, velocity, connection_id)| {
-                        let mut packet_buf;
+                        // A player is spawned with `add_entity` like anything
+                        // else since 1.20.2; `player_spawn` no longer exists.
+                        let spawn_packet = add_entity(
+                            minecraft_id,
+                            entity_kind,
+                            uuid,
+                            position,
+                            *pitch,
+                            *yaw,
+                            velocity,
+                        );
+                        let mut packet_buf = compose
+                            .io_buf()
+                            .encode_packet(
+                                Clientbound::new(PacketId::AddEntity.to_raw(), &spawn_packet),
+                                compose,
+                            )
+                            .unwrap();
 
-                        match entity_kind {
-                            EntityKind::Player => {
-                                let spawn_packet = play::PlayerSpawnS2c {
-                                    entity_id: VarInt(minecraft_id),
-                                    player_uuid: uuid.0,
-                                    position: position.as_dvec3(),
-                                    yaw: ByteAngle::from_degrees(**yaw),
-                                    pitch: ByteAngle::from_degrees(**pitch),
-                                };
-                                packet_buf = compose
+                        if entity_kind == EntityKind::Player {
+                            let show_all = show_all(minecraft_id);
+                            packet_buf.extend_from_slice(
+                                &compose
                                     .io_buf()
-                                    .encode_packet(&spawn_packet, compose)
-                                    .unwrap();
-
-                                let show_all = show_all(minecraft_id);
-                                packet_buf.extend_from_slice(
-                                    &compose
-                                        .io_buf()
-                                        .encode_packet(
-                                            Clientbound::new(
-                                                PacketId::SetEntityData.to_raw(),
-                                                &show_all,
-                                            ),
-                                            compose,
-                                        )
-                                        .unwrap(),
-                                );
-                            }
-                            _ => {
-                                let velocity = velocity.to_packet_units();
-
-                                let spawn_packet = play::EntitySpawnS2c {
-                                    entity_id: VarInt(minecraft_id),
-                                    object_uuid: uuid.0,
-                                    kind: VarInt(entity_kind as i32),
-                                    position: position.as_dvec3(),
-                                    pitch: ByteAngle::from_degrees(**pitch),
-                                    yaw: ByteAngle::from_degrees(**yaw),
-                                    head_yaw: ByteAngle::from_degrees(0.0), // todo:
-                                    data: VarInt::default(),                // todo:
-                                    velocity,
-                                };
-                                packet_buf = compose
-                                    .io_buf()
-                                    .encode_packet(&spawn_packet, compose)
-                                    .unwrap();
-
-                                let velocity_packet = play::EntityVelocityUpdateS2c {
-                                    entity_id: VarInt(minecraft_id),
-                                    velocity,
-                                };
-                                packet_buf.extend_from_slice(
-                                    &compose
-                                        .io_buf()
-                                        .encode_packet(&velocity_packet, compose)
-                                        .unwrap(),
-                                );
-                            }
+                                    .encode_packet(
+                                        Clientbound::new(
+                                            PacketId::SetEntityData.to_raw(),
+                                            &show_all,
+                                        ),
+                                        compose,
+                                    )
+                                    .unwrap(),
+                            );
                         }
 
                         let mut metadata = MetadataChanges::default();
