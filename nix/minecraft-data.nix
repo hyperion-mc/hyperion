@@ -18,9 +18,18 @@ let
     in
     pkgs.${attr} or (throw "nixpkgs has no ${attr}, required by Minecraft ${pin.id}");
 
+  # The jar is the one unfree thing in the tree, so it is named to match the
+  # flake's allowUnfreePredicate ("minecraft-" prefixed) and carries the
+  # licence itself. Without both, the policy that is supposed to gate Mojang's
+  # EULA never actually looks at the file it exists for.
   serverJar = pkgs.fetchurl {
+    name = "minecraft-server-${pin.id}.jar";
     inherit (pin.server) url;
     hash = pin.server.sha256;
+    meta = {
+      description = "Mojang's Minecraft ${pin.id} server jar";
+      license = lib.licenses.unfree;
+    };
   };
 
   # Mojang's own data generator. It needs no mappings and never did, which is
@@ -59,7 +68,9 @@ let
   # generator's packets.json carries ids and names but no field information.
   decompiledSources = pkgs.runCommand "minecraft-decompiled-${pin.id}"
     {
-      nativeBuildInputs = [ jdk pkgs.cfr pkgs.unzip ];
+      # No jdk: nixpkgs wraps cfr with its own runtime, so pulling a second
+      # one into the closure buys nothing.
+      nativeBuildInputs = [ pkgs.cfr pkgs.unzip ];
       meta = {
         description = "Decompiled packet and codec sources for Minecraft ${pin.id}";
         license = lib.licenses.unfree;
@@ -104,7 +115,11 @@ let
       while read -r outer; do
         printf '%s\n' "$outer"
         for nested in "''${outer%.class}"\$*.class; do
-          [ -e "$nested" ] && printf '%s\n' "$nested"
+          # An `if` rather than `[ -e ] &&`, whose non-zero status on the last
+          # iteration would become the loop's and trip pipefail.
+          if [ -e "$nested" ]; then
+            printf '%s\n' "$nested"
+          fi
         done
       done < outers.txt | sort -u > selected.txt
 
@@ -169,7 +184,10 @@ let
   # is an app rather than a derivation.
   updateScript = pkgs.writeShellApplication {
     name = "update-minecraft-data";
-    runtimeInputs = [ pkgs.curl pkgs.jq pkgs.nix ];
+    # git resolves the repository root. writeShellApplication only prepends
+    # these to PATH, so an undeclared tool silently falls through to whatever
+    # the caller happens to have.
+    runtimeInputs = [ pkgs.curl pkgs.git pkgs.jq pkgs.nix pkgs.unzip ];
     text = ''
       manifest=${lib.escapeShellArg pin.manifestUrl}
       target="''${1:-}"
@@ -206,7 +224,7 @@ let
       # inferred from the version string, which has no stable relationship to it.
       tmp=$(mktemp -d)
       trap 'rm -rf "$tmp"' EXIT
-      ${lib.getExe' pkgs.unzip "unzip"} -p "$store" version.json > "$tmp/version.json"
+      unzip -p "$store" version.json > "$tmp/version.json"
 
       jq -n \
         --arg id "$target" \
@@ -247,7 +265,7 @@ let
   # plain `cargo build` works without nix; the check below keeps the two honest.
   syncScript = pkgs.writeShellApplication {
     name = "sync-minecraft-proto";
-    runtimeInputs = [ ];
+    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
     text = ''
       root=$(git rev-parse --show-toplevel)
       dest="$root/crates/hyperion-minecraft-proto/src/generated"
