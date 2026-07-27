@@ -11,7 +11,10 @@ use smash::{
         damage::{DamageKind, Damaged, LastHitAt, MatchClock, hurt},
         kit,
         knockback::Knockback,
-        lives::{DeathCause, Eliminated, Lives, MAX_LIVES, Placement, RespawnAt, kill, killer_of},
+        lives::{
+            DeathCause, Eliminated, InvulnerableUntil, Lives, MAX_LIVES, Placement,
+            RESPAWN_INVULNERABLE_SECS, RespawnAt, kill, killer_of,
+        },
         lobby::Phase,
         player::{Health, Position},
         scoreboard::{COLLAPSE_ABOVE, Row, render},
@@ -32,9 +35,18 @@ fn everyone_starts_with_four_lives() {
 
 #[test]
 fn falling_out_of_bounds_costs_a_life_and_schedules_a_respawn() {
+    use smash::module::lobby::Lobby;
+
     let mut game = Game::new();
     let player = game.player("faller", Vec3::new(0.0, 40.0, 0.0));
     let player = game.world.entity_from_id(player);
+
+    // The void check only runs during a match. In the hub a player standing
+    // below a kill plane would otherwise die on the tick they connect.
+    game.world.set(Lobby {
+        phase: Phase::Playing,
+        timer: 1.0,
+    });
 
     let kill_y = game.world.cloned::<&Arena>().kill_y;
     player.set(Position(Vec3::new(0.0, kill_y - 5.0, 0.0)));
@@ -296,5 +308,82 @@ fn switching_kit_replaces_the_old_abilities_rather_than_stacking_them() {
         count_granted(),
         3,
         "Iron Golem has three starting abilities and no leftovers from Skeleton"
+    );
+}
+
+#[test]
+fn a_respawn_is_not_killed_again_by_the_position_it_died_at() {
+    use smash::module::lobby::{Lobby, Phase};
+
+    let mut game = Game::new();
+    let player = game.player("faller", Vec3::new(0.0, 40.0, 0.0));
+    let player = game.world.entity_from_id(player);
+
+    // One player alive is the end of a match, so the lobby would leave
+    // `Playing` on the first tick and the kill plane would switch itself off.
+    let tick = || {
+        game.world.set(Lobby {
+            phase: Phase::Playing,
+            timer: 1.0,
+        });
+        game.advance(0.05, 1);
+    };
+
+    let kill_y = game.world.cloned::<&Arena>().kill_y;
+    let under_the_map = Vec3::new(0.0, kill_y - 5.0, 0.0);
+    player.set(Position(under_the_map));
+    tick();
+    assert_eq!(player.cloned::<&Lives>().0, MAX_LIVES - 1);
+
+    // The respawn moves the game's mirror, but the host's copy of the position
+    // only catches up once the client acknowledges the teleport, so the mirror
+    // is refilled with the place they died for a tick or two afterwards. That
+    // is exactly what `RESPAWN_INVUL` is for, and honouring it is the
+    // difference between one fall costing one life and one fall costing all
+    // four.
+    game.world.get::<&mut MatchClock>(|clock| clock.0 = 10.0);
+    tick();
+    assert!(
+        player.try_get::<&RespawnAt>(|r| r.0).is_none(),
+        "did not respawn"
+    );
+    let until = player.cloned::<&InvulnerableUntil>().0;
+    assert!(until > 10.0);
+
+    player.set(Position(under_the_map));
+    tick();
+    assert_eq!(
+        player.cloned::<&Lives>().0,
+        MAX_LIVES - 1,
+        "the kill plane took a second life during the respawn immunity"
+    );
+
+    // Once the immunity is gone the same position is lethal again.
+    game.world
+        .get::<&mut MatchClock>(|clock| clock.0 = until + RESPAWN_INVULNERABLE_SECS);
+    player.set(Position(under_the_map));
+    tick();
+    assert_eq!(player.cloned::<&Lives>().0, MAX_LIVES - 2);
+}
+
+#[test]
+fn using_an_ability_gives_up_the_respawn_immunity() {
+    use smash::module::ability;
+
+    let mut game = Game::new();
+    let player = game.player("p", Vec3::ZERO);
+    let player = game.world.entity_from_id(player);
+    kit::apply(
+        &game.world,
+        player,
+        kit::by_name(&game.world, "Skeleton").unwrap(),
+    );
+    player.set(InvulnerableUntil(100.0));
+
+    // Bone Explosion, Skeleton's slot 1, which needs neither ground nor energy.
+    assert!(ability::activate(player, 1, 0.0).is_ok());
+    assert!(
+        player.try_get::<&InvulnerableUntil>(|u| u.0).is_none(),
+        "acting must end the immunity, or a respawn is a free attack"
     );
 }

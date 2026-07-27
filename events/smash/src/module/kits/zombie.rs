@@ -1,0 +1,121 @@
+//! Zombie: the ranged-and-melee generalist.
+//!
+//! Stats verified: 6.0 damage, 10 armour points (40%), 125% knockback taken,
+//! 0.25 regen, 6000 gems. Every ability number is `[APPROXIMATED]`: the wiki
+//! names the four abilities and describes them, and gives no figures at all.
+
+use flecs_ecs::prelude::*;
+use glam::Vec3;
+
+use crate::{
+    module::{
+        ability::{Cast, splash_at},
+        kit::{self, AbilitySpec, KitStats},
+        player::Position,
+        projectile::{Flight, Impact, Payload, fire},
+    },
+    server::{Cue, PlayerId, ServerHandle},
+};
+
+#[derive(Component)]
+pub struct Zombie;
+
+impl Module for Zombie {
+    fn module(world: &World) {
+        world.module::<Self>("smash::kits::Zombie");
+
+        kit::define(world, "Zombie", KitStats {
+            melee_damage: 6.0,
+            armor: 10.0,
+            knockback_taken: 1.25,
+            regen: 0.25,
+            ..KitStats::default()
+        })
+        .cost(6000)
+        .blurb("Something for every range, and nothing outstanding at any of them.")
+        .ability(AbilitySpec {
+            name: "Bile Blaster",
+            item: "minecraft:iron_axe",
+            slot: 1,
+            description: "Spray bile. It lands where you point and hurts what it lands on.",
+            cooldown: 7.0,
+            activate: bile_blaster,
+            ..AbilitySpec::DEFAULT
+        })
+        .ability(AbilitySpec {
+            name: "Deaths Grasp",
+            item: "minecraft:bow",
+            slot: 2,
+            description: "An arrow that drags whoever it hits back to you.",
+            cooldown: 9.0,
+            charge_time: Some(1.0),
+            activate: deaths_grasp,
+            ..AbilitySpec::DEFAULT
+        })
+        .ultimate(AbilitySpec {
+            name: "Night of the Living Dead",
+            item: "minecraft:nether_star",
+            slot: 8,
+            description: "The dead get up around you.",
+            cooldown: 20.0,
+            activate: night_of_the_living_dead,
+            ..AbilitySpec::DEFAULT
+        })
+        .register();
+    }
+}
+
+fn bile_blaster(cast: &Cast<'_>) {
+    const BLOBS: usize = 4;
+    let forward = cast.facing.0.normalize_or_zero();
+    let side = Vec3::new(-forward.z, 0.0, forward.x);
+    for index in 0..BLOBS {
+        let offset = (index as f32 - (BLOBS as f32 - 1.0) / 2.0) * 0.14;
+        fire(
+            cast.world,
+            cast.caster,
+            Flight {
+                position: cast.position.0,
+                velocity: (forward + side * offset).normalize_or_zero() * 20.0,
+                gravity: 14.0,
+                seconds_left: 1.6,
+                radius: 0.7,
+            },
+            Payload::new(2.5, 0.5),
+        );
+    }
+}
+
+fn deaths_grasp(cast: &Cast<'_>) {
+    fire(
+        cast.world,
+        cast.caster,
+        Flight {
+            position: cast.position.0,
+            velocity: cast.facing.0.normalize_or_zero() * 16.0f32.mul_add(cast.charge, 24.0),
+            gravity: 6.0,
+            seconds_left: 2.0,
+            radius: 0.6,
+        },
+        Payload::new(4.0, 0.4).then(drag_back),
+    );
+}
+
+fn drag_back(impact: &Impact<'_>) {
+    let (Some(to), Some(from), Some(id)) = (
+        impact.shooter.and_then(|s| s.try_get::<&Position>(|p| p.0)),
+        impact.victim.try_get::<&Position>(|p| p.0),
+        impact.victim.try_get::<&PlayerId>(|p| *p),
+    ) else {
+        return;
+    };
+    let pull = (to - from).normalize_or_zero() * 1.6 + Vec3::Y * 0.5;
+    impact
+        .world
+        .get::<&ServerHandle>(|server| server.add_velocity(id, pull));
+}
+
+fn night_of_the_living_dead(cast: &Cast<'_>) {
+    splash_at(cast, cast.position.0, 7.0, 10.0, 1.6);
+    cast.server.cue(cast.position.0, Cue::Explosion);
+}

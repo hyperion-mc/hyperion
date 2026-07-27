@@ -360,6 +360,13 @@
                 root="$(git rev-parse --show-toplevel)"
                 cd "$root"
 
+                # The event and the client that drives it move together, so
+                # `smash-e2e` sets both and this stays the bedwars gate. Two
+                # apps rather than one with a flag, because the useful thing to
+                # type is one word.
+                export HYPERION_EVENT="''${HYPERION_EVENT:-bedwars}"
+                read -ra client <<< "''${HYPERION_E2E_CLIENT:-tools/client-26.2.py --name e2e}"
+
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
                 player_port="$HYPERION_PLAYER_PORT"
@@ -411,8 +418,33 @@
                   sleep 2
                 done
 
-                echo "stack up on 127.0.0.1:$player_port"
-                python3 tools/client-26.2.py --host 127.0.0.1 --port "$player_port" --name e2e "$@"
+                echo "stack up on 127.0.0.1:$player_port ($HYPERION_EVENT)"
+                # Not `exec`: replacing this shell would skip the EXIT trap and
+                # orphan the stack, and the next run would die on "address
+                # already in use".
+                python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" "$@"
+              '';
+            };
+
+            # The same gate on smash. bedwars is joinable with one client, so
+            # `e2e` drives one; a smash match needs `min_players` of them at
+            # once, which is why the client is a different program rather than
+            # the same one with a flag.
+            #
+            # Ports default off the `e2e` ones rather than sharing them, so the
+            # two gates can run side by side.
+            smash-e2e = {
+              deps = [
+                pkgs.process-compose
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/smash-match.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 2000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 2000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
 

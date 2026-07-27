@@ -848,6 +848,13 @@ impl Module for SimModule {
             &ConnectionId
         )
         .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
+            // The same packet the join path sends, at the same id. Sending
+            // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client with
+            // no teleport to confirm, so `AcceptTeleportation` never came back,
+            // `PendingTeleportation` was never removed, and `sync_player_entity`
+            // took its pending-teleport branch forever after: no movement, no
+            // rotation and no velocity ever reached anyone again. A mid-match
+            // teleport is the whole of respawning.
             let destination = pending_teleportation.destination.as_dvec3();
             let pkt = PlayerPosition {
                 id: pending_teleportation.teleport_id,
