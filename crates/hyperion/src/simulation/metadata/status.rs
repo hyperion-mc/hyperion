@@ -1,5 +1,8 @@
 use std::ops::BitOr;
 
+/// The same byte [`super::entity::EntityFlags`] holds, as a set of predicates.
+///
+/// The bit numbers are `Entity.FLAG_ONFIRE` and friends, unchanged in 26.2.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct EntityStatus(pub u8);
 

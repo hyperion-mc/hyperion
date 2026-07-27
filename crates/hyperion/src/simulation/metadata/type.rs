@@ -1,67 +1,142 @@
-//! | Type | Name | Value | Notes |
-//! |------|------|-------|-------|
-//! | 0 | Byte | Byte | |
-//! | 1 | VarInt | VarInt | |
-//! | 2 | VarLong | VarLong | |
-//! | 3 | Float | Float | |
-//! | 4 | String | String (32767) | |
-//! | 5 | Text Component | Text Component | |
-//! | 6 | Optional Text Component | (Boolean, Optional Text Component) | Text Component is present if the Boolean is set to true. |
-//! | 7 | Slot | Slot | |
-//! | 8 | Boolean | Boolean | |
-//! | 9 | Rotations | (Float, Float, Float) | rotation on x, rotation on y, rotation on z |
-//! | 10 | Position | Position | |
-//! | 11 | Optional Position | (Boolean, Optional Position) | Position is present if the Boolean is set to true. |
-//! | 12 | Direction | VarInt Enum | Down = 0, Up = 1, North = 2, South = 3, West = 4, East = 5 |
-//! | 13 | Optional UUID | (Boolean, Optional UUID) | UUID is present if the Boolean is set to true. |
-//! | 14 | Block State | VarInt | An ID in the block state registry. |
-//! | 15 | Optional Block State | VarInt | 0 for absent (air is unrepresentable); otherwise, an ID in the block state registry. |
-//! | 16 | NBT | NBT | |
-//! | 17 | Particle | (VarInt, Varies) | particle type (an ID in the minecraft:particle_type registry), particle data (See Particles.) |
-//! | 18 | Particles | (VarInt, Array of (VarInt, Varies)) | length-prefixed list of particle defintions (as above). |
-//! | 19 | Villager Data | (VarInt, VarInt, VarInt) | villager type, villager profession, level (See below.) |
-//! | 20 | Optional VarInt | VarInt | 0 for absent; 1 + actual value otherwise. Used for entity IDs. |
-//! | 21 | Pose | VarInt Enum | STANDING = 0, FALL_FLYING = 1, SLEEPING = 2, SWIMMING = 3, SPIN_ATTACK = 4, SNEAKING = 5, LONG_JUMPING = 6, DYING = 7, CROAKING = 8, USING_TONGUE = 9, SITTING = 10, ROARING = 11, SNIFFING = 12, EMERGING = 13, DIGGING = 14, (1.21.3: SLIDING = 15, SHOOTING = 16, INHALING = 17) |
-//! | 22 | Cat Variant | VarInt | An ID in the minecraft:cat_variant registry. |
-//! | 23 | Wolf Variant | ID or Wolf Variant | An ID in the minecraft:wolf_variant registry, or an inline definition. |
-//! | 24 | Frog Variant | VarInt | An ID in the minecraft:frog_variant registry. |
-//! | 25 | Optional Global Position | (Boolean, Optional Identifier, Optional Position) | dimension identifier, position; only if the Boolean is set to true. |
-//! | 26 | Painting Variant | ID or Painting Variant | An ID in the minecraft:painting_variant registry, or an inline definition. |
-//! | 27 | Sniffer State | VarInt Enum | IDLING = 0, FEELING_HAPPY = 1, SCENTING = 2, SNIFFING = 3, SEARCHING = 4, DIGGING = 5, RISING = 6 |
-//! | 28 | Vector3 | (Float, Float, Float) | x, y, z |
-//! | 29 | Quaternion | (Float, Float, Float, Float) | x, y, z, w |
+//! Which codec each tracked value is written with, for Minecraft 26.2.
+//!
+//! A tracked value carries its serializer id on the wire, and the client uses
+//! that id to decide how many bytes to read and which field of the entity to
+//! put them in. The id is an index into a registration-ordered table, so it
+//! moves whenever Mojang inserts a serializer: four of the ten this server
+//! sends shifted between 1.20.1 and protocol 776, and thirty are new. Sending
+//! the old number does not fail, it writes a float into a field that expects a
+//! long.
+//!
+//! The numbers themselves live in
+//! [`hyperion_minecraft_proto::packets::play::entity::EntityDataSerializer`],
+//! read off the pinned server jar. What is here is the mapping from the Rust
+//! type a component holds to the serializer that type is sent with, plus the
+//! encoding, because several of those types are foreign and cannot carry the
+//! proto crate's `Encode` implementation themselves.
 
-use valence_generated::block::BlockState;
-use valence_protocol::{ItemStack, VarInt};
-use valence_text::Text;
+use glam::{Quat, Vec3};
+use hyperion_minecraft_proto::{
+    Encode, Result, VarInt, Writer, item::Slot, packets::play::entity::EntityDataSerializer,
+    text::Component,
+};
 
-use crate::simulation::metadata::entity::Pose;
+use crate::simulation::metadata::entity::{HumanoidArm, Pose};
 
+/// A value that can be sent as entity tracked data.
 pub trait MetadataType {
-    const INDEX: i32;
+    /// The serializer the field was declared with.
+    ///
+    /// The client rejects a value whose serializer does not match the one its
+    /// own accessor was defined with, so this and the field index have to move
+    /// together.
+    const SERIALIZER: EntityDataSerializer;
+
+    /// Write the value the way that serializer's codec writes it.
+    ///
+    /// # Errors
+    /// Returns an error when the value exceeds a protocol limit.
+    fn write(&self, writer: &mut Writer) -> Result<()>;
 }
 
-macro_rules! impl_metadata_type {
-    ($($index:expr => $type:ty),* $(,)?) => {
+/// The straightforward cases, where the value already encodes itself.
+macro_rules! delegating_metadata_type {
+    ($($serializer:ident => $type:ty),* $(,)?) => {
         $(
             impl MetadataType for $type {
-                #[allow(clippy::use_self)]
-                const INDEX: i32 = $index;
+                const SERIALIZER: EntityDataSerializer = EntityDataSerializer::$serializer;
+
+                fn write(&self, writer: &mut Writer) -> Result<()> {
+                    Encode::encode(self, writer)
+                }
             }
         )*
     };
 }
 
-impl_metadata_type! {
-    0 => u8,
-    1 => VarInt,
-    3 => f32,
-    5 => Text,
-    6 => Option<Text>,
-    7 => ItemStack,
-    8 => bool,
-    14 => BlockState,
-    20 => Pose,
-    26 => glam::Vec3,
-    27 => glam::Quat,
+delegating_metadata_type! {
+    Byte => u8,
+    Int => VarInt,
+    Float => f32,
+    Boolean => bool,
+    ItemStack => Slot<'static>,
+    OptionalComponent => Option<Component<'static>>,
+}
+
+/// `ByteBufCodecs.idMapper(Block.BLOCK_STATE_REGISTRY)`.
+///
+/// The number is an index into one global table of all 32366 states, and the
+/// numbering is dense but arbitrary, so it moves with almost every game
+/// version. [`hyperion_minecraft_proto::block_state`] resolves a name to the id
+/// this protocol sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BlockStateId(pub u32);
+
+impl MetadataType for BlockStateId {
+    const SERIALIZER: EntityDataSerializer = EntityDataSerializer::BlockState;
+
+    fn write(&self, writer: &mut Writer) -> Result<()> {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "32366 states, so no id reaches the sign bit"
+        )]
+        writer.var_int(self.0 as i32);
+        Ok(())
+    }
+}
+
+impl MetadataType for Pose {
+    const SERIALIZER: EntityDataSerializer = EntityDataSerializer::Pose;
+
+    fn write(&self, writer: &mut Writer) -> Result<()> {
+        writer.var_int(*self as i32);
+        Ok(())
+    }
+}
+
+impl MetadataType for HumanoidArm {
+    const SERIALIZER: EntityDataSerializer = EntityDataSerializer::HumanoidArm;
+
+    fn write(&self, writer: &mut Writer) -> Result<()> {
+        writer.var_int(*self as i32);
+        Ok(())
+    }
+}
+
+impl MetadataType for Vec3 {
+    const SERIALIZER: EntityDataSerializer = EntityDataSerializer::Vector3;
+
+    fn write(&self, writer: &mut Writer) -> Result<()> {
+        // `ByteBufCodecs.VECTOR3F`: three big-endian floats, no length.
+        writer.f32(self.x);
+        writer.f32(self.y);
+        writer.f32(self.z);
+        Ok(())
+    }
+}
+
+impl MetadataType for Quat {
+    const SERIALIZER: EntityDataSerializer = EntityDataSerializer::Quaternion;
+
+    fn write(&self, writer: &mut Writer) -> Result<()> {
+        // `ByteBufCodecs.QUATERNIONF`: x, y, z, w in that order.
+        writer.f32(self.x);
+        writer.f32(self.y);
+        writer.f32(self.z);
+        writer.f32(self.w);
+        Ok(())
+    }
+}
+
+/// Borrows a tracked value so it can be written through [`MetadataType`].
+///
+/// [`MetadataType`] exists because `glam::Vec3` and the rest are foreign types
+/// that cannot carry the proto crate's `Encode`; this is the adapter back, so
+/// the run builder stays a plain `Encode` consumer.
+pub(crate) struct Tracked<'a, T>(pub &'a T);
+
+impl<T: MetadataType> Encode for Tracked<'_, T> {
+    fn encode(&self, writer: &mut Writer) -> Result<()> {
+        self.0.write(writer)
+    }
 }
