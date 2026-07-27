@@ -15,7 +15,7 @@
 use std::io::Write;
 
 use flecs_ecs::prelude::*;
-use hyperion_minecraft_proto::{Decode, Encode, Reader, Writer, packets::configuration::KnownPack};
+use hyperion_minecraft_proto::{Decode, Encode, Reader, Writer, types::KnownPack};
 use itertools::Either;
 
 use crate::{

@@ -24,13 +24,22 @@ use hyperion_minecraft_proto::{
         status::serverbound::PacketId as StatusPacketId,
     },
     packets::{
+        common::serverbound::PingRequest,
         configuration::{
-            self, ClientInformation, RegistryData, RegistryEntry, SelectKnownPacks,
-            UpdateEnabledFeatures, UpdateTags,
+            self, ClientInformation, UpdateTags,
+            clientbound::{FinishConfiguration, RegistryData, UpdateEnabledFeatures},
+            serverbound::SelectKnownPacks,
         },
-        handshake::{ClientIntent, Intention},
-        login::{Hello, LoginCompression, LoginFinished},
-        status::{PingRequest, PongResponse, StatusResponse},
+        handshake::serverbound::Intention,
+        login::{
+            clientbound::{LoginCompression, LoginFinished},
+            serverbound::Hello,
+        },
+        status::clientbound::{PongResponse, StatusResponse},
+    },
+    types::{
+        ClientIntent, GameProfile, Identifier, Uuid as ProtoUuid, VarInt,
+        registry_synchronization::PackedRegistryEntry,
     },
 };
 use serde_json::json;
@@ -128,11 +137,11 @@ fn handshake(world: &World) {
                 // path. A client on any version may ping, and answering the
                 // ping is how it learns which version to be.
                 if intention.intention != ClientIntent::Status
-                    && intention.protocol_version != PROTOCOL_VERSION
+                    && intention.protocol_version.0 != PROTOCOL_VERSION
                 {
                     warn!(
                         "client speaks protocol {} but this server speaks {PROTOCOL_VERSION}",
-                        intention.protocol_version
+                        intention.protocol_version.0
                     );
                 }
 
@@ -224,7 +233,7 @@ fn status_pong(compose: &Compose, connection_id: ConnectionId, body: &[u8]) -> a
         compose,
         connection_id,
         packet_id::status::clientbound::PacketId::PongResponse.to_raw(),
-        &PongResponse { time: ping.time },
+        &PongResponse(ping.0),
     )
 }
 
@@ -334,18 +343,16 @@ fn login_hello(
         compose,
         connection_id,
         packet_id::login::clientbound::PacketId::LoginCompression.to_raw(),
-        &LoginCompression {
-            compression_threshold: threshold.0,
-        },
+        &LoginCompression(VarInt(threshold.0)),
     )?;
     decoder.set_compression(threshold);
 
     // `Hello.profile_id` is what the launcher cached, not proof of anything:
     // this server is offline-mode, so a zero id means derive one from the name.
-    let uuid = if hello.profile_id == 0 {
+    let uuid = if hello.profile_id.0 == 0 {
         offline_uuid(&username)
     } else {
-        uuid::Uuid::from_u128(hello.profile_id)
+        uuid::Uuid::from_u128(hello.profile_id.0)
     };
 
     info!(
@@ -359,16 +366,18 @@ fn login_hello(
         connection_id,
         packet_id::login::clientbound::PacketId::LoginFinished.to_raw(),
         &LoginFinished {
-            profile_id: uuid.as_u128(),
-            name: &username,
-            properties: Vec::new(),
+            game_profile: GameProfile {
+                id: ProtoUuid(uuid.as_u128()),
+                name: &username,
+                properties: Vec::new(),
+            },
             // The chat session is not used yet; a zero id is what a server
             // that does not sign chat sends.
-            session_id: 0,
+            session_id: ProtoUuid(0),
         },
     )?;
 
-    let skin = if hello.profile_id == 0 {
+    let skin = if hello.profile_id.0 == 0 {
         Some(PlayerSkin::EMPTY)
     } else {
         let mojang = mojang.clone();
@@ -451,16 +460,14 @@ fn start_configuration(compose: &Compose, connection_id: ConnectionId) -> anyhow
         compose,
         connection_id,
         PacketId::UpdateEnabledFeatures.to_raw(),
-        &UpdateEnabledFeatures {
-            features: vec!["minecraft:vanilla"],
-        },
+        &UpdateEnabledFeatures(vec![Identifier::new("minecraft:vanilla")?]),
     )?;
 
     send(
         compose,
         connection_id,
         PacketId::SelectKnownPacks.to_raw(),
-        &SelectKnownPacks {
+        &configuration::clientbound::SelectKnownPacks {
             known_packs: known_packs(),
         },
     )
@@ -555,7 +562,7 @@ fn select_known_packs(
         let entries = registry
             .entries
             .iter()
-            .map(|&id| RegistryEntry { id, data: None })
+            .map(|&id| PackedRegistryEntry { id, data: None })
             .collect();
 
         send(
@@ -582,7 +589,7 @@ fn select_known_packs(
         compose,
         connection_id,
         PacketId::FinishConfiguration.to_raw(),
-        &configuration::FinishConfiguration,
+        &FinishConfiguration,
     )
 }
 
