@@ -95,14 +95,15 @@ pub fn enter_world(
 
     // The client discards chunks outside the cache centre, so this has to
     // precede any terrain rather than follow it.
-    let chunk: glam::IVec3 = position.as_ivec3() >> 4;
+    let chunk = Position::from(position).to_chunk();
+    let block = position.floor().as_ivec3();
     send(
         compose,
         connection_id,
         PacketId::SetChunkCacheCenter.to_raw(),
         &SetChunkCacheCenter {
-            x: chunk.x,
-            z: chunk.z,
+            x: i32::from(chunk.x),
+            z: i32::from(chunk.y),
         },
     )?;
 
@@ -114,9 +115,9 @@ pub fn enter_world(
             global_pos: GlobalPos {
                 dimension: LEVEL,
                 pos: BlockPos {
-                    x: chunk.x << 4,
-                    y: position.y as i32,
-                    z: chunk.z << 4,
+                    x: block.x,
+                    y: block.y,
+                    z: block.z,
                 },
             },
             yaw: 0.0,

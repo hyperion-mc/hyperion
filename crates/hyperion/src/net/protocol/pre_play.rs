@@ -18,7 +18,11 @@ use std::sync::Arc;
 use colored::Colorize;
 use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
-    generated::packet_id,
+    generated::packet_id::{
+        self, configuration::serverbound::PacketId as ConfigPacketId,
+        login::serverbound::PacketId as LoginPacketId,
+        status::serverbound::PacketId as StatusPacketId,
+    },
     packets::{
         configuration::{
             self, ClientInformation, RegistryData, RegistryEntry, SelectKnownPacks,
@@ -167,13 +171,11 @@ fn status(world: &World) {
                 while let Some(frame) =
                     next_frame(compose, connection_id, decoder, &mut decompressor, receiver)
                 {
-                    use packet_id::status::serverbound::PacketId;
-
-                    let result = match PacketId::from_raw(frame.id) {
-                        Some(PacketId::StatusRequest) => {
+                    let result = match StatusPacketId::from_raw(frame.id) {
+                        Some(StatusPacketId::StatusRequest) => {
                             status_response(compose, connection_id, ping_response)
                         }
-                        Some(PacketId::PingRequest) => {
+                        Some(StatusPacketId::PingRequest) => {
                             status_pong(compose, connection_id, frame_body(&frame))
                         }
                         other => Err(anyhow::anyhow!("unexpected status packet {other:?}")),
@@ -267,9 +269,8 @@ fn login(world: &World) {
                     return;
                 };
 
-                use packet_id::login::serverbound::PacketId;
-                let result = match PacketId::from_raw(frame.id) {
-                    Some(PacketId::Hello) => login_hello(
+                let result = match LoginPacketId::from_raw(frame.id) {
+                    Some(LoginPacketId::Hello) => login_hello(
                         &world,
                         entity,
                         compose,
@@ -282,7 +283,7 @@ fn login(world: &World) {
                         connection_id,
                         frame_body(&frame),
                     ),
-                    Some(PacketId::LoginAcknowledged) => {
+                    Some(LoginPacketId::LoginAcknowledged) => {
                         entity.add_enum(PacketState::Configuration);
                         start_configuration(compose, connection_id)
                     }
@@ -495,25 +496,28 @@ fn configuration(world: &World) {
                 return;
             };
 
-            use packet_id::configuration::serverbound::PacketId;
-            let result = match PacketId::from_raw(frame.id) {
-                Some(PacketId::SelectKnownPacks) => select_known_packs(
+            let result = match ConfigPacketId::from_raw(frame.id) {
+                Some(ConfigPacketId::SelectKnownPacks) => select_known_packs(
                     compose,
                     connection_id,
                     known_packs_accepted,
                     frame_body(&frame),
                 ),
-                Some(PacketId::ClientInformation) => {
+                Some(ConfigPacketId::ClientInformation) => {
                     client_information(entity, frame_body(&frame))
                 }
-                Some(PacketId::FinishConfiguration) => {
+                Some(ConfigPacketId::FinishConfiguration) => {
                     entity.add_enum(PacketState::Play);
                     join::enter_world(&world, entity, compose, connection_id)
                 }
                 // A client answers a keep-alive and may send a payload on its
                 // own channel; neither changes the handover, so both are read
                 // and dropped rather than treated as a protocol error.
-                Some(PacketId::KeepAlive | PacketId::Pong | PacketId::CustomPayload) => Ok(()),
+                Some(
+                    ConfigPacketId::KeepAlive
+                    | ConfigPacketId::Pong
+                    | ConfigPacketId::CustomPayload,
+                ) => Ok(()),
                 other => Err(anyhow::anyhow!("unexpected configuration packet {other:?}")),
             };
 

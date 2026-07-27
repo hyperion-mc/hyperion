@@ -33,6 +33,7 @@ pub mod registries;
 /// version is the game version string. A client that reports the same pack
 /// already has every registry element this server would send, so
 /// [`registries`] can be names alone.
+#[must_use]
 pub fn known_packs() -> Vec<KnownPack<'static>> {
     vec![KnownPack {
         namespace: hyperion_minecraft_proto::packets::configuration::VANILLA_PACK_NAMESPACE,
