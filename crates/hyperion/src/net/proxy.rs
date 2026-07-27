@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use bevy::prelude::*;
+use flecs_ecs::prelude::*;
 use hyperion_proto::ArchivedProxyToServerMessage;
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
@@ -27,11 +27,21 @@ use crate::{
     command_channel::CommandChannel,
     net::{Channel, ChannelId, Compose, IoBuf, ProxyId},
     runtime::AsyncRuntime,
-    simulation::{EgressComm, RequestSubscribeChannelPackets, StreamLookup, packet_state},
+    simulation::{EgressComm, PacketState, StreamLookup, event::RequestSubscribeChannelPackets},
+    storage::Events,
 };
 
 // TODO: Determine a better default
 const DEFAULT_FRAGMENT_SIZE: usize = 4096;
+
+/// Removes a disconnected proxy's channel from the compose egress comms list.
+fn remove_proxy_from_compose(world: &World, proxy_id: ProxyId) {
+    world.get::<&mut Compose>(|compose| {
+        if compose.io_buf_mut().remove_proxy(proxy_id).is_none() {
+            error!("failed to remove proxy from compose egress comms");
+        }
+    });
+}
 
 fn get_pid_from_port(port: u16) -> Result<Option<u32>, std::io::Error> {
     let output = if cfg!(target_os = "windows") {
@@ -96,19 +106,18 @@ async fn handle_proxy_messages(
                     );
                 }
 
-                command_channel.push(move |world: &mut World| {
+                command_channel.push(move |world: &World| {
                     let player = world
-                        .spawn((
-                            ConnectionId::new(stream, proxy_id),
-                            packet_state::Handshake(()),
-                            PacketDecoder::default(),
-                            receiver,
-                        ))
+                        .entity()
+                        .set(ConnectionId::new(stream, proxy_id))
+                        .add_enum(PacketState::Handshake)
+                        .set(PacketDecoder::default())
+                        .set(receiver)
                         .id();
-                    world
-                        .get_resource_mut::<StreamLookup>()
-                        .expect("StreamLookup resource should exist")
-                        .insert(stream, player);
+
+                    world.get::<&mut StreamLookup>(|lookup| {
+                        lookup.insert(stream, player);
+                    });
                 });
             }
             ArchivedProxyToServerMessage::PlayerDisconnect(message) => {
@@ -120,14 +129,14 @@ async fn handle_proxy_messages(
                     );
                 }
 
-                command_channel.push(move |world: &mut World| {
-                    let player = world
-                        .get_resource_mut::<StreamLookup>()
-                        .expect("StreamLookup resource should exist")
-                        .remove(&stream)
-                        .expect("player from PlayerDisconnect must exist in the stream lookup map");
+                command_channel.push(move |world: &World| {
+                    let player = world.get::<&mut StreamLookup>(|lookup| {
+                        lookup.remove(&stream).expect(
+                            "player from PlayerDisconnect must exist in the stream lookup map",
+                        )
+                    });
 
-                    world.despawn(player);
+                    world.entity_from_id(player).destruct();
                 });
             }
             ArchivedProxyToServerMessage::PlayerPackets(message) => {
@@ -154,13 +163,12 @@ async fn handle_proxy_messages(
                         SendError::AlreadyClosed => false,
                     };
                     if needs_shutdown {
-                        command_channel.push(move |world: &mut World| {
-                            let compose = world
-                                .get_resource::<Compose>()
-                                .expect("Compose resource should exist");
-                            compose
-                                .io_buf()
-                                .shutdown(ConnectionId::new(stream, proxy_id));
+                        command_channel.push(move |world: &World| {
+                            world.get::<&Compose>(|compose| {
+                                compose
+                                    .io_buf()
+                                    .shutdown(ConnectionId::new(stream, proxy_id));
+                            });
                         });
                     }
                 }
@@ -178,38 +186,42 @@ async fn handle_proxy_messages(
                         }
                     };
 
-                command_channel.push(move |world: &mut World| {
-                    // TODO: Is it possible to avoid this second allocation?
-                    let channels = channels
-                        .into_iter()
-                        .filter_map(|channel_id| match Entity::from_id(channel_id, world) {
-                            Ok(channel) => Some(RequestSubscribeChannelPackets(channel)),
-                            Err(e) => {
-                                error!(
-                                    "RequestSubscribeChannelPackets: channel id is invalid: {e}"
-                                );
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
+                command_channel.push(move |world: &World| {
+                    world.get::<&Events>(|events| {
+                        for channel_id in channels {
+                            let channel = Entity::from_minecraft_id(bytemuck::cast(channel_id));
+                            let view = world.entity_from_id(channel);
 
-                    let mut events = world.resource_mut::<Events<RequestSubscribeChannelPackets>>();
-                    events.send_batch(channels);
+                            if !view.is_alive() || !view.has(id::<Channel>()) {
+                                error!(
+                                    "RequestSubscribeChannelPackets: channel id is invalid: \
+                                     {channel_id}"
+                                );
+                                continue;
+                            }
+
+                            events.push(RequestSubscribeChannelPackets(channel), world);
+                        }
+                    });
                 });
             }
         }
     }
 
     // Disconnect all players that were connected through this proxy
-    command_channel.push(move |world: &mut World| {
-        let mut query = world.query::<(Entity, &ConnectionId)>();
-        let players_to_remove = query
-            .iter(world)
-            .filter(|(_, connection_id)| connection_id.proxy_id() == proxy_id)
-            .map(|(entity, _)| entity)
-            .collect::<Vec<_>>();
+    command_channel.push(move |world: &World| {
+        let mut players_to_remove = Vec::new();
+
+        world
+            .new_query::<&ConnectionId>()
+            .each_entity(|entity, connection_id| {
+                if connection_id.proxy_id() == proxy_id {
+                    players_to_remove.push(entity.id());
+                }
+            });
+
         for player in players_to_remove {
-            world.despawn(player);
+            world.entity_from_id(player).destruct();
         }
     });
 }
@@ -302,9 +314,10 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
                     let egress_comm = EgressComm::from(tx.clone());
                     let proxy_id = ProxyId::new(next_proxy_id.fetch_add(1, Ordering::Relaxed));
 
-                    command_channel.push(move |world: &mut World| {
-                        let mut compose = world.resource_mut::<Compose>();
-                        compose.io_buf_mut().add_proxy(proxy_id, egress_comm);
+                    command_channel.push(move |world: &World| {
+                        world.get::<&mut Compose>(|compose| {
+                            compose.io_buf_mut().add_proxy(proxy_id, egress_comm);
+                        });
                     });
 
                     let command_channel_clone = command_channel.clone();
@@ -319,13 +332,8 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
 
                         warn!("proxy shut down");
 
-                        command_channel_clone.push(move |world: &mut World| {
-                            // Remove this channel from the compose egress comms list
-                            let mut compose = world.resource_mut::<Compose>();
-                            let removed = compose.io_buf_mut().remove_proxy(proxy_id).is_some();
-                            if !removed {
-                                error!("failed to remove proxy from compose egress comms");
-                            }
+                        command_channel_clone.push(move |world: &World| {
+                            remove_proxy_from_compose(world, proxy_id);
 
                             // Explicitly close this receiver. This ensures that the channel isn't
                             // closed before this, which would lead to an error on the sender side
@@ -334,29 +342,30 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
                         });
                     });
 
-                    command_channel.push(move |world: &mut World| {
+                    command_channel.push(move |world: &World| {
                         // Let the proxy know about all packet channels that exist at the moment
+                        let query = world.query::<()>().with(id::<Channel>()).build();
 
-                        let mut query = world.query_filtered::<Entity, With<Channel>>();
-                        let compose = world.resource::<Compose>();
-                        for channel in query.iter(world) {
-                            let packet = play::EntitiesDestroyS2c {
-                                entity_ids: vec![VarInt(channel.minecraft_id())].into(),
-                            };
+                        world.get::<&Compose>(|compose| {
+                            query.each_entity(|channel, ()| {
+                                let packet = play::EntitiesDestroyS2c {
+                                    entity_ids: vec![VarInt(channel.id().minecraft_id())].into(),
+                                };
 
-                            let packet_buf =
-                                compose.io_buf().encode_packet(&packet, compose).unwrap();
+                                let packet_buf =
+                                    compose.io_buf().encode_packet(&packet, compose).unwrap();
 
-                            tx.send(IoBuf::encode_proxy_message(
-                                &hyperion_proto::ServerToProxyMessage::AddChannel(
-                                    hyperion_proto::AddChannel {
-                                        channel_id: ChannelId::from(channel).inner(),
-                                        unsubscribe_packets: &packet_buf,
-                                    },
-                                ),
-                            ))
-                            .unwrap();
-                        }
+                                tx.send(IoBuf::encode_proxy_message(
+                                    &hyperion_proto::ServerToProxyMessage::AddChannel(
+                                        hyperion_proto::AddChannel {
+                                            channel_id: ChannelId::from(channel).inner(),
+                                            unsubscribe_packets: &packet_buf,
+                                        },
+                                    ),
+                                ))
+                                .unwrap();
+                            });
+                        });
                     });
 
                     tokio::spawn(handle_proxy_messages(

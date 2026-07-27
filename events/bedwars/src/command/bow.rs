@@ -1,9 +1,8 @@
-use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{ItemKind, ItemStack};
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use hyperion_inventory::PlayerInventory;
-use tracing::error;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "bow")]
@@ -11,18 +10,12 @@ use tracing::error;
 pub struct BowCommand;
 
 impl MinecraftCommand for BowCommand {
-    type State = SystemState<Commands<'static, 'static>>;
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
+        let world = system.world();
 
-    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
-        let mut commands = state.get(world);
-        commands
-            .entity(caller)
-            .queue(|mut caller: EntityWorldMut<'_>| {
-                let Some(mut inventory) = caller.get_mut::<PlayerInventory>() else {
-                    error!("bow command failed: player is missing PlayerInventory component");
-                    return;
-                };
-
+        caller
+            .entity_view(world)
+            .get::<&mut PlayerInventory>(|inventory| {
                 inventory.try_add_item(ItemStack {
                     item: ItemKind::Bow,
                     count: 1,

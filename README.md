@@ -8,13 +8,10 @@
 Hyperion is a **Minecraft game engine** that can have 10,000+ players in one world. Our pilot event hopes to break the PvP Guinness World
 Record of ([8825 by
 EVE Online](https://www.guinnessworldrecords.com/world-records/105603-largest-videogame-pvp-battle)). The
-architecture is ECS-driven using [Bevy](https://bevy.org/).
-
-> [!NOTE]  
-> You can join the test server in 1.20.1 at `hyperion-test.duckdns.org`
+architecture is ECS-driven using [flecs](https://www.flecs.dev/flecs/) via
+[Flecs-Rust](https://github.com/Indra-db/Flecs-Rust).
 
 https://github.com/user-attachments/assets/64a4a8c7-f375-4821-a1c7-0efc69c1ae0b
-
 
 ## Feature Status
 
@@ -52,22 +49,19 @@ https://github.com/user-attachments/assets/64a4a8c7-f375-4821-a1c7-0efc69c1ae0b
 | 1000    | 0.40           | 15.3           | 1.09                      |
 | 5000    | 1.42           | 35.6           | 2.54                      |
 
-
 ![performance](https://github.com/user-attachments/assets/d15f2e72-eeef-4cfd-af39-e90d72732968)
-
 
 **Test Environment:**
 
 - Machine: 2023 MacBook Pro Max 16" (14-cores)
 - Chunk Render Distance: 32 (4225 total)
-- Commit hash `faac9117` run with `just release`
-- Bot Launch Command: `just bots {number}`
+- Commit hash `faac9117` run with `nix run .#dev -- release`
+- Bot Launch Command: `nix run .#bots -- 127.0.0.1:25565 {number}`
 
 The bulk of player-specific processing occurs in our proxy layer, which handles tasks like regional multicasting and can
 be horizontally scaled to maintain performance as player count grows.
 
 ![image](https://github.com/user-attachments/assets/65fc6d7b-7e73-44e0-afac-cae928d443b6)
-
 
 ## Architecture
 
@@ -166,7 +160,6 @@ sequenceDiagram
     end
 ```
 
-
 ## Running
 
 ### Network topology
@@ -232,20 +225,45 @@ Then, transfer `server.crt` to the target server.
 ### Without cloning
 
 ```bash
-curl -L https://raw.githubusercontent.com/hyperion-mc/hyperion/main/docker-compose.yml | docker compose -f - up --pull always
+nix run github:hyperion-mc/hyperion#bedwars
+nix run github:hyperion-mc/hyperion#hyperion-proxy
 ```
 
-### `main` branch
+### From a clone
+
+`nix run .#dev` starts the game server and the proxy together and rebuilds both
+when you edit `crates/hyperion` or `events/bedwars`. Pass a cargo profile to
+build optimised instead: `nix run .#dev -- release-full`.
 
 ```bash
-docker compose up --pull always
+nix run .#dev
 ```
 
-### With local build (for development)
+Point bots at it with `nix run .#bots -- 127.0.0.1:25565 100`.
 
-```bash
-docker compose up --build
-```
+## Development
+
+Every command is a flake app, so nix is the only thing you need installed.
+
+| Command | Does |
+| --- | --- |
+| `nix run .#dev` | Game server and proxy, rebuilding on change |
+| `nix run .#proxy` | Proxy alone, release-full |
+| `nix run .#bedwars` | Game server alone, release-full |
+| `nix run .#bots -- <ip> <count>` | Connect bots to a running server |
+| `nix run .#ci` | Everything CI runs |
+| `nix run .#fmt` | `cargo fmt`; add `-- --check` to verify only |
+| `nix run .#lint` | Clippy, warnings denied |
+| `nix run .#lint-fix` | Clippy with `--fix` |
+| `nix run .#test` | `cargo nextest run` |
+| `nix run .#miri` | Miri, over tests whose name contains `miri` |
+| `nix run .#deny` | `cargo deny check` |
+| `nix run .#unused-deps` | `cargo machete` |
+| `nix run .#doc` | Workspace documentation |
+
+`nix build .#bedwars` builds a release binary, and `nix flake check` builds every
+app. If you would rather use cargo directly, `nix develop` gives you a shell with
+the pinned toolchain and the cargo subcommands the apps use.
 
 ## Features
 
@@ -266,9 +284,7 @@ your own mechanics and replace the core mechanics with your own.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=andrewgazelka/hyperion&type=Date)](https://star-history.com/#andrewgazelka/hyperion&Date)
 
-
 Thank you for your hard work[^1] [@CuzImClicks](https://github.com/CuzImClicks), [@Indra-db](https://github.com/Indra-db), [@james-j-obrien](https://github.com/james-j-obrien), [@Ruben2424](https://github.com/Ruben2424), [@SanderMertens](https://github.com/SanderMertens), [@Tebarem](https://github.com/Tebarem), and [@TestingPlant](https://github.com/TestingPlant).
-
 
 [^1]: alphabetically ordered
 

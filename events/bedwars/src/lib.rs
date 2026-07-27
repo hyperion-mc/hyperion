@@ -5,22 +5,24 @@
 
 use std::net::SocketAddr;
 
-use bevy::prelude::*;
-use hyperion::{Crypto, Endpoint, HyperionCore, simulation::packet_state, spatial::Spatial};
-use hyperion_proxy_module::SetProxyAddress;
+use flecs_ecs::prelude::*;
+use hyperion::{Crypto, GameServerEndpoint, HyperionCore, simulation::Player, spatial};
+use hyperion_clap::hyperion_command::CommandRegistry;
+use hyperion_gui::Gui;
+use hyperion_proxy_module::{HyperionProxyModule, ProxyAddress};
 use valence_text::IntoText;
 
 use crate::{
-    plugin::{
-        attack::AttackPlugin, block::BlockPlugin, bow::BowPlugin, chat::ChatPlugin,
-        damage::DamagePlugin, regeneration::RegenerationPlugin, spawn::SpawnPlugin,
-        stats::StatsPlugin, vanish::VanishPlugin,
+    module::{
+        attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
+        damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
+        stats::StatsModule, vanish::VanishModule,
     },
-    skin::SkinPlugin,
+    skin::SkinModule,
 };
 
 mod command;
-mod plugin;
+mod module;
 mod skin;
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
@@ -98,55 +100,74 @@ impl From<Team> for valence_text::Text {
     }
 }
 
-fn initialize_player(
-    trigger: Trigger<'_, OnAdd, packet_state::Play>,
-    mut commands: Commands<'_, '_>,
-) {
-    commands
-        .entity(trigger.target())
-        .insert((Spatial, Team::Red));
-}
-
 #[derive(Component)]
-pub struct BedwarsPlugin;
+pub struct BedwarsModule;
 
-impl Plugin for BedwarsPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins((
-            (
-                AttackPlugin,
-                BlockPlugin,
-                BowPlugin,
-                ChatPlugin,
-                DamagePlugin,
-                RegenerationPlugin,
-                SkinPlugin,
-                SpawnPlugin,
-                StatsPlugin,
-                VanishPlugin,
-            ),
-            hyperion_clap::ClapCommandPlugin,
-            hyperion_genmap::GenMapPlugin,
-            hyperion_item::ItemPlugin,
-            hyperion_permission::PermissionPlugin,
-            hyperion_proxy_module::HyperionProxyPlugin,
-        ));
-        app.add_observer(initialize_player);
+impl Module for BedwarsModule {
+    fn module(world: &World) {
+        world.component::<Team>();
+        world.component::<Gui>();
 
-        command::register(app.world_mut());
+        world.import::<SpawnModule>();
+        world.import::<ChatModule>();
+        world.import::<StatsModule>();
+        world.import::<BlockModule>();
+        world.import::<AttackModule>();
+        world.import::<BowModule>();
+        world.import::<RegenerationModule>();
+        world.import::<DamageModule>();
+        world.import::<SkinModule>();
+        world.import::<VanishModule>();
+        world.import::<hyperion_permission::PermissionModule>();
+        world.import::<hyperion_utils::HyperionUtilsModule>();
+        world.import::<hyperion_clap::ClapCommandModule>();
+        world.import::<hyperion_genmap::GenMapModule>();
+        world.import::<hyperion_item::ItemModule>();
+
+        world.get::<&mut CommandRegistry>(|registry| {
+            command::register(registry, world);
+        });
+
+        world.set(hyperion_utils::AppId {
+            qualifier: "com".to_string(),
+            organization: "andrewgazelka".to_string(),
+            application: "hyperion-poc".to_string(),
+        });
+
+        // import spatial module and index all players
+        world.import::<spatial::SpatialModule>();
+
+        // Every player is spatially indexed and starts on the red team.
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with(id::<Player>())
+            .each_entity(|entity, ()| {
+                entity.add(id::<spatial::Spatial>());
+                entity.set(Team::Red);
+            });
     }
 }
 
 pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
-    let mut app = App::new();
+    let world = World::new();
 
-    app.insert_resource(Endpoint::from(address));
-    app.insert_resource(crypto);
-    app.add_plugins((HyperionCore, BedwarsPlugin));
-    app.world_mut().trigger(SetProxyAddress {
+    world.import::<HyperionCore>();
+    world.import::<HyperionProxyModule>();
+    world.import::<BedwarsModule>();
+
+    world.set(ProxyAddress {
         server: address.to_string(),
-        ..SetProxyAddress::default()
+        ..ProxyAddress::default()
     });
+
+    world.set(crypto);
+    world.set(GameServerEndpoint::from(address));
+
+    let mut app = world.app();
+
+    app.enable_rest(0)
+        .enable_stats(true)
+        .set_threads(i32::try_from(rayon::current_num_threads())?);
 
     app.run();
 

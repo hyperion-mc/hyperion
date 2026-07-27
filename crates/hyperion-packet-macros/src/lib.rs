@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 
+mod lifetime;
 mod packet;
 mod replace;
 mod state;
@@ -33,4 +34,28 @@ pub fn for_each_play_c2s_packet(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn for_each_state(input: TokenStream) -> TokenStream {
     state::for_each_state(input)
+}
+
+/// Same as [`macro@for_each_state`], but skips the `play` state.
+#[proc_macro]
+pub fn for_each_pre_play_state(input: TokenStream) -> TokenStream {
+    state::for_each_pre_play_state(input)
+}
+
+/// Repeats `input` once per play C2S packet that does not borrow, substituting `PACKET`.
+#[proc_macro]
+pub fn for_each_static_play_c2s_packet(input: TokenStream) -> TokenStream {
+    lifetime::STATIC_PLAY_C2S_PACKETS
+        .iter()
+        .flat_map(|packet| lifetime::replace(input.clone(), packet))
+        .collect()
+}
+
+/// Repeats `input` once per play C2S packet that borrows, substituting `PACKET`.
+#[proc_macro]
+pub fn for_each_lifetime_play_c2s_packet(input: TokenStream) -> TokenStream {
+    lifetime::LIFETIME_PLAY_C2S_PACKETS
+        .iter()
+        .flat_map(|packet| lifetime::replace(input.clone(), packet))
+        .collect()
 }

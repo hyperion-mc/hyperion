@@ -1,18 +1,19 @@
 use std::{net::SocketAddr, path::Path};
 
-use bevy::prelude::*;
+use flecs_ecs::{core::World, prelude::*};
 use hyperion::runtime::AsyncRuntime;
 use tokio::net::TcpListener;
 
-pub struct HyperionProxyPlugin;
+#[derive(Component)]
+pub struct HyperionProxyModule;
 
-#[derive(Event)]
-pub struct SetProxyAddress {
+#[derive(Component)]
+pub struct ProxyAddress {
     pub proxy: String,
     pub server: String,
 }
 
-impl Default for SetProxyAddress {
+impl Default for ProxyAddress {
     fn default() -> Self {
         Self {
             proxy: "0.0.0.0:25565".to_string(),
@@ -21,36 +22,49 @@ impl Default for SetProxyAddress {
     }
 }
 
-impl Plugin for HyperionProxyPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<SetProxyAddress>();
-        app.add_observer(update_proxy_address);
+impl Module for HyperionProxyModule {
+    fn module(world: &World) {
+        world.import::<hyperion::HyperionCore>();
+        world
+            .component::<ProxyAddress>()
+            .add_trait::<flecs::Singleton>();
+
+        proxy_address_observer(world);
     }
 }
 
-fn update_proxy_address(trigger: Trigger<'_, SetProxyAddress>, runtime: Res<'_, AsyncRuntime>) {
-    let proxy = trigger.proxy.clone();
-    let server = trigger.server.clone();
+fn proxy_address_observer(world: &World) {
+    let mut query = world.observer_named::<flecs::OnSet, (
+        &ProxyAddress, // (0)
+        &AsyncRuntime, // (1)
+    )>("proxy_address");
 
-    runtime.spawn(async move {
-        let listener = TcpListener::bind(&proxy).await.unwrap();
-        tracing::info!("Listening on {proxy}");
+    query.term_at(1).filter();
 
-        let addr: SocketAddr = tokio::net::lookup_host(&server)
+    query.each(|(addresses, runtime)| {
+        let proxy = addresses.proxy.clone();
+        let server = addresses.server.clone();
+
+        runtime.spawn(async move {
+            let listener = TcpListener::bind(&proxy).await.unwrap();
+            tracing::info!("Listening on {proxy}");
+
+            let addr: SocketAddr = tokio::net::lookup_host(&server)
+                .await
+                .unwrap()
+                .next()
+                .unwrap();
+
+            hyperion_proxy::run_proxy(
+                listener,
+                addr,
+                server.clone(),
+                Path::new("root_ca.crt"),
+                Path::new("proxy.crt"),
+                Path::new("proxy_private_key.pem"),
+            )
             .await
-            .unwrap()
-            .next()
             .unwrap();
-
-        hyperion_proxy::run_proxy(
-            listener,
-            addr,
-            server.clone(),
-            Path::new("root_ca.crt"),
-            Path::new("proxy.crt"),
-            Path::new("proxy_private_key.pem"),
-        )
-        .await
-        .unwrap();
+        });
     });
 }

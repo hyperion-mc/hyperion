@@ -4,7 +4,7 @@ name = "packet_channel"
 
 [dependencies]
 arc-swap = { workspace = true }
-bevy = { workspace = true }
+flecs_ecs = { workspace = true }
 more-asserts = { workspace = true }
 valence_protocol = { workspace = true }
 

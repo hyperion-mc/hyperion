@@ -13,7 +13,7 @@ use std::{
 };
 
 use arc_swap::ArcSwapOption;
-use bevy::prelude::*;
+use flecs_ecs::macros::Component;
 use more_asserts::debug_assert_le;
 use valence_protocol::MAX_PACKET_SIZE;
 
@@ -417,7 +417,6 @@ impl RawPacket {
         Self { fragment, range }
     }
 
-    #[expect(clippy::missing_const_for_fn, reason = "false positive")]
     #[must_use]
     pub fn fragment_id(&self) -> usize {
         self.fragment.id

@@ -1,5 +1,5 @@
-use bevy::prelude::*;
-use hyperion_clap::MinecraftCommand;
+use flecs_ecs::core::World;
+use hyperion_clap::{MinecraftCommand, hyperion_command::CommandRegistry};
 
 use crate::command::{
     bow::BowCommand, chest::ChestCommand, fly::FlyCommand, gui::GuiCommand,
@@ -17,14 +17,14 @@ mod speed;
 mod vanish;
 mod xp;
 
-pub fn register(world: &mut World) {
-    BowCommand::register(world);
-    FlyCommand::register(world);
-    GuiCommand::register(world);
-    RaycastCommand::register(world);
-    ShootCommand::register(world);
-    SpeedCommand::register(world);
-    VanishCommand::register(world);
-    XpCommand::register(world);
-    ChestCommand::register(world);
+pub fn register(registry: &mut CommandRegistry, world: &World) {
+    BowCommand::register(registry, world);
+    FlyCommand::register(registry, world);
+    GuiCommand::register(registry, world);
+    RaycastCommand::register(registry, world);
+    ShootCommand::register(registry, world);
+    SpeedCommand::register(registry, world);
+    VanishCommand::register(registry, world);
+    XpCommand::register(registry, world);
+    ChestCommand::register(registry, world);
 }

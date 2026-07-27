@@ -7,6 +7,17 @@ pub fn for_each_state(input: TokenStream) -> TokenStream {
     replace(input, STATES.iter().copied(), StateIdentReplacer)
 }
 
+/// Every state except `play`. Play packets are dispatched through
+/// `hyperion::simulation::packet::HandlerRegistry` rather than through a decoded-packet queue, so
+/// code which generates one queue per state must skip it.
+pub fn for_each_pre_play_state(input: TokenStream) -> TokenStream {
+    replace(
+        input,
+        STATES.iter().copied().filter(|state| state.name != "play"),
+        StateIdentReplacer,
+    )
+}
+
 #[derive(Copy, Clone)]
 struct State {
     name: &'static str,

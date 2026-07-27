@@ -23,8 +23,11 @@ impl Game {
     pub fn new() -> Self {
         let world = World::new();
         let server = Arc::new(MockServer::new());
-        world.set(ServerHandle(server.clone()));
+        // Import before set: the workspace enables flecs_manual_registration,
+        // so ServerHandle must be registered -- which the module does -- before
+        // anything uses it.
         world.import::<SmashModule>();
+        world.set(ServerHandle(server.clone()));
         Self {
             world,
             server,

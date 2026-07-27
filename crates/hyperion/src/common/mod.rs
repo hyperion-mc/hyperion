@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use bevy::prelude::*;
+use flecs_ecs::macros::Component;
 use libdeflater::CompressionLvl;
 use valence_protocol::CompressionThreshold;
 
@@ -12,6 +12,8 @@ pub mod command_channel;
 pub mod config;
 pub mod runtime;
 pub mod util;
+
+pub use command_channel::CommandChannel;
 
 /// Shared data that is shared between the ECS framework and the IO thread.
 pub struct Shared {

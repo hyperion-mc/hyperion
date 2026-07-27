@@ -1,6 +1,6 @@
 use anyhow::{Context, ensure};
-use bevy::prelude::*;
 use bytes::{Bytes, BytesMut};
+use flecs_ecs::macros::Component;
 use itertools::Either;
 use packet_channel::RawPacket;
 use valence_protocol::{

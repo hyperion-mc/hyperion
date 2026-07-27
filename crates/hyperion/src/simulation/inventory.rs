@@ -1,15 +1,18 @@
 use std::borrow::Cow;
 
-use bevy::prelude::*;
+use flecs_ecs::{
+    core::{EntityViewGet, SystemAPI, World, flecs, id},
+    macros::{Component, observer, system},
+    prelude::Module,
+};
 use hyperion_inventory::{
     CursorItem, Inventory, InventoryState, ItemKindExt, ItemSlot, OpenInventory, PlayerInventory,
 };
 use hyperion_utils::EntityExt;
-use tracing::error;
 use valence_protocol::{
     VarInt,
     packets::play::{
-        self,
+        self, ClickSlotC2s, UpdateSelectedSlotC2s,
         click_slot_c2s::{ClickMode, SlotChange},
         entity_equipment_update_s2c::EquipmentEntry,
     },
@@ -17,235 +20,185 @@ use valence_protocol::{
 use valence_server::ItemStack;
 use valence_text::IntoText;
 
-use super::event;
-use crate::{
-    ingress,
-    net::{Compose, ConnectionId, DataBundle},
-    simulation::{packet, packet_state},
-};
+use super::{Player, event, handlers::PacketSwitchQuery};
+use crate::net::{Compose, ConnectionId, DataBundle};
 
-pub struct InventoryPlugin;
+#[derive(Component)]
+pub struct InventoryModule;
 
-impl Plugin for InventoryPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_observer(initialize_inventory_state);
-        app.add_observer(on_inventory_open);
-        app.add_observer(on_inventory_close);
-        app.add_systems(
-            FixedUpdate,
-            (
-                (
-                    handle_close_window,
-                    handle_update_selected_slot,
-                    handle_click_slot,
-                )
-                    .after(ingress::decode::play),
-                update_player_inventory
-                    .after(handle_close_window)
-                    .after(handle_update_selected_slot)
-                    .after(handle_click_slot),
-            ),
-        );
-    }
-}
+impl Module for InventoryModule {
+    fn module(world: &World) {
+        world.component::<OpenInventory>();
+        world.component::<InventoryState>();
 
-fn initialize_inventory_state(
-    trigger: Trigger<'_, OnAdd, packet_state::Play>,
-    mut commands: Commands<'_, '_>,
-) {
-    commands
-        .entity(trigger.target())
-        .insert(InventoryState::default())
-        .insert(PlayerInventory::default());
-}
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, InventoryState)>();
 
-fn on_inventory_open(
-    trigger: Trigger<'_, OnInsert, OpenInventory>,
-    compose: Res<'_, Compose>,
-    mut player_query: Query<
-        '_,
-        '_,
-        (
+        observer!(
+            world,
+            flecs::OnSet,
             &OpenInventory,
+            &Compose,
             &mut InventoryState,
             &CursorItem,
             &ConnectionId,
-        ),
-    >,
-    inventory_query: Query<'_, '_, &Inventory>,
-) {
-    let (open_inventory, mut inv_state, cursor_item, &stream_id) =
-        match player_query.get_mut(trigger.target()) {
-            Ok(data) => data,
-            Err(e) => {
-                error!("failed to process open inventory: player query failed: {e}");
-                return;
-            }
-        };
+        )
+        .each_iter(
+            |it, row, (open_inventory, compose, inv_state, cursor_item, io)| {
+                let world = it.world();
+                let entity = it.entity(row);
+                let _entity_id = VarInt(entity.minecraft_id());
+                let stream_id = *io;
 
-    let inventory = match inventory_query.get(open_inventory.entity) {
-        Ok(data) => data,
-        Err(e) => {
-            error!("failed to process open inventory: inventory query failed: {e}");
-            return;
-        }
-    };
+                inv_state.set_window_id();
 
-    inv_state.set_window_id();
+                open_inventory
+                    .entity
+                    .entity_view(world)
+                    .try_get::<&mut Inventory>(|inventory| {
+                        let packet = &(play::OpenScreenS2c {
+                            window_id: VarInt(i32::from(inv_state.window_id())),
+                            window_type: inventory.kind(),
+                            window_title: inventory.title().to_string().into_cow_text(),
+                        });
 
-    let packet = &(play::OpenScreenS2c {
-        window_id: VarInt(i32::from(inv_state.window_id())),
-        window_type: inventory.kind(),
-        window_title: inventory.title().to_string().into_cow_text(),
-    });
+                        compose.unicast(packet, stream_id).unwrap();
 
-    compose.unicast(packet, stream_id).unwrap();
+                        let packet = &(play::InventoryS2c {
+                            window_id: inv_state.window_id(),
+                            state_id: VarInt(inv_state.state_id()),
+                            slots: Cow::Owned(
+                                inventory
+                                    .slots()
+                                    .iter()
+                                    .map(|slot| slot.stack.clone())
+                                    .collect(),
+                            ),
+                            carried_item: Cow::Borrowed(&cursor_item.0),
+                        });
 
-    let packet = &(play::InventoryS2c {
-        window_id: inv_state.window_id(),
-        state_id: VarInt(inv_state.state_id()),
-        slots: Cow::Owned(
-            inventory
-                .slots()
-                .iter()
-                .map(|slot| slot.stack.clone())
-                .collect(),
-        ),
-        carried_item: Cow::Borrowed(&cursor_item.0),
-    });
+                        compose.unicast(packet, stream_id).unwrap();
+                    })
+                    .expect("open inventory: no inventory found");
+            },
+        );
 
-    compose.unicast(packet, stream_id).unwrap();
-}
-
-fn on_inventory_close(
-    trigger: Trigger<'_, OnRemove, OpenInventory>,
-    compose: Res<'_, Compose>,
-    mut query: Query<'_, '_, (&mut InventoryState, &ConnectionId)>,
-) {
-    let (mut inv_state, &stream_id) = match query.get_mut(trigger.target()) {
-        Ok(data) => data,
-        Err(e) => {
-            error!("failed to process close inventory: query failed: {e}");
-            return;
-        }
-    };
-
-    inv_state.reset_window_id();
-
-    let packet = &(play::CloseScreenS2c {
-        window_id: inv_state.window_id(),
-    });
-
-    compose.unicast(packet, stream_id).unwrap();
-}
-
-fn update_player_inventory(
-    compose: Res<'_, Compose>,
-    player_query: Query<
-        '_,
-        '_,
-        (
-            Entity,
-            &InventoryState,
-            &CursorItem,
-            Option<&OpenInventory>,
+        observer!(
+            world,
+            flecs::OnRemove,
+            &OpenInventory,
+            &Compose,
+            &mut InventoryState,
             &ConnectionId,
-        ),
-    >,
-    mut inventory_query: Query<'_, '_, &mut Inventory>,
-) {
-    for (entity, inv_state, cursor_item, open_inventory, &stream_id) in player_query {
-        let mut inventory;
-        let open_inv;
-        if let Some(open_inventory) = open_inventory {
-            match inventory_query.get_many_mut([entity, open_inventory.entity]) {
-                Ok([a, b]) => {
-                    inventory = a;
-                    open_inv = Some(b);
-                }
-                Err(e) => {
-                    error!("failed to update player inventory: inventory query failed: {e}");
-                    continue;
-                }
-            }
-        } else {
-            inventory = match inventory_query.get_mut(entity) {
-                Ok(inventory) => inventory,
-                Err(e) => {
-                    error!("failed to update player inventory: inventory query failed: {e}");
-                    continue;
-                }
-            };
-            open_inv = None;
-        }
+        )
+        .each_iter(|it, row, (_open_inventory, compose, inv_state, io)| {
+            let entity = it.entity(row);
+            let _entity_id = VarInt(entity.minecraft_id());
+            let stream_id = *io;
 
-        let mut equipment_changes: Vec<EquipmentEntry> = Vec::new();
-        let hand_slot = inventory.get_cursor_index();
-        for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
-            if slot.changed {
-                if idx == usize::from(hand_slot) {
-                    equipment_changes.push(EquipmentEntry {
-                        slot: 0,
-                        item: slot.stack.clone(),
-                    });
-                }
-
-                if idx == 45 {
-                    equipment_changes.push(EquipmentEntry {
-                        slot: 1,
-                        item: slot.stack.clone(),
-                    });
-                }
-
-                if (5..=8).contains(&idx) {
-                    let index = match idx {
-                        5 => 5,
-                        6 => 4,
-                        7 => 3,
-                        8 => 2,
-                        _ => 0,
-                    };
-                    equipment_changes.push(EquipmentEntry {
-                        slot: index,
-                        item: slot.stack.clone(),
-                    });
-                }
-            }
-        }
-
-        if !equipment_changes.is_empty() {
-            let packet = &(play::EntityEquipmentUpdateS2c {
-                entity_id: VarInt(entity.minecraft_id()),
-                equipment: equipment_changes,
+            let packet = &(play::CloseScreenS2c {
+                window_id: inv_state.window_id(),
             });
 
-            compose
-                .broadcast_channel(packet, entity.into())
-                .exclude(stream_id)
-                .send()
-                .unwrap();
-        }
+            inv_state.reset_window_id();
 
-        if let Some(mut open_inv) = open_inv {
-            update_player_inventory_inner(
-                &compose,
-                stream_id,
-                inv_state,
-                cursor_item,
-                open_inv
-                    .slots_mut()
-                    .iter_mut()
-                    .chain(inventory.slots_inventory_mut().iter_mut()),
-            );
-        } else {
-            update_player_inventory_inner(
-                &compose,
-                stream_id,
-                inv_state,
-                cursor_item,
-                inventory.slots_mut().iter_mut(),
-            );
-        }
+            compose.unicast(packet, stream_id).unwrap();
+        });
+
+        system!(
+            "update_player_inventory",
+            world,
+            &Compose,
+            &mut PlayerInventory,
+            &InventoryState,
+            &CursorItem,
+            ?&OpenInventory,
+            &ConnectionId,
+        )
+        .kind(id::<flecs_ecs::prelude::flecs::pipeline::OnStore>())
+        .each_iter(
+            |it, row, (compose, inventory, inv_state, cursor_item, open_inventory, io)| {
+                let world = it.world();
+                let entity = it.entity(row);
+                let entity_id = VarInt(entity.minecraft_id());
+                let stream_id = *io;
+
+                // update held item, offhand, and equipment
+                let mut equipment_changes: Vec<EquipmentEntry> = Vec::new();
+                let hand_slot = inventory.get_cursor_index();
+                for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
+                    if slot.changed {
+                        if idx == usize::from(hand_slot) {
+                            equipment_changes.push(EquipmentEntry {
+                                slot: 0,
+                                item: slot.stack.clone(),
+                            });
+                        }
+
+                        if idx == 45 {
+                            equipment_changes.push(EquipmentEntry {
+                                slot: 1,
+                                item: slot.stack.clone(),
+                            });
+                        }
+
+                        if (5..=8).contains(&idx) {
+                            let index = match idx {
+                                5 => 5,
+                                6 => 4,
+                                7 => 3,
+                                8 => 2,
+                                _ => 0,
+                            };
+                            equipment_changes.push(EquipmentEntry {
+                                slot: index,
+                                item: slot.stack.clone(),
+                            });
+                        }
+                    }
+                }
+
+                if !equipment_changes.is_empty() {
+                    let packet = &(play::EntityEquipmentUpdateS2c {
+                        entity_id,
+                        equipment: equipment_changes,
+                    });
+
+                    compose
+                        .broadcast_channel(packet, entity.into())
+                        .exclude(stream_id)
+                        .send()
+                        .unwrap();
+                }
+
+                if let Some(open_inventory) = open_inventory {
+                    open_inventory
+                        .entity
+                        .entity_view(world)
+                        .get::<&mut Inventory>(|open_inv| {
+                            update_player_inventory_inner(
+                                compose,
+                                stream_id,
+                                inv_state,
+                                cursor_item,
+                                open_inv
+                                    .slots_mut()
+                                    .iter_mut()
+                                    .chain(inventory.slots_inventory_mut().iter_mut()),
+                            );
+                        });
+                } else {
+                    update_player_inventory_inner(
+                        compose,
+                        stream_id,
+                        inv_state,
+                        cursor_item,
+                        inventory.slots_mut().iter_mut(),
+                    );
+                }
+            },
+        );
     }
 }
 
@@ -289,51 +242,30 @@ fn update_player_inventory_inner<'a>(
     }
 }
 
-fn handle_close_window(
-    mut packets: EventReader<'_, '_, packet::play::CloseHandledScreen>,
-    mut commands: Commands<'_, '_>,
+pub fn handle_update_selected_slot(
+    packet: UpdateSelectedSlotC2s,
+    query: &mut PacketSwitchQuery<'_>,
 ) {
-    for packet in packets.read() {
-        commands.entity(packet.sender()).remove::<OpenInventory>();
+    let Ok(slot) = u8::try_from(packet.slot) else {
+        return;
+    };
+
+    if query.inventory.set_cursor(u16::from(slot)).is_err() {
+        return;
     }
-}
 
-fn handle_update_selected_slot(
-    mut packets: EventReader<'_, '_, packet::play::UpdateSelectedSlot>,
-    mut query: Query<'_, '_, &mut Inventory>,
-    mut event_writer: EventWriter<'_, event::UpdateSelectedSlotEvent>,
-) {
-    for packet in packets.read() {
-        let mut inventory = match query.get_mut(packet.sender()) {
-            Ok(inventory) => inventory,
-            Err(e) => {
-                error!("failed to update selected slot: query failed: {e}");
-                continue;
-            }
-        };
+    let event = event::UpdateSelectedSlotEvent {
+        client: query.id,
+        slot,
+    };
 
-        let Ok(slot) = u8::try_from(packet.slot) else {
-            continue;
-        };
-
-        if inventory.set_cursor(u16::from(slot)).is_err() {
-            continue;
-        }
-
-        let event = event::UpdateSelectedSlotEvent {
-            client: packet.sender(),
-            slot,
-        };
-
-        event_writer.write(event);
-    }
+    query.events.push(event, query.world);
 }
 
 #[expect(clippy::too_many_arguments)]
 fn handle_click_slot_inner<'a>(
-    packet: &packet::play::ClickSlot,
-    compose: &Compose,
-    event_writer: &mut EventWriter<'_, event::DropItemStackEvent>,
+    packet: &ClickSlotC2s<'_>,
+    query: &PacketSwitchQuery<'_>,
     inv_state: &mut InventoryState,
     player_inventory: &'a mut PlayerInventory,
     cursor_item: &mut CursorItem,
@@ -357,32 +289,32 @@ fn handle_click_slot_inner<'a>(
     // validate that packet_window_id is the same as the inv_state.window_id
     if packet.window_id != inv_state.window_id() {
         resync_inventory(
-            compose,
+            query.compose,
             &inventories_mut,
             inv_state,
             cursor_item,
-            packet.connection_id(),
+            query.io_ref,
         );
         return;
     }
 
     if packet.state_id != VarInt(inv_state.state_id()) {
         resync_inventory(
-            compose,
+            query.compose,
             &inventories_mut,
             inv_state,
             cursor_item,
-            packet.connection_id(),
+            query.io_ref,
         );
     }
 
     if readonly {
         resync_inventory(
-            compose,
+            query.compose,
             &inventories_mut,
             inv_state,
             cursor_item,
-            packet.connection_id(),
+            query.io_ref,
         );
 
         return;
@@ -407,8 +339,7 @@ fn handle_click_slot_inner<'a>(
                 0 => {
                     handle_left_click_slot(
                         packet,
-                        compose,
-                        event_writer,
+                        query,
                         &mut inventories_mut,
                         inv_state,
                         cursor_item,
@@ -418,7 +349,7 @@ fn handle_click_slot_inner<'a>(
                 1 => {
                     handle_right_click_slot(
                         packet,
-                        event_writer,
+                        query,
                         &mut inventories_mut,
                         cursor_item,
                         player_only,
@@ -476,7 +407,7 @@ fn handle_click_slot_inner<'a>(
         ClickMode::DropKey => {
             handle_drop_key(
                 packet,
-                event_writer,
+                query,
                 &mut inventories_mut,
                 cursor_item,
                 player_only,
@@ -485,11 +416,11 @@ fn handle_click_slot_inner<'a>(
     }
 
     resync_inventory(
-        compose,
+        query.compose,
         &inventories_mut,
         inv_state,
         cursor_item,
-        packet.connection_id(),
+        query.io_ref,
     );
 
     let mut has_changed = false;
@@ -501,111 +432,72 @@ fn handle_click_slot_inner<'a>(
     }
 
     if has_changed {
-        inv_state.set_last_button(0, compose.global().tick);
-        inv_state.set_last_mode(ClickMode::Click, compose.global().tick);
+        inv_state.set_last_button(0, query.compose.global().tick);
+        inv_state.set_last_mode(ClickMode::Click, query.compose.global().tick);
     }
 }
 
-fn handle_click_slot(
-    mut packets: EventReader<'_, '_, packet::play::ClickSlot>,
-    mut player_query: Query<
-        '_,
-        '_,
-        (
-            Entity,
-            &mut InventoryState,
-            Option<&OpenInventory>,
-            &mut CursorItem,
-        ),
-    >,
-    compose: Res<'_, Compose>,
-    mut inventory_query: Query<'_, '_, &mut Inventory>,
-    mut event_writer: EventWriter<'_, event::DropItemStackEvent>,
-) {
-    let compose = compose.into_inner();
-    for packet in packets.read() {
-        let (entity, mut inv_state, open_inventory, mut cursor_item) =
-            match player_query.get_mut(packet.sender()) {
-                Ok(data) => data,
-                Err(e) => {
-                    error!("failed to click slot: player query failed: {e}");
-                    continue;
-                }
-            };
+pub fn handle_click_slot(packet: &ClickSlotC2s<'_>, query: &mut PacketSwitchQuery<'_>) {
+    // In here we need to handle different behaviors based on the click mode
+    // First of we need to check if the player has the inventory open
+    // Then we need to check if that inventory is readonly
+    // If so then we need to resync the inventory with the client to make sure the client is in sync with the server
+    query.id.entity_view(query.world).get::<(
+        &mut InventoryState,
+        Option<&OpenInventory>,
+        &mut PlayerInventory,
+        &mut CursorItem,
+    )>(
+        |(inv_state, open_inventory, player_inventory, cursor_item)| {
+            if let Some(open_inventory) = open_inventory {
+                open_inventory
+                    .entity
+                    .entity_view(query.world)
+                    .get::<&mut Inventory>(|open_inv| {
+                        let readonly = open_inv.readonly();
+                        let open_inv_size = open_inv.size();
+                        let player_only = false;
 
-        let mut player_inventory;
-        let open_inv;
-        if let Some(open_inventory) = open_inventory {
-            match inventory_query.get_many_mut([entity, open_inventory.entity]) {
-                Ok([a, b]) => {
-                    player_inventory = a;
-                    open_inv = Some(b);
-                }
-                Err(e) => {
-                    error!("failed to click slot: inventory query failed: {e}");
-                    continue;
-                }
+                        let inventories_mut: Vec<&mut ItemSlot> =
+                            open_inv.slots_mut().iter_mut().collect();
+
+                        handle_click_slot_inner(
+                            packet,
+                            query,
+                            inv_state,
+                            player_inventory,
+                            cursor_item,
+                            readonly,
+                            open_inv_size,
+                            player_only,
+                            inventories_mut,
+                        );
+                    });
+            } else {
+                let readonly = player_inventory.readonly();
+                let open_inv_size = 0;
+                let player_only = true;
+                let inventories_mut: Vec<&mut ItemSlot> = vec![];
+
+                handle_click_slot_inner(
+                    packet,
+                    query,
+                    inv_state,
+                    player_inventory,
+                    cursor_item,
+                    readonly,
+                    open_inv_size,
+                    player_only,
+                    inventories_mut,
+                );
             }
-        } else {
-            player_inventory = match inventory_query.get_mut(entity) {
-                Ok(inventory) => inventory,
-                Err(e) => {
-                    error!("failed to click slot: inventory query failed: {e}");
-                    continue;
-                }
-            };
-            open_inv = None;
-        }
-
-        // In here we need to handle different behaviors based on the click mode
-        // First of we need to check if the player has the inventory open
-        // Then we need to check if that inventory is readonly
-        // If so then we need to resync the inventory with the client to make sure the client is in sync with the server
-        if let Some(mut open_inv) = open_inv {
-            let readonly = open_inv.readonly();
-            let open_inv_size = open_inv.size();
-            let player_only = false;
-
-            let inventories_mut: Vec<&mut ItemSlot> = open_inv.slots_mut().iter_mut().collect();
-
-            handle_click_slot_inner(
-                packet,
-                compose,
-                &mut event_writer,
-                &mut inv_state,
-                &mut player_inventory,
-                &mut cursor_item,
-                readonly,
-                open_inv_size,
-                player_only,
-                inventories_mut,
-            );
-        } else {
-            let readonly = player_inventory.readonly();
-            let open_inv_size = 0;
-            let player_only = true;
-            let inventories_mut: Vec<&mut ItemSlot> = vec![];
-
-            handle_click_slot_inner(
-                packet,
-                compose,
-                &mut event_writer,
-                &mut inv_state,
-                &mut player_inventory,
-                &mut cursor_item,
-                readonly,
-                open_inv_size,
-                player_only,
-                inventories_mut,
-            );
-        }
-    }
+        },
+    );
 }
 
 fn handle_left_click_slot(
-    packet: &packet::play::ClickSlot,
-    compose: &Compose,
-    event_writer: &mut EventWriter<'_, event::DropItemStackEvent>,
+    packet: &ClickSlotC2s<'_>,
+    query: &PacketSwitchQuery<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     inv_state: &mut InventoryState,
     cursor_item: &mut CursorItem,
@@ -616,12 +508,12 @@ fn handle_left_click_slot(
             return;
         }
         let event = event::DropItemStackEvent {
-            client: packet.sender(),
+            client: query.id,
             from_slot: None,
             item: cursor_item.0.clone(),
         };
         cursor_item.0 = ItemStack::EMPTY;
-        event_writer.write(event);
+        query.events.push(event, query.world);
         return;
     }
 
@@ -654,7 +546,7 @@ fn handle_left_click_slot(
         slot.stack = cursor;
         slot.changed = true;
         cursor_item.0 = ItemStack::EMPTY;
-        inv_state.set_last_stack_clicked(ItemStack::EMPTY, compose.global().tick);
+        inv_state.set_last_stack_clicked(ItemStack::EMPTY, query.compose.global().tick);
     } else if slot.stack.item == cursor.item {
         let count = slot.stack.count.saturating_add(cursor.count);
         let max = slot.stack.item.max_stack();
@@ -669,19 +561,19 @@ fn handle_left_click_slot(
         }
 
         slot.changed = true;
-        inv_state.set_last_stack_clicked(slot.stack.clone(), compose.global().tick);
+        inv_state.set_last_stack_clicked(slot.stack.clone(), query.compose.global().tick);
     } else {
         let old_slot_stack = slot.stack.clone();
         slot.stack = cursor;
         slot.changed = true;
         cursor_item.0 = old_slot_stack.clone();
-        inv_state.set_last_stack_clicked(old_slot_stack, compose.global().tick);
+        inv_state.set_last_stack_clicked(old_slot_stack, query.compose.global().tick);
     }
 }
 
 fn handle_right_click_slot(
-    packet: &packet::play::ClickSlot,
-    event_writer: &mut EventWriter<'_, event::DropItemStackEvent>,
+    packet: &ClickSlotC2s<'_>,
+    query: &PacketSwitchQuery<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     cursor_item: &mut CursorItem,
     player_only: bool,
@@ -694,11 +586,14 @@ fn handle_right_click_slot(
             if cursor_item.0.count == 0 {
                 cursor_item.0 = ItemStack::EMPTY;
             }
-            event_writer.write(event::DropItemStackEvent {
-                client: packet.sender(),
-                from_slot: None,
-                item: new_stack,
-            });
+            query.events.push(
+                event::DropItemStackEvent {
+                    client: query.id,
+                    from_slot: None,
+                    item: new_stack,
+                },
+                query.world,
+            );
         }
         return;
     }
@@ -887,7 +782,7 @@ fn handle_right_drag_slot(
 }
 
 fn handle_double_click(
-    packet: &packet::play::ClickSlot,
+    packet: &ClickSlotC2s<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     inv_state: &InventoryState,
     cursor_item: &mut CursorItem,
@@ -963,7 +858,7 @@ fn handle_double_click(
 }
 
 fn handle_shift_click(
-    packet: &packet::play::ClickSlot,
+    packet: &ClickSlotC2s<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     open_inv_size: usize,
     player_only: bool,
@@ -1055,7 +950,7 @@ fn handle_shift_click(
 }
 
 fn handle_hotbar_swap(
-    packet: &packet::play::ClickSlot,
+    packet: &ClickSlotC2s<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     open_inv_size: usize,
     player_only: bool,
@@ -1111,8 +1006,8 @@ fn handle_hotbar_swap(
 }
 
 fn handle_drop_key(
-    packet: &packet::play::ClickSlot,
-    event_writer: &mut EventWriter<'_, event::DropItemStackEvent>,
+    packet: &ClickSlotC2s<'_>,
+    query: &PacketSwitchQuery<'_>,
     inventories_mut: &mut Vec<&mut ItemSlot>,
     cursor_item: &mut CursorItem,
     _player_only: bool,
@@ -1144,12 +1039,12 @@ fn handle_drop_key(
         }
 
         let event = event::DropItemStackEvent {
-            client: packet.sender(),
+            client: query.id,
             from_slot: None,
             item: dropped,
         };
 
-        event_writer.write(event);
+        query.events.push(event, query.world);
         return;
     }
 
@@ -1183,12 +1078,12 @@ fn handle_drop_key(
     slot.changed = true;
 
     let event = event::DropItemStackEvent {
-        client: packet.sender(),
+        client: query.id,
         from_slot: Some(slot_idx),
         item: dropped,
     };
 
-    event_writer.write(event);
+    query.events.push(event, query.world);
 }
 
 fn try_move_to_slot(source: &mut ItemStack, target: &mut ItemSlot) -> bool {
@@ -1252,4 +1147,13 @@ fn resync_inventory(
     });
 
     compose.unicast(packet, stream_id).unwrap();
+}
+
+/// Closes whatever inventory the player currently has open. Removing [`OpenInventory`] is what
+/// makes the close screen packet go out, via the `flecs::OnRemove` observer above.
+pub fn handle_close_window(query: &PacketSwitchQuery<'_>) {
+    query
+        .id
+        .entity_view(query.world)
+        .remove(id::<OpenInventory>());
 }

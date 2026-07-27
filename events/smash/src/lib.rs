@@ -20,9 +20,18 @@ use crate::module::{
 #[derive(Component)]
 pub struct SmashModule;
 
+use crate::server::{PlayerId, ServerHandle};
+
 impl Module for SmashModule {
     fn module(world: &World) {
         world.module::<Self>("smash");
+
+        // The workspace enables flecs_manual_registration, so every component
+        // must be registered before first use. ServerHandle belongs to no
+        // submodule -- it is the seam the host installs -- so it registers here.
+        world.component::<ServerHandle>();
+        world.component::<PlayerId>();
+
         world.import::<PlayerModule>();
         world.import::<KnockbackModule>();
         world.import::<DamageModule>();
