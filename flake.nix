@@ -339,6 +339,21 @@
               '';
             };
 
+            # Joins a running server with the real Minecraft client and says
+            # whether a player reached the world.
+            #
+            # Everything else in this file reads the wire; this reads the game.
+            # The distance between the two is not theoretical: the scripted
+            # client passed for a week while every real client was dropped
+            # during registry loading, because the scripted one does not load
+            # registries. It cannot run in CI, since it needs a launcher, an
+            # account and a GPU, so it is a command a person runs before saying
+            # an address works.
+            real-client = {
+              deps = [ pkgs.bash ];
+              text = ''exec ./tools/real-client-join.sh "$@"'';
+            };
+
             # Boots the whole stack, drives a scripted 26.2 client through it,
             # and exits with that client's verdict.
             #

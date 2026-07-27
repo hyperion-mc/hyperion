@@ -278,6 +278,9 @@ Every command is a flake app, so nix is the only thing you need installed.
 | `nix run .#deny` | `cargo deny check` |
 | `nix run .#unused-deps` | `cargo machete` |
 | `nix run .#doc` | Workspace documentation |
+| `nix run .#e2e` | Boots the stack and drives a scripted 26.2 client through it |
+| `nix run .#smash-e2e` | The same on smash: four clients, a whole match |
+| `nix run .#real-client -- <host:port>` | Joins with the actual game and says whether a player reached the world |
 
 `nix build .#bedwars` builds a release binary, and `nix flake check` builds every
 app. If you would rather use cargo directly, `nix develop` gives you a shell with
