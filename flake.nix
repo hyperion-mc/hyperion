@@ -1,5 +1,15 @@
 {
-  description = "Hyperion - A Minecraft bot framework";
+  description = "Hyperion - A Minecraft game engine";
+
+  nixConfig = {
+    extra-substituters = [ "https://cache.ix.dev" ];
+    extra-trusted-public-keys = [
+      "ix-workspace:JuAaeOPfR3GL3nUICpEz/88/+S3BzGF3L6bPYFy0GwI="
+    ];
+    # cargoUnit content-addresses every crate unit, so a source change that does
+    # not change a crate's output stops the rebuild there instead of at the root.
+    extra-experimental-features = [ "ca-derivations" ];
+  };
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -7,9 +17,13 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    index = {
+      url = "github:indexable-inc/index";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, ... }:
+  outputs = { self, nixpkgs, rust-overlay, index, ... }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
@@ -18,105 +32,237 @@
         "aarch64-darwin"
       ];
 
+      # rust-toolchain.toml is the one place the version lives; rustup users and
+      # CI already read it, so the flake reads it too rather than restating it.
+      rustChannel = (nixpkgs.lib.importTOML ./rust-toolchain.toml).toolchain.channel;
+
+      # Raising this is what keeps the proxy from running out of sockets once a
+      # few thousand bots connect.
+      fileDescriptors = "32768";
+
+      clippyArgs = "--all-targets --all-features";
+
       mkSystem = system:
         let
-          overlays = [ (import rust-overlay) ];
           pkgs = import nixpkgs {
-            inherit system overlays;
+            inherit system;
+            overlays = [ (import rust-overlay) ];
           };
 
-          rustToolchain = pkgs.rust-bin.nightly."2025-02-22".default.override {
-            extensions = [ "rust-src" "rustfmt" "clippy" ];
+          inherit (pkgs) lib;
+
+          rustWith = components: pkgs.rust-bin.fromRustupToolchain {
+            channel = rustChannel;
+            inherit components;
           };
 
-          nativeBuildInputs = with pkgs; [
-            rustToolchain
-            pkg-config
-            cmake
+          rustToolchain = rustWith [ "rustfmt" "clippy" "rust-src" ];
+          rustWithMiri = rustWith [ "rustfmt" "clippy" "rust-src" "miri" ];
+          rustWithCoverage = rustWith [ "rustfmt" "clippy" "rust-src" "llvm-tools-preview" ];
+
+          cargoTools = [
+            pkgs.cargo-deny
+            pkgs.cargo-machete
+            pkgs.cargo-nextest
+            pkgs.cargo-watch
           ];
 
-          buildInputs = with pkgs; [
-            openssl
-          ] ++ lib.optionals stdenv.isDarwin [
-            darwin.apple_sdk.frameworks.Security
-            darwin.apple_sdk.frameworks.SystemConfiguration
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.pkg-config
           ];
 
-          hyperion = pkgs.rustPlatform.buildRustPackage {
+          # Every dev command carries the tools it needs, so `nix run .#lint`
+          # works on a machine with nothing but nix installed.
+          mkScript = name: { text, deps ? [ ], toolchain ? rustToolchain }:
+            pkgs.writeShellApplication {
+              inherit name text;
+              runtimeInputs = [ toolchain ] ++ deps;
+            };
+
+          checkScripts = lib.mapAttrs mkScript {
+            fmt.text = ''cargo fmt --all "$@"'';
+
+            lint.text = ''cargo clippy ${clippyArgs} -- -D warnings'';
+
+            lint-fix.text = ''
+              cargo clippy --fix --allow-dirty --allow-staged ${clippyArgs} -- -D warnings
+            '';
+
+            test = {
+              deps = [ pkgs.cargo-nextest ];
+              text = ''cargo nextest run "$@"'';
+            };
+
+            # Only tests whose name contains "miri" run under it; the rest are
+            # far too slow to interpret.
+            miri = {
+              deps = [ pkgs.cargo-nextest ];
+              toolchain = rustWithMiri;
+              text = ''
+                export MIRIFLAGS='-Zmiri-tree-borrows -Zmiri-ignore-leaks'
+                cargo miri nextest run miri "$@"
+              '';
+            };
+
+            deny = {
+              deps = [ pkgs.cargo-deny ];
+              text = ''cargo deny check "$@"'';
+            };
+
+            unused-deps = {
+              deps = [ pkgs.cargo-machete ];
+              text = ''cargo machete'';
+            };
+
+            doc.text = ''cargo doc --workspace --no-deps --all-features "$@"'';
+
+            coverage = {
+              deps = [ pkgs.cargo-llvm-cov ];
+              toolchain = rustWithCoverage;
+              text = ''
+                cargo llvm-cov --all-features --workspace --branch \
+                  --lcov --output-path lcov.info "$@"
+              '';
+            };
+          };
+
+          # The three cheap checks run together and every one of them reports
+          # before the run fails, so a single push can fix all of them.
+          ci = mkScript "ci" {
+            text = ''
+              pids=()
+              "${lib.getExe checkScripts.fmt}" --check & pids+=("$!")
+              "${lib.getExe checkScripts.unused-deps}" & pids+=("$!")
+              "${lib.getExe checkScripts.deny}" & pids+=("$!")
+
+              status=0
+              for pid in "''${pids[@]}"; do
+                wait "$pid" || status=1
+              done
+              [ "$status" -eq 0 ]
+
+              "${lib.getExe checkScripts.lint}"
+              "${lib.getExe checkScripts.test}"
+              "${lib.getExe checkScripts.doc}"
+            '';
+          };
+
+          runners = lib.mapAttrs mkScript {
+            proxy.text = ''
+              ulimit -Sn ${fileDescriptors}
+              exec cargo run --profile release-full --bin hyperion-proxy -- \
+                --server 127.0.0.1:35565 0.0.0.0:25565
+            '';
+
+            bedwars.text = ''
+              exec cargo run --profile release-full -p bedwars -- "$@"
+            '';
+
+            # rust-mc-bot reads its whole configuration from BOT_-prefixed
+            # environment variables, so the address and count cannot be passed
+            # positionally to the binary.
+            bots.text = ''
+              export BOT_SERVER="''${1:-127.0.0.1:25565}"
+              export BOT_BOT_COUNT="''${2:-100}"
+              ulimit -Sn ${fileDescriptors}
+              exec cargo run --release -p rust-mc-bot
+            '';
+
+            # One rebuild-and-restart loop for any profile: `nix run .#dev`, or
+            # `nix run .#dev -- release-full`. One watcher rebuilds bedwars and
+            # touches a trigger file; a second watches only the trigger, which is
+            # what stops a restart from racing a half-written executable.
+            dev = {
+              deps = [ pkgs.cargo-watch pkgs.git pkgs.parallel ];
+              text = ''
+                profile="''${1:-dev}"
+                case "$profile" in
+                  dev | debug) profile=dev; target=debug ;;
+                  *) target="$profile" ;;
+                esac
+
+                root="$(git rev-parse --show-toplevel)"
+                trigger="$root/.trigger-$target"
+                touch "$trigger"
+
+                ulimit -Sn ${fileDescriptors}
+                export RUST_BACKTRACE=full
+
+                parallel --ungroup --halt now,done=1 --jobs 3 ::: \
+                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars'" \
+                  "cargo run --profile $profile --bin hyperion-proxy -- --server 127.0.0.1:35565 0.0.0.0:25565" \
+                  "cargo watch -w '$root/crates/hyperion' -w '$root/events/bedwars' -s 'cargo build --profile $profile -p bedwars' -s 'touch $trigger'"
+              '';
+            };
+          };
+
+          scripts = checkScripts // runners // { inherit ci; };
+
+          cargoUnit = index.lib.cargoUnitExternal {
+            inherit pkgs rustToolchain;
+          };
+
+          workspace = cargoUnit.buildWorkspace {
             pname = "hyperion";
-            version = "0.1.0";
             src = ./.;
+            workspaceRoot = ./.;
+            cargoLock = ./Cargo.lock;
+            cargoArgs = [ "--workspace" ];
 
-            inherit buildInputs nativeBuildInputs;
+            inherit nativeBuildInputs;
 
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              outputHashes = {
-                "bvh-0.1.0" = "sha256-KHQ7Uh1Y4mGIYj16aX36dy927pf401bQFNKBnL+VwCo=";
-                "divan-0.1.17" = "sha256-0zrZsUAqU7f53FEPtAdueOD3rl+G0ekYRKoVEehneNg=";
-                "flecs_ecs-0.1.3" = "sha256-A4gLBl9aK/ThXdkIslouooKn/7jKbfl8OSfg0BRyLT4=";
-                "valence_anvil-0.1.0" = "sha256-sirOc/aNOCbkzvf/igm7PTA1+YOMgj9ov2BINprxNa0=";
-              };
+            # Linting, auditing and unused-dependency checks are the `nix run`
+            # apps above, which use the pinned nightly. cargoUnit's own gates
+            # would run a second, mismatched clippy over the same code.
+            policy = {
+              clippy.enable = false;
+              cargoAudit.enable = false;
+              cargoMachete.enable = false;
+              denyUnusedCrateDependencies = false;
             };
-          };
 
-          # Create minimal runtime environment
-          minimalEnv = pkgs.buildEnv {
-            name = "minimal-env";
-            paths = [
-              (pkgs.runCommand "hyperion-bins" { } ''
-                mkdir -p $out/bin
-                cp ${hyperion}/bin/hyperion-proxy $out/bin/
-                cp ${hyperion}/bin/bedwars $out/bin/
-              '')
-              pkgs.cacert # Required for SSL/TLS
-            ];
-          };
-
-          # Docker image for hyperion-proxy
-          hyperion-proxy-image = pkgs.dockerTools.buildLayeredImage {
-            name = "hyperion-proxy";
-            tag = "latest";
-            maxLayers = 5;
-            contents = [ minimalEnv ];
-
-            config = {
-              Cmd = [ "/bin/hyperion-proxy" "0.0.0.0:8080" ];
-              ExposedPorts = {
-                "8080/tcp" = { };
-              };
-            };
-          };
-
-          # Docker image for bedwars
-          bedwars-image = pkgs.dockerTools.buildLayeredImage {
-            name = "bedwars";
-            tag = "latest";
-            maxLayers = 5;
-            contents = [ minimalEnv ];
-
-            config = {
-              Cmd = [ "/bin/bedwars" "--ip" "0.0.0.0" "--port" "35565" ];
-              ExposedPorts = {
-                "35565/tcp" = { };
-              };
+            # Keyed by the exact source string in Cargo.lock. Refresh with
+            # `nix-prefetch-git --fetch-submodules --url <url> --rev <rev>`.
+            outputHashes = {
+              "git+https://github.com/TestingPlant/bvh-data#9bffb03a4b894a7884c9ec0da986bdde732ac704" =
+                "sha256-QjsyP9XdR53JDNFC8IX1qgTlJQZmanAZU+246QG4v9s=";
+              "git+https://github.com/nvzqz/divan#bca5c9676a35751d0a8164df7d79bda70f23286b" =
+                "sha256-WmzYLzLwXUGuX0K151Kh+fEV6nJJQLq/vb4ijXu01Vg=";
+              "git+https://github.com/TestingPlant/valence?branch=feat-bytes#fb792dcb6669b64c5dc2366eb3d074b293def046" =
+                "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
+              "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5" =
+                "sha256-BV6QgM5d5qanEGonbAV7iOhNDk4aW3ub3++DH7/DY5E=";
             };
           };
         in
         {
           devShells.default = pkgs.mkShell {
-            inherit buildInputs nativeBuildInputs;
+            nativeBuildInputs = nativeBuildInputs ++ cargoTools ++ [ rustToolchain ];
             RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
           };
 
+          apps = lib.mapAttrs
+            (_: script: {
+              type = "app";
+              program = lib.getExe script;
+            })
+            (scripts // { default = scripts.dev; });
+
           packages = {
-            default = hyperion;
-            docker-hyperion-proxy = hyperion-proxy-image;
-            docker-bedwars = bedwars-image;
+            default = workspace.binaries.bedwars;
+            inherit (workspace.binaries) bedwars hyperion-proxy rust-mc-bot;
           };
+
+          # `nix flake check` builds every app, which is what proves each one
+          # passes shellcheck and that its tools resolve.
+          checks = scripts;
+
         };
     in
     {
+      apps = forAllSystems (system: (mkSystem system).apps);
+      checks = forAllSystems (system: (mkSystem system).checks);
       devShells = forAllSystems (system: (mkSystem system).devShells);
       packages = forAllSystems (system: (mkSystem system).packages);
     };
