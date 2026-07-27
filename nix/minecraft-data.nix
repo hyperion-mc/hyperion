@@ -410,6 +410,23 @@ let
     '';
   };
 
+  # The fixtures are committed so `cargo test` runs without nix. That only
+  # stays honest if something notices when the jar stops producing them.
+  fixturesUpToDate = pkgs.runCommand "check-minecraft-encoder-fixtures"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/tests/fixtures/vanilla.json}
+      if diff "$committed" ${encoderFixtures}/fixtures.json > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed test fixtures are stale; regenerate with:" >&2
+        echo "  nix run .#minecraft-encode -- fixtures \\" >&2
+        echo "    crates/hyperion-minecraft-proto/tests/fixtures/vanilla.json" >&2
+        cat diff.txt >&2
+        exit 1
+      fi
+    '';
+
   registryDataUpToDate = pkgs.runCommand "check-minecraft-registry-data"
     { }
     ''
@@ -458,6 +475,7 @@ in
     syncRegistryDataScript
     generatedUpToDate
     registryDataUpToDate
+    fixturesUpToDate
     ;
   inherit pin;
 }

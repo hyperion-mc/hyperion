@@ -429,6 +429,7 @@
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
+            minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-protocol = minecraft.protocolJson;
           };
 
