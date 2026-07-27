@@ -6,7 +6,10 @@
 use std::{collections::BTreeMap, path::Path};
 
 use flecs_ecs::{
-    core::{Entity, EntityView, EntityViewGet, IdOperations, World, flecs, utility::traits::FlecsConstantId},
+    core::{
+        Entity, EntityView, EntityViewGet, IdOperations, World, flecs,
+        utility::traits::FlecsConstantId,
+    },
     sys,
 };
 
@@ -39,7 +42,10 @@ impl core::fmt::Display for LoadError {
         match self {
             Self::Dlopen(e) => write!(f, "could not open module: {e}"),
             Self::MissingEntry(e) => {
-                write!(f, "module exports no `hyperion_hot_module` entry point: {e}")
+                write!(
+                    f,
+                    "module exports no `hyperion_hot_module` entry point: {e}"
+                )
             }
             Self::Abi(m) => write!(f, "refusing to load module: {m}"),
             Self::Refused(r) => write!(f, "{r}"),
@@ -124,8 +130,7 @@ impl HotReloader {
             return Err(LoadError::Abi(reason));
         }
 
-        let opaque: BTreeMap<String, u32> =
-            descriptor.opaque_versions.iter().cloned().collect();
+        let opaque: BTreeMap<String, u32> = descriptor.opaque_versions.iter().cloned().collect();
 
         // Register into a throwaway world first. The candidate's schema is only knowable
         // by running its registration, and running it in the live world is exactly what
@@ -233,13 +238,10 @@ impl HotReloader {
             migrated += write_migrated(world, new_id, &planned.new, migration, &rows);
         }
 
-        self.loaded.insert(
-            descriptor.name.clone(),
-            Loaded {
-                manifest: candidate.clone(),
-                registrations,
-            },
-        );
+        self.loaded.insert(descriptor.name.clone(), Loaded {
+            manifest: candidate.clone(),
+            registrations,
+        });
         migrated
     }
 }

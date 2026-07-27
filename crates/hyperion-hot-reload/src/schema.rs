@@ -161,9 +161,14 @@ impl ComponentSchema {
         match (&self.layout, &new.layout) {
             (Layout::Reflected(a), Layout::Reflected(b)) => a == b,
             (Layout::Enum(a), Layout::Enum(b)) => a == b,
-            (Layout::Opaque { declared_version: a }, Layout::Opaque { declared_version: b }) => {
-                a == b
-            }
+            (
+                Layout::Opaque {
+                    declared_version: a,
+                },
+                Layout::Opaque {
+                    declared_version: b,
+                },
+            ) => a == b,
             // A component that gained or lost reflection has not been proved unchanged,
             // and an unknown interior is never provably unchanged.
             _ => false,

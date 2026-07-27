@@ -55,18 +55,17 @@ impl AbiToken {
         }
         if self.rustc != host.rustc {
             return Some(format!(
-                "module was built by {}, host by {} -- repr(Rust) layout is not stable \
-                 across compilers, so no shared type can be trusted",
+                "module was built by {}, host by {} -- repr(Rust) layout is not stable across \
+                 compilers, so no shared type can be trusted",
                 self.rustc, host.rustc
             ));
         }
         if self.anchor != host.anchor {
             return Some(format!(
-                "module linked its own copy of hyperion-hot-reload (anchor {:p} vs host \
-                 {:p}). It therefore has its own flecs component-index counter and its own \
-                 flecs C globals, which alias the host's silently. Build the module with \
-                 `-C prefer-dynamic` so it links the hyperion-hot-reload dylib \
-                 rather than its rlib.",
+                "module linked its own copy of hyperion-hot-reload (anchor {:p} vs host {:p}). It \
+                 therefore has its own flecs component-index counter and its own flecs C globals, \
+                 which alias the host's silently. Build the module with `-C prefer-dynamic` so it \
+                 links the hyperion-hot-reload dylib rather than its rlib.",
                 self.anchor, host.anchor
             ));
         }

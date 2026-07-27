@@ -118,7 +118,11 @@ impl WorldSample {
 
 fn added(before: &[sys::ecs_entity_t], after: &[sys::ecs_entity_t]) -> Vec<sys::ecs_entity_t> {
     let before: HashSet<_> = before.iter().copied().collect();
-    let mut out: Vec<_> = after.iter().copied().filter(|e| !before.contains(e)).collect();
+    let mut out: Vec<_> = after
+        .iter()
+        .copied()
+        .filter(|e| !before.contains(e))
+        .collect();
     out.sort_unstable();
     out
 }

@@ -153,7 +153,8 @@ fn allows_an_unprovable_layout_with_no_stored_data() {
     };
     let old = module(vec![opaque.clone()]);
     let new = module(vec![opaque]);
-    let plan = gate::plan(Some(&old), &new, &[], &no_data).expect("no stored data, nothing to lose");
+    let plan =
+        gate::plan(Some(&old), &new, &[], &no_data).expect("no stored data, nothing to lose");
     assert_eq!(plan.kept, vec!["demo::Blob"]);
 }
 
@@ -168,10 +169,20 @@ fn an_opaque_version_bump_is_a_layout_change() {
             declared_version: v,
         },
     };
-    let same = gate::plan(Some(&module(vec![at(1)])), &module(vec![at(1)]), &[], &has_data);
+    let same = gate::plan(
+        Some(&module(vec![at(1)])),
+        &module(vec![at(1)]),
+        &[],
+        &has_data,
+    );
     assert!(same.is_ok(), "an unchanged version must be accepted");
 
-    let bumped = gate::plan(Some(&module(vec![at(1)])), &module(vec![at(2)]), &[], &has_data);
+    let bumped = gate::plan(
+        Some(&module(vec![at(1)])),
+        &module(vec![at(2)]),
+        &[],
+        &has_data,
+    );
     assert!(
         bumped.is_err(),
         "a bumped version with no migration must be refused"
@@ -194,8 +205,13 @@ fn a_tag_that_grows_fields_is_not_refused() {
         alignment: 4,
         layout: Layout::Reflected(vec![field("ticks", "u32", 0, 4)]),
     };
-    let plan = gate::plan(Some(&module(vec![tag])), &module(vec![grown]), &[], &has_data)
-        .expect("a tag has no stored bytes to misinterpret");
+    let plan = gate::plan(
+        Some(&module(vec![tag])),
+        &module(vec![grown]),
+        &[],
+        &has_data,
+    )
+    .expect("a tag has no stored bytes to misinterpret");
     assert_eq!(plan.kept, vec!["demo::Frozen"]);
 }
 

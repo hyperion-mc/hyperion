@@ -52,14 +52,13 @@ fn render(world: &World, entity: EntityView<'_>, manifest: &ModuleManifest, name
             let end = start + usize::try_from(f.size).unwrap_or(0);
             let raw = &bytes[start..end];
             let value = match f.type_name.as_str() {
-                "u32" => {
-                    u32::from_le_bytes(raw.try_into().unwrap_or([0; 4])).to_string()
-                }
-                "i32" => {
-                    i32::from_le_bytes(raw.try_into().unwrap_or([0; 4])).to_string()
-                }
+                "u32" => u32::from_le_bytes(raw.try_into().unwrap_or([0; 4])).to_string(),
+                "i32" => i32::from_le_bytes(raw.try_into().unwrap_or([0; 4])).to_string(),
                 "f32" => {
-                    format!("{:.1}", f32::from_le_bytes(raw.try_into().unwrap_or([0; 4])))
+                    format!(
+                        "{:.1}",
+                        f32::from_le_bytes(raw.try_into().unwrap_or([0; 4]))
+                    )
                 }
                 other => format!("<{other} {raw:02x?}>"),
             };
@@ -93,7 +92,10 @@ fn dump(world: &World, reloader: &HotReloader, entities: &[Entity]) {
 
 fn main() {
     let builds: Vec<String> = std::env::args().skip(1).collect();
-    assert!(!builds.is_empty(), "usage: hot-reload-demo <module.dylib>...");
+    assert!(
+        !builds.is_empty(),
+        "usage: hot-reload-demo <module.dylib>..."
+    );
 
     let world = World::new();
     let mut reloader = HotReloader::new();
@@ -103,7 +105,12 @@ fn main() {
         .load(&world, Path::new(&builds[0]))
         .unwrap_or_else(|e| panic!("initial load failed: {e}"));
     println!("  loaded module `{}`", first.module);
-    for c in &reloader.manifest().module("arena").expect("arena").components {
+    for c in &reloader
+        .manifest()
+        .module("arena")
+        .expect("arena")
+        .components
+    {
         println!("    registered: {}", c.describe());
     }
 

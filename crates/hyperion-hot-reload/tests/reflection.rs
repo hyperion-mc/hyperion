@@ -182,12 +182,9 @@ fn a_declared_opaque_version_replaces_unknown() {
     let mut opaque = BTreeMap::new();
     opaque.insert(core::any::type_name::<Unreflected>().to_owned(), 7);
     let schema = schema_of::<Unreflected>(&world, &opaque);
-    assert_eq!(
-        schema.layout,
-        Layout::Opaque {
-            declared_version: 7
-        }
-    );
+    assert_eq!(schema.layout, Layout::Opaque {
+        declared_version: 7
+    });
     assert!(
         schema.is_bit_compatible_with(&schema.clone()),
         "a vouched-for component at the same version is unchanged"

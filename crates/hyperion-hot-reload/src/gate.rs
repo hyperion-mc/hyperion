@@ -55,8 +55,8 @@ impl fmt::Display for Refusal {
         match self {
             Self::MissingMigration { old, new } => write!(
                 f,
-                "component `{}` changed layout and no migration was supplied.\n  \
-                 was: {}\n  now: {}\n  Add to the module:\n{}",
+                "component `{}` changed layout and no migration was supplied.\n  was: {}\n  now: \
+                 {}\n  Add to the module:\n{}",
                 old.name,
                 old.describe(),
                 new.describe(),
@@ -68,18 +68,18 @@ impl fmt::Display for Refusal {
                 actual,
             } => write!(
                 f,
-                "migration for `{component}` declares an old layout the running world does \
-                 not have, so it would read the live bytes at the wrong offsets.\n  \
-                 declared: {}\n  actual:   {}",
+                "migration for `{component}` declares an old layout the running world does not \
+                 have, so it would read the live bytes at the wrong offsets.\n  declared: {}\n  \
+                 actual:   {}",
                 declared.describe(),
                 actual.describe()
             ),
             Self::UnprovableLayout { component } => write!(
                 f,
-                "component `{}` carries no field reflection, so an unchanged layout cannot \
-                 be proved and its bytes may not be reinterpreted.\n  {}\n  Add \
-                 `#[flecs(meta)]` to the struct, or list it in `opaque_versions` and bump \
-                 the version whenever its interior changes.",
+                "component `{}` carries no field reflection, so an unchanged layout cannot be \
+                 proved and its bytes may not be reinterpreted.\n  {}\n  Add `#[flecs(meta)]` to \
+                 the struct, or list it in `opaque_versions` and bump the version whenever its \
+                 interior changes.",
                 component.name,
                 component.describe()
             ),
@@ -116,9 +116,9 @@ fn migration_stub(old: &ComponentSchema) -> String {
         }
     };
     format!(
-        "    hyperion_hot_reload::migration! {{\n        \
-         component: {short},\n        from: {{\n{fields}\n        }},\n        \
-         with: |old| {short} {{ /* map each field */ }},\n    }}"
+        "    hyperion_hot_reload::migration! {{\n        component: {short},\n        from: \
+         {{\n{fields}\n        }},\n        with: |old| {short} {{ /* map each field */ }},\n    \
+         }}"
     )
 }
 
@@ -153,8 +153,8 @@ impl fmt::Display for Refused {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "refusing to reload module `{}`: {} unmigrated schema change(s). The running \
-             world was not modified.",
+            "refusing to reload module `{}`: {} unmigrated schema change(s). The running world \
+             was not modified.",
             self.module,
             self.reasons.len()
         )?;
