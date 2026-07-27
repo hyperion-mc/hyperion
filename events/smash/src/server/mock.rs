@@ -1,0 +1,127 @@
+//! A recording [`Server`] so the whole game runs headless in a unit test.
+//!
+//! Every call is appended to a log. Tests assert on the log rather than on
+//! interior state, which keeps them honest about what actually reaches a
+//! client: a knockback the game computed but never sent is a bug the log
+//! catches and a state assertion does not.
+
+use std::sync::Mutex;
+
+use glam::Vec3;
+
+use super::{Channel, Cue, HotbarItem, PlayerId, Server};
+
+/// One thing the game asked the server to do.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Call {
+    AddVelocity(PlayerId, Vec3),
+    Teleport(PlayerId, Vec3),
+    SetHealth(PlayerId, f32, f32),
+    SetHotbar(PlayerId, Vec<HotbarItem>),
+    Message(PlayerId, Channel, String),
+    Broadcast(Channel, String),
+    Sidebar(PlayerId, String, Vec<String>),
+    Spectating(PlayerId, bool),
+    Cue(Vec3, Cue),
+}
+
+#[derive(Default)]
+pub struct MockServer {
+    calls: Mutex<Vec<Call>>,
+}
+
+impl MockServer {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn push(&self, call: Call) {
+        self.calls.lock().unwrap().push(call);
+    }
+
+    /// Every call so far, oldest first.
+    #[must_use]
+    pub fn calls(&self) -> Vec<Call> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    /// Drain the log. Lets a test assert on one phase without the previous
+    /// phase's calls bleeding in.
+    pub fn take(&self) -> Vec<Call> {
+        core::mem::take(&mut *self.calls.lock().unwrap())
+    }
+
+    /// Total velocity the game asked to be applied to `player`. Knockback tests
+    /// want the sum, not the individual impulses.
+    #[must_use]
+    pub fn total_velocity(&self, player: PlayerId) -> Vec3 {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::AddVelocity(id, delta) if *id == player => Some(*delta),
+                _ => None,
+            })
+            .sum()
+    }
+
+    #[must_use]
+    pub fn messages_to(&self, player: PlayerId) -> Vec<String> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Message(id, _, text) if *id == player => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn broadcasts(&self) -> Vec<String> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Broadcast(_, text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+impl Server for MockServer {
+    fn add_velocity(&self, player: PlayerId, delta: Vec3) {
+        self.push(Call::AddVelocity(player, delta));
+    }
+
+    fn teleport(&self, player: PlayerId, to: Vec3) {
+        self.push(Call::Teleport(player, to));
+    }
+
+    fn set_health(&self, player: PlayerId, health: f32, max: f32) {
+        self.push(Call::SetHealth(player, health, max));
+    }
+
+    fn set_hotbar(&self, player: PlayerId, items: &[HotbarItem]) {
+        self.push(Call::SetHotbar(player, items.to_vec()));
+    }
+
+    fn send_message(&self, player: PlayerId, channel: Channel, text: &str) {
+        self.push(Call::Message(player, channel, text.to_owned()));
+    }
+
+    fn broadcast(&self, channel: Channel, text: &str) {
+        self.push(Call::Broadcast(channel, text.to_owned()));
+    }
+
+    fn set_sidebar(&self, player: PlayerId, title: &str, lines: &[String]) {
+        self.push(Call::Sidebar(player, title.to_owned(), lines.to_vec()));
+    }
+
+    fn set_spectating(&self, player: PlayerId, spectating: bool) {
+        self.push(Call::Spectating(player, spectating));
+    }
+
+    fn cue(&self, at: Vec3, cue: Cue) {
+        self.push(Call::Cue(at, cue));
+    }
+}

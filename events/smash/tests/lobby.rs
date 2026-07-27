@@ -1,0 +1,178 @@
+//! The lobby state machine, driven directly.
+
+use smash::module::lobby::{Lobby, LobbyConfig, Phase, step};
+
+fn config() -> LobbyConfig {
+    LobbyConfig::default()
+}
+
+/// Run the machine until the phase changes or `limit` seconds pass.
+fn run_until_change(
+    config: &LobbyConfig,
+    mut state: Lobby,
+    players: u32,
+    alive: u32,
+) -> (Lobby, f32) {
+    const DT: f32 = 0.05;
+    let start = state.phase;
+    let mut elapsed = 0.0;
+    while state.phase == start && elapsed < 3600.0 {
+        state = step(config, state, DT, players, alive);
+        elapsed += DT;
+    }
+    (state, elapsed)
+}
+
+#[test]
+fn an_empty_lobby_stays_waiting() {
+    let config = config();
+    let state = step(&config, Lobby::default(), 1.0, 0, 0);
+    assert_eq!(state.phase, Phase::Waiting);
+}
+
+#[test]
+fn one_short_of_the_minimum_still_waits() {
+    let config = config();
+    let state = step(&config, Lobby::default(), 1.0, config.min_players - 1, 0);
+    assert_eq!(state.phase, Phase::Waiting);
+}
+
+#[test]
+fn the_countdown_length_depends_on_how_full_the_lobby_is() {
+    let config = config();
+    assert_eq!(config.countdown_for(3), None);
+    assert_eq!(config.countdown_for(4), Some(config.countdown_at_min));
+    assert_eq!(
+        config.countdown_for(6),
+        Some(config.countdown_at_three_quarters)
+    );
+    assert_eq!(config.countdown_for(8), Some(config.countdown_at_full));
+    assert_eq!(
+        config.countdown_for(20),
+        Some(config.countdown_at_full),
+        "an over-full lobby is still a full lobby"
+    );
+}
+
+#[test]
+fn reaching_the_minimum_starts_the_long_countdown() {
+    let config = config();
+    let state = step(&config, Lobby::default(), 0.05, 4, 4);
+    assert_eq!(state.phase, Phase::Countdown);
+    assert!((state.timer - config.countdown_at_min).abs() < 1e-3);
+}
+
+#[test]
+fn a_join_that_fills_the_lobby_shortens_the_countdown_immediately() {
+    let config = config();
+    let state = step(&config, Lobby::default(), 0.05, 4, 4);
+    assert!(state.timer > 50.0);
+
+    let state = step(&config, state, 0.05, 8, 8);
+    assert_eq!(state.phase, Phase::Countdown);
+    assert!(
+        state.timer <= config.countdown_at_full,
+        "timer {} should have snapped down to {}",
+        state.timer,
+        config.countdown_at_full
+    );
+}
+
+#[test]
+fn the_countdown_never_lengthens_when_someone_leaves_but_stays_above_minimum() {
+    let config = config();
+    let full = step(&config, Lobby::default(), 0.05, 8, 8);
+    let after_leaver = step(&config, full, 0.05, 6, 6);
+    assert!(after_leaver.timer <= full.timer);
+}
+
+#[test]
+fn dropping_below_the_minimum_cancels_the_countdown_outright() {
+    let config = config();
+    let state = step(&config, Lobby::default(), 0.05, 4, 4);
+    assert_eq!(state.phase, Phase::Countdown);
+
+    let state = step(&config, state, 0.05, 3, 3);
+    assert_eq!(state.phase, Phase::Waiting);
+    assert!(
+        state.timer.abs() < 1e-6,
+        "the clock is discarded, not paused"
+    );
+}
+
+#[test]
+fn the_full_path_from_waiting_to_results_and_back() {
+    let config = config();
+    let mut state = Lobby::default();
+
+    state = step(&config, state, 0.05, 8, 8);
+    assert_eq!(state.phase, Phase::Countdown);
+
+    let (state_after, elapsed) = run_until_change(&config, state, 8, 8);
+    state = state_after;
+    assert_eq!(state.phase, Phase::Preparing);
+    assert!(
+        (elapsed - config.countdown_at_full).abs() < 0.2,
+        "countdown ran {elapsed}s, expected {}",
+        config.countdown_at_full
+    );
+
+    let (state_after, elapsed) = run_until_change(&config, state, 8, 8);
+    state = state_after;
+    assert_eq!(state.phase, Phase::Playing);
+    assert!((elapsed - config.prepare_seconds).abs() < 0.2);
+
+    // Still eight alive, so the match keeps running.
+    let mid = step(&config, state, 1.0, 8, 8);
+    assert_eq!(mid.phase, Phase::Playing);
+    assert!(mid.timer > state.timer, "the match clock counts up");
+
+    // One left standing ends it.
+    state = step(&config, mid, 0.05, 8, 1);
+    assert_eq!(state.phase, Phase::Ended);
+    assert!((state.timer - config.results_seconds).abs() < 1e-3);
+
+    let (state, _) = run_until_change(&config, state, 8, 1);
+    assert_eq!(state.phase, Phase::Waiting);
+}
+
+#[test]
+fn a_match_that_never_resolves_times_out() {
+    let config = config();
+    let state = Lobby {
+        phase: Phase::Playing,
+        timer: config.match_timeout_seconds - 0.5,
+    };
+    let state = step(&config, state, 1.0, 8, 8);
+    assert_eq!(
+        state.phase,
+        Phase::Ended,
+        "twenty minutes is the hard stop; there is no sudden death"
+    );
+}
+
+#[test]
+fn a_solo_lobby_that_somehow_starts_ends_at_once() {
+    let config = config();
+    let state = Lobby {
+        phase: Phase::Playing,
+        timer: 0.0,
+    };
+    assert_eq!(step(&config, state, 0.05, 1, 1).phase, Phase::Ended);
+    assert_eq!(step(&config, state, 0.05, 8, 0).phase, Phase::Ended);
+}
+
+#[test]
+fn preparing_cannot_be_cancelled_by_a_leaver() {
+    let config = config();
+    let state = Lobby {
+        phase: Phase::Preparing,
+        timer: config.prepare_seconds,
+    };
+    let state = step(&config, state, 0.05, 0, 0);
+    assert_eq!(
+        state.phase,
+        Phase::Preparing,
+        "once committed the match starts regardless"
+    );
+}

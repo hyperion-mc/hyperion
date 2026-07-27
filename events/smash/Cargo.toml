@@ -1,0 +1,19 @@
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "smash"
+publish = false
+readme = "README.md"
+version.workspace = true
+
+[dependencies]
+# Pinned to the crates.io release rather than git `main`: see
+# docs/flecs-rust-api-notes.md for the version decision.
+flecs_ecs = "0.2.2"
+glam = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true
