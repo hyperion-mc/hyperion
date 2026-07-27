@@ -701,3 +701,28 @@ const fn ensure_available(reader: &Reader<'_>, count: usize, stride: usize) -> R
     }
     Ok(())
 }
+
+/// The `TAG_End`-means-absent form, as a `#[proto(with = ...)]` module.
+///
+/// `FriendlyByteBuf.writeNbt` maps a null tag to `TAG_End`, so a nullable NBT
+/// field is not the boolean-prefixed [`Option`] the derive writes by default.
+pub mod optional {
+    use super::{Tag, decode_optional, encode_optional};
+    use crate::{Reader, Result, Writer};
+
+    /// Write `TAG_End` for an absent tag, the tag itself otherwise.
+    ///
+    /// # Errors
+    /// Returns an error when the tag itself cannot be written.
+    pub fn encode(value: &Option<Tag<'_>>, writer: &mut Writer) -> Result<()> {
+        encode_optional(value.as_ref(), writer)
+    }
+
+    /// Read a tag, mapping a root `TAG_End` to absence.
+    ///
+    /// # Errors
+    /// Returns an error on a malformed tag or truncated input.
+    pub fn decode<'a>(reader: &mut Reader<'a>) -> Result<Option<Tag<'a>>> {
+        decode_optional(reader)
+    }
+}

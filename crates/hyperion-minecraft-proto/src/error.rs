@@ -20,6 +20,15 @@ pub enum Error {
     VarIntTooLong,
     /// A length prefix was negative, which the protocol never emits.
     NegativeLength(i32),
+    /// A collection field held more elements than the field permits.
+    ListTooLong {
+        /// Element count seen.
+        length: usize,
+        /// Maximum the field permits.
+        max: usize,
+    },
+    /// A namespaced name used a character outside the permitted set.
+    InvalidIdentifier(String),
     /// A string field exceeded the limit for that field.
     StringTooLong {
         /// Length seen, in UTF-16 code units to match the server's own check.
@@ -88,6 +97,12 @@ impl fmt::Display for Error {
             Self::NegativeLength(n) => write!(f, "negative length prefix: {n}"),
             Self::StringTooLong { length, max } => {
                 write!(f, "string too long: {length} characters, maximum {max}")
+            }
+            Self::ListTooLong { length, max } => {
+                write!(f, "list too long: {length} elements, maximum {max}")
+            }
+            Self::InvalidIdentifier(value) => {
+                write!(f, "not a valid namespaced identifier: {value}")
             }
             Self::InvalidUtf8 => f.write_str("string field was not valid UTF-8"),
             Self::InvalidEnum { name, value } => write!(f, "invalid {name} discriminant: {value}"),

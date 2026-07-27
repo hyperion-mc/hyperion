@@ -31,6 +31,7 @@ members = [
     'crates/hyperion-inventory',
     'crates/hyperion-item',
     'crates/hyperion-minecraft-proto',
+    'crates/hyperion-minecraft-proto-derive',
     'crates/hyperion-nerd-font',
     'crates/hyperion-packet-macros',
     'crates/hyperion-palette',
@@ -210,6 +211,12 @@ path = 'crates/hyperion-inventory'
 
 [workspace.dependencies.hyperion-item]
 path = 'crates/hyperion-item'
+
+[workspace.dependencies.hyperion-minecraft-proto]
+path = 'crates/hyperion-minecraft-proto'
+
+[workspace.dependencies.hyperion-minecraft-proto-derive]
+path = 'crates/hyperion-minecraft-proto-derive'
 
 [workspace.dependencies.hyperion-nerd-font]
 path = 'crates/hyperion-nerd-font'

@@ -66,11 +66,14 @@
               pkg: nixpkgs.lib.hasPrefix "minecraft-" (nixpkgs.lib.getName pkg);
           };
 
-          minecraft = import ./nix/minecraft-data.nix { pkgs = minecraftPkgs; };
-
           rustToolchain = rustWith [ "rustfmt" "clippy" "rust-src" ];
           rustWithMiri = rustWith [ "rustfmt" "clippy" "rust-src" "miri" ];
           rustWithCoverage = rustWith [ "rustfmt" "clippy" "rust-src" "llvm-tools-preview" ];
+
+          minecraft = import ./nix/minecraft-data.nix {
+            pkgs = minecraftPkgs;
+            rustfmt = rustToolchain;
+          };
 
           cargoTools = [
             pkgs.cargo-deny
@@ -430,6 +433,7 @@
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
+            minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;
           };
 

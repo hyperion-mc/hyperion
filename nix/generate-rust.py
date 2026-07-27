@@ -292,7 +292,7 @@ pub mod wire;
 
 pub use data_component::DataComponent;
 pub use version::{MINECRAFT_VERSION, PROTOCOL_VERSION, WORLD_VERSION};
-pub use wire::{Field, Wire};
+pub use wire::{Constant, Field, Wire};
 """
 
 
@@ -448,6 +448,12 @@ class WireEmitter:
         if kind == "either":
             return "crate::generated::wire::Wire::Either {{ left: {}, right: {} }}".format(
                 self.expr(wire["left"]), self.expr(wire["right"]))
+        if kind == "enum":
+            constants = ", ".join(
+                'crate::generated::wire::Constant {{ name: "{}", value: {} }}'.format(c["name"], c["value"])
+                for c in wire["constants"])
+            return 'crate::generated::wire::Wire::Enum {{ java_class: "{}", constants: &[{}] }}'.format(
+                wire["type"], constants)
         if kind == "struct":
             members = ", ".join(
                 'crate::generated::wire::Field {{ name: "{}", wire: {} }}'.format(f["name"], self.expr(f["wire"]))
@@ -495,6 +501,16 @@ pub struct Field {
     pub name: &'static str,
     /// Layout of the field's value.
     pub wire: &'static Wire,
+}
+
+/// One constant of a [`Wire::Enum`], and the number it is sent as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Constant {
+    /// Mojang's own name for the constant.
+    pub name: &'static str,
+    /// The `VarInt` the server writes for it, which is the declaration index
+    /// unless the class supplies ids of its own.
+    pub value: i32,
 }
 
 /// The layout of a value on the wire.
@@ -572,37 +588,45 @@ pub enum Wire {
         /// Registry the id is scoped to.
         registry: &'static str,
         /// Layout written when the value is inline rather than referenced.
-        direct: &'static Wire,
+        direct: &'static Self,
     },
     /// A boolean, then the value when it is present.
-    Optional(&'static Wire),
+    Optional(&'static Self),
     /// A `VarInt` count, then that many elements.
     List {
         /// Layout of one element.
-        element: &'static Wire,
+        element: &'static Self,
         /// Largest count the server accepts.
         max: Option<u32>,
     },
     /// A `VarInt` byte length, then the value within it.
     LengthPrefixed {
         /// Layout of the value inside the length.
-        value: &'static Wire,
+        value: &'static Self,
         /// Largest byte length the server accepts.
         max: Option<u32>,
     },
     /// A `VarInt` count, then that many key and value pairs.
     Map {
         /// Layout of a key.
-        key: &'static Wire,
+        key: &'static Self,
         /// Layout of a value.
-        value: &'static Wire,
+        value: &'static Self,
     },
     /// A boolean selecting which of two layouts follows; true selects `left`.
     Either {
         /// Layout written when the discriminant is true.
-        left: &'static Wire,
+        left: &'static Self,
         /// Layout written when the discriminant is false.
-        right: &'static Wire,
+        right: &'static Self,
+    },
+    /// A `VarInt` naming one of a fixed set of constants.
+    Enum {
+        /// Class the constants come from, e.g.
+        /// `net.minecraft.world.InteractionHand`.
+        java_class: &'static str,
+        /// Every constant, in declaration order.
+        constants: &'static [Constant],
     },
     /// Fields written back to back with nothing between them.
     Struct(&'static [Field]),

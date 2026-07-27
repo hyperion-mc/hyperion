@@ -3,7 +3,10 @@
 # Everything downstream of the pinned server jar is a sandboxed derivation, so a
 # protocol bump is a one-line change to nix/minecraft-version.json plus a
 # rebuild. The version is the only knob.
-{ pkgs }:
+#
+# `rustfmt` is the repo's pinned toolchain rather than nixpkgs' own: rustfmt.toml
+# turns on unstable options, which only the nightly binary accepts.
+{ pkgs, rustfmt }:
 
 let
   inherit (pkgs) lib;
@@ -101,11 +104,30 @@ let
       #                                world/item/component
       #   net/minecraft/core/registries  the registry key table, which is what
       #                                turns a registry id into a name
+      #   any enum a packet references  `writeEnum` sends an ordinal, so the
+      #                                declaration order of the constants is
+      #                                the discriminant table; enums like
+      #                                RecipeBookType carry no StreamCodec of
+      #                                their own and would otherwise be missed
       #
-      # This is 1137 of the jar's 7434 classes and costs about ten seconds;
+      # This is about a sixth of the jar's 7434 classes and costs ten seconds;
       # decompiling everything is minutes for sources nothing reads.
+      #
+      # An enum is recognised by `java/lang/Enum` in its constant pool, which
+      # is in the class file for every enum and for nothing else.
+      grep -rhoa 'net/minecraft/[A-Za-z0-9/$]*' --include='*.class' net/minecraft/network \
+        | sed 's/$/.class/' | sort -u > referenced.txt
+      : > enums.txt
+      while read -r candidate; do
+        if [ -e "$candidate" ] && grep -qa 'java/lang/Enum' "$candidate"; then
+          printf '%s\n' "$candidate" >> enums.txt
+        fi
+      done < referenced.txt
+      echo "  of which $(wc -l < enums.txt) are enums a packet names" >&2
+
       { find net/minecraft/network net/minecraft/core/registries -name '*.class'
         grep -rl StreamCodec --include='*.class' net/minecraft
+        cat enums.txt
       } | sed 's/\$[^/]*\.class$/.class/' | sort -u > outers.txt
 
       # Inner classes are decompiled into the file of their outermost class, so
@@ -290,13 +312,19 @@ let
       # rustfmt runs here rather than on the committed copy: formatting the
       # copy alone would make it differ from what the generator emits, and the
       # staleness check compares the two.
-      nativeBuildInputs = [ codegen pkgs.rustfmt ];
+      #
+      # It needs the repo's own rustfmt.toml. Without --config-path it would
+      # find no configuration in the sandbox and settle on defaults, so the
+      # committed tables would disagree with `cargo fmt` -- which rewrites them
+      # on the next run and fails `fmt --check` on a tree nobody has touched.
+      nativeBuildInputs = [ codegen rustfmt ];
       meta.description = "Generated Rust protocol tables for Minecraft ${pin.id}";
     }
     ''
       mkdir -p $out
       generate-minecraft-proto --protocol ${protocolJson}/protocol.json --out $out
-      find $out -name '*.rs' -exec rustfmt --edition 2024 {} +
+      find $out -name '*.rs' -exec \
+        rustfmt --edition 2024 --config-path ${../rustfmt.toml} {} +
     '';
 
   # Re-resolves Mojang's manifest and rewrites the pin. Impure by nature, so it
@@ -380,19 +408,26 @@ let
     '';
   };
 
-  # Copies generated Rust into the crate. The output is committed so that a
-  # plain `cargo build` works without nix; the check below keeps the two honest.
+  # Copies the extraction into the crate: protocol.json, which build.rs turns
+  # into packet structs, and the tables that stay committed Rust. Both are in
+  # the tree so that a plain `cargo build` works without nix; the checks below
+  # are what make the committed copies trustworthy rather than merely present.
   syncScript = pkgs.writeShellApplication {
     name = "sync-minecraft-proto";
     runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
     text = ''
       root=$(git rev-parse --show-toplevel)
-      dest="$root/crates/hyperion-minecraft-proto/src/generated"
+      crate="$root/crates/hyperion-minecraft-proto"
+
+      install -m 644 ${protocolJson}/protocol.json "$crate/protocol.json"
+
+      dest="$crate/src/generated"
       rm -rf "$dest"
       mkdir -p "$dest"
       cp -r ${generatedRust}/. "$dest/"
       chmod -R u+w "$dest"
-      echo "synced $(find "$dest" -type f | wc -l | tr -d ' ') files into $dest" >&2
+
+      echo "synced protocol.json and $(find "$dest" -type f | wc -l | tr -d ' ') tables into $crate" >&2
     '';
   };
 
@@ -454,6 +489,22 @@ let
         exit 1
       fi
     '';
+
+  # protocol.json is the input build.rs reads, so a stale copy is a stale
+  # packet struct in every build that does not go through nix. Guarding it is
+  # what lets the structs live in OUT_DIR instead of in the tree.
+  protocolJsonUpToDate = pkgs.runCommand "check-minecraft-protocol-json"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/protocol.json}
+      if diff -u "$committed" ${protocolJson}/protocol.json > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed protocol.json is stale; run: nix run .#sync-minecraft-proto" >&2
+        head -n 200 diff.txt >&2
+        exit 1
+      fi
+    '';
 in
 {
   inherit
@@ -476,6 +527,7 @@ in
     generatedUpToDate
     registryDataUpToDate
     fixturesUpToDate
+    protocolJsonUpToDate
     ;
   inherit pin;
 }
