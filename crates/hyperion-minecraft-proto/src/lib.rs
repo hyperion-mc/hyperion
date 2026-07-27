@@ -10,6 +10,7 @@
 
 pub mod codec;
 pub mod generated;
+pub mod item;
 pub mod packets;
 
 mod error;

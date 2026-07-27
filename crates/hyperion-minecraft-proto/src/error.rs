@@ -38,6 +38,13 @@ pub enum Error {
     },
     /// Bytes remained after decoding a packet that should have consumed all of them.
     TrailingBytes(usize),
+    /// A value nested deeper than the decoder will follow.
+    ///
+    /// An item component can contain an item, so nesting is unbounded on the
+    /// wire and a recursive decoder has to stop before the stack does.
+    DepthLimitExceeded(u32),
+    /// An item stack was empty where the field requires a real stack.
+    EmptyItemStack,
 }
 
 impl fmt::Display for Error {
@@ -57,6 +64,8 @@ impl fmt::Display for Error {
             Self::InvalidUtf8 => f.write_str("string field was not valid UTF-8"),
             Self::InvalidEnum { name, value } => write!(f, "invalid {name} discriminant: {value}"),
             Self::TrailingBytes(n) => write!(f, "{n} trailing bytes after packet body"),
+            Self::DepthLimitExceeded(max) => write!(f, "value nested deeper than {max} levels"),
+            Self::EmptyItemStack => f.write_str("empty item stack where one was required"),
         }
     }
 }
