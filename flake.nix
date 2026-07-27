@@ -288,25 +288,43 @@
                 ${ensureCerts}
 
                 root="$(git rev-parse --show-toplevel)"
-                trigger="$root/.trigger-$target"
+
+                # The trigger lives outside the checkout. `--no-vcs-ignores` is
+                # what makes the restart watcher see a file cargo itself writes,
+                # but it also stops that watcher honouring .gitignore, so a
+                # trigger inside the repo made it restart on every write under
+                # `target/` — including the one `nix run .#bots` does when it
+                # builds the bot, which killed the whole stack from another
+                # terminal.
+                triggerdir="$(mktemp -d)"
+                trap 'rm -rf "$triggerdir"' EXIT
+                trigger="$triggerdir/rebuilt"
                 touch "$trigger"
 
                 ulimit -Sn ${fileDescriptors}
                 export RUST_BACKTRACE=full
 
+                # Both ports are overridable because two checkouts on one machine
+                # otherwise fight over 25565, and the loser's stack dies with no
+                # explanation beyond a SIGTERM.
+                player_port="''${HYPERION_PLAYER_PORT:-25565}"
+                server_port="''${HYPERION_SERVER_PORT:-35565}"
+
                 # The game server binds the internal port only; players reach it
                 # through the proxy below, so it starts no proxy of its own.
                 export BEDWARS_IP=0.0.0.0
-                export BEDWARS_PORT=35565
+                export BEDWARS_PORT="$server_port"
                 export BEDWARS_ROOT_CA_CERT="$certs/root_ca.crt"
                 export BEDWARS_CERT="$certs/server.crt"
                 export BEDWARS_PRIVATE_KEY="$certs/server_private_key.pem"
 
-                export HYPERION_PROXY_PROXY_ADDR=0.0.0.0:25565
-                export HYPERION_PROXY_SERVER=127.0.0.1:35565
+                export HYPERION_PROXY_PROXY_ADDR="0.0.0.0:$player_port"
+                export HYPERION_PROXY_SERVER="127.0.0.1:$server_port"
                 export HYPERION_PROXY_ROOT_CA_CERT="$certs/root_ca.crt"
                 export HYPERION_PROXY_CERT="$certs/proxy.crt"
                 export HYPERION_PROXY_PRIVATE_KEY="$certs/proxy_private_key.pem"
+
+                echo "players: 0.0.0.0:$player_port | game server: 127.0.0.1:$server_port"
 
                 parallel --ungroup --halt now,done=1 --jobs 3 ::: \
                   "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars'" \

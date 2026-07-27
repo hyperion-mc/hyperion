@@ -75,14 +75,11 @@ fn main() {
     let bot_on = Arc::new(AtomicU32::new(0));
 
     if config.bot_count > 0 {
-        // BOT_BOT_COUNT is the total number of bots, not the number per thread.
-        // The remainder goes to the first threads so the total is exact whatever
-        // the core count is.
-        let thread_count = u32::try_from(threads)
-            .unwrap_or(u32::MAX)
-            .clamp(1, config.bot_count);
-        let per_thread = config.bot_count / thread_count;
-        let remainder = config.bot_count % thread_count;
+        // Every manager is given the whole count, and `bot_on` — which they
+        // share — is what caps the total. Handing each thread a slice of the
+        // count instead makes them all stop at one slice's worth.
+        let thread_count =
+            threads.clamp(1, usize::try_from(config.bot_count).unwrap_or(usize::MAX));
 
         tracing::info!(
             "connecting {count} bots to {server} across {thread_count} threads",
@@ -91,8 +88,8 @@ fn main() {
         );
 
         let threads: Vec<_> = (0..thread_count)
-            .map(|index| {
-                let count = per_thread + u32::from(index < remainder);
+            .map(|_| {
+                let count = config.bot_count;
                 let addrs = addrs.clone();
                 let bot_on = bot_on.clone();
                 std::thread::spawn(move || {

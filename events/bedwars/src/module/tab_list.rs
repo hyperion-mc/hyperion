@@ -10,12 +10,12 @@ use hyperion::{
 use tracing::{info, info_span};
 
 #[derive(Component)]
-pub struct StatsModule;
+pub struct TabListModule;
 
 /// One console line per second at the 20 Hz tick rate.
 const TICKS_PER_LOG: u32 = 20;
 
-impl Module for StatsModule {
+impl Module for TabListModule {
     #[allow(clippy::excessive_nesting)]
     fn module(world: &World) {
         let mode = env!("RUN_MODE");

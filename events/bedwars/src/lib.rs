@@ -13,7 +13,7 @@ use crate::{
     module::{
         attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
         damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
-        stats::StatsModule, vanish::VanishModule,
+        tab_list::TabListModule, vanish::VanishModule,
     },
     skin::SkinModule,
 };
@@ -107,7 +107,7 @@ impl Module for BedwarsModule {
 
         world.import::<SpawnModule>();
         world.import::<ChatModule>();
-        world.import::<StatsModule>();
+        world.import::<TabListModule>();
         world.import::<BlockModule>();
         world.import::<AttackModule>();
         world.import::<BowModule>();

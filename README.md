@@ -176,6 +176,13 @@ build optimised instead: `nix run .#dev -- release-full`.
 Point clients at it with `nix run .#bots -- 127.0.0.1:25565 100`, or join
 `localhost` from a Minecraft 1.20.1 client.
 
+Two checkouts on one machine both want 25565. `HYPERION_PLAYER_PORT` and
+`HYPERION_SERVER_PORT` move the second one out of the way:
+
+```bash
+HYPERION_PLAYER_PORT=25566 HYPERION_SERVER_PORT=35566 nix run .#dev
+```
+
 The certificates land in `certs/` and are gitignored. `nix run .#certs` writes
 them on their own; delete the directory to start again. They are for a single
 machine and nothing else: the SANs cover `localhost` and `127.0.0.1`, the CA
