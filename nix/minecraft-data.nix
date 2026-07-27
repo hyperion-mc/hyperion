@@ -129,6 +129,106 @@ let
       cfr --outputdir $out --silent true --comments false $(cat selected.txt)
     '';
 
+  # The bundler jar is a launcher wrapped around the real server jar and its
+  # dependencies. Both the harness below and anything else wanting to run
+  # server code needs them unpacked with a classpath, so it happens once.
+  serverClasspath = pkgs.runCommand "minecraft-server-classpath-${pin.id}"
+    {
+      nativeBuildInputs = [ pkgs.unzip ];
+      meta = {
+        description = "Unpacked Minecraft ${pin.id} server jar and its libraries";
+        license = lib.licenses.unfree;
+      };
+    }
+    ''
+      mkdir -p $out
+      unzip -q ${serverJar} -d $out
+
+      # META-INF/classpath-joined lists the libraries in the order the bundler
+      # loads them, semicolon separated and relative to META-INF. It has no
+      # trailing newline, so the version jar is appended rather than echoed on
+      # a line of its own.
+      libs=$(tr ';' ':' < "$out/META-INF/classpath-joined" \
+        | sed "s|libraries/|$out/META-INF/libraries/|g")
+      version=$(find "$out/META-INF/versions" -name 'server-*.jar' | head -n1)
+      if [ -z "$version" ]; then
+        echo "no versioned server jar inside the bundle" >&2
+        exit 1
+      fi
+      printf '%s:%s' "$libs" "$version" > $out/classpath
+    '';
+
+  # Prints bytes from Mojang's own encoders. Compiled here rather than by hand
+  # so that every slice of the protocol work can check itself against the
+  # server without first rebuilding a harness. See hyperion-mc/hyperion#970.
+  vanillaEncoder = pkgs.runCommand "minecraft-vanilla-encoder-${pin.id}"
+    {
+      nativeBuildInputs = [ jdk pkgs.makeWrapper ];
+      meta = {
+        description = "Harness printing Minecraft ${pin.id} bytes from the server's own codecs";
+        license = lib.licenses.unfree;
+      };
+    }
+    ''
+      mkdir -p $out/share/java $out/bin
+      classpath=$(cat ${serverClasspath}/classpath)
+
+      # javac insists a public class live in a file named after it, and a
+      # store path is prefixed with its hash, so the source is copied first.
+      cp ${./java/VanillaEncoder.java} VanillaEncoder.java
+
+      # -nowarn because the server jar carries no -parameters metadata and
+      # javac otherwise emits a page of notes about it.
+      javac -nowarn -cp "$classpath" -d $out/share/java VanillaEncoder.java
+
+      makeWrapper ${lib.getExe' jdk "java"} $out/bin/minecraft-encode \
+        --add-flags "-cp $out/share/java:$classpath VanillaEncoder"
+    '';
+
+  # Named hex strings the Rust tests compare against. Regenerating them is a
+  # rebuild rather than a manual run, so a protocol bump moves the fixtures
+  # and the tests fail loudly instead of passing against stale bytes.
+  encoderFixtures = pkgs.runCommand "minecraft-encoder-fixtures-${pin.id}"
+    {
+      nativeBuildInputs = [ vanillaEncoder ];
+      meta.description = "Reference wire bytes from Minecraft ${pin.id}'s own encoders";
+    }
+    ''
+      export HOME="$PWD/home" && mkdir -p "$HOME"
+      mkdir -p $out
+      minecraft-encode fixtures $out/fixtures.json
+    '';
+
+  # The contents of every synchronised registry, as network NBT.
+  #
+  # These are datapack-loaded, so `reports/registries.json` has the names and
+  # nothing else; the values only exist once the game has built them. Running
+  # `RegistrySynchronization`'s own encoding is the only way to get bytes a
+  # client will accept.
+  registryContents = pkgs.runCommand "minecraft-registry-contents-${pin.id}"
+    {
+      nativeBuildInputs = [ vanillaEncoder ];
+      meta = {
+        description = "Network NBT for Minecraft ${pin.id}'s synchronised registries";
+        license = lib.licenses.unfree; # Mojang EULA; derived from the server jar.
+      };
+    }
+    ''
+      export HOME="$PWD/home" && mkdir -p "$HOME"
+      mkdir -p $out
+      minecraft-encode registries $out
+
+      # A registry that fails to encode is reported rather than dropped, and
+      # the three a client cannot render without must never be among them.
+      for required in dimension_type worldgen.biome chat_type; do
+        if [ ! -s "$out/minecraft.$required.nbt" ]; then
+          echo "registry dump is missing minecraft.$required" >&2
+          cat $out/skipped.json >&2
+          exit 1
+        fi
+      done
+    '';
+
   # writePython3Bin runs flake8 over each script, which is what keeps them
   # honest without a separate lint step. Three checks are turned off, each
   # because it argues with something the code does on purpose:
@@ -151,6 +251,25 @@ let
 
   codegen = pkgs.writers.writePython3Bin "generate-minecraft-proto" pythonWriterOptions
     (builtins.readFile ./generate-rust.py);
+
+  registryCodegen = pkgs.writers.writePython3Bin "generate-minecraft-registry-data" pythonWriterOptions
+    (builtins.readFile ./generate-registry-data.py);
+
+  # The NBT blobs live next to the Rust that `include_bytes!`es them, so this
+  # output is a whole directory rather than a single file.
+  generatedRegistryData = pkgs.runCommand "hyperion-minecraft-registry-data-${pin.id}"
+    {
+      nativeBuildInputs = [ registryCodegen pkgs.rustfmt ];
+      meta.description = "Generated Rust registry contents for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      generate-minecraft-registry-data \
+        --dump ${registryContents} \
+        --version ${pin.id} \
+        --out $out
+      find $out -name '*.rs' -exec rustfmt --edition 2024 {} +
+    '';
 
   protocolJson = pkgs.runCommand "minecraft-protocol-${pin.id}.json"
     {
@@ -277,6 +396,33 @@ let
     '';
   };
 
+  syncRegistryDataScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-registry-data";
+    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      dest="$root/crates/hyperion-minecraft-proto/src/registry_data"
+      rm -rf "$dest"
+      mkdir -p "$dest"
+      cp -r ${generatedRegistryData}/. "$dest/"
+      chmod -R u+w "$dest"
+      echo "synced $(find "$dest" -type f | wc -l | tr -d ' ') files into $dest" >&2
+    '';
+  };
+
+  registryDataUpToDate = pkgs.runCommand "check-minecraft-registry-data"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/src/registry_data}
+      if diff -r "$committed" ${generatedRegistryData} > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed registry data is stale; run: nix run .#sync-minecraft-registry-data" >&2
+        cat diff.txt >&2
+        exit 1
+      fi
+    '';
+
   # Fails if the committed generated sources drift from what the pipeline
   # produces, which is the only thing making the committed copy trustworthy.
   generatedUpToDate = pkgs.runCommand "check-minecraft-proto-generated"
@@ -295,15 +441,23 @@ in
 {
   inherit
     serverJar
+    serverClasspath
     generatedData
     decompiledSources
     protocolJson
     generatedRust
+    vanillaEncoder
+    encoderFixtures
+    registryContents
+    generatedRegistryData
     extractor
     codegen
+    registryCodegen
     updateScript
     syncScript
+    syncRegistryDataScript
     generatedUpToDate
+    registryDataUpToDate
     ;
   inherit pin;
 }

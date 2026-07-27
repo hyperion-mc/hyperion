@@ -400,7 +400,12 @@
               default = scripts.dev;
               update-minecraft-data = minecraft.updateScript;
               sync-minecraft-proto = minecraft.syncScript;
+              sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
               extract-minecraft-protocol = minecraft.extractor;
+              # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
+              # from the server's own codecs, so a new codec can be checked
+              # against Mojang rather than against a reading of Mojang.
+              minecraft-encode = minecraft.vanillaEncoder;
             });
 
           packages = {
@@ -412,6 +417,9 @@
             minecraft-decompiled = minecraft.decompiledSources;
             minecraft-protocol = minecraft.protocolJson;
             minecraft-proto-rust = minecraft.generatedRust;
+            minecraft-encoder-fixtures = minecraft.encoderFixtures;
+            minecraft-registry-contents = minecraft.registryContents;
+            minecraft-registry-data-rust = minecraft.generatedRegistryData;
           };
 
           # `nix flake check` builds every app, which is what proves each one
@@ -420,6 +428,7 @@
             # The committed generated sources must match what the pipeline
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
+            minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-protocol = minecraft.protocolJson;
           };
 

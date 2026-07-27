@@ -9,10 +9,12 @@
 //! crate is Mojang's own name and greps directly against the server jar.
 
 pub mod codec;
+pub mod framing;
 pub mod generated;
 pub mod item;
 pub mod nbt;
 pub mod packets;
+pub mod registry_data;
 pub mod text;
 
 mod error;
