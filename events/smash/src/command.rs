@@ -25,7 +25,14 @@ pub fn register(registry: &mut CommandRegistry, world: &World) {
 #[command_permission(group = "Normal")]
 pub struct KitCommand {
     /// The kit to play, as shown by `/kits`.
-    name: String,
+    ///
+    /// Several words rather than one, because more than half the roster has a
+    /// space in its name and a player who types the name they can see on the
+    /// screen should not be told `unexpected argument 'Golem'`. The words are
+    /// squashed back together before matching, so `/kit Iron Golem`,
+    /// `/kit irongolem` and `/kit IRON GOLEM` are all the same request.
+    #[arg(trailing_var_arg = true, num_args = 1..)]
+    name: Vec<String>,
 }
 
 impl MinecraftCommand for KitCommand {
@@ -37,7 +44,7 @@ impl MinecraftCommand for KitCommand {
         // half the kit names in Super Smash Mobs have a space in them. Matching
         // on the squashed name is what lets `/kit irongolem` mean "Iron Golem"
         // without the game's own registry having to care.
-        let Some(canonical) = resolve(&world, &self.name) else {
+        let Some(canonical) = resolve(&world, &self.name.join(" ")) else {
             tell(world, caller, "§cNo such kit. Try /kits.");
             return;
         };

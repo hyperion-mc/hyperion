@@ -68,6 +68,20 @@ pub struct RespawnAt(pub f32);
 #[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct InvulnerableUntil(pub f32);
 
+/// Whether `player` is still inside their respawn immunity.
+///
+/// Read by the damage pipeline and by the arena's kill plane. The kill plane is
+/// the one that matters most: a respawn writes the new position into the mirror
+/// and asks the host to teleport, but the mirror is refilled from the host every
+/// tick and the host does not move the player until the client acknowledges the
+/// teleport, so for the tick or two in between the mirror still says the player
+/// is under the map. Without this the respawn kills them again immediately, and
+/// a player loses all four lives to one fall.
+#[must_use]
+pub fn is_invulnerable(player: EntityView<'_>, now: f32) -> bool {
+    player.try_get::<&InvulnerableUntil>(|until| now < until.0) == Some(true)
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DeathCause {
     Void,

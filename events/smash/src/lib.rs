@@ -12,9 +12,11 @@ pub mod adapter;
 pub mod command;
 pub mod flecs_ext;
 pub mod input;
+pub mod map;
 pub mod mirror;
 pub mod module;
 pub mod server;
+pub mod terrain;
 
 use std::net::SocketAddr;
 
@@ -75,12 +77,11 @@ impl Module for SmashHost {
         // right-click logs "No handlers registered" and the packet is dropped
         // before the ability layer ever sees it.
         world.import::<hyperion_item::ItemModule>();
-        // Super Smash Mobs maps are floating platforms over a kill plane, which
-        // this is not. It is a real world the client can load, which is what
-        // makes the thing playable today; a map loader is the follow-up.
-        world.import::<hyperion_genmap::GenMapModule>();
 
         world.import::<crate::adapter::SmashAdapterModule>();
+        // After the adapter, because building the maps writes the `Arena`
+        // singleton the game half registered.
+        world.import::<crate::terrain::MapModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
             command::register(registry, world);

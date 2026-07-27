@@ -1,4 +1,8 @@
 [toolchain]
-channel = "nightly-2026-07-26"
+# nightly-2026-07-24 through -07-26 ICE in rustc_codegen_ssa building tokio at
+# opt-level >= 2, so the release build could not be produced on any target:
+# rust-lang/rust#159815, fixed by rust-lang/rust#159825. -07-27 is the first
+# nightly carrying that fix. Do not move below it.
+channel = "nightly-2026-07-27"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
