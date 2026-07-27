@@ -6,7 +6,6 @@ on:
     branches: [ main ]
 
 env:
-  RUST_NIGHTLY_TOOLCHAIN: nightly-2025-02-22
   RUSTFLAGS: -Clinker=/usr/bin/clang -Clink-arg=--ld-path=/usr/local/bin/mold -Ctarget-cpu=native -Zshare-generics=y -Zthreads=0
 
 jobs:
@@ -23,9 +22,15 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-export
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        shell: bash
+        run: |
+          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
+          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
       - name: Run cargo export
         run: cargo export target/benchmarks -- bench --bench=${{ matrix.benchmark }}
@@ -54,9 +59,15 @@ jobs:
           name: bench_${{ matrix.benchmark }}
           path: /tmp/bench/
       - uses: rui314/setup-mold@v1
+      - name: Read rust-toolchain.toml
+        id: toolchain
+        shell: bash
+        run: |
+          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
+          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_NIGHTLY_TOOLCHAIN }}
+          toolchain: ${{ steps.toolchain.outputs.version }}
       - uses: Swatinem/rust-cache@v2
       - name: Run cargo bench
         if: steps.download.outcome == 'success'
