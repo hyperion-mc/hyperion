@@ -231,9 +231,22 @@ nix run github:hyperion-mc/hyperion#hyperion-proxy
 
 ### From a clone
 
-`nix run .#dev` starts the game server and the proxy together and rebuilds both
-when you edit `crates/hyperion` or `events/bedwars`. Pass a cargo profile to
-build optimised instead: `nix run .#dev -- release-full`.
+The game server and the proxy are two processes that authenticate to each other
+with mTLS, so generate throwaway development certificates once:
+
+```bash
+nix run .#certs
+```
+
+Then `nix run .#dev` supervises both with process-compose — the proxy starts
+after the game server, each restarts on failure, and one Ctrl-C stops
+everything. Connect a Minecraft 1.20.1 client to `localhost:25565`.
+
+```bash
+nix run .#dev
+```
+
+Build optimised instead with `HYPERION_PROFILE=release-full nix run .#dev`.
 
 ```bash
 nix run .#dev
@@ -247,7 +260,8 @@ Every command is a flake app, so nix is the only thing you need installed.
 
 | Command | Does |
 | --- | --- |
-| `nix run .#dev` | Game server and proxy, rebuilding on change |
+| `nix run .#certs` | Throwaway dev certificates for the mTLS link |
+| `nix run .#dev` | Game server and proxy under process-compose |
 | `nix run .#proxy` | Proxy alone, release-full |
 | `nix run .#bedwars` | Game server alone, release-full |
 | `nix run .#bots -- <ip> <count>` | Connect bots to a running server |

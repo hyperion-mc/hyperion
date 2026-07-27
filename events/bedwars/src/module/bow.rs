@@ -27,6 +27,16 @@ pub struct LastFireTime {
     pub time: SystemTime,
 }
 
+// (flecs::With, LastFireTime) below auto-adds this to every Player, so flecs
+// needs to be able to construct one without our help.
+impl Default for LastFireTime {
+    fn default() -> Self {
+        Self {
+            time: SystemTime::UNIX_EPOCH,
+        }
+    }
+}
+
 impl LastFireTime {
     pub fn now() -> Self {
         Self {
@@ -44,6 +54,15 @@ impl LastFireTime {
 #[derive(Component)]
 pub struct BowCharging {
     pub start_time: SystemTime,
+}
+
+// Same reason as LastFireTime: it is a (flecs::With, _) target.
+impl Default for BowCharging {
+    fn default() -> Self {
+        Self {
+            start_time: SystemTime::UNIX_EPOCH,
+        }
+    }
 }
 
 impl BowCharging {
