@@ -12,7 +12,7 @@ use flecs_ecs::prelude::*;
 use crate::{
     module::{
         knockback::{Knockback, Smashed},
-        player::{Health, Position},
+        player::{self, Health, Player, Position},
     },
     server::{Cue, PlayerId, ServerHandle},
 };
@@ -88,7 +88,16 @@ pub const KILL_CREDIT_WINDOW: f32 = 10.0;
 /// damage: half a heart, ignoring armour, once the food bar empties.
 pub const STARVE_DAMAGE: f32 = 1.0;
 
-/// Emitted at a victim to hurt them. The only supported way to deal damage.
+/// Hurt someone. The only supported way to deal damage.
+///
+/// A function rather than a bare `emit` because a flecs payload event has to
+/// name the component its observers query on, and no caller should have to know
+/// that [`Health`] is that component.
+pub fn hurt(victim: EntityView<'_>, event: Damaged) {
+    player::notify(victim, &event);
+}
+
+/// Emitted at a victim to hurt them. Prefer [`hurt`].
 #[derive(Component, Debug, Copy, Clone)]
 pub struct Damaged {
     pub attacker: Option<Entity>,
@@ -112,6 +121,11 @@ impl Module for DamageModule {
 
         world.component::<Armor>();
         world.component::<Damaged>();
+        // This module is what makes armour mean anything, so this module is
+        // what says every player has some.
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, Armor)>();
         world.component::<LastHitAt>();
         world.component::<LastHitBy>().add(flecs::Exclusive);
         world
@@ -119,35 +133,43 @@ impl Module for DamageModule {
             .add_trait::<flecs::Singleton>();
         world.set(MatchClock::default());
 
+        // Health is written here and read by the knockback observer this one
+        // emits into. flecs tracks that at runtime and panics on the overlap,
+        // so the write is scoped to a block and `Smashed` goes out only once
+        // the borrow is gone. The query therefore does not name `Health` at
+        // all.
         world
-            .observer_named::<Damaged, (&mut Health, &Armor, &Position, &PlayerId)>(
-                "smash::apply_damage",
-            )
-            .each_iter(|it, index, (health, armor, position, player)| {
+            .observer_named::<Damaged, (&Armor, &Position, &PlayerId)>("smash::apply_damage")
+            .with(Player::id())
+            .each_iter(|it, index, (armor, position, player)| {
                 let event = *it.param();
                 let victim = it.entity(index);
+                let world = it.world();
 
                 let applied = if event.kind.is_reduced_by_armor() {
                     armor.apply(event.amount)
                 } else {
                     event.amount
                 };
-                health.damage(applied);
 
-                let world = it.world();
+                let (current, max) = victim.get::<&mut Health>(|health| {
+                    health.damage(applied);
+                    (health.current, health.max)
+                });
+
                 if let Some(attacker) = event.attacker
-                    && attacker != *victim.id()
+                    && attacker != victim.id()
                 {
                     let clock = world.cloned::<&MatchClock>();
                     victim.add((LastHitBy, attacker)).set(LastHitAt(clock.0));
                 }
 
                 world.get::<&ServerHandle>(|server| {
-                    server.set_health(*player, health.current, health.max);
+                    server.set_health(*player, current, max);
                     server.cue(position.0, Cue::Hurt);
                 });
 
-                victim.emit(&Smashed {
+                player::notify(victim, &Smashed {
                     attacker: event.attacker,
                     knockback: event.knockback,
                     damage: applied,

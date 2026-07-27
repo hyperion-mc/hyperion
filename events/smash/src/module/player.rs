@@ -8,7 +8,7 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::server::PlayerId;
+use crate::{flecs_ext::EntityViewExt, server::PlayerId};
 
 /// Tag: this entity is a player taking part in the game.
 #[derive(Component, Debug, Default)]
@@ -163,6 +163,16 @@ impl Module for PlayerModule {
                     .min(energy.max);
             });
     }
+}
+
+/// Send a game event to one player.
+///
+/// Every event in the game is *about a player*, and flecs matches an observer
+/// when the emitted id matches any of its terms. Tagging every event with
+/// [`Player`] and filtering every observer on [`Player`] makes that one rule
+/// instead of a per-event convention nobody can check.
+pub fn notify<E: ComponentId>(player: EntityView<'_>, event: &E) {
+    player.emit_about::<Player, _>(event);
 }
 
 /// Convenience for tests and for the adapter: make a player entity.

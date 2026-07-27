@@ -4,12 +4,16 @@
 //! [`Module`], so a deployment picks its feature set by choosing which modules
 //! to import and a new kit is a new file plus one import line.
 
+pub mod flecs_ext;
 pub mod module;
 pub mod server;
 
 use flecs_ecs::prelude::*;
 
-use crate::module::{damage::DamageModule, knockback::KnockbackModule, player::PlayerModule};
+use crate::module::{
+    ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
+    knockback::KnockbackModule, lives::LivesModule, player::PlayerModule,
+};
 
 /// The whole game.
 #[derive(Component)]
@@ -21,5 +25,9 @@ impl Module for SmashModule {
         world.import::<PlayerModule>();
         world.import::<KnockbackModule>();
         world.import::<DamageModule>();
+        world.import::<AbilityModule>();
+        world.import::<KitModule>();
+        world.import::<ArenaModule>();
+        world.import::<LivesModule>();
     }
 }

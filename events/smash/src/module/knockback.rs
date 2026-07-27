@@ -17,7 +17,7 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 
 use crate::{
-    module::player::{Health, OnGround, Position},
+    module::player::{Health, OnGround, Player, Position},
     server::{Cue, PlayerId, ServerHandle},
 };
 
@@ -204,6 +204,9 @@ impl Module for KnockbackModule {
 
         world.component::<Knockback>();
         world.component::<KnockbackTaken>();
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, KnockbackTaken)>();
         world.component::<Smashed>();
         world
             .component::<KnockbackModel>()
@@ -214,6 +217,7 @@ impl Module for KnockbackModule {
             .observer_named::<Smashed, (&Health, &KnockbackTaken, &Position, &OnGround, &PlayerId)>(
                 "smash::apply_knockback",
             )
+            .with(Player::id())
             .each_iter(|it, _index, (health, taken, position, ground, player)| {
                 let event = *it.param();
 
