@@ -24,7 +24,10 @@ use hyperion_minecraft_proto::{
 };
 
 fn hex(text: &str) -> Vec<u8> {
-    assert!(text.len() % 2 == 0, "hex fixture has an odd length");
+    assert!(
+        text.len().is_multiple_of(2),
+        "hex fixture has an odd length"
+    );
     (0..text.len() / 2)
         .map(|index| {
             u8::from_str_radix(&text[index * 2..index * 2 + 2], 16).expect("hex fixture digit")
