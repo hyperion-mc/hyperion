@@ -18,7 +18,7 @@ use crate::{
     flecs_ext::EntityViewExt,
     module::{
         ability,
-        damage::{self, DamageKind, Damaged},
+        damage::{self, DamageKind, Damaged, MeleeBonus},
         kit::{self, KitStats, Playing},
         knockback::Knockback,
         player::{Player, Position},
@@ -123,7 +123,8 @@ impl Module for InputModule {
                     let Some(origin) = attacker.try_get::<&Position>(|position| position.0) else {
                         continue;
                     };
-                    let amount = melee_damage(attacker);
+                    let clock = world.get::<&crate::module::damage::MatchClock>(|clock| clock.0);
+                    let amount = melee_damage(attacker, victim.id(), clock);
 
                     damage::hurt(victim, Damaged {
                         attacker: Some(attacker.id()),
@@ -195,10 +196,15 @@ fn held_slot(player: EntityView<'_>) -> Option<u8> {
     u8::try_from(absolute.checked_sub(PlayerInventory::HOTBAR_START_SLOT)?).ok()
 }
 
-/// The attacker's kit's melee damage, or a bare-handed default.
-fn melee_damage(attacker: EntityView<'_>) -> f32 {
-    attacker
+/// The attacker's kit's melee damage, plus whatever their kit has stacked onto
+/// it, or a bare-handed default.
+fn melee_damage(attacker: EntityView<'_>, victim: Entity, now: f32) -> f32 {
+    let base = attacker
         .find_target(Playing, |_| true)
         .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.melee_damage))
-        .unwrap_or(1.0)
+        .unwrap_or(1.0);
+    let bonus = attacker
+        .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(victim, now))
+        .unwrap_or(0.0);
+    base + bonus
 }

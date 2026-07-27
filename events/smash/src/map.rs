@@ -90,7 +90,7 @@ struct Cursor<'a> {
     line: usize,
 }
 
-impl<'a> Cursor<'a> {
+impl Cursor<'_> {
     fn int(&mut self, what: &str) -> Result<i32, ParseError> {
         let word = self.words.next().ok_or_else(|| self.missing(what))?;
         word.parse().map_err(|_| ParseError {
