@@ -70,7 +70,11 @@ let
 
       # The published jar is a bundler; the real server is nested inside it.
       unzip -q ${serverJar} 'META-INF/versions/*/server-*.jar' -d bundle
-      inner=$(find bundle -name 'server-*.jar' | head -n1)
+      inner=$(find "$PWD/bundle" -name 'server-*.jar' | head -n1)
+      if [ -z "$inner" ]; then
+        echo "no inner server jar found in the bundle" >&2
+        exit 1
+      fi
       mkdir -p classes && (cd classes && unzip -q "$inner")
 
       mkdir -p $out
@@ -80,10 +84,18 @@ let
         $(find net/minecraft/network -name '*.class' | sort))
     '';
 
-  extractor = pkgs.writers.writePython3Bin "extract-minecraft-protocol" { libraries = [ ]; }
+  # E501 is ignored because both scripts are code emitters: the long lines are
+  # format strings whose layout mirrors the Rust they produce, and reflowing
+  # them makes the generated output harder to read, not the script.
+  pythonWriterOptions = {
+    libraries = [ ];
+    flakeIgnore = [ "E501" ];
+  };
+
+  extractor = pkgs.writers.writePython3Bin "extract-minecraft-protocol" pythonWriterOptions
     (builtins.readFile ./extract-protocol.py);
 
-  codegen = pkgs.writers.writePython3Bin "generate-minecraft-proto" { libraries = [ ]; }
+  codegen = pkgs.writers.writePython3Bin "generate-minecraft-proto" pythonWriterOptions
     (builtins.readFile ./generate-rust.py);
 
   protocolJson = pkgs.runCommand "minecraft-protocol-${pin.id}.json"
@@ -143,13 +155,14 @@ let
       kind=$(printf '%s' "$version" | jq -r '.type')
 
       echo "fetching $jar" >&2
-      sri=$(nix store prefetch-file --json --hash-type sha256 "$jar" | jq -r '.hash')
+      prefetch=$(nix store prefetch-file --json --hash-type sha256 "$jar")
+      sri=$(printf '%s' "$prefetch" | jq -r '.hash')
+      store=$(printf '%s' "$prefetch" | jq -r '.storePath')
 
       # The protocol number lives inside the jar, so it is read rather than
-      # guessed from the version string.
+      # inferred from the version string, which has no stable relationship to it.
       tmp=$(mktemp -d)
       trap 'rm -rf "$tmp"' EXIT
-      store=$(nix store prefetch-file --json --hash-type sha256 "$jar" | jq -r '.storePath')
       ${lib.getExe' pkgs.unzip "unzip"} -p "$store" version.json > "$tmp/version.json"
 
       jq -n \

@@ -7,9 +7,14 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Minecraft 26.x refuses to run on anything below JDK 25, which the pinned
+    # nixpkgs above predates (it tops out at jdk23). A second input supplies the
+    # toolchain for the protocol pipeline without forcing a repo-wide bump that
+    # would rebuild every Rust dependency.
+    nixpkgs-minecraft.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, ... }:
+  outputs = { self, nixpkgs, nixpkgs-minecraft, rust-overlay, ... }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
@@ -28,6 +33,21 @@
           rustToolchain = pkgs.rust-bin.nightly."2025-02-22".default.override {
             extensions = [ "rust-src" "rustfmt" "clippy" ];
           };
+
+          # Minecraft protocol data: fetching the pinned server jar, running
+          # Mojang's data generator, and generating the Rust tables from it.
+          #
+          # Anything derived from the server jar is unfree under Mojang's EULA,
+          # so it gets its own nixpkgs instance whose unfree allowance is
+          # narrowed to exactly those derivations. Flipping allowUnfree on the
+          # shared instance would quietly relax the policy for the whole flake.
+          minecraftPkgs = import nixpkgs-minecraft {
+            inherit system;
+            config.allowUnfreePredicate =
+              pkg: nixpkgs.lib.hasPrefix "minecraft-" (nixpkgs.lib.getName pkg);
+          };
+
+          minecraft = import ./nix/minecraft-data.nix { pkgs = minecraftPkgs; };
 
           nativeBuildInputs = with pkgs; [
             rustToolchain
@@ -113,11 +133,43 @@
             default = hyperion;
             docker-hyperion-proxy = hyperion-proxy-image;
             docker-bedwars = bedwars-image;
+
+            minecraft-server-jar = minecraft.serverJar;
+            minecraft-data = minecraft.generatedData;
+            minecraft-decompiled = minecraft.decompiledSources;
+            minecraft-protocol = minecraft.protocolJson;
+            minecraft-proto-rust = minecraft.generatedRust;
+          };
+
+          apps = {
+            # Re-resolves Mojang's manifest and rewrites nix/minecraft-version.json.
+            update-minecraft-data = {
+              type = "app";
+              program = pkgs.lib.getExe minecraft.updateScript;
+            };
+            # Copies the generated Rust into the crate so cargo works without nix.
+            sync-minecraft-proto = {
+              type = "app";
+              program = pkgs.lib.getExe minecraft.syncScript;
+            };
+            extract-minecraft-protocol = {
+              type = "app";
+              program = pkgs.lib.getExe minecraft.extractor;
+            };
+          };
+
+          checks = {
+            # The committed generated sources must match what the pipeline
+            # produces, or the copy cargo reads is a fiction.
+            minecraft-proto-generated = minecraft.generatedUpToDate;
+            minecraft-protocol = minecraft.protocolJson;
           };
         };
     in
     {
       devShells = forAllSystems (system: (mkSystem system).devShells);
       packages = forAllSystems (system: (mkSystem system).packages);
+      apps = forAllSystems (system: (mkSystem system).apps);
+      checks = forAllSystems (system: (mkSystem system).checks);
     };
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate the Rust protocol tables for hyperion-minecraft-proto.
 
 Only facts that came out of Mojang's own data are emitted here: the protocol

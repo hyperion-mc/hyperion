@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Extract a machine-readable Minecraft protocol description for hyperion.
 
 Two independent sources are combined, deliberately:
