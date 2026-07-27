@@ -30,37 +30,21 @@ Then click the "Start Listening" button in the top left of the UI.
 
 The client can now connect to `localhost:25566`. You should see packets streaming in on the GUI.
 
-## Quick start with Vanilla Server via Docker
+## Quick start with a vanilla server
 
-Start the server
+nixpkgs ships the vanilla server, so this needs nothing installed but nix.
 
 ```sh
-docker run -e EULA=TRUE -e ONLINE_MODE=false -e ANNOUNCE_PLAYER_ACHIEVEMENTS=false -e GENERATE_STRUCTURES=false -e SPAWN_ANIMALS=false -e SPAWN_MONSTERS=false -e SPAWN_NPCS=false -e SPAWN_PROTECTION=0 -e VIEW_DISTANCE=16 -e MODE=creative -e LEVEL_TYPE=flat -e RCON_CMDS_STARTUP="gamerule doWeatherCycle false" -d -p 25565:25565 --name mc itzg/minecraft-server
+mkdir -p /tmp/mc && cd /tmp/mc
+echo 'eula=true' > eula.txt
+printf 'online-mode=false\nlevel-type=flat\nview-distance=16\ngamemode=creative\nspawn-protection=0\n' > server.properties
+nix run nixpkgs#minecraft-server -- nogui
 ```
 
-View server logs
+In a separate terminal, start the packet inspector between your client and that server.
 
 ```sh
-docker logs -f mc
-```
-
-Server Rcon
-
-```sh
-docker exec -i mc rcon-cli
-```
-
-In a separate terminal, start the packet inspector.
-
-```sh
-cargo r -r -p packet_inspector --no-default-features --features cli -- 127.0.0.1:25566 127.0.0.1:25565
+cargo run -r -p packet-inspector -- 127.0.0.1:25566 127.0.0.1:25565
 ```
 
 Open Minecraft and connect to `localhost:25566`.
-
-Clean up
-
-```
-docker stop mc
-docker rm mc
-```
