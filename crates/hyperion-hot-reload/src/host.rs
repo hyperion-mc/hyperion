@@ -37,14 +37,22 @@ pub enum LoadError {
     Refused(Refused),
 }
 
+/// What the platform said, which is the only part of a load failure worth
+/// reading. libloading 0.9 moved the `dlerror` text out of `Display` and behind
+/// `source`, so `{e}` alone now prints "dlopen failed" and nothing else.
+fn platform_detail(e: &libloading::Error) -> String {
+    core::error::Error::source(e).map_or_else(|| e.to_string(), |cause| format!("{e}: {cause}"))
+}
+
 impl core::fmt::Display for LoadError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Dlopen(e) => write!(f, "could not open module: {e}"),
+            Self::Dlopen(e) => write!(f, "could not open module: {}", platform_detail(e)),
             Self::MissingEntry(e) => {
                 write!(
                     f,
-                    "module exports no `hyperion_hot_module` entry point: {e}"
+                    "module exports no `hyperion_hot_module` entry point: {}",
+                    platform_detail(e)
                 )
             }
             Self::Abi(m) => write!(f, "refusing to load module: {m}"),
@@ -53,7 +61,14 @@ impl core::fmt::Display for LoadError {
     }
 }
 
-impl std::error::Error for LoadError {}
+impl std::error::Error for LoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Dlopen(e) | Self::MissingEntry(e) => Some(e),
+            Self::Abi(_) | Self::Refused(_) => None,
+        }
+    }
+}
 
 /// A successful load.
 #[derive(Debug)]

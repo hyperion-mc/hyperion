@@ -259,11 +259,11 @@
         "tests": "tests"
       },
       "locked": {
-        "lastModified": 1785167710,
-        "narHash": "sha256-+GibfstVTRaWmGaVUYTUr+ZxcZ5Ytz3QF0cSQNUJDow=",
+        "lastModified": 1785182436,
+        "narHash": "sha256-tce0UtK5lapbkMOI3c4/uEuZr6CQtBZvB0/BvfYUbak=",
         "owner": "indexable-inc",
         "repo": "index",
-        "rev": "3225f70fca2bc3a442e703ce09582c9d418e7221",
+        "rev": "5e3b95c1837f8f1d2b71f8bc6f1ef26f1439625a",
         "type": "github"
       },
       "original": {
