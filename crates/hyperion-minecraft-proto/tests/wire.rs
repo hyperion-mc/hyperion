@@ -6,7 +6,7 @@
 //! handing bytes to a real 26.2 server and reading back what it sends.
 
 use hyperion_minecraft_proto::{
-    Decode, Encode, Error, Identifier, PROTOCOL_VERSION, Reader, Uuid, VarInt, Writer,
+    Decode, Encode, Error, Identifier, PROTOCOL_VERSION, Reader, Uuid, Writer,
     packets::{
         common::serverbound::{CookieResponse, PingRequest},
         configuration::clientbound::SelectKnownPacks,
@@ -148,7 +148,7 @@ fn truncated_input_is_an_error_not_a_default() {
 #[test]
 fn intention_round_trips() {
     let packet = Intention {
-        protocol_version: VarInt(PROTOCOL_VERSION),
+        protocol_version: PROTOCOL_VERSION,
         host_name: "localhost",
         port: 25565,
         intention: ClientIntent::Login,
@@ -254,11 +254,9 @@ fn login_hello_request_round_trips() {
 
 #[test]
 fn login_compression_round_trips() {
-    round_trip(&LoginCompression(VarInt(256)), &[0x80, 0x02]);
+    round_trip(&LoginCompression(256), &[0x80, 0x02]);
     // A negative threshold disables compression and needs the full five bytes.
-    round_trip(&LoginCompression(VarInt(-1)), &[
-        0xFF, 0xFF, 0xFF, 0xFF, 0x0F,
-    ]);
+    round_trip(&LoginCompression(-1), &[0xFF, 0xFF, 0xFF, 0xFF, 0x0F]);
 }
 
 #[test]

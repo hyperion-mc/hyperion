@@ -33,13 +33,20 @@ pub struct Hello<'a> {
 
 | attribute | effect |
 | --- | --- |
+| `#[proto(varint)]` | write the innermost `i32` seven bits per byte |
+| `#[proto(varlong)]` | write the innermost `i64` seven bits per byte |
 | `#[proto(max_len = N)]` | limit on the innermost string, in UTF-16 code units |
 | `#[proto(max_count = N)]` | limit on the innermost collection's element count |
 | `#[proto(with = path)]` | use `path::encode` and `path::decode` for this field |
 
-`max_len` and `max_count` thread through `Option<_>` and `Vec<_>` to the type
-they constrain, so `#[proto(max_len = 1024)] pages: Vec<&'a str>` bounds each
-page rather than the list.
+How wide a number is belongs to the value and lives in its type; how many bytes
+it costs belongs to the wire and lives in the attribute. A field is therefore
+`#[proto(varint)] pub entity_id: i32` and a caller writes `entity_id: 42`.
+
+Each of these describes a type nested somewhere under the field's own, so the
+derive walks through `Option<_>` and `Vec<_>` until it finds it:
+`#[proto(max_len = 1024)] pages: Vec<&'a str>` bounds each page rather than the
+list, and `#[proto(varint)] passengers: Vec<i32>` writes each id as a `VarInt`.
 
 ## What it refuses
 
@@ -49,5 +56,10 @@ Every one of these is a compile error rather than a silent approximation:
   read what follows
 - more than one lifetime, since the derive would have to guess which one the
   reader lends to
-- a `with` beside a limit, since the limit would never be applied
+- a `with` beside anything else, since the rest would never be applied
+- `max_len` beside `varint` or `varlong`, since no one type is both a string
+  and an integer
+- an attribute that reached the bottom of a field without finding the type it
+  describes, such as `max_count` on a field holding no collection: dropping it
+  would leave a codec that looks constrained and is not
 - a union

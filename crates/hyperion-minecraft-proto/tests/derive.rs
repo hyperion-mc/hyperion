@@ -3,9 +3,7 @@
 //! These are the shapes the generator emits, exercised on hand-written types
 //! so a failure points at the derive rather than at a packet layout.
 
-use hyperion_minecraft_proto::{
-    Decode, Encode, Error, Identifier, Reader, Result, Uuid, VarInt, Writer,
-};
+use hyperion_minecraft_proto::{Decode, Encode, Error, Identifier, Reader, Result, Uuid, Writer};
 
 fn round_trip<'a, T>(value: &T, bytes: &'a [u8])
 where
@@ -30,16 +28,48 @@ fn a_unit_struct_occupies_no_bytes() {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
-struct Newtype(VarInt);
+struct Newtype(#[proto(varint)] i32);
 
 #[test]
 fn a_newtype_is_its_field() {
-    round_trip(&Newtype(VarInt(300)), &[0xAC, 0x02]);
+    round_trip(&Newtype(300), &[0xAC, 0x02]);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+struct Encodings {
+    plain: i32,
+    #[proto(varint)]
+    short: i32,
+    #[proto(varlong)]
+    long: i64,
+    #[proto(varint)]
+    maybe: Option<i32>,
+}
+
+#[test]
+fn an_encoding_attribute_selects_the_wire_form_of_a_plain_integer() {
+    // The same 300 four ways: four fixed bytes, two `VarInt` bytes, two
+    // `VarLong` bytes, and the same again behind a present-flag.
+    round_trip(
+        &Encodings {
+            plain: 300,
+            short: 300,
+            long: 300,
+            maybe: Some(300),
+        },
+        &[
+            0x00, 0x00, 0x01, 0x2C, // plain
+            0xAC, 0x02, // short
+            0xAC, 0x02, // long
+            0x01, 0xAC, 0x02, // maybe
+        ],
+    );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 struct Fields<'a> {
-    count: VarInt,
+    #[proto(varint)]
+    count: i32,
     flag: bool,
     name: &'a str,
     id: Uuid,
@@ -49,7 +79,7 @@ struct Fields<'a> {
 fn fields_are_written_in_declaration_order() {
     round_trip(
         &Fields {
-            count: VarInt(1),
+            count: 1,
             flag: true,
             name: "hi",
             id: Uuid(0),
@@ -64,8 +94,8 @@ fn fields_are_written_in_declaration_order() {
 struct Bounded<'a> {
     #[proto(max_len = 4)]
     short: &'a str,
-    #[proto(max_count = 2)]
-    few: Vec<VarInt>,
+    #[proto(varint, max_count = 2)]
+    few: Vec<i32>,
     #[proto(max_len = 3)]
     maybe: Option<&'a str>,
     #[proto(max_len = 2)]
@@ -77,7 +107,7 @@ fn limits_reach_the_type_they_constrain() {
     round_trip(
         &Bounded {
             short: "abcd",
-            few: vec![VarInt(7)],
+            few: vec![7],
             maybe: Some("xy"),
             pages: vec!["a", "b"],
         },
@@ -194,7 +224,8 @@ fn with_replaces_the_whole_field_codec() {
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 struct Nested<'a> {
-    outer: VarInt,
+    #[proto(varint)]
+    outer: i32,
     inner: Fields<'a>,
     list: Vec<Fields<'a>>,
     id: Option<Identifier<'a>>,
@@ -203,7 +234,7 @@ struct Nested<'a> {
 #[test]
 fn nested_structs_delegate_to_their_own_codecs() {
     let inner = Fields {
-        count: VarInt(2),
+        count: 2,
         flag: false,
         name: "a",
         id: Uuid(1),
@@ -217,7 +248,7 @@ fn nested_structs_delegate_to_their_own_codecs() {
     expected.push(0x00);
     round_trip(
         &Nested {
-            outer: VarInt(9),
+            outer: 9,
             inner,
             list: vec![inner],
             id: None,
