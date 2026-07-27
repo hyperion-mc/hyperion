@@ -1,5 +1,16 @@
 [build]
-rustflags = ["--cfg", "tokio_unstable", "-Ctarget-cpu=native"]
+# No `-Ctarget-cpu=native` here. These flags reach proc macros and build
+# scripts, which run on the machine doing the compiling, and CI's self hosted
+# runners are not all the same CPU. A `derive_build` shared object built on a
+# newer runner and loaded by rustc on an older one kills rustc with SIGILL,
+# which is what took out the coverage job on 2026-07-27:
+#
+#   error: rustc interrupted by SIGILL, printing backtrace
+#   error: could not compile `hyperion-crafting` (lib)
+#
+# Tuning for a specific CPU belongs to the profile a deployment builds with,
+# where the target machine is known, not to a file every build shares.
+rustflags = ["--cfg", "tokio_unstable"]
 
 [env]
 RUST_LOG="debug"

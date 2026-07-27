@@ -1898,7 +1898,6 @@ dependencies = [
  "hyperion-nerd-font",
  "hyperion-palette",
  "hyperion-proto",
- "hyperion-text",
  "hyperion-utils",
  "indexmap",
  "itertools 0.15.0",
