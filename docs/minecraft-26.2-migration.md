@@ -140,8 +140,8 @@ Preferring the derived value is what surfaced it.
 ```
                      before   after
 packets                 256     256
-fully mechanical        124     200
-partial                  77      56
+fully mechanical        124     202
+partial                  77      54
 unrecovered              55       0
 data components           -     111
   with a known layout     -     100
@@ -237,6 +237,117 @@ play::clientbound::PacketId::SetEntityMotion.layout()
 // None -- Vec3.LP_STREAM_CODEC is variable-length
 ```
 
+## The packet structs are generated too, out of a committed protocol.json
+
+The `Wire` table above says what the bytes are. It does not give a Rust type to
+put them in, and hand-writing that type for two hundred packets is exactly the
+transcription this pipeline exists to delete. So `protocol.json` is committed
+into the crate and `build.rs` turns it into the packet structs:
+
+```rust
+/// `minecraft:intention`, sent serverbound as handshake id 0.
+///
+/// Layout from `net.minecraft.network.protocol.handshake.ClientIntentionPacket#STREAM_CODEC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
+pub struct Intention<'a> {
+    pub protocol_version: VarInt,
+    #[proto(max_len = 32767)]
+    pub host_name: &'a str,
+    pub port: i16,
+    pub intention: ClientIntent,
+}
+```
+
+**177 of the 180 packet classes the extractor recovered in full are generated.**
+The three it declines are named, with the reason, in a comment at the top of the
+file they would have been written into:
+
+```
+// Layouts the extractor recovered in full but this generator declined, and
+// why. Each needs a hand-written codec; none of them is approximated here.
+//   minecraft:custom_click_action -- a custom codec inside a combinator needs a hand-written packet
+//   minecraft:damage_event -- two fields would both be named `output`
+//   minecraft:disguised_chat -- `net.minecraft.network.chat.ChatType$Bound#STREAM_CODEC` contains itself
+```
+
+Two hundred packets across 180 classes, because `ClientboundKeepAlivePacket` is
+one class that configuration and play both register. It is defined once, in
+`packets::common`, and re-exported into each state that sends it, so a value
+built for one state is the same Rust value in the other.
+
+### What is committed and what is generated, and why they differ
+
+| artifact | where it lives | why |
+| --- | --- | --- |
+| `protocol.json` | committed, 660 KB | the input everything else derives from, and the diff a version bump is reviewed as |
+| packet structs | `OUT_DIR`, via `build.rs` | the wire contract, where a stale copy silently desynchronises a stream |
+| packet ids, registries, versions, `Wire` table | committed `.rs` | data restated as Rust, greppable, and only wrong in a log line |
+
+The line is not "generated versus hand-written", it is **what a mistake costs
+and whether the projection is total**. The tables are a total function of
+`protocol.json`: every packet gets an id, every registry gets its entries,
+nothing is filtered. A committed copy of a total projection can be checked by
+diffing it, and `nix flake check` does exactly that.
+
+The packet structs are a *partial* projection — the generator refuses layouts
+it cannot express, and the refusal set moves as the extractor improves. That is
+precisely the shape that has bitten this pipeline before: an earlier extractor
+silently truncated eleven packets and reported them as complete. Making the
+filtering happen at build time, from a file whose contents are themselves
+guarded, means there is no committed artifact that can disagree with it.
+
+Volume settles the rest. `registry.rs` is 7,700 lines of `&'static str` that
+nobody reads top to bottom but everybody greps; moving it into `OUT_DIR` would
+make `rg 'minecraft:diamond_sword'` miss, for no gain. The packet structs are
+1,300 lines that people *do* read, and `cargo doc` renders them either way.
+
+### The derive
+
+`#[derive(Encode, Decode)]` lives in `crates/hyperion-minecraft-proto-derive`.
+A packet body is a fixed sequence of fields with nothing between them, so the
+derive is a loop over the fields in declaration order, and anything that is not
+that is a compile error rather than a guess.
+
+| attribute | effect |
+| --- | --- |
+| `#[proto(max_len = N)]` | limit on the innermost string or byte slice |
+| `#[proto(max_count = N)]` | limit on the innermost collection's element count |
+| `#[proto(with = path)]` | `path::encode` and `path::decode` for this field |
+
+`max_len` and `max_count` thread through `Option<_>` and `Vec<_>` to the type
+they constrain, so `#[proto(max_len = 1024)] pages: Vec<&'a str>` bounds each
+page rather than the list. Fieldless enums are a `VarInt` discriminant; a
+variant with fields is refused, because the discriminant alone does not say how
+to read what follows.
+
+The hand-written handshake, status and login codecs are gone: every one of
+their packets is generated, and the generated version carries limits the
+hand-written one had transcribed by hand.
+
+### Enums are enums
+
+`writeEnum` sends `ordinal()` and `ClientIntent` sends ids of its own, so an
+enum field used to come out as a `VarInt`. Both are readable off the jar — the
+constants in declaration order, and where the class has one, the `byId` switch
+naming each constant's number — so eleven of them are generated as Rust enums:
+
+```rust
+/// `net.minecraft.network.protocol.handshake.ClientIntent`, sent as a varint id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
+pub enum ClientIntent {
+    /// `STATUS`
+    Status = 1,
+    /// `LOGIN`
+    Login = 2,
+    /// `TRANSFER`
+    Transfer = 3,
+}
+```
+
+The ids are 1, 2, 3 and the ordinals are 0, 1, 2. Reading one for the other
+picks the wrong intent silently, which is why the switch is parsed rather than
+the position assumed.
+
 ## What Pumpkin and the other prior art actually offer
 
 - **Pumpkin-MC/Extractor** is a Kotlin Fabric mod, so it depends on the
@@ -314,23 +425,38 @@ Built and verified:
   URL and SRI hash, JDK requirement.
 - `nix build .#minecraft-data` — Mojang's generator, sandboxed, 8,899 files.
 - `nix build .#minecraft-decompiled` — cfr over the packet and codec classes
-  the extractor reads, selected from the jar rather than listed: 676 files.
+  the extractor reads, selected from the jar rather than listed: 698 files.
 - `nix build .#minecraft-protocol` — the extraction above, as JSON, including a
   shared table of every named codec it resolved.
 - `nix build .#minecraft-proto-rust` — Rust tables: ids, registries, the data
   component registry and the wire layouts.
 - `nix run .#update-minecraft-data` — re-resolves Mojang's manifest and rewrites
   the pin, reading the protocol number out of the jar rather than guessing it.
-- `nix run .#sync-minecraft-proto` — copies generated Rust into the crate.
-- `nix flake check` — fails if the committed generated sources drift.
+- `nix run .#sync-minecraft-proto` — copies `protocol.json` and the generated
+  tables into the crate.
+- `nix flake check` — fails if either committed artifact drifts.
 
-Both checks added here pass:
+The three checks pass:
 
 ```
 $ nix build --no-link .#checks.aarch64-darwin.minecraft-proto-generated \
+                      .#checks.aarch64-darwin.minecraft-proto-json \
                       .#checks.aarch64-darwin.minecraft-protocol
 $ echo $?
 0
+```
+
+The `protocol.json` guard was watched failing before it was trusted. Editing
+the committed copy's protocol number to 999 and re-running gives:
+
+```
+committed protocol.json is stale; run: nix run .#sync-minecraft-proto
+@@ -1,7 +1,7 @@
+  {
+    "version": {
+      "id": "26.2",
+ -    "protocolVersion": 999,
+ +    "protocolVersion": 776,
 ```
 
 `nix flake check` as a whole still fails, on a defect that predates this work
@@ -367,8 +493,10 @@ identical
 In `crates/hyperion-minecraft-proto`: generated tables for protocol 776, 256
 packet ids, 95 registries (6,979 entries), the 111 data component types, and
 the wire layouts of the 200 packets and 100 components the extractor resolved.
-Alongside them, hand-written codecs for handshake, status and login, NBT, text
-components and item stacks.
+Alongside them, generated structs for 177 packet classes, and hand-written
+codecs for NBT, text components and item stacks.
+
+`crates/hyperion-minecraft-proto-derive` supplies `#[derive(Encode, Decode)]`.
 
 ## What the nix audit found
 
@@ -411,18 +539,34 @@ Stated plainly, because these are the parts a reader cannot check by looking:
 
 - **Layouts were validated by reading, not by round-tripping.** Only the
   handshake, status and login packets are exercised against a real server. The
-  200 layouts the extractor now emits were checked three ways — against the
+  202 layouts the extractor now emits were checked three ways — against the
   independently-established `ItemLore` and `CustomModelData` shapes, against
   the previous extractor's output for the packets both call complete, and by
   reading a dozen of the largest by hand — but no play packet has been sent.
+- **Field limits come from the writer, and the server enforces them on the
+  reader.** The two disagree more often than they look like they should:
+  `ClientIntentionPacket` writes `hostName` with the default 32767 and reads it
+  with 255, and `ClientboundHelloPacket` writes `serverId` unbounded and reads
+  it with 20. The generated struct follows the writer, so it is permissive
+  where vanilla is strict — a decoder that accepts a 300-character host the
+  server would reject. It cannot desynchronise a stream, but it is a real
+  divergence and the fix is to parse the private `(FriendlyByteBuf)`
+  constructor as a second, independent statement of the layout and cross-check
+  it against the writer, the way packet ids are already cross-checked.
+- **`port` is written as `i16` and read as `u16`.** Same two bytes, same cause
+  as above: `writeShort` against `readUnsignedShort`. The generated struct says
+  `i16`. Any other field with asymmetric signedness is misreported the same
+  way, and the same cross-check would find them all.
+- **Three complete layouts are declined rather than generated**, listed in the
+  file each would have gone into. `damage_event` is the one that is a defect
+  rather than a limit: the extractor inlines `writeOptionalEntityId(output,
+  this.sourceCauseId)` without binding the helper's parameter back to the
+  caller's argument, so two fields are both labelled `output`. Binding it would
+  recover the packet.
 - **The extractor being loud is a property of its structure, not a proof.**
   Every statement of an encode body and every argument of a composite has to be
   accounted for, and anything unmodelled propagates up as unresolved. That is
   checked by construction rather than by a test that deliberately breaks it.
-- **`port` is reported as `i16` and implemented as `u16`.** The server writes it
-  with `writeShort` and reads it with `readUnsignedShort`; the extractor follows
-  the writer, the Rust follows the reader. Same two bytes, but the mismatch is
-  real and any other field with asymmetric signedness reads the same way.
 - **`GAME_PROFILE_PROPERTIES` is the one asserted layout.** It was transcribed
   from the 26.2 source by hand because its encoder is a loop. Everything else in
   the vocabulary either bottoms out in a netty write or is derived.
