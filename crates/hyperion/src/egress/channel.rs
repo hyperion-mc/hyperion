@@ -1,15 +1,18 @@
 use flecs_ecs::prelude::*;
+use hyperion_minecraft_proto::{
+    generated::packet_id::play::clientbound::PacketId, packets::play::entity::SetEntityData,
+};
 use hyperion_proto::UpdateChannelPosition;
 use hyperion_utils::EntityExt;
 use tracing::error;
-use valence_bytes::CowBytes;
-use valence_protocol::{ByteAngle, RawBytes, VarInt, packets::play};
+use valence_protocol::{ByteAngle, VarInt, packets::play};
 
 use crate::{
     egress::metadata::show_all,
     net::{
         Channel, ChannelId, Compose, ConnectionId,
         intermediate::{IntermediateServerToProxyMessage, UpdateChannelPositions},
+        protocol::Clientbound,
     },
     simulation::{
         Pitch, Position, Uuid, Velocity, Yaw,
@@ -125,7 +128,16 @@ impl Module for ChannelModule {
 
                                 let show_all = show_all(minecraft_id);
                                 packet_buf.extend_from_slice(
-                                    &compose.io_buf().encode_packet(&show_all, compose).unwrap(),
+                                    &compose
+                                        .io_buf()
+                                        .encode_packet(
+                                            Clientbound::new(
+                                                PacketId::SetEntityData.to_raw(),
+                                                &show_all,
+                                            ),
+                                            compose,
+                                        )
+                                        .unwrap(),
                                 );
                             }
                             _ => {
@@ -164,12 +176,18 @@ impl Module for ChannelModule {
                         metadata.encode_non_default_components(entity);
 
                         if let Some(view) = get_and_clear_metadata(&mut metadata) {
-                            let pkt = play::EntityTrackerUpdateS2c {
-                                entity_id: VarInt(minecraft_id),
-                                tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+                            let pkt = SetEntityData {
+                                id: minecraft_id,
+                                packed_items: &view,
                             };
                             packet_buf.extend_from_slice(
-                                &compose.io_buf().encode_packet(&pkt, compose).unwrap(),
+                                &compose
+                                    .io_buf()
+                                    .encode_packet(
+                                        Clientbound::new(PacketId::SetEntityData.to_raw(), &pkt),
+                                        compose,
+                                    )
+                                    .unwrap(),
                             );
                         }
 

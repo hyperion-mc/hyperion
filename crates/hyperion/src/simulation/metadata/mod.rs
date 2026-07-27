@@ -1,3 +1,22 @@
+//! Entity tracked data, as protocol 776 sends it.
+//!
+//! # The indices are hand-written, not generated
+//!
+//! A field index comes from `SynchedEntityData.defineId`, which counts the
+//! calls in each entity class and offsets each class by its superclasses'
+//! total. That numbering never appears on the wire, so
+//! `nix/extract-protocol.py` -- which follows stream codecs from a packet down
+//! to the bytes -- cannot reach it, and the tables in the modules below were
+//! instead read out of the pinned jar by reflection and transcribed here.
+//!
+//! Making them generated means adding a pass that loads the server classes,
+//! walks each entity class's static `EntityDataAccessor` fields, and emits
+//! `id()` and `getSerializedId(serializer())` for each. That is the same shape
+//! as the existing `nix/java/VanillaEncoder.java` harness and belongs beside
+//! it, feeding a table under `src/generated` with the usual staleness check.
+//! Until then a Mojang change to a field index is a silently wrong mob rather
+//! than a build failure.
+
 use std::fmt::Debug;
 
 use flecs_ecs::{
@@ -7,11 +26,15 @@ use flecs_ecs::{
     },
     macros::Component,
 };
-use valence_protocol::{Encode, VarInt};
+use hyperion_minecraft_proto::packets::play::entity::DataValues;
 
 use crate::{
     Prev,
-    simulation::metadata::entity::{EntityFlags, Pose},
+    simulation::metadata::{
+        entity::{EntityFlags, Pose},
+        player::MainHand,
+        r#type::Tracked,
+    },
 };
 
 pub mod block_display;
@@ -121,6 +144,9 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
     let living_entity_base = living_entity::register_prefab(world, Some(entity_base)).id();
     let player_base = player::register_prefab(world, Some(living_entity_base))
         // .add(id::<Player>())
+        // Hand-written like `EntityFlags` and `Pose`: its wire type is an enum
+        // while callers set it from the byte a client settings packet carries.
+        .component_and_track::<MainHand>()
         .add_enum(EntityKind::Player)
         .id();
 
@@ -137,12 +163,13 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
 use super::entity_kind::EntityKind;
 use crate::simulation::metadata::r#type::MetadataType;
 
-#[derive(Debug, Default, Component, Clone)]
-// index (u8), type (varint), value (varies)
-/// <https://wiki.vg/Entity_metadata>
+/// Tracked-value changes accumulated within a gametick.
 ///
-/// Tracks updates within a gametick for the metadata
-pub struct MetadataChanges(Vec<u8>);
+/// The run is built as bytes rather than as values because an entry's length is
+/// decided by its serializer, which is also why the terminator belongs to the
+/// packet rather than to the run; see [`DataValues`].
+#[derive(Debug, Default, Component, Clone)]
+pub struct MetadataChanges(DataValues);
 
 unsafe impl Send for MetadataChanges {}
 
@@ -151,11 +178,16 @@ unsafe impl Sync for MetadataChanges {}
 
 mod status;
 
-mod r#type;
+pub mod r#type;
 
+/// One tracked field of an entity: which index it occupies and what it holds.
 pub trait Metadata {
+    /// The field index, which depends on the entity's class; see the module
+    /// documentation for where the numbering comes from.
     const INDEX: u8;
-    type Type: MetadataType + Encode;
+    /// The value this field carries.
+    type Type: MetadataType;
+    /// The value, ready to write.
     fn to_type(self) -> Self::Type;
 }
 
@@ -271,15 +303,20 @@ impl MetadataChanges {
         self.encode(metadata);
     }
 
+    /// Queue one tracked value for the next [`MetadataChanges`] flush.
+    ///
+    /// # Panics
+    /// Panics when the value does not encode, which for a value this server
+    /// built itself means a protocol limit was exceeded.
     pub fn encode<M: Metadata>(&mut self, metadata: M) {
-        let value_index = M::INDEX;
-        self.0.push(value_index);
-
-        let type_index = VarInt(<M as Metadata>::Type::INDEX);
-        type_index.encode(&mut self.0).unwrap();
-
-        let r#type = metadata.to_type();
-        r#type.encode(&mut self.0).unwrap();
+        let value = metadata.to_type();
+        self.0
+            .push(
+                M::INDEX,
+                <M::Type as MetadataType>::SERIALIZER,
+                &Tracked(&value),
+            )
+            .expect("a tracked value this server built exceeded a protocol limit");
     }
 
     /// Encodes the full non-default metadata state of `entity`, so that a player who has just
@@ -296,6 +333,15 @@ impl MetadataChanges {
         entity.try_get::<&Pose>(|component| {
             self.encode_if_not_default(*component);
         });
+
+        // `MainHand` is registered by hand, so the generated
+        // `encode_non_default_components` for the player group does not cover
+        // it and a subscriber would otherwise see everyone right-handed.
+        if kind == EntityKind::Player {
+            entity.try_get::<&MainHand>(|component| {
+                self.encode_if_not_default(*component);
+            });
+        }
 
         entity::encode_non_default_components(entity, self);
 
@@ -323,7 +369,7 @@ impl core::ops::Deref for MetadataView<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.0.0[..]
+        self.0.0.as_bytes()
     }
 }
 
@@ -333,13 +379,18 @@ impl Drop for MetadataView<'_> {
     }
 }
 
-/// This is only meant to be called from egress systems
-pub(crate) fn get_and_clear_metadata(metadata: &mut MetadataChanges) -> Option<MetadataView<'_>> {
+/// The pending run, or `None` when there is nothing to send.
+///
+/// The `0xFF` terminator is not here: it belongs to
+/// [`hyperion_minecraft_proto::packets::play::entity::SetEntityData`], which
+/// writes it after this run. Appending it here as well would send two.
+///
+/// This is only meant to be called from egress systems.
+pub(crate) const fn get_and_clear_metadata(
+    metadata: &mut MetadataChanges,
+) -> Option<MetadataView<'_>> {
     if metadata.is_empty() {
         return None;
     }
-    // denote end of metadata
-    metadata.0.push(0xff);
-
     Some(MetadataView(metadata))
 }
