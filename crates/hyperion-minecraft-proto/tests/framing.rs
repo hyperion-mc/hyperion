@@ -190,7 +190,12 @@ fn loopback_round_trips_every_layer_combination() {
             }
 
             for size in [0usize, 1, 63, 64, 65, 255, 256, 257, 4096] {
-                let body: Vec<u8> = (0..size).map(|index| (index % 251) as u8).collect();
+                // 251 rather than 256 so the pattern is not a multiple of any
+                // buffer size the codec might use, which is what would hide an
+                // off-by-one in the packing.
+                let body: Vec<u8> = (0..size)
+                    .map(|index| u8::try_from(index % 251).expect("below 251"))
+                    .collect();
                 let mut wire = Vec::new();
                 encoder.encode(0x2A, &body, &mut wire).expect("encode");
                 decoder.queue(&wire);
@@ -219,8 +224,8 @@ fn loopback_survives_arbitrary_read_boundaries() {
     encoder.enable_encryption(&secret());
     decoder.enable_encryption(&secret());
 
-    let bodies: Vec<Vec<u8>> = (0..16)
-        .map(|packet| vec![packet as u8; packet * 97])
+    let bodies: Vec<Vec<u8>> = (0..16u8)
+        .map(|packet| vec![packet; usize::from(packet) * 97])
         .collect();
 
     let mut wire = Vec::new();
@@ -230,16 +235,16 @@ fn loopback_survives_arbitrary_read_boundaries() {
             .expect("encode");
     }
 
-    let mut decoded = Vec::new();
+    let mut received = Vec::new();
     for byte in &wire {
         decoder.queue(std::slice::from_ref(byte));
         while let Some(packet) = decoder.next_packet().expect("decode") {
-            decoded.push((packet.id, packet.body.to_vec()));
+            received.push((packet.id, packet.body.to_vec()));
         }
     }
 
-    assert_eq!(decoded.len(), bodies.len());
-    for (packet, (id, body)) in decoded.iter().enumerate() {
+    assert_eq!(received.len(), bodies.len());
+    for (packet, (id, body)) in received.iter().enumerate() {
         assert_eq!(*id, i32::try_from(packet).unwrap());
         assert_eq!(body, &bodies[packet]);
     }
@@ -251,17 +256,17 @@ fn several_frames_arrive_in_one_read() {
     let mut decoder = FrameDecoder::new();
 
     let mut wire = Vec::new();
-    for packet in 0..8i32 {
+    for packet in 0..8u8 {
         encoder
-            .encode(packet, &[packet as u8; 40], &mut wire)
+            .encode(i32::from(packet), &[packet; 40], &mut wire)
             .expect("encode");
     }
     decoder.queue(&wire);
 
-    for packet in 0..8i32 {
-        let decoded = decoder.next_packet().expect("decode").expect("a frame");
-        assert_eq!(decoded.id, packet);
-        assert_eq!(decoded.body, &[packet as u8; 40][..]);
+    for packet in 0..8u8 {
+        let received = decoder.next_packet().expect("decode").expect("a frame");
+        assert_eq!(received.id, i32::from(packet));
+        assert_eq!(received.body, &[packet; 40][..]);
     }
     assert!(decoder.next_packet().expect("decode").is_none());
 }
@@ -315,7 +320,7 @@ fn a_frame_past_the_21_bit_limit_is_refused() {
         Err(Error::FrameLengthTooWide | Error::FrameTooLarge { .. }) => {}
         other => panic!("expected a refusal, got {other:?}"),
     }
-    assert!(MAX_FRAME_LENGTH < (1 << 21));
+    const { assert!(MAX_FRAME_LENGTH < (1 << 21)) };
 }
 
 /// `CompressionDecoder` rejects a frame whose declared length is below the

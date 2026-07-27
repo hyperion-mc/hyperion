@@ -61,5 +61,9 @@ pub fn number(name: &str) -> i32 {
 
 /// Render bytes the way the fixture file spells them, for assertion messages.
 pub fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut out, byte| {
+        let _unused = write!(out, "{byte:02x}");
+        out
+    })
 }

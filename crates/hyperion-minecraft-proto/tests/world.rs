@@ -25,7 +25,7 @@ use vanilla_fixtures as vanilla;
 /// than pretended to be derived.
 const BLOCK_STATE_COUNT: usize = 30_000;
 
-fn block_states() -> ContainerKind {
+const fn block_states() -> ContainerKind {
     ContainerKind::block_states(BLOCK_STATE_COUNT)
 }
 
@@ -280,7 +280,9 @@ fn light_masks_match_the_bitset_codec() {
 
 #[test]
 fn light_arrays_are_length_prefixed_and_exactly_2048_bytes() {
-    let layer: Vec<u8> = (0..2048).map(|index| (index & 0xFF) as u8).collect();
+    let layer: Vec<u8> = (0..2048u32)
+        .map(|index| u8::try_from(index & 0xFF).expect("masked to a byte"))
+        .collect();
     let mut writer = Writer::new();
     writer.var_int(1);
     writer.byte_array(&layer).expect("write");
