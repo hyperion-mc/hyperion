@@ -3844,6 +3844,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperion-platform"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "hyperion-proto"
 version = "0.1.0"
 dependencies = [

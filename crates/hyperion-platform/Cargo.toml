@@ -1,0 +1,15 @@
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "hyperion-platform"
+publish = false
+readme = "README.md"
+version.workspace = true
+
+[dependencies]
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[lints]
+workspace = true
