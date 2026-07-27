@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, bail};
-use bevy::prelude::*;
+use flecs_ecs::macros::Component;
 use serde_json::Value;
 use tokio::{
     sync::Semaphore,
@@ -12,7 +12,7 @@ use tokio::{
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::AsyncRuntime;
+use crate::runtime::AsyncRuntime;
 
 /// The API provider to use for Minecraft profile lookups
 #[derive(Clone, Copy)]
@@ -60,7 +60,7 @@ impl ApiProvider {
 ///
 /// Can use either the official Mojang API or [matdoes/mowojang](https://matdoes.dev/minecraft-uuids) as a data source.
 /// This does not include caching, this should be done separately probably using [`crate::storage::LocalDb`].
-#[derive(Resource, Clone)]
+#[derive(Component, Clone)]
 pub struct MojangClient {
     req: reqwest::Client,
     rate_limit: Arc<Semaphore>,
@@ -69,11 +69,11 @@ pub struct MojangClient {
 
 impl MojangClient {
     #[must_use]
-    pub fn new(runtime: &AsyncRuntime, provider: ApiProvider) -> Self {
+    pub fn new(tasks: &AsyncRuntime, provider: ApiProvider) -> Self {
         let rate_limit = Arc::new(Semaphore::new(provider.max_requests()));
         let interval_duration = provider.interval();
 
-        runtime.spawn({
+        tasks.spawn({
             let rate_limit = Arc::downgrade(&rate_limit);
             let max_requests = provider.max_requests();
             async move {
@@ -184,7 +184,8 @@ mod tests {
 
     #[test]
     fn test_get_uuid() {
-        let tasks = AsyncRuntime::new();
+        let (tx, _rx) = kanal::bounded(1);
+        let tasks = AsyncRuntime::new(tx);
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let uuid = tasks.block_on(mojang.get_uuid("Emerald_Explorer")).unwrap();
@@ -194,7 +195,8 @@ mod tests {
 
     #[test]
     fn test_get_username() {
-        let tasks = AsyncRuntime::new();
+        let (tx, _rx) = kanal::bounded(1);
+        let tasks = AsyncRuntime::new(tx);
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let username = tasks
@@ -207,7 +209,8 @@ mod tests {
 
     #[test]
     fn test_retrieve_username() {
-        let tasks = AsyncRuntime::new();
+        let (tx, _rx) = kanal::bounded(1);
+        let tasks = AsyncRuntime::new(tx);
         let mojang = MojangClient::new(&tasks, ApiProvider::MAT_DOES_DEV);
 
         let res = tasks

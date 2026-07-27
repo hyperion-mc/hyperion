@@ -274,12 +274,9 @@ impl Writer {
     }
 
     /// The bytes written so far.
-    // Not const: Vec's deref coercion is not available in const context on the
-    // pinned toolchain, so clippy's missing_const_for_fn is wrong here.
-    #[expect(
-        clippy::missing_const_for_fn,
-        reason = "Vec deref coercion is not const on the pinned toolchain"
-    )]
+    // Not const: deref coercion from Vec to a slice is not available in const
+    // context. clippy used to suggest it anyway; nightly-2025-05-05 no longer
+    // does, so the expect attribute that silenced it is gone.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
         &self.buffer

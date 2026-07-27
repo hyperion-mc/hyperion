@@ -1,12 +1,12 @@
-use bevy::{ecs::system::SystemState, prelude::*};
 use clap::Parser;
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{
     glam::Vec3,
     net::Channel,
-    simulation::{Pitch, Position, Uuid, Velocity, Yaw, entity_kind::EntityKind},
+    simulation::{Pitch, Position, Spawn, Uuid, Velocity, Yaw, entity_kind::EntityKind},
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
-use tracing::{debug, error};
+use tracing::debug;
 
 #[derive(Parser, CommandPermission, Debug)]
 #[command(name = "shoot")]
@@ -17,55 +17,47 @@ pub struct ShootCommand {
 }
 
 impl MinecraftCommand for ShootCommand {
-    type State = SystemState<(
-        Query<'static, 'static, (&'static Position, &'static Yaw, &'static Pitch)>,
-        Commands<'static, 'static>,
-    )>;
-
-    fn execute(self, world: &World, state: &mut Self::State, caller: Entity) {
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
         const EYE_HEIGHT: f32 = 1.62;
         const BASE_VELOCITY: f32 = 3.0; // Base velocity multiplier for arrows
 
-        let (query, mut commands) = state.get(world);
+        let world = system.world();
 
-        let (pos, yaw, pitch) = match query.get(caller) {
-            Ok(data) => data,
-            Err(e) => {
-                error!("shoot command failed: query failed: {e}");
-                return;
-            }
-        };
+        caller
+            .entity_view(world)
+            .get::<(&Position, &Yaw, &Pitch)>(|(pos, yaw, pitch)| {
+                // Calculate direction vector from player's rotation
+                let direction = super::raycast::get_direction_from_rotation(**yaw, **pitch);
 
-        // Calculate direction vector from player's rotation
-        let direction = super::raycast::get_direction_from_rotation(**yaw, **pitch);
+                // Spawn arrow slightly in front of player to avoid self-collision
+                let spawn_pos = Vec3::new(pos.x, pos.y + EYE_HEIGHT, pos.z) + direction * 1.0;
 
-        // Spawn arrow slightly in front of player to avoid self-collision
-        let spawn_pos = Vec3::new(pos.x, pos.y + EYE_HEIGHT, pos.z) + direction * 1.0;
+                // Calculate velocity with base multiplier
+                let velocity = direction * (self.velocity * BASE_VELOCITY);
 
-        // Calculate velocity with base multiplier
-        let velocity = direction * (self.velocity * BASE_VELOCITY);
+                debug!(
+                    "Arrow velocity: ({}, {}, {})",
+                    velocity.x, velocity.y, velocity.z
+                );
 
-        debug!(
-            "Arrow velocity: ({}, {}, {})",
-            velocity.x, velocity.y, velocity.z
-        );
+                debug!(
+                    "Arrow spawn position: ({}, {}, {})",
+                    spawn_pos.x, spawn_pos.y, spawn_pos.z
+                );
 
-        debug!(
-            "Arrow spawn position: ({}, {}, {})",
-            spawn_pos.x, spawn_pos.y, spawn_pos.z
-        );
+                let entity_id = Uuid::new_v4();
 
-        let entity_id = Uuid::new_v4();
-
-        // Create arrow entity with velocity
-        commands.spawn((
-            EntityKind::Arrow,
-            entity_id,
-            Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z),
-            Velocity::new(velocity.x, velocity.y, velocity.z),
-            Yaw::new(**yaw),
-            Pitch::new(**pitch),
-            Channel,
-        ));
+                // Create arrow entity with velocity
+                world
+                    .entity()
+                    .add_enum(EntityKind::Arrow)
+                    .set(entity_id)
+                    .set(Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z))
+                    .set(Velocity::new(velocity.x, velocity.y, velocity.z))
+                    .set(Yaw::new(**yaw))
+                    .set(Pitch::new(**pitch))
+                    .add(Channel)
+                    .enqueue(Spawn);
+            });
     }
 }

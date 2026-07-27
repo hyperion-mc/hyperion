@@ -8,6 +8,7 @@
 #![feature(core_io_borrowed_buf)]
 #![feature(maybe_uninit_slice)]
 #![feature(duration_millis_float)]
+#![feature(sync_unsafe_cell)]
 #![feature(iter_array_chunks)]
 #![feature(assert_matches)]
 #![feature(try_trait_v2)]
@@ -24,21 +25,33 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(thread_local)]
 
+pub const NUM_THREADS: usize = 1;
 pub const CHUNK_HEIGHT_SPAN: u32 = 384; // 512; // usually 384
 
 use std::{
-    alloc::Allocator, fmt::Debug, io::Write, net::SocketAddr, path::Path, sync::Arc, time::Duration,
+    alloc::Allocator,
+    fmt::Debug,
+    io::Write,
+    net::SocketAddr,
+    path::Path,
+    sync::{Arc, atomic::AtomicBool},
 };
 
-use bevy::prelude::*;
-use egress::EgressPlugin;
+use anyhow::Context;
+use egress::EgressModule;
+pub use flecs_ecs;
+use flecs_ecs::prelude::*;
 pub use glam;
+use glam::{I16Vec2, IVec2};
+use ingress::IngressModule;
 #[cfg(unix)]
 use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
-use storage::{LocalDb, SkinHandler};
-use tracing::{info, warn};
+use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+use storage::{Events, LocalDb, SkinHandler};
+use tracing::{info, info_span, warn};
+use util::mojang::MojangClient;
 pub use uuid;
 pub use valence_protocol as protocol;
 // todo: slowly move more and more things to arbitrary module
@@ -49,21 +62,25 @@ pub use valence_protocol::{
     ItemKind, ItemStack, Particle,
     block::{BlockKind, BlockState},
 };
+pub use valence_server as server;
+
+use crate::{
+    net::{Compose, IoBuf, MAX_PACKET_SIZE, proxy::init_proxy_comms},
+    runtime::AsyncRuntime,
+    simulation::{Pitch, Yaw},
+};
 
 mod common;
 pub use common::*;
 use hyperion_crafting::CraftingRegistry;
-use hyperion_utils::HyperionUtilsPlugin;
 pub use valence_ident;
 
 use crate::{
-    command_channel::{CommandChannel, CommandChannelPlugin},
-    ingress::IngressPlugin,
-    net::{Compose, ConnectionId, IoBuf, MAX_PACKET_SIZE, PacketDecoder, proxy::init_proxy_comms},
-    runtime::AsyncRuntime,
-    simulation::{IgnMap, SimPlugin, StreamLookup, blocks::Blocks},
-    spatial::SpatialPlugin,
-    util::mojang::{ApiProvider, MojangClient},
+    ingress::PendingRemove,
+    net::{Channel, ChannelId, ConnectionId, PacketDecoder, ProxyId},
+    runtime::Tasks,
+    simulation::{EgressComm, EntitySize, IgnMap, PacketState, Player, packet::HandlerRegistry},
+    util::mojang::ApiProvider,
 };
 
 pub mod egress;
@@ -72,6 +89,10 @@ pub mod net;
 pub mod simulation;
 pub mod spatial;
 pub mod storage;
+
+/// Relationship for previous values
+#[derive(Component)]
+pub struct Prev;
 
 pub trait PacketBundle {
     fn encode_including_ids(self, w: impl Write) -> anyhow::Result<()>;
@@ -96,7 +117,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
         rlim_max: 0, // Initialize hard limit to 0
     };
 
-    if unsafe { getrlimit(RLIMIT_NOFILE, &mut limits) } == 0 {
+    if unsafe { getrlimit(RLIMIT_NOFILE, &raw mut limits) } == 0 {
         // Create a stack-allocated buffer...
 
         info!("current soft limit: {}", limits.rlim_cur);
@@ -117,7 +138,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
 
     info!("setting soft limit to: {}", limits.rlim_cur);
 
-    if unsafe { setrlimit(RLIMIT_NOFILE, &limits) } != 0 {
+    if unsafe { setrlimit(RLIMIT_NOFILE, &raw const limits) } != 0 {
         error!("Failed to set the file handle limits");
         return Err(std::io::Error::last_os_error());
     }
@@ -125,7 +146,7 @@ pub fn adjust_file_descriptor_limits(recommended_min: u64) -> std::io::Result<()
     Ok(())
 }
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Crypto {
     /// The root certificate authority's certificate
     pub root_ca_cert: CertificateDer<'static>,
@@ -150,6 +171,8 @@ impl Crypto {
         })
     }
 }
+#[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GameServerEndpoint(SocketAddr);
 
 impl Clone for Crypto {
     fn clone(&self) -> Self {
@@ -161,10 +184,7 @@ impl Clone for Crypto {
     }
 }
 
-#[derive(Resource, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Endpoint(SocketAddr);
-
-impl From<SocketAddr> for Endpoint {
+impl From<SocketAddr> for GameServerEndpoint {
     fn from(value: SocketAddr) -> Self {
         const DEFAULT_MINECRAFT_PORT: u16 = 25565;
         let port = value.port();
@@ -183,24 +203,38 @@ impl From<SocketAddr> for Endpoint {
     }
 }
 
-#[derive(Event, Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct InitializePlayerPosition(pub Entity);
-
 /// The central [`HyperionCore`] struct which owns and manages the entire server.
+#[derive(Component)]
 pub struct HyperionCore;
 
-impl Plugin for HyperionCore {
+#[derive(Component)]
+struct Shutdown {
+    value: Arc<AtomicBool>,
+}
+
+impl Module for HyperionCore {
+    fn module(world: &World) {
+        Self::init_with(world).unwrap();
+    }
+}
+
+impl HyperionCore {
+    /// Initializes the server with a custom handler.
+    fn init_with(world: &World) -> anyhow::Result<()> {
+        // Denormals (numbers very close to 0) are flushed to zero because doing computations on them
+        // is slow.
+
+        Self::init_with_helper(world)
+    }
+
     /// Initialize the server.
-    fn build(&self, app: &mut App) {
+    fn init_with_helper(world: &World) -> anyhow::Result<()> {
         // 10k players * 2 file handles / player  = 20,000. We can probably get away with 16,384 file handles
         #[cfg(unix)]
-        if let Err(e) = adjust_file_descriptor_limits(32_768) {
-            warn!("failed to set file limits: {e}");
-        }
+        adjust_file_descriptor_limits(32_768).context("failed to set file limits")?;
 
-        // Errors are ignored because they will only occur when the thread pool is initialized
-        // twice, which may occur in tests that add the `HyperionCore` plugin to different apps
-        let _result = rayon::ThreadPoolBuilder::new()
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(NUM_THREADS)
             .spawn_handler(|thread| {
                 std::thread::Builder::new()
                     .stack_size(1024 * 1024)
@@ -210,75 +244,214 @@ impl Plugin for HyperionCore {
                     .expect("Failed to spawn thread");
                 Ok(())
             })
-            .build_global();
-
-        // Initialize the compute task pool. This is done manually instead of by using
-        // TaskPoolPlugin because TaskPoolPlugin also initializes AsyncComputeTaskPool and
-        // IoTaskPool which are not used by Hyperion but are given 50% of the available cores.
-        // Setting up ComputeTaskPool manually allows it to use 100% of the available cores.
-        let mut init = false;
-        bevy::tasks::ComputeTaskPool::get_or_init(|| {
-            init = true;
-            bevy::tasks::TaskPool::new()
-        });
-        if !init {
-            warn!("failed to initialize ComputeTaskPool because it was already initialized");
-        }
+            .build_global()
+            .context("failed to build thread pool")?;
 
         let shared = Arc::new(Shared {
             compression_threshold: CompressionThreshold(256),
-            compression_level: CompressionLvl::new(2).expect("failed to create compression level"),
+            compression_level: CompressionLvl::new(2)
+                .map_err(|_| anyhow::anyhow!("failed to create compression level"))?,
         });
 
+        world
+            .component::<GameServerEndpoint>()
+            .add_trait::<flecs::Singleton>();
+        world.component::<Crypto>().add_trait::<flecs::Singleton>();
+        command_channel::register(world);
+
+        world
+            .component::<Shutdown>()
+            .add_trait::<flecs::Singleton>();
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        world.set(Shutdown {
+            value: shutdown.clone(),
+        });
+
+        world.component::<Prev>();
+
+        // Minecraft tick rate is 20 ticks per second
+        world.set_target_fps(20.0);
+
+        // todo: sadly this requires u32
+        // .bit("on_fire", *EntityFlags::ON_FIRE)
+        // .bit("crouching", *EntityFlags::CROUCHING)
+        // .bit("sprinting", *EntityFlags::SPRINTING)
+        // .bit("swimming", *EntityFlags::SWIMMING)
+        // .bit("invisible", *EntityFlags::INVISIBLE)
+        // .bit("glowing", *EntityFlags::GLOWING)
+        // .bit("flying_with_elytra", *EntityFlags::FLYING_WITH_ELYTRA);
+
+        component!(world, I16Vec2 { x: i16, y: i16 });
+
+        component!(world, IVec2 { x: i32, y: i32 });
+        world.component::<PendingRemove>();
+
+        world.component::<Yaw>().meta();
+
+        world.component::<Pitch>().meta();
+
+        world.component::<PacketDecoder>();
+
+        world.component::<PacketState>();
+
+        world.component::<ConnectionId>();
+        world.component::<ProxyId>();
+        world.component::<Channel>();
+        world.component::<ChannelId>();
+        world.component::<Compose>().add_trait::<flecs::Singleton>();
+        world
+            .component::<CraftingRegistry>()
+            .add_trait::<flecs::Singleton>();
+
+        world.component::<LocalDb>().add_trait::<flecs::Singleton>();
+        world
+            .component::<SkinHandler>()
+            .add_trait::<flecs::Singleton>();
+        world
+            .component::<MojangClient>()
+            .add_trait::<flecs::Singleton>();
+        world.component::<Events>().add_trait::<flecs::Singleton>();
+        world.component::<Comms>().add_trait::<flecs::Singleton>();
+        world
+            .component::<EgressComm>()
+            .add_trait::<flecs::Singleton>();
+
+        world
+            .component::<AsyncRuntime>()
+            .add_trait::<flecs::Singleton>();
+        world.component::<Blocks>().add_trait::<flecs::Singleton>();
+
+        world.component::<Tasks>().add_trait::<flecs::Singleton>();
+
+        system!("run_tasks", world, &mut Tasks)
+            .kind(id::<flecs::pipeline::OnUpdate>())
+            .each_iter(|it, _, tasks| {
+                let world = it.world();
+                let span = info_span!("run_tasks");
+                let _enter = span.enter();
+                while let Ok(Some(task)) = tasks.tasks.try_recv() {
+                    task(&world);
+                }
+            });
+
+        world
+            .component::<StreamLookup>()
+            .add_trait::<flecs::Singleton>();
+        world.component::<EntitySize>();
+        world.component::<IgnMap>().add_trait::<flecs::Singleton>();
+
+        world
+            .component::<config::Config>()
+            .add_trait::<flecs::Singleton>();
+
         info!("starting hyperion");
-        let config = config::Config::load("run/config.toml").expect("failed to load config");
-        app.insert_resource(config);
+        let config = config::Config::load("run/config.toml")?;
+        world.set(config);
 
-        let runtime = AsyncRuntime::new();
+        let (task_tx, task_rx) = kanal::unbounded();
+        let runtime = AsyncRuntime::new(task_tx);
 
-        let db = LocalDb::new().expect("failed to load database");
-        let skins = SkinHandler::new(&db).expect("failed to load skin handler");
+        #[cfg(unix)]
+        #[allow(clippy::redundant_pub_crate)]
+        runtime.spawn(async move {
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+            let mut sigquit =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::quit()).unwrap();
 
-        app.insert_resource(db);
-        app.insert_resource(skins);
-        app.insert_resource(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
-        app.insert_resource(Blocks::empty(&runtime));
-        app.add_event::<InitializePlayerPosition>();
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    warn!("SIGINT/ctrl-c received, shutting down");
+                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                _ = sigterm.recv() => {
+                    warn!("SIGTERM received, shutting down");
+                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                _ = sigquit.recv() => {
+                    warn!("SIGQUIT received, shutting down");
+                    shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        });
+
+        let tasks = Tasks { tasks: task_rx };
+        world.set(tasks);
+
+        world
+            .component::<HandlerRegistry>()
+            .add_trait::<flecs::Singleton>();
+        world.set(HandlerRegistry::default());
+
+        info!("initializing database");
+        let db = LocalDb::new()?;
+        let skins = SkinHandler::new(&db)?;
+        info!("database initialized");
+
+        world.set(db);
+        world.set(skins);
+
+        world.set(MojangClient::new(&runtime, ApiProvider::MAT_DOES_DEV));
+
+        #[rustfmt::skip]
+        world
+            .observer::<flecs::OnSet, (&GameServerEndpoint, &AsyncRuntime, &Crypto, &CommandChannel)>()
+            .term_at(1).filter()
+            .term_at(2).filter()
+            .term_at(3).filter()
+            .each(|(address, runtime, crypto, command_channel)| {
+                init_proxy_comms(runtime, command_channel.clone(), address.0, crypto.clone());
+            });
 
         let global = Global::new(shared.clone());
 
-        app.add_plugins(CommandChannelPlugin);
-
-        if let Some(address) = app.world().get_resource::<Endpoint>() {
-            let crypto = app.world().resource::<Crypto>();
-            let command_channel = app.world().resource::<CommandChannel>();
-            init_proxy_comms(&runtime, command_channel.clone(), address.0, crypto.clone());
-        } else {
-            warn!("Endpoint was not set while loading HyperionCore");
-        }
-
-        app.insert_resource(Compose::new(
+        world.set(Compose::new(
             shared.compression_level,
             global,
             IoBuf::default(),
         ));
-        app.insert_resource(runtime);
-        app.insert_resource(CraftingRegistry::default());
-        app.insert_resource(StreamLookup::default());
 
-        app.add_plugins((
-            bevy::time::TimePlugin,
-            bevy::app::ScheduleRunnerPlugin::run_loop(Duration::from_millis(10)),
-            IngressPlugin,
-            EgressPlugin,
-            SimPlugin,
-            SpatialPlugin,
-            HyperionUtilsPlugin,
-        ));
+        world.set(CraftingRegistry::default());
 
-        app.insert_resource(IgnMap::default());
-        // Minecraft is 20 TPS
-        app.insert_resource(Time::<Fixed>::from_hz(20.0));
+        world.set(Comms::default());
+
+        let events = Events::initialize(world);
+        world.set(events);
+
+        world.set(runtime);
+        world.set(StreamLookup::default());
+
+        world.set_threads(i32::try_from(rayon::current_num_threads())?);
+        world.import::<SimModule>();
+        world.import::<EgressModule>();
+        world.import::<IngressModule>();
+
+        world
+            .component::<Player>()
+            .add_trait::<(flecs::With, EntitySize)>();
+
+        // add yaw and pitch
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with(id::<Player>())
+            .without(id::<Yaw>())
+            .each_entity(|entity, ()| {
+                entity.set(Yaw::default());
+            });
+
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with(id::<Player>())
+            .without(id::<Pitch>())
+            .each_entity(|entity, ()| {
+                entity.set(Pitch::default());
+            });
+
+        world.set(IgnMap::default());
+        world.set(Blocks::empty(world));
+
+        Ok(())
     }
 }
 

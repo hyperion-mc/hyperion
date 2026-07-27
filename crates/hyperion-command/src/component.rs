@@ -1,27 +1,25 @@
-use std::sync::Mutex;
-
-use bevy::prelude::*;
-use derive_more::{Deref, DerefMut};
-use hyperion::simulation::packet::play;
-use hyperion_utils::ApplyWorld;
+use flecs_ecs::{
+    core::{Entity, EntityView, World, flecs},
+    macros::Component,
+    prelude::Module,
+};
+use hyperion::{simulation::handlers::PacketSwitchQuery, storage::CommandCompletionRequest};
 use indexmap::IndexMap;
 
-pub trait ExecutableCommand: ApplyWorld {
-    /// Executes a command triggered by a player
-    fn execute(&mut self, world: &World, execution: &play::CommandExecution);
-}
-
+pub type OnTabComplete =
+    Box<dyn Fn(&mut PacketSwitchQuery<'_>, &CommandCompletionRequest) + 'static + Send + Sync>;
 pub struct CommandHandler {
-    pub executable: Box<dyn ExecutableCommand + Send + Sync + 'static>,
-    pub tab_complete: fn(&World, &play::RequestCommandCompletions),
-    pub has_permissions: fn(&World, Entity) -> bool,
+    pub on_execute: fn(input: &str, system: EntityView<'_>, caller: Entity),
+    pub on_tab_complete: OnTabComplete,
+    pub has_permissions: fn(world: &World, caller: Entity) -> bool,
 }
 
-pub struct CommandRegistryInner {
+#[derive(Component)]
+pub struct CommandRegistry {
     pub(crate) commands: IndexMap<String, CommandHandler>,
 }
 
-impl CommandRegistryInner {
+impl CommandRegistry {
     pub fn register(&mut self, name: impl Into<String>, handler: CommandHandler) {
         let name = name.into();
         self.commands.insert(name, handler);
@@ -47,19 +45,16 @@ impl CommandRegistryInner {
     }
 }
 
-/// Registry storing a list of commands.
-///
-/// This registry is locked by a [`Mutex`]. See the `execute_commands` system for justification.
-/// Consider accessing this resource using [`ResMut`] and [`Mutex::get_mut`].
-#[derive(Resource, Deref, DerefMut)]
-pub struct CommandRegistry(Mutex<CommandRegistryInner>);
+#[derive(Component)]
+pub struct CommandComponentModule;
 
-pub struct CommandComponentPlugin;
-
-impl Plugin for CommandComponentPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(CommandRegistry(Mutex::new(CommandRegistryInner {
+impl Module for CommandComponentModule {
+    fn module(world: &World) {
+        world
+            .component::<CommandRegistry>()
+            .add_trait::<flecs::Singleton>();
+        world.set(CommandRegistry {
             commands: IndexMap::default(),
-        })));
+        });
     }
 }

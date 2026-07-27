@@ -1,7 +1,7 @@
 [dependencies]
 anyhow = {workspace = true}
 clap = {workspace = true}
-bevy = {workspace = true}
+flecs_ecs = {workspace = true}
 heed = {workspace = true}
 hyperion = {workspace = true}
 num-derive = {workspace = true}

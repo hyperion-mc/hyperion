@@ -21,6 +21,7 @@ members = [
     'crates/hyperion-clap',
     'crates/hyperion-command',
     'crates/hyperion-crafting',
+    'crates/hyperion-event-macros',
     'crates/hyperion-genmap',
     'crates/hyperion-gui',
     'crates/hyperion-inventory',
@@ -129,11 +130,6 @@ git = 'https://github.com/TestingPlant/bvh-data'
 [workspace.dependencies.bvh-region]
 path = 'crates/bvh-region'
 
-[workspace.dependencies.bevy]
-default-features = false
-features = ['multi_threaded']
-version = "0.16.1"
-
 [workspace.dependencies.bytemuck]
 features = ['derive']
 version = '1.23.0'
@@ -153,6 +149,10 @@ git = 'https://github.com/nvzqz/divan'
 default-features = false
 version = '1.1.1'
 
+[workspace.dependencies.flecs_ecs]
+features = ['flecs_manual_registration']
+version = '0.2.2'
+
 [workspace.dependencies.geometry]
 path = 'crates/geometry'
 
@@ -170,6 +170,9 @@ path = 'crates/hyperion-command'
 
 [workspace.dependencies.hyperion-crafting]
 path = 'crates/hyperion-crafting'
+
+[workspace.dependencies.hyperion-event-macros]
+path = 'crates/hyperion-event-macros'
 
 [workspace.dependencies.hyperion-genmap]
 path = 'crates/hyperion-genmap'

@@ -1,75 +1,66 @@
-use bevy::prelude::*;
-use derive_more::Deref;
-use hyperion::{ingress, simulation::event::InteractEvent};
-use hyperion_inventory::PlayerInventory;
-use tracing::error;
+use derive_more::{Constructor, Deref, DerefMut};
+use flecs_ecs::{
+    core::{EntityViewGet, World, WorldGet},
+    macros::Component,
+    prelude::Module,
+};
+use hyperion::{
+    simulation::{handlers::PacketSwitchQuery, packet::HandlerRegistry},
+    storage::{EventFn, InteractEvent},
+};
 use valence_protocol::nbt;
 
 pub mod builder;
 
-pub struct ItemPlugin;
+#[derive(Component)]
+pub struct ItemModule;
 
-/// Event sent when an item with an NBT is clicked in the hotbar
-#[derive(Event, Deref)]
-pub struct NbtInteractEvent {
-    pub handler: Entity,
-
-    #[deref]
-    pub event: InteractEvent,
+#[derive(Component, Constructor, Deref, DerefMut)]
+pub struct Handler {
+    on_click: EventFn<InteractEvent>,
 }
 
-fn handle_interact(
-    mut events: EventReader<'_, '_, InteractEvent>,
-    query: Query<'_, '_, &PlayerInventory>,
-    mut event_writer: EventWriter<'_, NbtInteractEvent>,
-) {
-    for event in events.read() {
-        let inventory = match query.get(event.client) {
-            Ok(inventory) => inventory,
-            Err(e) => {
-                error!("failed to handle interact event: query failed: {e}");
-                continue;
-            }
-        };
+impl Module for ItemModule {
+    fn module(world: &World) {
+        world.import::<hyperion::simulation::inventory::InventoryModule>();
+        world.component::<Handler>();
 
-        let stack = &inventory.get_cursor().stack;
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |event: &InteractEvent, query: &mut PacketSwitchQuery<'_>| {
+                    let world = query.world;
+                    let inventory = &mut *query.inventory;
 
-        if stack.is_empty() {
-            return;
-        }
+                    let stack = &inventory.get_cursor().stack;
 
-        let Some(nbt) = stack.nbt.as_ref() else {
-            return;
-        };
+                    if stack.is_empty() {
+                        return Ok(());
+                    }
 
-        let Some(handler) = nbt.get("Handler") else {
-            return;
-        };
+                    let Some(nbt) = stack.nbt.as_ref() else {
+                        return Ok(());
+                    };
 
-        let nbt::Value::Long(id) = handler else {
-            return;
-        };
+                    let Some(handler) = nbt.get("Handler") else {
+                        return Ok(());
+                    };
 
-        let id: u64 = bytemuck::cast(*id);
+                    let nbt::Value::Long(id) = handler else {
+                        return Ok(());
+                    };
 
-        let Ok(handler) = Entity::try_from_bits(id) else {
-            error!(
-                "failed to handle interact event: nbt handler field contains an invalid entity id \
-                 {id}"
-            );
-            return;
-        };
+                    let id: u64 = bytemuck::cast(*id);
 
-        event_writer.write(NbtInteractEvent {
-            handler,
-            event: event.clone(),
+                    let handler = world.entity_from_id(id);
+
+                    handler.try_get::<&Handler>(|handler| {
+                        let on_interact = &handler.on_click;
+                        on_interact(query, event);
+                    });
+
+                    Ok(())
+                },
+            ));
         });
-    }
-}
-
-impl Plugin for ItemPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_event::<NbtInteractEvent>();
-        app.add_systems(FixedUpdate, handle_interact.after(ingress::decode::play));
     }
 }

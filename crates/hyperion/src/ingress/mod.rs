@@ -1,13 +1,13 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
-use bevy::prelude::*;
 use colored::Colorize;
+use flecs_ecs::prelude::*;
 use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn};
 use valence_protocol::{
-    VarInt,
+    Bounded, VarInt,
     packets::{
         handshaking::handshake_c2s::HandshakeNextState,
         login::{LoginCompressionS2c, LoginSuccessS2c},
@@ -17,29 +17,16 @@ use valence_protocol::{
 };
 
 use crate::{
-    InitializePlayerPosition,
+    Prev, Shutdown,
     command_channel::CommandChannel,
     egress::sync_chunks::ChunkSendQueue,
+    ingress::decode::{DecodeModule, queues},
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
     runtime::AsyncRuntime,
     simulation::{
-        AiTargetable,
-        ChunkPosition,
-        ImmuneStatus,
-        Pitch,
-        Uuid,
-        Velocity,
-        Xp,
-        Yaw,
-        animation::ActiveAnimation,
-        entity_kind::EntityKind,
-        packet,
-        // animation::ActiveAnimation,
-        // blocks::Blocks,
-        // handlers::PacketSwitchQuery,
-        // metadata::{MetadataPrefabs, entity::Pose},
-        packet_state,
-        skin::PlayerSkin,
+        AiTargetable, ChunkPosition, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name,
+        PacketState, Player, Uuid, Velocity, Xp, animation::ActiveAnimation,
+        entity_kind::EntityKind, metadata::MetadataPrefabs, skin::PlayerSkin,
     },
     storage::SkinHandler,
     util::mojang::MojangClient,
@@ -47,26 +34,13 @@ use crate::{
 
 pub mod decode;
 
-pub fn process_handshake(
-    mut packets: EventReader<'_, '_, packet::handshake::Handshake>,
-    mut commands: Commands<'_, '_>,
-) {
-    for packet in packets.read() {
-        let mut entity = commands.entity(packet.sender());
+/// This marks players who have already been disconnected and about to be destructed. This component should not be
+/// added to an entity to disconnect a player. Use [`crate::net::IoBuf::shutdown`] instead.
+#[derive(Component, Debug)]
+pub struct PendingRemove;
 
-        entity.remove::<packet_state::Handshake>();
-        match packet.next_state {
-            HandshakeNextState::Status => {
-                entity.insert(packet_state::Status(()));
-            }
-            HandshakeNextState::Login => {
-                entity.insert(packet_state::Login(()));
-            }
-        }
-    }
-}
-
-#[derive(Resource)]
+/// The data sent to clients which ping the server without logging in.
+#[derive(Component)]
 pub struct ServerPingResponse {
     pub description: String,
     pub max_players: u32,
@@ -84,169 +58,6 @@ impl Default for ServerPingResponse {
     }
 }
 
-fn process_status_request(
-    mut packets: EventReader<'_, '_, packet::status::QueryRequest>,
-    ping_response_data: Res<'_, ServerPingResponse>,
-    compose: Res<'_, Compose>,
-) {
-    for packet in packets.read() {
-        // let img_bytes = include_bytes!("data/hyperion.png");
-
-        // let favicon = general_purpose::STANDARD.encode(img_bytes);
-        // let favicon = format!("data:image/png;base64,{favicon}");
-
-        let online = compose
-            .global()
-            .player_count
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        // https://wiki.vg/Server_List_Ping#Response
-        let json = json!({
-            "version": {
-                "name": MINECRAFT_VERSION,
-                "protocol": PROTOCOL_VERSION,
-            },
-            "players": {
-                "online": online,
-                "max": ping_response_data.max_players,
-                "sample": [],
-            },
-            "description": ping_response_data.description,
-            // "favicon": favicon,
-        });
-
-        let json = serde_json::to_string_pretty(&json).expect("json serialization should succeed");
-
-        let send = QueryResponseS2c {
-            json: json.as_str().into(),
-        };
-
-        info!("sent query response: {packet:?}");
-        compose
-            .unicast_no_compression(&send, packet.connection_id())
-            .unwrap();
-    }
-}
-
-fn process_status_ping(
-    mut packets: EventReader<'_, '_, packet::status::QueryPing>,
-    compose: Res<'_, Compose>,
-) {
-    for packet in packets.read() {
-        let payload = packet.payload;
-        let send = QueryPongS2c { payload };
-        info!("sent ping response: {send:?}");
-        compose
-            .unicast_no_compression(&send, packet.connection_id())
-            .unwrap();
-    }
-}
-pub fn process_login_hello(
-    mut packets: EventReader<'_, '_, packet::login::LoginHello>,
-    compose: Res<'_, Compose>,
-    runtime: Res<'_, AsyncRuntime>,
-    skins_collection: Res<'_, SkinHandler>,
-    mojang: Res<'_, MojangClient>,
-    command_channel: Res<'_, CommandChannel>,
-    mut commands: Commands<'_, '_>,
-    mut query: Query<'_, '_, &mut PacketDecoder>,
-) {
-    for packet in packets.read() {
-        let sender = packet.sender();
-        let mut decoder = query
-            .get_mut(sender)
-            .expect("PacketDecoder must be available for player");
-
-        let username = &packet.username;
-        let profile_id = packet.profile_id;
-
-        // Set compression
-        let global = compose.global();
-        let pkt = LoginCompressionS2c {
-            threshold: VarInt(global.shared.compression_threshold.0),
-        };
-        compose
-            .unicast_no_compression(&pkt, packet.connection_id())
-            .unwrap();
-        decoder.set_compression(global.shared.compression_threshold);
-
-        let uuid = profile_id.unwrap_or_else(|| offline_uuid(username));
-        let uuid_s = format!("{uuid:?}").dimmed();
-        info!("Starting login: {sender:?} {username} {uuid_s}");
-
-        let pkt = LoginSuccessS2c {
-            uuid,
-            username: username.clone(),
-            properties: Cow::default(),
-        };
-
-        compose.unicast(&pkt, packet.connection_id()).unwrap();
-
-        let skin = if profile_id.is_some() {
-            let mojang = mojang.as_ref().clone();
-            let skins_collection = skins_collection.as_ref().clone();
-            let command_channel = command_channel.as_ref().clone();
-            runtime.spawn(async move {
-                let skin = match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await {
-                    Ok(Some(skin)) => skin,
-                    Err(e) => {
-                        error!("failed to get skin {e}. Using empty skin");
-                        PlayerSkin::EMPTY
-                    }
-                    Ok(None) => {
-                        error!("failed to get skin. Using empty skin");
-                        PlayerSkin::EMPTY
-                    }
-                };
-
-                command_channel.push(move |world: &mut World| {
-                    let Ok(mut entity) = world.get_entity_mut(sender) else {
-                        warn!(
-                            "failed to get entity after skin has been fetched (likely because the \
-                             player has already left the server)"
-                        );
-                        return;
-                    };
-
-                    entity.insert(skin);
-                });
-            });
-            None
-        } else {
-            Some(PlayerSkin::EMPTY)
-        };
-
-        let username = username.to_string();
-        commands.queue(move |world: &mut World| {
-            let mut entity = world.entity_mut(sender);
-
-            // TODO: The more specific components (such as ChunkSendQueue) should be added in a
-            // separate system
-            entity.remove::<packet_state::Login>().insert((
-                Name::new(username.to_string()),
-                ActiveAnimation::NONE,
-                AiTargetable,
-                ImmuneStatus::default(),
-                Uuid::from(uuid),
-                ChunkPosition::null(),
-                ChunkSendQueue::default(),
-                Yaw::default(),
-                Pitch::default(),
-                Velocity::default(),
-                Xp::default(),
-                EntityKind::Player,
-            ));
-
-            world.trigger(InitializePlayerPosition(sender));
-
-            if let Some(skin) = skin {
-                let mut entity = world.entity_mut(sender);
-                entity.insert(skin);
-            }
-        });
-    }
-}
-
 /// Get a [`uuid::Uuid`] based on the given user's name.
 fn offline_uuid(username: &str) -> uuid::Uuid {
     let digest = sha2::Sha256::digest(username);
@@ -258,55 +69,313 @@ fn offline_uuid(username: &str) -> uuid::Uuid {
     uuid::Uuid::from_u128(digest)
 }
 
-fn remove_player_from_visibility(
-    trigger: Trigger<'_, OnRemove, packet_state::Play>,
-    query: Query<'_, '_, &Uuid>,
-    compose: Res<'_, Compose>,
-) {
-    let uuid = match query.get(trigger.target()) {
-        Ok(uuid) => uuid,
-        Err(e) => {
-            error!("failed to send player remove packet: query failed: {e}");
-            return;
-        }
-    };
+fn process_handshake(world: &World) {
+    world
+        .system_named::<&mut queues::handshake>("process_handshake")
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each_iter(|it, _, queue| {
+            let world = it.world();
 
-    let uuids = &[uuid.0];
-    let entity_ids = [VarInt(trigger.target().minecraft_id())];
+            for packet in std::mem::take(&mut queue.Handshake) {
+                let entity = world.entity_from_id(packet.sender());
 
-    // destroy
-    let pkt = EntitiesDestroyS2c {
-        entity_ids: Cow::Borrowed(&entity_ids),
-    };
-
-    if let Err(e) = compose.broadcast(&pkt).send() {
-        error!("failed to send player remove packet: {e}");
-        return;
-    }
-
-    let pkt = PlayerRemoveS2c {
-        uuids: Cow::Borrowed(uuids),
-    };
-
-    if let Err(e) = compose.broadcast(&pkt).send() {
-        error!("failed to send player remove packet: {e}");
-    }
+                // todo: check version is correct
+                // PacketState is an exclusive relationship, so adding the next state removes the
+                // handshake state.
+                match packet.next_state {
+                    HandshakeNextState::Status => {
+                        entity.add_enum(PacketState::Status);
+                    }
+                    HandshakeNextState::Login => {
+                        entity.add_enum(PacketState::Login);
+                    }
+                }
+            }
+        });
 }
 
-pub struct IngressPlugin;
+fn process_status_request(world: &World) {
+    world
+        .system_named::<(&mut queues::status, &ServerPingResponse, &Compose)>(
+            "process_status_request",
+        )
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each(|(queue, ping_response_data, compose)| {
+            for packet in std::mem::take(&mut queue.QueryRequest) {
+                // let img_bytes = include_bytes!("data/hyperion.png");
 
-impl Plugin for IngressPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(decode::DecodePlugin);
-        app.add_systems(
-            FixedUpdate,
-            (
-                process_handshake.after(decode::handshake),
-                (process_status_request, process_status_ping).after(decode::status),
-                process_login_hello.after(decode::login),
-            ),
+                // let favicon = general_purpose::STANDARD.encode(img_bytes);
+                // let favicon = format!("data:image/png;base64,{favicon}");
+
+                let online = compose
+                    .global()
+                    .player_count
+                    .load(std::sync::atomic::Ordering::Relaxed);
+
+                // https://wiki.vg/Server_List_Ping#Response
+                let json = json!({
+                    "version": {
+                        "name": MINECRAFT_VERSION,
+                        "protocol": PROTOCOL_VERSION,
+                    },
+                    "players": {
+                        "online": online,
+                        "max": ping_response_data.max_players,
+                        "sample": [],
+                    },
+                    "description": ping_response_data.description,
+                    // "favicon": favicon,
+                });
+
+                let json =
+                    serde_json::to_string_pretty(&json).expect("json serialization should succeed");
+
+                let send = QueryResponseS2c {
+                    json: json.as_str().into(),
+                };
+
+                info!("sent query response: {packet:?}");
+
+                if let Err(e) = compose.unicast_no_compression(&send, packet.connection_id()) {
+                    error!("failed to send query response: {e}");
+                }
+            }
+        });
+}
+
+fn process_status_ping(world: &World) {
+    world
+        .system_named::<(&mut queues::status, &Compose)>("process_status_ping")
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each(|(queue, compose)| {
+            for packet in std::mem::take(&mut queue.QueryPing) {
+                let payload = packet.payload;
+                let send = QueryPongS2c { payload };
+                info!("sent ping response: {send:?}");
+
+                if let Err(e) = compose.unicast_no_compression(&send, packet.connection_id()) {
+                    error!("failed to send ping response: {e}");
+                }
+            }
+        });
+}
+
+fn process_login_hello(world: &World) {
+    world
+        .system_named::<(
+            &mut queues::login,
+            &Compose,
+            &AsyncRuntime,
+            &SkinHandler,
+            &MojangClient,
+            &CommandChannel,
+            &IgnMap,
+        )>("process_login_hello")
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each_iter(
+            |it,
+             _,
+             (queue, compose, runtime, skins_collection, mojang, command_channel, ign_map)| {
+                let world = it.world();
+
+                for packet in std::mem::take(&mut queue.LoginHello) {
+                    let sender = packet.sender();
+                    let connection_id = packet.connection_id();
+                    let entity = world.entity_from_id(sender);
+
+                    let username: Arc<str> = Arc::from(packet.username.0.as_str());
+                    let profile_id = packet.profile_id;
+
+                    // Set compression
+                    let global = compose.global();
+                    let pkt = LoginCompressionS2c {
+                        threshold: VarInt(global.shared.compression_threshold.0),
+                    };
+
+                    if let Err(e) = compose.unicast_no_compression(&pkt, connection_id) {
+                        error!("failed to send login compression packet: {e}");
+                        compose.io_buf().shutdown(connection_id);
+                        continue;
+                    }
+
+                    entity.get::<&mut PacketDecoder>(|decoder| {
+                        decoder.set_compression(global.shared.compression_threshold);
+                    });
+
+                    let uuid = profile_id.unwrap_or_else(|| offline_uuid(&username));
+                    let uuid_s = format!("{uuid:?}").dimmed();
+                    info!("Starting login: {sender:?} {username} {uuid_s}");
+
+                    let pkt = LoginSuccessS2c {
+                        uuid,
+                        username: Bounded(username.as_ref().into()),
+                        properties: Cow::default(),
+                    };
+
+                    if let Err(e) = compose.unicast(&pkt, connection_id) {
+                        error!("failed to send login success packet: {e}");
+                        compose.io_buf().shutdown(connection_id);
+                        continue;
+                    }
+
+                    // Skins for players with a real Mojang profile are fetched asynchronously and
+                    // applied through the command channel once they arrive.
+                    let skin = if profile_id.is_some() {
+                        let mojang = mojang.clone();
+                        let skins_collection = skins_collection.clone();
+                        let command_channel = command_channel.clone();
+
+                        runtime.spawn(async move {
+                            let skin =
+                                match PlayerSkin::from_uuid(uuid, &mojang, &skins_collection).await
+                                {
+                                    Ok(Some(skin)) => skin,
+                                    Err(e) => {
+                                        error!("failed to get skin {e}. Using empty skin");
+                                        PlayerSkin::EMPTY
+                                    }
+                                    Ok(None) => {
+                                        error!("failed to get skin. Using empty skin");
+                                        PlayerSkin::EMPTY
+                                    }
+                                };
+
+                            command_channel.push(move |world: &World| {
+                                let entity = world.entity_from_id(sender);
+
+                                if !entity.is_alive() {
+                                    warn!(
+                                        "failed to get entity after skin has been fetched (likely \
+                                         because the player has already left the server)"
+                                    );
+                                    return;
+                                }
+
+                                entity.set(skin);
+                            });
+                        });
+
+                        None
+                    } else {
+                        Some(PlayerSkin::EMPTY)
+                    };
+
+                    ign_map.insert(username.clone(), sender, &world);
+
+                    // TODO: The more specific components (such as ChunkSendQueue) should be added
+                    // in a separate system
+                    world.get::<&MetadataPrefabs>(|prefabs| {
+                        entity
+                            .is_a(prefabs.player_base)
+                            .set(Name::from(username.clone()))
+                            .add(id::<AiTargetable>())
+                            .set(ImmuneStatus::default())
+                            .set(Uuid::from(uuid))
+                            .add(id::<Xp>())
+                            .set_pair::<Prev, _>(Xp::default())
+                            .add(id::<ChunkSendQueue>())
+                            .add(id::<Velocity>())
+                            .set(ChunkPosition::null())
+                            .set(ActiveAnimation::NONE)
+                            .set(hyperion_inventory::PlayerInventory::default())
+                            .set(ConfirmBlockSequences::default())
+                            .add_enum(EntityKind::Player)
+                            .add(id::<Player>());
+                    });
+
+                    if let Some(skin) = skin {
+                        entity.set(skin);
+                    }
+
+                    entity.add_enum(PacketState::Play);
+
+                    compose.io_buf().set_receive_broadcasts(connection_id);
+                }
+            },
         );
-        app.add_observer(remove_player_from_visibility);
-        app.init_resource::<ServerPingResponse>();
+}
+
+fn remove_player_from_visibility(world: &World) {
+    world
+        .observer::<flecs::OnRemove, ()>()
+        .with_enum(PacketState::Play)
+        .each_entity(|entity, ()| {
+            let world = entity.world();
+
+            let Some(uuid) = entity.try_get::<&Uuid>(|uuid| uuid.0) else {
+                error!("failed to send player remove packet: player has no uuid");
+                return;
+            };
+
+            world.get::<&Compose>(|compose| {
+                let uuids = &[uuid];
+                let entity_ids = [VarInt(entity.id().minecraft_id())];
+
+                // destroy
+                let pkt = EntitiesDestroyS2c {
+                    entity_ids: Cow::Borrowed(&entity_ids),
+                };
+
+                if let Err(e) = compose.broadcast(&pkt).send() {
+                    error!("failed to send player remove packet: {e}");
+                    return;
+                }
+
+                let pkt = PlayerRemoveS2c {
+                    uuids: Cow::Borrowed(uuids),
+                };
+
+                if let Err(e) = compose.broadcast(&pkt).send() {
+                    error!("failed to send player remove packet: {e}");
+                }
+            });
+        });
+}
+
+#[derive(Component)]
+pub struct IngressModule;
+
+impl Module for IngressModule {
+    fn module(world: &World) {
+        world.component::<PendingRemove>();
+        world
+            .component::<ServerPingResponse>()
+            .add_trait::<flecs::Singleton>();
+        world.set(ServerPingResponse::default());
+
+        world.import::<DecodeModule>();
+
+        system!("shutdown", world, &Shutdown)
+            .kind(id::<flecs::pipeline::OnLoad>())
+            .each_iter(|it, _, shutdown| {
+                let world = it.world();
+                if shutdown.value.load(std::sync::atomic::Ordering::Relaxed) {
+                    info!("shutting down");
+                    world.quit();
+                }
+            });
+
+        system!("update_ign_map", world, &mut IgnMap)
+            .kind(id::<flecs::pipeline::OnLoad>())
+            .each_iter(|_, _, ign_map| {
+                let span = info_span!("update_ign_map");
+                let _enter = span.enter();
+                ign_map.update();
+            });
+
+        process_handshake(world);
+        process_status_request(world);
+        process_status_ping(world);
+        process_login_hello(world);
+
+        remove_player_from_visibility(world);
+
+        world
+            .system_named::<()>("remove_player")
+            .kind(id::<flecs::pipeline::PostLoad>())
+            .with(id::<PendingRemove>())
+            .each_entity(|entity, ()| {
+                entity.destruct();
+            });
     }
 }

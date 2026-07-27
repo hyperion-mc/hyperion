@@ -1,9 +1,17 @@
-use bevy::prelude::*;
+use flecs_ecs::{
+    core::{
+        Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI, QueryBuilderImpl,
+        SystemAPI, World, WorldGet, flecs, id,
+    },
+    macros::{Component, system},
+    prelude::Module,
+};
 use geometry::{aabb::Aabb, ray::Ray};
 use ordered_float::NotNan;
 use rayon::iter::Either;
 
 use super::{
+    egress::player_join::RayonWorldStages,
     glam::Vec3,
     simulation::{
         EntitySize, Position, aabb,
@@ -11,9 +19,10 @@ use super::{
     },
 };
 
-pub struct SpatialPlugin;
+#[derive(Component)]
+pub struct SpatialModule;
 
-#[derive(Resource, Debug, Default)]
+#[derive(Component, Debug, Default)]
 pub struct SpatialIndex {
     /// The bounding boxes of all entities with the [`Spatial`] component
     query: bvh_region::Bvh<Entity>,
@@ -22,27 +31,30 @@ pub struct SpatialIndex {
 #[must_use]
 pub fn get_first_collision(
     ray: Ray,
-    index: &SpatialIndex,
-    blocks: &Blocks,
-    query: Query<'_, '_, (&Position, &EntitySize)>,
+    world: &World,
     owner: Option<Entity>,
-) -> Option<Either<Entity, RayCollision>> {
+) -> Option<Either<EntityView<'_>, RayCollision>> {
     // Check for collisions with entities
-    let entity = index.first_ray_collision(ray, query);
-    let block = blocks.first_collision(ray);
+    let entity = world.get::<&SpatialIndex>(|index| index.first_ray_collision(ray, world));
+    let block = world.get::<&Blocks>(|blocks| blocks.first_collision(ray));
 
     // make sure the entity is not the owner
     let entity = entity.filter(|(entity, _)| owner.is_none_or(|owner| *entity != owner));
 
     // check which one is closest to the Ray don't forget to account for entity size
     entity.map_or(block.map(Either::Right), |(entity, _)| {
-        let entity_aabb = get_aabb_func(query)(&entity);
+        let entity_data = entity.get::<(&Position, &EntitySize)>(|(position, size)| {
+            let entity_aabb = aabb(**position, *size);
 
-        #[allow(clippy::redundant_closure_for_method_calls)]
-        let distance_to_entity = entity_aabb
-            .intersect_ray(&ray)
-            .map_or(f32::MAX, |distance| distance.into_inner());
+            #[allow(clippy::redundant_closure_for_method_calls)]
+            let distance_to_entity = entity_aabb
+                .intersect_ray(&ray)
+                .map_or(f32::MAX, |distance| distance.into_inner());
 
+            (entity, distance_to_entity)
+        });
+
+        let (entity, distance_to_entity) = entity_data;
         block.map_or(Some(Either::Left(entity)), |block_collision| {
             if distance_to_entity < block_collision.distance {
                 Some(Either::Left(entity))
@@ -53,69 +65,96 @@ pub fn get_first_collision(
     })
 }
 
-fn get_aabb_func(
-    query: Query<'_, '_, (&Position, &EntitySize)>,
-) -> impl Fn(&Entity) -> Aabb + Send + Sync {
-    move |entity: &Entity| {
-        let (position, size) = query
-            .get(*entity)
-            .expect("spatial index must contain alive entities");
-        aabb(**position, *size)
+fn get_aabb_func<'a>(world: &'a World) -> impl Fn(&Entity) -> Aabb + Send + Sync {
+    let stages: &'a RayonWorldStages = world.get::<&RayonWorldStages>(|stages| {
+        // we can properly extend lifetimes here
+        unsafe { core::mem::transmute(stages) }
+    });
+
+    |entity: &Entity| {
+        let rayon_thread = rayon::current_thread_index().unwrap_or_default();
+
+        stages[rayon_thread]
+            .entity_from_id(*entity)
+            .get::<(&Position, &EntitySize)>(|(position, size)| aabb(**position, *size))
     }
 }
 
 impl SpatialIndex {
+    fn recalculate(&mut self, world: &World) {
+        let all_entities = all_indexed_entities(world);
+        let get_aabb = get_aabb_func(world);
+
+        self.query = bvh_region::Bvh::build(all_entities, &get_aabb);
+    }
+
     pub fn get_collisions<'a>(
         &'a self,
         target: Aabb,
-        query: Query<'a, 'a, (&Position, &EntitySize)>,
+        world: &'a World,
     ) -> impl Iterator<Item = Entity> + 'a {
-        let get_aabb = get_aabb_func(query);
+        let get_aabb = get_aabb_func(world);
         self.query.range(target, get_aabb).copied()
     }
 
     /// Get the closest player to the given position.
     #[must_use]
-    pub fn closest_to(
-        &self,
-        point: Vec3,
-        query: Query<'_, '_, (&Position, &EntitySize)>,
-    ) -> Option<Entity> {
-        let get_aabb = get_aabb_func(query);
-        Some(*self.query.get_closest(point, &get_aabb)?.0)
+    pub fn closest_to<'a>(&self, point: Vec3, world: &'a World) -> Option<EntityView<'a>> {
+        let get_aabb = get_aabb_func(world);
+        let (target, _) = self.query.get_closest(point, &get_aabb)?;
+        Some(world.entity_from_id(*target))
     }
 
     #[must_use]
     pub fn first_ray_collision<'a>(
         &self,
         ray: Ray,
-        query: Query<'a, 'a, (&Position, &EntitySize)>,
-    ) -> Option<(Entity, NotNan<f32>)> {
-        let get_aabb = get_aabb_func(query);
+        world: &'a World,
+    ) -> Option<(EntityView<'a>, NotNan<f32>)> {
+        let get_aabb = get_aabb_func(world);
         let (entity, distance) = self.query.first_ray_collision(ray, get_aabb)?;
-        Some((*entity, distance))
+        let entity = world.entity_from_id(*entity);
+        Some((entity, distance))
     }
-}
-
-fn recalculate_spatial_index(
-    mut index: ResMut<'_, SpatialIndex>,
-    entity_query: Query<'_, '_, Entity, (With<Position>, With<EntitySize>, With<Spatial>)>,
-    component_query: Query<'_, '_, (&Position, &EntitySize)>,
-) {
-    // todo(perf): re-use allocations?
-    let all_entities = entity_query.iter().collect();
-    let get_aabb = get_aabb_func(component_query);
-
-    index.query = bvh_region::Bvh::build(all_entities, &get_aabb);
 }
 
 /// If we want the entity to be spatially indexed, we need to add this component.
 #[derive(Component)]
 pub struct Spatial;
+// todo(perf): re-use allocations?
+fn all_indexed_entities(world: &World) -> Vec<Entity> {
+    // todo(perf): can we cache this?
+    let query = world
+        .query::<()>()
+        .with(id::<Position>())
+        .with(id::<EntitySize>())
+        .with(id::<Spatial>())
+        .build();
 
-impl Plugin for SpatialPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(SpatialIndex::default());
-        app.add_systems(FixedPreUpdate, recalculate_spatial_index);
+    let count = query.count();
+    let count = usize::try_from(count).unwrap();
+    let mut entities = Vec::with_capacity(count);
+
+    query.each_entity(|entity, ()| {
+        entities.push(entity.id());
+    });
+
+    entities
+}
+//
+impl Module for SpatialModule {
+    fn module(world: &World) {
+        world.component::<Spatial>();
+        world
+            .component::<SpatialIndex>()
+            .add_trait::<flecs::Singleton>();
+        world.set(SpatialIndex::default());
+
+        system!("recalculate_spatial_index", world, &mut SpatialIndex,)
+            .kind(id::<flecs::pipeline::OnStore>())
+            .each_iter(|it, _, index| {
+                let world = it.world();
+                index.recalculate(&world);
+            });
     }
 }

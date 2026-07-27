@@ -1,13 +1,22 @@
-use bevy::prelude::*;
+use std::{cell::RefCell, rc::Rc};
+
+use flecs_ecs::{
+    core::{QueryBuilderImpl, SystemAPI, World, flecs, id},
+    macros::{Component, observer},
+    prelude::Module,
+};
 use hyperion::{
-    InitializePlayerPosition,
     runtime::AsyncRuntime,
-    simulation::{Position, blocks::Blocks},
+    simulation::{Position, Uuid, blocks::Blocks},
     valence_protocol::{
         BlockKind,
         math::{IVec2, IVec3, Vec3},
     },
 };
+use rustc_hash::FxHashMap;
+
+#[derive(Component)]
+pub struct SpawnModule;
 
 const RADIUS: i32 = 0;
 const SPAWN_MIN_Y: i16 = 3;
@@ -39,23 +48,31 @@ pub fn avoid_blocks() -> RoaringBitmap {
     blocks
 }
 
-pub struct SpawnPlugin;
-
-impl Plugin for SpawnPlugin {
-    fn build(&self, app: &mut App) {
+impl Module for SpawnModule {
+    fn module(world: &World) {
+        let positions = Rc::new(RefCell::new(FxHashMap::default()));
         let avoid_blocks = avoid_blocks();
 
-        app.add_observer(
-            move |trigger: Trigger<'_, InitializePlayerPosition>,
-                  mut blocks: ResMut<'_, Blocks>,
-                  runtime: Res<'_, AsyncRuntime>,
-                  mut commands: Commands<'_, '_>| {
-                let position =
-                    Position::from(find_spawn_position(&mut blocks, &runtime, &avoid_blocks));
-                let target = trigger.event().0;
-                commands.entity(target).insert(position);
-            },
-        );
+        observer!(world, flecs::OnSet, &Uuid, &mut Blocks, &AsyncRuntime,)
+            .without(id::<Position>())
+            .each_entity({
+                let positions = Rc::clone(&positions);
+                move |entity, (uuid, blocks, runtime)| {
+                    let mut positions = positions.borrow_mut();
+                    let position = *positions
+                        .entry(uuid.0)
+                        .or_insert_with(|| find_spawn_position(blocks, runtime, &avoid_blocks));
+
+                    entity.set(Position::from(position));
+                }
+            });
+
+        world
+            .observer::<flecs::OnRemove, (&Uuid, &Position)>()
+            .each(move |(uuid, position)| {
+                let mut positions = positions.borrow_mut();
+                positions.insert(uuid.0, **position);
+            });
     }
 }
 

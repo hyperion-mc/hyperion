@@ -1,11 +1,11 @@
-use bevy::prelude::*;
+use flecs_ecs::macros::Component;
 use heed::{Database, Env, byteorder::NativeEndian, types};
 use hyperion::storage::LocalDb;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use crate::Group;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct PermissionStorage {
     env: Env,
     perms: Database<types::U128<NativeEndian>, types::U8>,
