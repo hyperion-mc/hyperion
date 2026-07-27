@@ -1,4 +1,9 @@
 [package]
+# A vendored fork of Eoghanmc22/rust-mc-bot, which is GPL — unlike the rest of
+# the workspace. It is a standalone test client that nothing here links against,
+# and it is not published.
+license = "GPL-3.0-or-later"
+publish = false
 name = "rust-mc-bot"
 version.workspace = true
 authors = [
@@ -9,15 +14,14 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+# `env` backs each argument with its BOT_-prefixed variable.
+clap = { workspace = true, features = ["env"] }
 libdeflater.workspace = true
 mio.workspace = true
 num_cpus.workspace = true
 rand.workspace = true
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-serde = { version = "1.0", features = ["derive"] }
-envy = "0.4"
-dotenvy = "0.15"
 
 [lints]
 workspace = true

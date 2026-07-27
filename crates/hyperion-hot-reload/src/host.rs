@@ -319,7 +319,7 @@ fn write_migrated(
     let mut buf = vec![0u8; new_size];
     let mut done = 0;
     for (entity, old_bytes) in rows {
-        buf.iter_mut().for_each(|b| *b = 0);
+        buf.fill(0);
         (migration.apply)(old_bytes, &mut buf);
         unsafe {
             let dst = sys::ecs_ensure_id(world.ptr_mut(), **entity, new_id, new_size);

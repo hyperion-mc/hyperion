@@ -6,66 +6,43 @@ use std::{
     sync::{Arc, atomic::AtomicU32},
 };
 
+use clap::Parser;
 use rust_mc_bot::{Address, BotManager};
-use serde::Deserialize;
 
 const UDS_PREFIX: &str = "unix://";
 
-#[derive(Deserialize, Debug)]
-#[allow(clippy::doc_markdown)]
+/// Both settings are positional as well as environment-backed, so
+/// `rust-mc-bot 127.0.0.1:25565 100` and `BOT_BOT_COUNT=100 rust-mc-bot` mean
+/// the same thing.
+///
+/// This used to read the environment through `envy`, whose prefix handling is
+/// `trim_start_matches("BOT_")` — it strips the prefix repeatedly, so
+/// `BOT_BOT_COUNT` arrived as `count`, never matched `bot_count`, and every run
+/// silently used the default of 500 per thread. clap matches variable names
+/// exactly.
+#[derive(Parser, Debug)]
+#[clap(version)]
 struct Config {
-    /// Server address (hostname:port or unix://path)
-    #[serde(default = "default_server")]
+    /// Server address, as `hostname:port` or `unix://path`
+    #[clap(env = "BOT_SERVER", default_value = "127.0.0.1:25565")]
     server: String,
 
-    /// Number of bots to spawn
-    #[serde(default = "default_bot_count")]
+    /// Total number of bots to spawn, across all threads
+    #[clap(env = "BOT_BOT_COUNT", default_value_t = 500)]
     bot_count: u32,
 
-    /// Number of threads to use
-    #[serde(default = "default_threads")]
-    threads: usize,
-}
-
-fn default_server() -> String {
-    "hyperion-proxy:25565".to_string()
-}
-
-const fn default_bot_count() -> u32 {
-    500
-}
-
-fn default_threads() -> usize {
-    1_usize.max(num_cpus::get())
+    /// Number of threads to spread the bots across. Defaults to the core count.
+    #[clap(short, long, env = "BOT_THREADS")]
+    threads: Option<usize>,
 }
 
 fn main() {
-    dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    // Load config from environment variables
-    let config = match envy::prefixed("BOT_").from_env::<Config>() {
-        Ok(config) => {
-            tracing::info!("Loaded configuration from environment variables");
-            config
-        }
-        Err(e) => {
-            tracing::error!(
-                "Failed to load configuration from environment variables: {}",
-                e
-            );
-            tracing::info!(
-                "Configure using BOT_SERVER, BOT_BOT_COUNT, and BOT_THREADS environment variables"
-            );
-            tracing::info!(
-                "Default values: BOT_SERVER={}, BOT_BOT_COUNT={}, BOT_THREADS={}",
-                default_server(),
-                default_bot_count(),
-                default_threads()
-            );
-            return;
-        }
-    };
+    let config = Config::parse();
+    let threads = config
+        .threads
+        .unwrap_or_else(|| 1_usize.max(num_cpus::get()));
 
     let addrs: Address = if config.server.starts_with(UDS_PREFIX) {
         #[cfg(unix)]
@@ -95,20 +72,32 @@ fn main() {
         Address::TCP(server)
     };
 
-    tracing::info!("cpus: {}", config.threads);
-
     let bot_on = Arc::new(AtomicU32::new(0));
 
     if config.bot_count > 0 {
-        let mut threads = Vec::new();
-        for _ in 0..config.threads {
-            let addrs = addrs.clone();
-            let bot_on = bot_on.clone();
-            threads.push(std::thread::spawn(move || {
-                let mut manager = BotManager::create(config.bot_count, addrs, bot_on).unwrap();
-                manager.game_loop();
-            }));
-        }
+        // Every manager is given the whole count, and `bot_on` — which they
+        // share — is what caps the total. Handing each thread a slice of the
+        // count instead makes them all stop at one slice's worth.
+        let thread_count =
+            threads.clamp(1, usize::try_from(config.bot_count).unwrap_or(usize::MAX));
+
+        tracing::info!(
+            "connecting {count} bots to {server} across {thread_count} threads",
+            count = config.bot_count,
+            server = config.server
+        );
+
+        let threads: Vec<_> = (0..thread_count)
+            .map(|_| {
+                let count = config.bot_count;
+                let addrs = addrs.clone();
+                let bot_on = bot_on.clone();
+                std::thread::spawn(move || {
+                    let mut manager = BotManager::create(count, addrs, bot_on).unwrap();
+                    manager.game_loop();
+                })
+            })
+            .collect();
 
         for thread in threads {
             let _unused = thread.join();

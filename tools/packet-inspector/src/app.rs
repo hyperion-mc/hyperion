@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use egui_dock::{DockArea, DockState, NodeIndex, Style};
+use egui_dock::{DockArea, DockState, NodeIndex, Style, tab_viewer::OnCloseResponse};
 use packet_inspector::Proxy;
 use tokio::task::JoinHandle;
 
@@ -46,8 +46,8 @@ impl egui_dock::TabViewer for TabViewer {
         tab.name().into()
     }
 
-    fn on_close(&mut self, _tab: &mut Self::Tab) -> bool {
-        false
+    fn on_close(&mut self, _tab: &mut Self::Tab) -> OnCloseResponse {
+        OnCloseResponse::Ignore
     }
 }
 
@@ -82,10 +82,10 @@ impl GuiApp {
         // Persistent Storage
         let mut shared_state = SharedState::new(ctx);
 
-        if let Some(storage) = cc.storage {
-            if let Some(value) = eframe::get_value::<SharedState>(storage, eframe::APP_KEY) {
-                shared_state = value.merge(shared_state);
-            }
+        if let Some(storage) = cc.storage
+            && let Some(value) = eframe::get_value::<SharedState>(storage, eframe::APP_KEY)
+        {
+            shared_state = value.merge(shared_state);
         }
 
         let autostart = shared_state.autostart;
@@ -123,13 +123,15 @@ impl eframe::App for GuiApp {
         );
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    // eframe 0.35 replaced `update(&Context, &mut Frame)` with `ui(&mut Ui,
+    // &mut Frame)`; the dock area fills the root ui rather than the context.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         DockArea::new(&mut self.tree)
             .show_add_buttons(false)
             .show_add_popup(false)
             .show_close_buttons(false)
-            .style(Style::from_egui(ctx.style().as_ref()))
-            .show(ctx, &mut self.tab_viewer);
+            .style(Style::from_egui(ui.style().as_ref()))
+            .show_inside(ui, &mut self.tab_viewer);
     }
 }
 

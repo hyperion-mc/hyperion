@@ -12,7 +12,7 @@ use valence_protocol::{Encode, VarInt};
 use crate::{Data, LEN, PalettedContainer};
 
 const fn bit_width(n: usize) -> usize {
-    (usize::BITS - n.leading_zeros()) as usize
+    n.bit_width() as usize
 }
 
 const fn compact_u64s_len(vals_count: usize, bits_per_val: usize) -> usize {

@@ -1,6 +1,5 @@
 [dependencies]
 hyperion-crafting = {workspace = true}
-roaring = {workspace = true}
 snafu = {workspace = true}
 valence_protocol = {workspace = true}
 valence_generated = {workspace = true}

@@ -22,7 +22,8 @@ use libdeflater::{CompressionLvl, Compressor, Decompressor};
 #[cfg(unix)]
 use mio::net::UnixStream;
 use mio::{Events, Interest, Poll, Registry, Token, event, net::TcpStream};
-use rand::{Rng, seq::IndexedRandom};
+// rand 0.10 moved `random_range` off `Rng` onto `RngExt`.
+use rand::{RngExt, seq::IndexedRandom};
 
 use crate::{
     packet_utils::Buf,
@@ -110,7 +111,7 @@ impl BotManager {
                 break;
             }
 
-            std::thread::sleep(self.dur - elapsed);
+            std::thread::sleep(self.dur.saturating_sub(elapsed));
         }
     }
 
@@ -203,7 +204,7 @@ impl BotManager {
                 bot.z += rand::random::<f64>().mul_add(1.0, -0.5);
                 bot.send_packet(play::write_current_pos(bot), &mut self.compression);
 
-                if (self.tick_counter + bot.id) % self.action_tick == 0 {
+                if (self.tick_counter + bot.id).is_multiple_of(self.action_tick) {
                     match rand::rng().random_range(0..=4u8) {
                         0 => {
                             // Send chat

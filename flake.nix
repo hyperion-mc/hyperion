@@ -180,6 +180,10 @@
 
           certsDir = ".hyperion-dev-certs";
 
+          # Defaults, not constants: HYPERION_PLAYER_PORT and
+          # HYPERION_SERVER_PORT override them, and process-compose's own API
+          # port moves with them. Two checkouts on one machine otherwise fight
+          # over all three, and the loser dies on "address already in use".
           gameServerPort = 35565;
           proxyPort = 25565;
 
@@ -192,12 +196,12 @@
             version = "0.5";
             processes = {
               game-server = {
-                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p \"$\{HYPERION_EVENT:-bedwars}\" -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p \"$\{HYPERION_EVENT:-bedwars}\" -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
                 availability.restart = "on_failure";
               };
 
               proxy = {
-                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:${toString proxyPort}";
+                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:\"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:\"$\{HYPERION_PLAYER_PORT:-${toString proxyPort}}\"";
                 # Started, not healthy: a TCP readiness probe would connect and
                 # immediately disconnect every few seconds, and the game server
                 # logs an error for each half-open connection. The proxy already
@@ -293,7 +297,7 @@
               text = ''
                 certs="$(git rev-parse --show-toplevel)/${certsDir}"
                 exec cargo run --profile release-full -p smash -- \
-                  --ip 0.0.0.0 --port 35565 \
+                  --ip 0.0.0.0 --port "''${HYPERION_SERVER_PORT:-${toString gameServerPort}}" \
                   --root-ca-cert "$certs/root_ca.crt" \
                   --cert "$certs/server.crt" \
                   --private-key "$certs/server_private_key.pem" \
@@ -301,20 +305,12 @@
               '';
             };
 
-            # rust-mc-bot reads its whole configuration from BOT_-prefixed
-            # environment variables, so the address and count cannot be passed
-            # positionally to the binary.
             bots.text = ''
-              export BOT_SERVER="''${1:-127.0.0.1:25565}"
-              export BOT_BOT_COUNT="''${2:-100}"
               ulimit -Sn ${fileDescriptors}
-              exec cargo run --release -p rust-mc-bot
+              exec cargo run --release -p rust-mc-bot -- \
+                "''${1:-127.0.0.1:25565}" "''${2:-100}"
             '';
 
-            # One rebuild-and-restart loop for any profile: `nix run .#dev`, or
-            # `nix run .#dev -- release-full`. One watcher rebuilds bedwars and
-            # touches a trigger file; a second watches only the trigger, which is
-            # what stops a restart from racing a half-written executable.
             # process-compose supervises the two processes instead of the
             # shell doing it: it gives dependency ordering (the proxy waits for
             # the game server's port), per-process restart policy, a readable
@@ -331,7 +327,12 @@
                   "${lib.getExe runners.certs}"
                 fi
                 cd "$root"
-                exec process-compose --config ${processComposeConfig} "$@"
+                # process-compose's own API port has to move with the game
+                # ports, or a second checkout dies on 8080 before either process
+                # starts.
+                api_port="''${HYPERION_PC_PORT:-$(( 8080 + ''${HYPERION_PLAYER_PORT:-${toString proxyPort}} - ${toString proxyPort} ))}"
+                echo "players: 0.0.0.0:''${HYPERION_PLAYER_PORT:-${toString proxyPort}} | game server: 127.0.0.1:''${HYPERION_SERVER_PORT:-${toString gameServerPort}}"
+                exec process-compose --config ${processComposeConfig} --port "$api_port" "$@"
               '';
             };
 
@@ -373,10 +374,10 @@
             # Keyed by the exact source string in Cargo.lock. Refresh with
             # `nix-prefetch-git --fetch-submodules --url <url> --rev <rev>`.
             outputHashes = {
-              "git+https://github.com/TestingPlant/bvh-data#9bffb03a4b894a7884c9ec0da986bdde732ac704" =
-                "sha256-QjsyP9XdR53JDNFC8IX1qgTlJQZmanAZU+246QG4v9s=";
-              "git+https://github.com/nvzqz/divan#bca5c9676a35751d0a8164df7d79bda70f23286b" =
-                "sha256-WmzYLzLwXUGuX0K151Kh+fEV6nJJQLq/vb4ijXu01Vg=";
+              "git+https://github.com/nvzqz/divan#55ec68e31526c28c7825fa1bb884f326b619a879" =
+                "sha256-xL0b6ZGmG4lhVcBjbBpobODZye6MAIr/gGBwMIrxmwM=";
+              "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950" =
+                "sha256-3qUAXDHkeRFVfovZT+fW7VXW6aDteAiqCrLeCG/jd40=";
               "git+https://github.com/TestingPlant/valence?branch=feat-bytes#fb792dcb6669b64c5dc2366eb3d074b293def046" =
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
               "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5" =

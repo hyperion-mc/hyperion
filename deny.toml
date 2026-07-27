@@ -10,7 +10,21 @@
 # db-urls = ["https://github.com/rustsec/advisory-db"]
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
+# Every entry here is an `unmaintained` notice with no upgrade available, on a
+# crate this workspace does not choose. Re-check when the parent moves.
 ignore = [
+  # instant, via bevy_utils <- valence_entity. Goes when hyperion stops
+  # depending on the valence fork, which still carries a Bevy 0.12 dependency.
+  "RUSTSEC-2024-0384",
+  # paste, via hyperion's packet-decoding macros and egui_dock. `pastey` is the
+  # maintained fork, but egui_dock pulls the original regardless.
+  "RUSTSEC-2024-0436",
+  # bincode 1.x, via heed-types. heed 0.22 is the current release.
+  "RUSTSEC-2025-0141",
+  # yaml-rust, via syntect <- packet-inspector. syntect 5.3 is current.
+  "RUSTSEC-2024-0320",
+  # ttf-parser, via ab_glyph <- winit <- eframe <- packet-inspector.
+  "RUSTSEC-2026-0192",
 ]
 
 # This section is considered when running `cargo deny check bans`.
@@ -141,7 +155,17 @@ exceptions = [
   # TODO: this is an OR clause I am confused I think we are taking the MPL verion
   {allow = [
     "ISC"
-  ], crate = "libloading"}
+  ], crate = "libloading"},
+  # Font licences on the fonts egui embeds. Neither belongs on the global allow
+  # list: they permit redistributing a typeface, not code.
+  {allow = [
+    "OFL-1.1",
+    "Ubuntu-font-1.0"
+  ], crate = "epaint_default_fonts"},
+  # A public-domain dedication, not a licence anything else here should carry.
+  {allow = [
+    "CC0-1.0"
+  ], crate = "hexf-parse"}
 ]
 unused-allowed-license = "allow"
 
@@ -171,10 +195,13 @@ feature-depth = 1
 # https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
 [sources]
 # List of URLs for allowed Git repositories
+# Every git source the lock actually holds. The forks under andrewgazelka carry
+# patches that are open upstream; see the comments on each in Cargo.toml.
 allow-git = [
-  "https://github.com/andrewgazelka/valence",
+  "https://github.com/TestingPlant/valence",
   "https://github.com/andrewgazelka/bvh-data",
-  "https://github.com/Indra-db/Flecs-Rust"
+  "https://github.com/andrewgazelka/Flecs-Rust",
+  "https://github.com/nvzqz/divan"
 ]
 # List of URLs for allowed crate registries. Defaults to the crates.io index
 # if not specified. If it is specified but empty, no registries are allowed.

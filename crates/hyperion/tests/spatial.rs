@@ -1,11 +1,10 @@
-#![feature(assert_matches)]
 #![allow(
     clippy::print_stdout,
     reason = "the purpose of not having printing to stdout is so that tracing is used properly \
               for the core libraries. These are tests, so it doesn't matter"
 )]
 
-use std::{assert_matches::assert_matches, collections::HashSet};
+use std::{assert_matches, collections::HashSet};
 
 use approx::assert_relative_eq;
 use flecs_ecs::core::{QueryBuilderImpl, SystemAPI, World, WorldGet, flecs, id};

@@ -518,5 +518,5 @@ fn ident_path(ident: &str) -> &str {
 
 /// Returns the minimum number of bits needed to represent the integer `n`.
 const fn bit_width(n: usize) -> usize {
-    (usize::BITS - n.leading_zeros()) as _
+    n.bit_width() as _
 }

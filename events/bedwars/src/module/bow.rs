@@ -56,12 +56,13 @@ pub struct BowCharging {
     pub start_time: SystemTime,
 }
 
-// Same reason as LastFireTime: it is a (flecs::With, _) target.
+// Same reason as LastFireTime: it is a (flecs::With, _) target. Unlike
+// LastFireTime the epoch is the wrong default here -- `get_charge` clamps
+// elapsed time to 1.2s, so a player who never drew the bow would release a
+// full-power shot. "Started charging now" is the minimum charge.
 impl Default for BowCharging {
     fn default() -> Self {
-        Self {
-            start_time: SystemTime::UNIX_EPOCH,
-        }
+        Self::now()
     }
 }
 

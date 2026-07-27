@@ -5,5 +5,5 @@ pub mod chat;
 pub mod damage;
 pub mod regeneration;
 pub mod spawn;
-pub mod stats;
+pub mod tab_list;
 pub mod vanish;

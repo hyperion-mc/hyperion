@@ -96,13 +96,6 @@ impl PacketIoWriter {
                     .append_bytes(&varint_to_bytes(uncompressed_packet_length_varint));
 
                 self.enc.append_bytes(&compressed);
-
-                let bytes = self.enc.take();
-
-                self.writer.write_all(&bytes).await?;
-                self.writer.flush().await?;
-
-                // now we need to compress the packet.
             } else {
                 // no need to compress, but we do need to inject a zero
                 let empty = VarInt(0);
@@ -114,10 +107,11 @@ impl PacketIoWriter {
                     .append_bytes(&varint_to_bytes(VarInt(packet_len as i32)));
                 self.enc.append_bytes(&varint_to_bytes(empty));
                 self.enc.append_bytes(&uncompressed_packet);
-                let bytes = self.enc.take();
-                self.writer.write_all(&bytes).await?;
-                self.writer.flush().await?;
             }
+
+            let bytes = self.enc.take();
+            self.writer.write_all(&bytes).await?;
+            self.writer.flush().await?;
 
             return Ok(());
         }

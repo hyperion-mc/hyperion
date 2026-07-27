@@ -142,7 +142,7 @@ impl HandlerRegistry {
         let deserializer = self
             .deserializers
             .get(&id)
-            .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {}", id))?;
+            .ok_or_else(|| anyhow::anyhow!("No deserializer registered for packet ID: {id}"))?;
 
         deserializer(self, frame, query)
     }

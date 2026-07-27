@@ -113,7 +113,7 @@ pub fn generate_biome_registry() -> anyhow::Result<BiomeRegistry> {
 /// Returns the minimum number of bits needed to represent the integer `n`.
 #[must_use]
 pub const fn ceil_log2(x: u32) -> u32 {
-    u32::BITS - x.leading_zeros()
+    x.bit_width()
 }
 
 /// Create a heightmap for the highest solid block at each position in the chunk.

@@ -105,7 +105,7 @@ pub fn rocket_size(charge: f32) -> u32 {
 }
 
 #[must_use]
-pub fn rocket_damage(size: u32) -> f32 {
+pub const fn rocket_damage(size: u32) -> f32 {
     3.0f32.mul_add(size as f32, 3.0)
 }
 

@@ -1,6 +1,6 @@
 use divan::{Bencher, black_box};
 use hyperion_stats::ParallelStats;
-use rand::Rng;
+use rand::RngExt;
 
 fn main() {
     divan::main();

@@ -55,7 +55,7 @@ pub struct Component<'a> {
     /// What this component says.
     pub contents: Contents<'a>,
     /// Children appended after the contents, inheriting this style.
-    pub extra: Vec<Component<'a>>,
+    pub extra: Vec<Self>,
     /// Formatting.
     pub style: Style<'a>,
 }

@@ -1,11 +1,11 @@
 #![feature(portable_simd)]
 #![feature(trusted_len)]
-#![feature(pointer_is_aligned_to)]
+#![cfg_attr(test, feature(pointer_is_aligned_to))]
 
 use core::simd;
 use std::{
     iter::zip,
-    simd::{LaneCount, Mask, MaskElement, Simd, SupportedLaneCount, cmp::SimdPartialEq},
+    simd::{Mask, MaskElement, Simd, cmp::SimdPartialEq},
 };
 
 use crate::one_bit_positions::OneBitPositionsExt;
@@ -50,7 +50,6 @@ pub fn copy_and_get_diff<T, const LANES: usize>(
     Simd<T, LANES>: AsMut<[T; LANES]> + SimdPartialEq,
     T: simd::SimdElement + PartialEq + std::fmt::Debug,
     <T as simd::SimdElement>::Mask: MaskElement,
-    LaneCount<LANES>: SupportedLaneCount,
     <Simd<T, LANES> as SimdPartialEq>::Mask: Into<Mask<<T as simd::SimdElement>::Mask, LANES>>,
 {
     // Verify SIMD alignment requirement at compile time
@@ -160,16 +159,14 @@ fn copy_and_get_diff_scalar<T>(
 ) where
     T: Copy + PartialEq + std::fmt::Debug,
 {
-    let mut idx = start_idx;
     debug_assert_eq!(prev.len(), current.len());
 
-    for (prev, current) in zip(prev, current) {
+    for (idx, (prev, current)) in (start_idx..).zip(zip(prev, current)) {
         if prev != current {
             debug_assert_ne!(prev, current);
             on_diff(idx, prev, current);
         }
         *prev = *current;
-        idx += 1;
     }
 }
 
@@ -191,7 +188,6 @@ mod tests {
         Simd<T, LANES>: AsMut<[T; LANES]> + SimdPartialEq,
         T: simd::SimdElement + PartialEq + Debug,
         <T as simd::SimdElement>::Mask: MaskElement,
-        LaneCount<LANES>: SupportedLaneCount,
         <Simd<T, LANES> as SimdPartialEq>::Mask: Into<Mask<<T as simd::SimdElement>::Mask, LANES>>,
     {
         // convert prev and current to simd-aligned arrays
