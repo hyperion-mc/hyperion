@@ -32,8 +32,8 @@ pub mod nbt;
 pub mod packets;
 pub mod registry_data;
 pub mod text;
-pub mod world;
 pub mod types;
+pub mod world;
 
 mod error;
 
