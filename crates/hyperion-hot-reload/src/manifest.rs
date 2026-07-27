@@ -307,7 +307,12 @@ pub fn describe_module(
     let mut components: Vec<ComponentSchema> = registrations
         .components
         .iter()
-        .map(|&id| read_component_schema(world.entity_from_id(id), opaque_versions))
+        .map(|&id| world.entity_from_id(id))
+        // A module's own marker component is structure, not game data: flecs puts it on
+        // the module entity, so it always has exactly one instance and never any
+        // reflection. Schema-checking it would refuse every reload of every module.
+        .filter(|e| !e.has(<flecs::Module as FlecsConstantId>::ID))
+        .map(|e| read_component_schema(e, opaque_versions))
         .collect();
     components.sort_by(|a, b| a.name.cmp(&b.name));
     ModuleManifest {
