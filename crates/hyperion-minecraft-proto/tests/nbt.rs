@@ -71,7 +71,10 @@ fn scalars_match_vanilla() {
 
 #[test]
 fn arrays_match_vanilla() {
-    matches_vanilla(&Tag::ByteArray(Cow::Borrowed(&[1, 0xFE, 3])), "070000000301FE03");
+    matches_vanilla(
+        &Tag::ByteArray(Cow::Borrowed(&[1, 0xFE, 3])),
+        "070000000301FE03",
+    );
     matches_vanilla(&Tag::IntArray(vec![1, -2]), "0B0000000200000001FFFFFFFE");
     matches_vanilla(&Tag::LongArray(vec![7]), "0C000000010000000000000007");
 }
@@ -203,10 +206,7 @@ fn a_compound_that_looks_like_a_box_gets_boxed_too() {
 
 #[test]
 fn nested_list_matches_vanilla() {
-    matches_vanilla(
-        &list([list([Tag::Byte(1)])]),
-        "090900000001010000000101",
-    );
+    matches_vanilla(&list([list([Tag::Byte(1)])]), "090900000001010000000101");
 }
 
 #[test]

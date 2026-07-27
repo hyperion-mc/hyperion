@@ -88,15 +88,16 @@ impl fmt::Display for Error {
             Self::InvalidTagType(id) => write!(f, "invalid NBT tag type: {id}"),
             Self::UnexpectedEndTag => f.write_str("NBT value was a bare TAG_End"),
             Self::NbtTooDeep => f.write_str("NBT nested deeper than 512 levels"),
-            Self::InvalidModifiedUtf8 => {
-                f.write_str("NBT string was not valid modified UTF-8")
-            }
+            Self::InvalidModifiedUtf8 => f.write_str("NBT string was not valid modified UTF-8"),
             Self::MissingField(name) => write!(f, "missing required field: {name}"),
             Self::WrongTagType {
                 field,
                 expected,
                 found,
-            } => write!(f, "field {field} should be {expected}, found tag type {found}"),
+            } => write!(
+                f,
+                "field {field} should be {expected}, found tag type {found}"
+            ),
             Self::UnknownVariant { name, value } => write!(f, "invalid {name}: {value}"),
             Self::NoMatchingCodec(name) => write!(f, "no {name} matched the fields present"),
         }

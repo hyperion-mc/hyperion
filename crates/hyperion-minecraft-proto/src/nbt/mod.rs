@@ -364,7 +364,6 @@ impl<'a> Compound<'a> {
         writer.u8(TAG_END);
         Ok(())
     }
-
 }
 
 impl PartialEq for Compound<'_> {
