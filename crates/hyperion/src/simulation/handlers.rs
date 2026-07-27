@@ -35,7 +35,11 @@ use crate::{
     net::{Compose, ConnectionId, decoder::BorrowedPacketFrame},
     simulation::{
         Pitch, Yaw, aabb, event,
-        metadata::{entity::Pose, living_entity::HandStates},
+        metadata::{
+            entity::Pose,
+            living_entity::HandStates,
+            player::{DisplayedSkinParts, MainHand},
+        },
         packet::HandlerRegistry,
     },
     storage::{CommandCompletionRequest, Events, InteractEvent},
@@ -559,6 +563,27 @@ pub fn client_status(
     Ok(())
 }
 
+/// The client tells the server which of its own skin layers to render, and the
+/// server has to echo that back as entity metadata or nobody sees them --
+/// including the player themselves in third person. Without this the metadata
+/// keeps its default of 0, so every player appears with the base layer only:
+/// no hat, no jacket, no sleeves.
+pub fn client_settings(
+    pkt: &play::ClientSettingsC2s<'_>,
+    query: &mut PacketSwitchQuery<'_>,
+) -> anyhow::Result<()> {
+    // The bitfield's memory layout is already the wire mask the metadata field
+    // expects, so it round-trips without re-deriving each flag.
+    let parts = u8::from(pkt.displayed_skin_parts);
+
+    query
+        .view
+        .set(DisplayedSkinParts::new(parts))
+        .set(MainHand::new(pkt.main_arm as u8));
+
+    Ok(())
+}
+
 pub fn confirm_teleportation(
     pkt: &play::TeleportConfirmC2s,
     query: &mut PacketSwitchQuery<'_>,
@@ -607,6 +632,7 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(click_slot));
     registry.add_handler(Box::new(close_handled_screen));
     registry.add_handler(Box::new(client_command));
+    registry.add_handler(Box::new(client_settings));
     registry.add_handler(Box::new(client_status));
     registry.add_handler(Box::new(chat_command));
     registry.add_handler(Box::new(creative_inventory_action));
