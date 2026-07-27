@@ -29,8 +29,9 @@ symbol here greps directly against the server jar.
 
 ## State
 
-Implemented: handshake, status, login. Configuration and play are not started.
-Compression and encryption are not implemented.
+Implemented: handshake, status, login, configuration, and the play-state join
+sequence (`packets::play_login`). The rest of play is not started. Compression
+and encryption are not implemented.
 
 ## Regenerating
 
