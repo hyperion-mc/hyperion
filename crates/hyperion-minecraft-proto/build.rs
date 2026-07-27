@@ -180,7 +180,7 @@ struct Module {
     reexports: BTreeSet<String>,
     /// Items keyed by type name, which is also the order they are written in.
     items: BTreeMap<String, String>,
-    children: BTreeMap<String, (String, Module)>,
+    children: BTreeMap<String, (String, Self)>,
 }
 
 impl Module {

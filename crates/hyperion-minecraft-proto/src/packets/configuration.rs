@@ -787,10 +787,16 @@ pub(super) use empty_packet;
 /// See this module's own note: several of these are also defined above by
 /// hand, and these are the ones to keep.
 pub mod clientbound {
-    include!(concat!(env!("OUT_DIR"), "/packets/configuration_clientbound.rs"));
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/packets/configuration_clientbound.rs"
+    ));
 }
 
 /// Packets the client sends, generated from `protocol.json`.
 pub mod serverbound {
-    include!(concat!(env!("OUT_DIR"), "/packets/configuration_serverbound.rs"));
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/packets/configuration_serverbound.rs"
+    ));
 }

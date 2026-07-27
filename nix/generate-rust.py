@@ -588,37 +588,37 @@ pub enum Wire {
         /// Registry the id is scoped to.
         registry: &'static str,
         /// Layout written when the value is inline rather than referenced.
-        direct: &'static Wire,
+        direct: &'static Self,
     },
     /// A boolean, then the value when it is present.
-    Optional(&'static Wire),
+    Optional(&'static Self),
     /// A `VarInt` count, then that many elements.
     List {
         /// Layout of one element.
-        element: &'static Wire,
+        element: &'static Self,
         /// Largest count the server accepts.
         max: Option<u32>,
     },
     /// A `VarInt` byte length, then the value within it.
     LengthPrefixed {
         /// Layout of the value inside the length.
-        value: &'static Wire,
+        value: &'static Self,
         /// Largest byte length the server accepts.
         max: Option<u32>,
     },
     /// A `VarInt` count, then that many key and value pairs.
     Map {
         /// Layout of a key.
-        key: &'static Wire,
+        key: &'static Self,
         /// Layout of a value.
-        value: &'static Wire,
+        value: &'static Self,
     },
     /// A boolean selecting which of two layouts follows; true selects `left`.
     Either {
         /// Layout written when the discriminant is true.
-        left: &'static Wire,
+        left: &'static Self,
         /// Layout written when the discriminant is false.
-        right: &'static Wire,
+        right: &'static Self,
     },
     /// A `VarInt` naming one of a fixed set of constants.
     Enum {
