@@ -415,6 +415,26 @@ class Client:
                 self.log("<- configuration packet 0x%02X len=%d %s" % (packet_id, len(payload), payload[:48].hex()))
 
 
+# Packets a server has no reason to send between accepting a login and the
+# player standing in the world. Each is a 1.20.1 id that a port leaves behind:
+# 0x24 was chunk data, 0x1E was chunk unload, 0x28 and 0x7E are test harness
+# packets a production server never sends at all.
+NEVER_ON_JOIN = frozenset(
+    {
+        0x1A,  # DebugBlockValue
+        0x1B,  # DebugChunkValue
+        0x1C,  # DebugEntityValue
+        0x1D,  # DebugEvent
+        0x1E,  # DebugSample
+        0x24,  # Explode
+        0x28,  # GameTestHighlightPos
+        0x32,  # LowDiskSpaceWarning
+        0x7E,  # TestInstanceBlockStatus
+        0x80,  # TickingStep
+    }
+)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
@@ -497,6 +517,22 @@ def main():
             "RESULT: %d packet id(s) are not clientbound play ids in protocol "
             "776: %s" % (len(unknown), ", ".join("0x%02X" % i for i in unknown))
         )
+        return 1
+
+    # Every id in 0x00..0x8x is a valid 776 packet, so "the id decoded" proves
+    # nothing on its own: a 1.20.1 chunk packet lands on 0x24 and reads as a
+    # perfectly well-formed Explode. What gives the mismatch away is meaning.
+    # A server that has just accepted a connection has no reason to detonate
+    # anything or to emit a profiler sample, so seeing one of these is proof
+    # the numbering is from some other protocol version.
+    implausible = sorted(i for i in seen if i in NEVER_ON_JOIN)
+    if implausible:
+        for packet_id in implausible:
+            log(
+                "RESULT: %d x 0x%02X %s during a join, which no server sends. "
+                "The wire is carrying another protocol's numbering."
+                % (seen[packet_id], packet_id, PLAY_NAMES[packet_id])
+            )
         return 1
 
     if not client.joined:
