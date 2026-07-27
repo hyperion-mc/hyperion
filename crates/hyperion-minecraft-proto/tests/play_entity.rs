@@ -289,7 +289,11 @@ fn harness_data_values() -> DataValues {
         )
         .expect("absent optional component");
     values
-        .push(9, EntityDataSerializer::ItemStack, &stack(diamond_sword(), 3))
+        .push(
+            9,
+            EntityDataSerializer::ItemStack,
+            &stack(diamond_sword(), 3),
+        )
         .expect("item stack");
     values
         .push(10, EntityDataSerializer::ItemStack, &Slot::Empty)
@@ -356,13 +360,20 @@ fn entity_data_serializer_ids_match_the_server() {
         (EntityDataSerializer::Float, "float"),
         (EntityDataSerializer::String, "string"),
         (EntityDataSerializer::Component, "component"),
-        (EntityDataSerializer::OptionalComponent, "optional_component"),
+        (
+            EntityDataSerializer::OptionalComponent,
+            "optional_component",
+        ),
         (EntityDataSerializer::ItemStack, "item_stack"),
         (EntityDataSerializer::Boolean, "boolean"),
         (EntityDataSerializer::BlockPos, "block_pos"),
     ] {
         let name = format!("entity_data_serializer.{fixture}");
-        assert_eq!(serializer.to_raw(), vanilla_fixtures::number(&name), "{name}");
+        assert_eq!(
+            serializer.to_raw(),
+            vanilla_fixtures::number(&name),
+            "{name}"
+        );
     }
 }
 
