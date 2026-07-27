@@ -1,5 +1,7 @@
 //! The lobby state machine, driven directly.
 
+mod harness;
+
 use smash::module::lobby::{Lobby, LobbyConfig, Phase, step};
 
 fn config() -> LobbyConfig {
@@ -174,5 +176,62 @@ fn preparing_cannot_be_cancelled_by_a_leaver() {
         state.phase,
         Phase::Preparing,
         "once committed the match starts regardless"
+    );
+}
+
+#[test]
+fn a_phase_change_reaches_an_observer_that_names_lobby() {
+    use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
+
+    use flecs_ecs::prelude::*;
+    use harness::Game;
+    use smash::module::lobby::PhaseChanged;
+
+    let mut game = Game::new();
+    for index in 0..4 {
+        game.player(&format!("p{index}"), glam::Vec3::ZERO);
+    }
+
+    // Two observers, one per candidate term. Only the term the emit in
+    // `lobby.rs` names may fire, and `terrain.rs` hangs the map rotation and
+    // the return to the hub off exactly this: an observer whose term is wrong
+    // registers happily and is never called, so the pin is that one counter
+    // moves and the other does not.
+    let by_lobby = Arc::new(AtomicU32::new(0));
+    let by_arena = Arc::new(AtomicU32::new(0));
+
+    let counted = Arc::clone(&by_lobby);
+    game.world
+        .observer_named::<PhaseChanged, ()>("test::by_lobby")
+        .with(Lobby::id())
+        .each_iter(move |_, _, ()| {
+            counted.fetch_add(1, Ordering::Relaxed);
+        });
+
+    let counted = Arc::clone(&by_arena);
+    game.world
+        .observer_named::<PhaseChanged, ()>("test::by_arena")
+        .with(smash::module::arena::Arena::id())
+        .each_iter(move |_, _, ()| {
+            counted.fetch_add(1, Ordering::Relaxed);
+        });
+
+    // Four players is `min_players`, so the first tick leaves Waiting.
+    game.advance(0.05, 1);
+
+    assert_eq!(
+        game.world.cloned::<&Lobby>().phase,
+        Phase::Countdown,
+        "four players is the minimum, so the countdown should have started"
+    );
+    assert_eq!(
+        by_lobby.load(Ordering::Relaxed),
+        1,
+        "the phase change did not reach an observer whose term is Lobby"
+    );
+    assert_eq!(
+        by_arena.load(Ordering::Relaxed),
+        0,
+        "an observer whose term is not the emitted id must never fire"
     );
 }

@@ -56,22 +56,22 @@ cylinder 0 65 10 2 3 minecraft:chiseled_sandstone
 
 
 # --- sixteen spawn points ---------------------------------------------------
-spawn -10 66 -10
-spawn 10 66 -10
-spawn -10 66 10
-spawn 10 66 10
-spawn 0 66 -13
-spawn 0 66 13
-spawn -3 72 -40
-spawn 3 72 -40
-spawn -3 60 40
-spawn 3 60 40
-spawn 40 68 -3
-spawn 40 68 3
-spawn -40 64 -3
-spawn -40 64 3
-spawn 26 78 -26
-spawn -26 56 26
+spawn -10 65 -10
+spawn 10 65 -10
+spawn -10 65 10
+spawn 10 65 10
+spawn 0 65 -13
+spawn 0 65 13
+spawn -3 71 -40
+spawn 3 71 -40
+spawn -3 59 40
+spawn 3 59 40
+spawn 40 67 -3
+spawn 40 67 3
+spawn -40 63 -3
+spawn -40 63 3
+spawn 26 77 -26
+spawn -26 55 26
 
 # --- three Smash Crystal points ---------------------------------------------
 crystal 0 68 0

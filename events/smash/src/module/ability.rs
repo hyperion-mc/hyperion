@@ -219,6 +219,9 @@ pub fn activate(player: EntityView<'_>, slot: u8, charge: f32) -> Result<(), Ref
     });
 
     commit(ability, player);
+    // Mineplex's `RESPAWN_INVUL` ends the moment you act, so a player cannot
+    // spend it attacking from under a platform nobody can answer from.
+    player.remove(crate::module::lives::InvulnerableUntil::id());
     Ok(())
 }
 

@@ -12,6 +12,7 @@ use glam::Vec3;
 use crate::{
     flecs_ext::WorldRefExt,
     module::{
+        damage::MatchClock,
         lives::{self, DeathCause, Eliminated, RespawnAt},
         lobby::{Lobby, Phase},
         player::{Health, Player, Position},
@@ -96,6 +97,7 @@ impl Module for ArenaModule {
                         continue;
                     }
                     let arena = world.cloned::<&Arena>();
+                    let clock = world.cloned::<&MatchClock>().0;
                     let mut doomed = Vec::new();
 
                     world
@@ -105,6 +107,9 @@ impl Module for ArenaModule {
                         .without(RespawnAt::id())
                         .build()
                         .each_entity(|player, (position, health)| {
+                            if lives::is_invulnerable(player, clock) {
+                                return;
+                            }
                             if health.is_dead() {
                                 doomed.push((player.id(), DeathCause::Damage));
                             } else if arena.is_out_of_bounds(position.0) {

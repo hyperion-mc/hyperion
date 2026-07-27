@@ -178,6 +178,11 @@ impl Module for DamageModule {
                 let victim = it.entity(index);
                 let world = it.world();
 
+                let clock = world.cloned::<&MatchClock>().0;
+                if crate::module::lives::is_invulnerable(victim, clock) {
+                    return;
+                }
+
                 let applied = if event.kind.is_reduced_by_armor() {
                     armor.apply(event.amount)
                 } else {

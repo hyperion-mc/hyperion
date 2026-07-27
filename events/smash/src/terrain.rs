@@ -26,7 +26,7 @@ use crate::{
     map::{MapSpec, parse},
     module::{
         arena::Arena,
-        lobby::{Phase, PhaseChanged},
+        lobby::{Lobby, Phase, PhaseChanged},
         player::Player,
     },
     server::{PlayerId, ServerHandle},
@@ -206,7 +206,11 @@ impl Module for MapModule {
         // right, and no file under `src/module/` has to know maps rotate.
         world
             .observer_named::<PhaseChanged, ()>("smash::rotate_map")
-            .with(Arena::id())
+            // `Lobby`, because a payload event only reaches an observer whose
+            // term is the id the emit named, and `lobby.rs` names `Lobby`. A
+            // term of `Arena` compiles, registers and never fires, which is
+            // what left every match on the first map.
+            .with(Lobby::id())
             .each_iter(|it, _, ()| {
                 let event = *it.param();
                 if event.to != Phase::Waiting {
@@ -232,7 +236,7 @@ impl Module for MapModule {
         // hosting question, so it is answered here.
         world
             .observer_named::<PhaseChanged, ()>("smash::return_to_hub")
-            .with(Arena::id())
+            .with(Lobby::id())
             .each_iter(|it, _, ()| {
                 let event = *it.param();
                 if event.to != Phase::Waiting {
@@ -297,12 +301,44 @@ fn stamp(blocks: &mut Blocks, runtime: &AsyncRuntime, map: &Loaded) {
         map.spec.name,
         unknown
     );
+
+    stand_on_something(blocks, map);
     tracing::info!(
         "built {:?} by {:?}: {placed} blocks, kill plane y={}",
         map.spec.name,
         map.spec.author,
         map.spec.kill_y
     );
+}
+
+/// Refuse a map whose spawn points hang in the air.
+///
+/// A spawn one block too high looks harmless and is not: hyperion decides
+/// whether a player is on the ground by reading the block at `ceil(y) - 1`, so
+/// a player placed a block above the floor is airborne from the moment they
+/// arrive, and every ability the kits gate on standing still (Fissure, Seismic
+/// Slam) answers "You must be on the ground" and never fires. All four arenas
+/// shipped with that off-by-one and nothing noticed, because the only symptom
+/// is an ability that silently does nothing.
+fn stand_on_something(blocks: &Blocks, map: &Loaded) {
+    for spawn in map.spawns() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a spawn is within a few hundred blocks of its region"
+        )]
+        let below = IVec3::new(
+            spawn.x.floor() as i32,
+            spawn.y.ceil() as i32 - 1,
+            spawn.z.floor() as i32,
+        );
+        let solid = blocks.get_block(below).is_some_and(|block| !block.is_air());
+        assert!(
+            solid,
+            "map {:?} has a spawn at {spawn} with nothing under it at {below}; a \
+             player put there is airborne and cannot use a grounded ability",
+            map.spec.name
+        );
+    }
 }
 
 /// The block-space bounding box of every brush in a map, before the region

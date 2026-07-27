@@ -1,11 +1,14 @@
 use flecs_ecs::prelude::*;
+use hyperion_minecraft_proto::{
+    generated::packet_id::play::clientbound::PacketId, packets::play::clientbound::BlockChangedAck,
+};
 use tracing::{error, info_span};
-use valence_protocol::{VarInt, packets::play};
 
 use crate::{
     net::{
         Compose, ConnectionId,
         intermediate::{IntermediateServerToProxyMessage, UpdatePlayerPositions},
+        protocol::Clientbound,
     },
     simulation::{Position, blocks::Blocks},
 };
@@ -60,12 +63,13 @@ impl Module for EgressModule {
                 for to_confirm in mc.to_confirm.drain(..) {
                     let entity = world.entity_from_id(to_confirm.entity);
 
-                    let pkt = play::PlayerActionResponseS2c {
-                        sequence: VarInt(to_confirm.sequence),
-                    };
+                    let packet = BlockChangedAck(to_confirm.sequence);
 
                     entity.get::<&ConnectionId>(|stream| {
-                        if let Err(e) = compose.unicast(&pkt, *stream) {
+                        if let Err(e) = compose.unicast(
+                            Clientbound::new(PacketId::BlockChangedAck.to_raw(), &packet),
+                            *stream,
+                        ) {
                             error!("failed to send player action response: {e}");
                         }
                     });

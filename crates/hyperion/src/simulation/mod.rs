@@ -8,7 +8,13 @@ use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
 use hyperion_minecraft_proto::{
     Uuid as ProtoUuid,
     generated::packet_id::play::clientbound::PacketId,
-    packets::play::entity::{AddEntity, pack_degrees},
+    packets::{
+        play::{
+            entity::{AddEntity, pack_degrees},
+            player::{AbilityFlags, PlayerAbilities},
+        },
+        play_login::{PlayerPosition, PositionMoveRotation, Relative, Vec3 as SpawnVec3},
+    },
     types::Vec3 as ProtoVec3,
 };
 use hyperion_utils::EntityExt;
@@ -18,13 +24,7 @@ use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
-use valence_protocol::{
-    VarInt,
-    packets::play::{
-        self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
-        player_position_look_s2c::PlayerPositionLookFlags,
-    },
-};
+use valence_protocol::VarInt;
 
 use crate::{
     Global,
@@ -845,15 +845,38 @@ impl Module for SimModule {
             &ConnectionId
         )
         .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
-            let pkt = play::PlayerPositionLookS2c {
-                position: pending_teleportation.destination.as_dvec3(),
-                yaw: **yaw,
-                pitch: **pitch,
-                flags: PlayerPositionLookFlags::default(),
-                teleport_id: VarInt(pending_teleportation.teleport_id),
+            // The same packet the join path sends, at the same id. Sending
+            // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client
+            // with no teleport to confirm, so `AcceptTeleportation` never came
+            // back, `PendingTeleportation` was never removed, and
+            // `sync_player_entity` took its pending-teleport branch forever
+            // after: no movement, no rotation and no velocity ever reached
+            // anyone again. A mid-match teleport is the whole of respawning.
+            let packet = PlayerPosition {
+                id: pending_teleportation.teleport_id,
+                change: PositionMoveRotation {
+                    position: SpawnVec3 {
+                        x: f64::from(pending_teleportation.destination.x),
+                        y: f64::from(pending_teleportation.destination.y),
+                        z: f64::from(pending_teleportation.destination.z),
+                    },
+                    delta_movement: SpawnVec3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    y_rot: **yaw,
+                    x_rot: **pitch,
+                },
+                relatives: Relative::NONE,
             };
 
-            compose.unicast(&pkt, *connection).unwrap();
+            compose
+                .unicast(
+                    Clientbound::new(PacketId::PlayerPosition.to_raw(), &packet),
+                    *connection,
+                )
+                .unwrap();
         });
 
         observer!(
@@ -865,15 +888,7 @@ impl Module for SimModule {
             &Flight
         )
         .each(|(flying_speed, compose, connection, flight)| {
-            let pkt = PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.0,
-            };
-
-            compose.unicast(&pkt, *connection).unwrap();
+            send_player_abilities(compose, *connection, *flight, *flying_speed);
         });
 
         observer!(
@@ -885,17 +900,44 @@ impl Module for SimModule {
             &FlyingSpeed
         )
         .each(|(flight, compose, connection, flying_speed)| {
-            let pkt = play::PlayerAbilitiesS2c {
-                flags: PlayerAbilitiesFlags::default()
-                    .with_allow_flying(flight.allow)
-                    .with_flying(flight.is_flying),
-                flying_speed: flying_speed.speed,
-                fov_modifier: 0.,
-            };
-
-            compose.unicast(&pkt, *connection).unwrap();
+            send_player_abilities(compose, *connection, *flight, *flying_speed);
         });
     }
+}
+
+/// Tell one client what it is allowed to do.
+///
+/// 26.2 replaced 1.20.1's `fov_modifier` with the walking speed the client
+/// applies directly, so the last field is a speed and not a multiplier.
+fn send_player_abilities(
+    compose: &Compose,
+    connection: ConnectionId,
+    flight: Flight,
+    flying_speed: FlyingSpeed,
+) {
+    let mut flags = AbilityFlags::NONE;
+    if flight.allow {
+        flags = flags.union(AbilityFlags::CAN_FLY);
+    }
+    if flight.is_flying {
+        flags = flags.union(AbilityFlags::FLYING);
+    }
+
+    let packet = PlayerAbilities {
+        flags,
+        flying_speed: flying_speed.speed,
+        // Vanilla's `Abilities.walkingSpeed`. hyperion has no per-player
+        // walking speed to send instead, and a zero here would freeze the
+        // player where they stand.
+        walking_speed: 0.1,
+    };
+
+    compose
+        .unicast(
+            Clientbound::new(PacketId::PlayerAbilities.to_raw(), &packet),
+            connection,
+        )
+        .unwrap();
 }
 
 #[derive(Component)]

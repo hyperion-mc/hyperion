@@ -10,6 +10,9 @@ use std::{
 };
 
 use flecs_ecs::prelude::*;
+use hyperion_minecraft_proto::{
+    generated::packet_id::play::clientbound::PacketId, packets::play::clientbound::RemoveEntities,
+};
 use hyperion_proto::ArchivedProxyToServerMessage;
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
@@ -20,12 +23,11 @@ use rustls::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::TlsAcceptor;
 use tracing::{error, info, warn};
-use valence_protocol::{VarInt, packets::play};
 
 use crate::{
     ConnectionId, Crypto, PacketDecoder,
     command_channel::CommandChannel,
-    net::{Channel, ChannelId, Compose, IoBuf, ProxyId},
+    net::{Channel, ChannelId, Compose, IoBuf, ProxyId, protocol::Clientbound},
     runtime::AsyncRuntime,
     simulation::{EgressComm, PacketState, StreamLookup, event::RequestSubscribeChannelPackets},
     storage::Events,
@@ -361,12 +363,19 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
 
                         world.get::<&Compose>(|compose| {
                             query.each_entity(|channel, ()| {
-                                let packet = play::EntitiesDestroyS2c {
-                                    entity_ids: vec![VarInt(channel.id().minecraft_id())].into(),
-                                };
+                                let packet =
+                                    RemoveEntities(vec![channel.id().minecraft_id()]);
 
-                                let packet_buf =
-                                    compose.io_buf().encode_packet(&packet, compose).unwrap();
+                                let packet_buf = compose
+                                    .io_buf()
+                                    .encode_packet(
+                                        Clientbound::new(
+                                            PacketId::RemoveEntities.to_raw(),
+                                            &packet,
+                                        ),
+                                        compose,
+                                    )
+                                    .unwrap();
 
                                 tx.send(IoBuf::encode_proxy_message(
                                     &hyperion_proto::ServerToProxyMessage::AddChannel(

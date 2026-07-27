@@ -52,12 +52,27 @@ pub fn render(phase: Phase, mut rows: Vec<Row>) -> Vec<String> {
     lines
 }
 
+/// The sidebar as it was last sent, so an unchanged one is not sent again.
+///
+/// A redraw is four packets plus one per row, per viewer. Doing that every tick
+/// is twenty times a second of bandwidth spent restating a line that changes
+/// when somebody dies, which is the difference between a few hundred packets a
+/// minute and a few hundred thousand.
+#[derive(Component, Debug, Default)]
+struct Drawn {
+    lines: Vec<String>,
+    viewers: Vec<PlayerId>,
+}
+
 #[derive(Component)]
 pub struct ScoreboardModule;
 
 impl Module for ScoreboardModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Scoreboard");
+
+        world.component::<Drawn>().add_trait::<flecs::Singleton>();
+        world.set(Drawn::default());
 
         world
             .system_named::<()>("smash::update_scoreboard")
@@ -87,11 +102,19 @@ impl Module for ScoreboardModule {
                         });
 
                     let lines = render(phase, rows);
+                    let unchanged = world.get::<&Drawn>(|drawn| {
+                        drawn.lines == lines && drawn.viewers == viewers
+                    });
+                    if unchanged {
+                        continue;
+                    }
+
                     world.get::<&ServerHandle>(|server| {
                         for viewer in &viewers {
                             server.set_sidebar(*viewer, "Super Smash Mobs", &lines);
                         }
                     });
+                    world.set(Drawn { lines, viewers });
                 }
             });
 

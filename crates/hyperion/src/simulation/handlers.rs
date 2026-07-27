@@ -30,7 +30,6 @@ use valence_generated::{
     item::ItemKind,
 };
 use valence_protocol::{Hand, packets::play};
-use valence_text::IntoText;
 
 use super::{
     ConfirmBlockSequences, EntitySize, Flight, MovementTracking, PendingTeleportation, Position,
@@ -42,7 +41,7 @@ use super::{
 };
 use crate::{
     net::{
-        Compose, ConnectionId, PROTOCOL_VERSION,
+        Compose, ConnectionId, PROTOCOL_VERSION, agnostic,
         decoder::BorrowedPacketFrame,
         protocol::{decode_body, frame_body},
     },
@@ -670,10 +669,7 @@ fn change_position_or_correct_client(
     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
         // Send error message to player
         let msg = format!("§c{e}");
-        let pkt = play::GameMessageS2c {
-            chat: msg.into_cow_text(),
-            overlay: false,
-        };
+        let pkt = agnostic::chat(msg);
 
         if let Err(e) = query.compose.unicast(&pkt, query.io_ref) {
             warn!("Failed to send error message to player: {e}");

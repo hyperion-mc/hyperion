@@ -39,9 +39,17 @@ impl Module for InputModule {
         // A hyperion player becomes a smash player. `Player` carries `With`
         // traits for every mirrored component, so this one add is what gives the
         // entity its Position, Facing, Health and the rest.
+        //
+        // Keyed on reaching play and not on `simulation::Player`, which hyperion
+        // adds while the connection is still in login. Everything the game does
+        // to a player is a packet at a play-state id, so a player counted any
+        // earlier is one the lobby tallies before they can see anything and one
+        // the scoreboard writes a sidebar to during the configuration state,
+        // where a real 26.2 client reads the id against the configuration
+        // table and drops the connection.
         world
             .observer::<flecs::OnAdd, ()>()
-            .with(id::<hyperion::simulation::Player>())
+            .with_enum(hyperion::simulation::PacketState::Play)
             .each_entity(|entity, ()| {
                 entity.set(player_id(entity.id())).add(Player::id());
             });
