@@ -40,11 +40,6 @@
       # few thousand bots connect.
       fileDescriptors = "32768";
 
-      # Development certificates live in the working tree rather than the store:
-      # they are private keys with an expiry, and both processes have to agree on
-      # where to find them. Gitignored.
-      certDir = "certs";
-
       clippyArgs = "--all-targets --all-features";
 
       mkSystem = system:
@@ -183,63 +178,35 @@
             '';
           };
 
-          # The game server and the proxy authenticate each other with mTLS, so a
-          # checkout with no certificates cannot run at all. Generating a
-          # throwaway CA is the whole of that setup on one machine; the README
-          # covers the multi-machine version, where the keys must not be copied
-          # between hosts.
-          certs = mkScript "certs" {
-            deps = [ pkgs.openssl pkgs.git ];
-            text = ''
-              dir="''${1:-$(git rev-parse --show-toplevel)/${certDir}}"
-              mkdir -p "$dir"
-              cd "$dir"
+          certsDir = ".hyperion-dev-certs";
 
-              if [ -f root_ca.crt ] && [ -f server.crt ] && [ -f proxy.crt ]; then
-                echo "dev certificates already in $PWD"
-                exit 0
-              fi
+          gameServerPort = 35565;
+          proxyPort = 25565;
 
-              # genpkey rather than `req -newkey`: the same key, without the two
-              # screens of progress dots `req` writes to stderr.
-              newkey() { openssl genpkey -quiet -algorithm RSA \
-                -pkeyopt rsa_keygen_bits:4096 -out "$1"; }
+          # Generated rather than committed as YAML: the ports and cert paths
+          # then have one source of truth shared with the standalone apps above.
+          # Commands are single-line: a backslash continuation is literal in a
+          # Nix indented string, survives into the YAML, and reaches the shell
+          # as a stray argument rather than a line join.
+          processComposeConfig = (pkgs.formats.yaml { }).generate "process-compose.yaml" {
+            version = "0.5";
+            processes = {
+              game-server = {
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                availability.restart = "on_failure";
+              };
 
-              newkey root_ca.pem
-              openssl req -new -x509 -key root_ca.pem -out root_ca.crt \
-                -days 365 -subj "/CN=hyperion dev CA"
-
-              for name in server proxy; do
-                newkey "''${name}_private_key.pem"
-                openssl req -new -key "''${name}_private_key.pem" \
-                  -out "''${name}.csr" -subj "/CN=hyperion dev ''${name}"
-                # The proxy dials the game server over loopback, so the SAN has to
-                # name the literal address it connects to; without it the
-                # handshake fails with "certificate not valid for name".
-                openssl x509 -req -in "''${name}.csr" -CA root_ca.crt \
-                  -CAkey root_ca.pem -CAcreateserial -out "''${name}.crt" \
-                  -days 365 -sha256 \
-                  -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1")
-                rm -f "''${name}.csr"
-              done
-
-              rm -f root_ca.srl
-              echo "wrote dev certificates to $PWD"
-            '';
+              proxy = {
+                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:${toString proxyPort}";
+                # Started, not healthy: a TCP readiness probe would connect and
+                # immediately disconnect every few seconds, and the game server
+                # logs an error for each half-open connection. The proxy already
+                # retries until the game server answers.
+                depends_on.game-server.condition = "process_started";
+                availability.restart = "on_failure";
+              };
+            };
           };
-
-          # `.cargo/config.toml`'s `[env]` only reaches processes cargo itself
-          # starts, and `dev` execs the built binary directly, so without this the
-          # game server logged absolutely nothing.
-          defaultLogLevel = ''export RUST_LOG="''${RUST_LOG:-info}"'';
-
-          # Prepended to the runners that speak mTLS, so a clean checkout starts
-          # with one command and no documented setup step.
-          ensureCerts = ''
-            ${defaultLogLevel}
-            certs="$(git rev-parse --show-toplevel)/${certDir}"
-            "${lib.getExe certs}" "$certs"
-          '';
 
           runners = lib.mapAttrs mkScript {
             # Builds four successive versions of the demo game module and drives
@@ -253,10 +220,48 @@
               text = ''exec ./crates/hyperion-hot-reload/demo.sh "$@"'';
             };
 
+            # The game server and the proxy authenticate to each other with
+            # mTLS, so a fresh clone cannot run until a CA and two leaf certs
+            # exist. That is the only thing between `git clone` and a running
+            # server, so it is a command rather than a page of README.
+            certs = {
+              deps = [ pkgs.openssl pkgs.git ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                dir="$root/${certsDir}"
+                if [ -f "$dir/root_ca.crt" ] && [ "''${1:-}" != "--force" ]; then
+                  echo "dev certificates already present in ${certsDir}"
+                  echo "regenerate with: nix run .#certs -- --force"
+                  exit 0
+                fi
+                mkdir -p "$dir"
+                cd "$dir"
+
+                openssl req -new -nodes -newkey rsa:2048 -keyout root_ca.pem \
+                  -x509 -out root_ca.crt -days 365 -subj '/CN=hyperion-dev-ca'
+
+                for who in server proxy; do
+                  openssl req -nodes -newkey rsa:2048 \
+                    -keyout "''${who}_private_key.pem" -out "$who.csr" \
+                    -subj "/CN=hyperion-dev-$who"
+                  # The SAN must cover the address the peer dials or the
+                  # handshake fails with "certificate not valid for name".
+                  openssl x509 -req -in "$who.csr" -CA root_ca.crt -CAkey root_ca.pem \
+                    -CAcreateserial -out "$who.crt" -days 365 -sha256 \
+                    -extfile <(printf 'subjectAltName=DNS:localhost,IP:127.0.0.1')
+                  rm -f "$who.csr"
+                done
+                rm -f root_ca.srl
+
+                echo "wrote throwaway dev certificates to ${certsDir}"
+                echo "local development only -- never deploy these"
+              '';
+            };
+
             proxy = {
               deps = [ pkgs.git ];
               text = ''
-                ${ensureCerts}
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
                 ulimit -Sn ${fileDescriptors}
                 exec cargo run --profile release-full --bin hyperion-proxy -- \
                   --server 127.0.0.1:35565 \
@@ -267,103 +272,47 @@
               '';
             };
 
-            # With no arguments this is a whole single-machine server: the game
-            # server plus a proxy in the same process, so players can join
-            # straight away. Any argument replaces the defaults outright, which is
-            # how a real deployment passes its own addresses and certificates.
             bedwars = {
               deps = [ pkgs.git ];
               text = ''
-                ${ensureCerts}
-                if [ "$#" -eq 0 ]; then
-                  set -- \
-                    --root-ca-cert "$certs/root_ca.crt" \
-                    --cert "$certs/server.crt" \
-                    --private-key "$certs/server_private_key.pem" \
-                    --proxy-addr 0.0.0.0:25565 \
-                    --proxy-cert "$certs/proxy.crt" \
-                    --proxy-private-key "$certs/proxy_private_key.pem"
-                fi
-                ulimit -Sn ${fileDescriptors}
-                exec cargo run --profile release-full -p bedwars -- "$@"
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
+                exec cargo run --profile release-full -p bedwars -- \
+                  --ip 0.0.0.0 --port 35565 \
+                  --root-ca-cert "$certs/root_ca.crt" \
+                  --cert "$certs/server.crt" \
+                  --private-key "$certs/server_private_key.pem" \
+                  "$@"
               '';
             };
 
-            # Bots talk plain Minecraft to the proxy, so they need no certificates.
             bots.text = ''
-              ${defaultLogLevel}
               ulimit -Sn ${fileDescriptors}
               exec cargo run --release -p rust-mc-bot -- \
                 "''${1:-127.0.0.1:25565}" "''${2:-100}"
             '';
 
-            # One rebuild-and-restart loop for any profile: `nix run .#dev`, or
-            # `nix run .#dev -- release-full`. One watcher rebuilds bedwars and
-            # touches a trigger file; a second watches only the trigger, which is
-            # what stops a restart from racing a half-written executable.
-            #
-            # Both binaries are configured through their environment rather than
-            # their arguments, because the argument lists here are nested two
-            # levels deep inside `parallel` and a quoted path would not survive.
+            # process-compose supervises the two processes instead of the
+            # shell doing it: it gives dependency ordering (the proxy waits for
+            # the game server's port), per-process restart policy, a readable
+            # TUI with separated logs, and one Ctrl-C that actually stops
+            # everything. GNU parallel gave none of that -- a crashed process
+            # just vanished from an interleaved stream.
             dev = {
-              deps = [ pkgs.cargo-watch pkgs.git pkgs.parallel ];
+              deps = [ pkgs.process-compose pkgs.git ];
               text = ''
-                profile="''${1:-dev}"
-                case "$profile" in
-                  dev | debug) profile=dev; target=debug ;;
-                  *) target="$profile" ;;
-                esac
-
-                ${ensureCerts}
-
                 root="$(git rev-parse --show-toplevel)"
-
-                # The trigger lives outside the checkout. `--no-vcs-ignores` is
-                # what makes the restart watcher see a file cargo itself writes,
-                # but it also stops that watcher honouring .gitignore, so a
-                # trigger inside the repo made it restart on every write under
-                # `target/` — including the one `nix run .#bots` does when it
-                # builds the bot, which killed the whole stack from another
-                # terminal.
-                triggerdir="$(mktemp -d)"
-                trap 'rm -rf "$triggerdir"' EXIT
-                trigger="$triggerdir/rebuilt"
-                touch "$trigger"
-
-                ulimit -Sn ${fileDescriptors}
-                export RUST_BACKTRACE=full
-
-                # Both ports are overridable because two checkouts on one machine
-                # otherwise fight over 25565, and the loser's stack dies with no
-                # explanation beyond a SIGTERM.
-                player_port="''${HYPERION_PLAYER_PORT:-25565}"
-                server_port="''${HYPERION_SERVER_PORT:-35565}"
-
-                # The game server binds the internal port only; players reach it
-                # through the proxy below, so it starts no proxy of its own.
-                export BEDWARS_IP=0.0.0.0
-                export BEDWARS_PORT="$server_port"
-                export BEDWARS_ROOT_CA_CERT="$certs/root_ca.crt"
-                export BEDWARS_CERT="$certs/server.crt"
-                export BEDWARS_PRIVATE_KEY="$certs/server_private_key.pem"
-
-                export HYPERION_PROXY_PROXY_ADDR="0.0.0.0:$player_port"
-                export HYPERION_PROXY_SERVER="127.0.0.1:$server_port"
-                export HYPERION_PROXY_ROOT_CA_CERT="$certs/root_ca.crt"
-                export HYPERION_PROXY_CERT="$certs/proxy.crt"
-                export HYPERION_PROXY_PRIVATE_KEY="$certs/proxy_private_key.pem"
-
-                echo "players: 0.0.0.0:$player_port | game server: 127.0.0.1:$server_port"
-
-                parallel --ungroup --halt now,done=1 --jobs 3 ::: \
-                  "cargo watch --postpone --no-vcs-ignores -w '$trigger' -s '$root/target/$target/bedwars'" \
-                  "cargo run --profile $profile --bin hyperion-proxy" \
-                  "cargo watch -w '$root/crates/hyperion' -w '$root/events/bedwars' -s 'cargo build --profile $profile -p bedwars' -s 'touch $trigger'"
+                certs="$root/${certsDir}"
+                if [ ! -f "$certs/root_ca.crt" ]; then
+                  echo "no dev certificates yet; generating them" >&2
+                  "${lib.getExe runners.certs}"
+                fi
+                cd "$root"
+                exec process-compose --config ${processComposeConfig} "$@"
               '';
             };
           };
 
-          scripts = checkScripts // runners // { inherit ci certs; };
+          scripts = checkScripts // runners // { inherit ci; };
 
           cargoUnit = index.lib.cargoUnitExternal {
             inherit pkgs rustToolchain;

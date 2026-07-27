@@ -1,12 +1,8 @@
-use std::{
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
-};
+use std::{net::SocketAddr, path::PathBuf};
 
 use bedwars::init_game;
 use clap::Parser;
 use hyperion::Crypto;
-use hyperion_proxy_module::EmbeddedProxy;
 use serde::Deserialize;
 use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
 // use tracing_tracy::TracyLayer;
@@ -39,23 +35,6 @@ struct Args {
     /// The file path to the game server's private key
     #[clap(long)]
     private_key: PathBuf,
-
-    /// Host a proxy in this process on the given address, so a single-machine
-    /// setup needs one binary. Omit it to run the game server alone and connect
-    /// a separate `hyperion-proxy`.
-    #[clap(long, requires_all = ["proxy_cert", "proxy_private_key"])]
-    #[serde(default)]
-    proxy_addr: Option<SocketAddr>,
-
-    /// The file path to the embedded proxy's certificate
-    #[clap(long)]
-    #[serde(default)]
-    proxy_cert: Option<PathBuf>,
-
-    /// The file path to the embedded proxy's private key
-    #[clap(long)]
-    #[serde(default)]
-    proxy_private_key: Option<PathBuf>,
 }
 
 fn default_ip() -> String {
@@ -106,34 +85,5 @@ fn main() {
     let address = address.parse::<SocketAddr>().unwrap();
     let crypto = Crypto::new(&args.root_ca_cert, &args.cert, &args.private_key).unwrap();
 
-    let embedded_proxy = args.proxy_addr.map(|listen| EmbeddedProxy {
-        listen,
-        server: SocketAddr::new(dial_address(address.ip()), address.port()).to_string(),
-        root_ca_cert: args.root_ca_cert.clone(),
-        // clap's `requires_all` guarantees both are present whenever
-        // `--proxy-addr` is.
-        cert: args.proxy_cert.clone().expect("--proxy-cert is required"),
-        private_key: args
-            .proxy_private_key
-            .clone()
-            .expect("--proxy-private-key is required"),
-    });
-
-    init_game(address, crypto, embedded_proxy).unwrap();
-}
-
-/// The address the embedded proxy dials the game server on.
-///
-/// A wildcard bind address is not a destination, and it is not a name any
-/// certificate can carry a SAN for, so an unspecified listen address becomes
-/// loopback.
-const fn dial_address(listen: IpAddr) -> IpAddr {
-    if listen.is_unspecified() {
-        match listen {
-            IpAddr::V4(..) => IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-            IpAddr::V6(..) => IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
-        }
-    } else {
-        listen
-    }
+    init_game(address, crypto).unwrap();
 }

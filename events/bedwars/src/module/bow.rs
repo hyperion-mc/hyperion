@@ -27,10 +27,9 @@ pub struct LastFireTime {
     pub time: SystemTime,
 }
 
+// (flecs::With, LastFireTime) below auto-adds this to every Player, so flecs
+// needs to be able to construct one without our help.
 impl Default for LastFireTime {
-    /// `flecs::With` auto-adds this to every player, and flecs constructs it
-    /// through `Default`, so the default has to mean "has never fired" or a
-    /// freshly joined player would be on cooldown.
     fn default() -> Self {
         Self {
             time: SystemTime::UNIX_EPOCH,
@@ -57,11 +56,11 @@ pub struct BowCharging {
     pub start_time: SystemTime,
 }
 
+// Same reason as LastFireTime: it is a (flecs::With, _) target. Unlike
+// LastFireTime the epoch is the wrong default here -- `get_charge` clamps
+// elapsed time to 1.2s, so a player who never drew the bow would release a
+// full-power shot. "Started charging now" is the minimum charge.
 impl Default for BowCharging {
-    /// `flecs::With` auto-adds this to every player, so the default stands for
-    /// "not drawing the bow". It has to read as a draw that just started:
-    /// `SystemTime::UNIX_EPOCH` would clamp to full charge and hand every
-    /// player a free maximum-power shot on their first release.
     fn default() -> Self {
         Self::now()
     }

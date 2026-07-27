@@ -6,7 +6,6 @@ use flecs_ecs::prelude::*;
 use hyperion::{Crypto, GameServerEndpoint, HyperionCore, simulation::Player, spatial};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
-use hyperion_proxy_module::{EmbeddedProxy, HyperionProxyModule};
 use valence_text::IntoText;
 
 use crate::{
@@ -145,30 +144,14 @@ impl Module for BedwarsModule {
     }
 }
 
-/// Starts the game server on `address`.
-///
-/// `embedded_proxy` hosts a proxy in this process so a single-machine setup
-/// needs one binary; leave it `None` and run `hyperion-proxy` separately for the
-/// production topology.
-pub fn init_game(
-    address: SocketAddr,
-    crypto: Crypto,
-    embedded_proxy: Option<EmbeddedProxy>,
-) -> anyhow::Result<()> {
+pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
     let world = World::new();
 
     world.import::<HyperionCore>();
-    world.import::<HyperionProxyModule>();
     world.import::<BedwarsModule>();
 
     world.set(crypto);
     world.set(GameServerEndpoint::from(address));
-
-    // Set last: the observer that starts the proxy dials the game server, so the
-    // endpoint it dials has to exist first.
-    if let Some(embedded_proxy) = embedded_proxy {
-        world.set(embedded_proxy);
-    }
 
     let mut app = world.app();
 

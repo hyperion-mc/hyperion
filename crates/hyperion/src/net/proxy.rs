@@ -278,9 +278,22 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
             let next_proxy_id = Arc::new(AtomicU64::new(0));
 
             loop {
-                let (socket, _) = listener.accept().await.unwrap();
+                let (socket, _) = match listener.accept().await {
+                    Ok(accepted) => accepted,
+                    Err(e) => {
+                        error!("failed to accept proxy connection: {e}");
+                        continue;
+                    }
+                };
 
-                socket.set_nodelay(true).unwrap();
+                // A peer that disconnects between accept and here makes this
+                // fail with EINVAL. Unwrapping killed the whole accept loop, so
+                // any half-open connection took the server's proxy listener
+                // down with it.
+                if let Err(e) = socket.set_nodelay(true) {
+                    error!("failed to accept proxy connection: set_nodelay failed: {e}");
+                    continue;
+                }
 
                 let addr = match socket.peer_addr() {
                     Ok(addr) => addr,

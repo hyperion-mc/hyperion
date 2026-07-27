@@ -35,3 +35,4 @@ vendor/
 # private keys here.
 /certs
 valence/
+.hyperion-dev-certs/

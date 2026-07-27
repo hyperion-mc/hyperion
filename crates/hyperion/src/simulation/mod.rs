@@ -109,9 +109,8 @@ impl<K: Eq + Hash, V> DeferredMap<K, V> {
 }
 
 /// The in-game name of a player.
-/// todo: fix the meta
+// No #[flecs(meta)]: registered below as opaque, and a type cannot be both.
 #[derive(Component, Deref, From, Display, Debug)]
-#[flecs(meta)]
 pub struct Name(Arc<str>);
 
 #[derive(Component, Deref, DerefMut, From, Debug, Default)]
@@ -458,8 +457,10 @@ pub struct Pitch {
 const PLAYER_WIDTH: f32 = 0.6;
 const PLAYER_HEIGHT: f32 = 1.8;
 
+// No #[flecs(meta)]: this registers below as an opaque type serialised through
+// Display, and flecs aborts if a type is registered as both a struct and an
+// opaque. Uuid is the same shape.
 #[derive(Component, Copy, Clone, Debug, Constructor, PartialEq)]
-#[flecs(meta)]
 pub struct EntitySize {
     pub half_width: f32,
     pub height: f32,
