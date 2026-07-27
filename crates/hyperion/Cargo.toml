@@ -11,7 +11,6 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 bitfield-struct = { workspace = true }
 bitvec = { workspace = true }
-boxcar = { workspace = true }
 bvh-region = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
@@ -46,7 +45,6 @@ more-asserts = { workspace = true }
 ndarray = { workspace = true }
 once_cell = { workspace = true }
 packet-channel = { workspace = true }
-paste = { workspace = true }
 rayon = { workspace = true }
 reqwest = { workspace = true }
 rkyv = { workspace = true }
