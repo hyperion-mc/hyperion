@@ -6,9 +6,7 @@
 
 use flecs_ecs::prelude::*;
 use hyperion::{
-    simulation::{
-        MovementTracking, Name, event, metadata::living_entity::Health as HyperionHealth,
-    },
+    simulation::{Name, event, metadata::living_entity::Health as HyperionHealth},
     storage::EventQueue,
 };
 use hyperion_inventory::PlayerInventory;
@@ -52,32 +50,6 @@ impl Module for InputModule {
             .with_enum(hyperion::simulation::PacketState::Play)
             .each_entity(|entity, ()| {
                 entity.set(player_id(entity.id())).add(Player::id());
-            });
-
-        // hyperion registers `MovementTracking` but never adds it to a player.
-        // Two things break as a result, and both look like something else:
-        // hyperion's own movement handler does a hard `get` on it and aborts the
-        // process on the first position packet, and `mirror.rs` names it as a
-        // query term, so the mirror matches nobody and every mirrored position
-        // stays at the origin.
-        //
-        // It has to be seeded with the player's real position, not `default()`.
-        // The movement handler treats a large step from `last_tick_position` as
-        // a cheat and teleports the player back to it, so a zeroed tracker drags
-        // everyone to (0, 0, 0) a tick after they join -- under the kill plane,
-        // which then reads as "fell out of bounds" the moment a match starts.
-        //
-        // This is a workaround for a hyperion bug, not a smash concern. The fix
-        // belongs in hyperion's join path; the diff is in the report.
-        world
-            .observer::<flecs::OnSet, &hyperion::simulation::Position>()
-            .without(id::<MovementTracking>())
-            .each_entity(|entity, position| {
-                entity.set(MovementTracking {
-                    last_tick_position: **position,
-                    was_on_ground: true,
-                    ..MovementTracking::default()
-                });
             });
 
         // The scoreboard and the death messages are built from `EntityView::name`,

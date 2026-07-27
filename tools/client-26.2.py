@@ -38,6 +38,7 @@ C2S_CONFIG_KEEP_ALIVE = 0x04
 C2S_CONFIG_SELECT_KNOWN_PACKS = 0x07
 C2S_PLAY_ACCEPT_TELEPORTATION = 0x00
 C2S_PLAY_KEEP_ALIVE = 0x1C
+C2S_PLAY_MOVE_PLAYER_POS = 0x1E
 
 # Clientbound ids, same source.
 S2C_STATUS_RESPONSE = 0x00
@@ -630,6 +631,8 @@ def main():
     started = time.time()
     deadline = started + args.seconds
     seen = {}
+    moved = False
+    lost_after_move = False
 
     while time.time() < deadline:
         try:
@@ -638,6 +641,7 @@ def main():
             break
         except ConnectionError as error:
             log("connection lost: %s" % error)
+            lost_after_move = moved
             break
 
         seen[packet_id] = seen.get(packet_id, 0) + 1
@@ -658,6 +662,18 @@ def main():
                 % (x, y, z, teleport_id)
             )
             client.send(C2S_PLAY_ACCEPT_TELEPORTATION, var_int(teleport_id))
+
+            # Walk. A client that only reads is a client that never exercises
+            # the movement handler, and that handler is where a player missing
+            # a component the server never added aborts the whole process
+            # (hyperion#987). One step is enough to reach it: the check is
+            # that the server is still there afterwards.
+            client.send(
+                C2S_PLAY_MOVE_PLAYER_POS,
+                struct.pack(">dddb", x + 0.2, y, z, 1),
+            )
+            moved = True
+            log("-> MovePlayerPos (%.1f, %.1f, %.1f)" % (x + 0.2, y, z))
         elif packet_id == S2C_PLAY_SET_DEFAULT_SPAWN:
             log("<- SetDefaultSpawnPosition")
         elif packet_id == S2C_PLAY_KEEP_ALIVE:
@@ -700,6 +716,17 @@ def main():
 
     if not client.joined:
         log("RESULT: never reached play state (client would sit on 'Joining world...')")
+        return 1
+
+    if not moved:
+        log("RESULT: never sent a movement packet, so the movement handler is untested")
+        return 1
+
+    if lost_after_move:
+        log(
+            "RESULT: the server dropped the connection after one step. A crash "
+            "here is what a real player hits the moment they walk."
+        )
         return 1
 
     # Reaching play is necessary but not sufficient. A vanilla client shows the

@@ -24,7 +24,7 @@ use crate::{
         Channel, Compose, ConnectionId,
         protocol::{registries, send},
     },
-    simulation::{Comms, Pitch, Position, Yaw},
+    simulation::{Comms, MovementTracking, Pitch, Position, Yaw},
 };
 
 /// The level this server serves. Only one, so the dimension list in [`Login`]
@@ -178,6 +178,18 @@ pub fn enter_world(
             param: 0.0,
         },
     )?;
+
+    // The movement handler reads this on every position packet and does not
+    // check for it first, so a player without it aborts the process the moment
+    // they walk. It is seeded with the position the client was just told to
+    // spawn at, not with `default()`: the handler treats a large step from
+    // `last_tick_position` as a cheat and teleports the player back to it, so a
+    // zeroed tracker drags a joining player to the origin one tick later.
+    entity.set(MovementTracking {
+        last_tick_position: position,
+        was_on_ground: true,
+        ..MovementTracking::default()
+    });
 
     // The player is now visible to other players through its own packet
     // channel, and may receive broadcasts.

@@ -380,6 +380,7 @@
                 # Killing the process group, not the pid: process-compose forks
                 # cargo, which forks the server, and killing only $stack orphans
                 # both so the next run dies on "address already in use".
+                # shellcheck disable=SC2329  # run by the EXIT trap below
                 cleanup() {
                   kill -- "-$stack" >> "$log" 2>&1 || kill "$stack" >> "$log" 2>&1 || true
                   wait "$stack" >> "$log" 2>&1 || true
@@ -422,7 +423,27 @@
                 # Not `exec`: replacing this shell would skip the EXIT trap and
                 # orphan the stack, and the next run would die on "address
                 # already in use".
-                python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" "$@"
+                rc=0
+                python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" "$@" || rc=$?
+
+                # A client that finished its checks proves nothing if the server
+                # died while it was reading. It has: the movement handler
+                # aborted the process on the first step a player took
+                # (hyperion#987), and the client saw only its own read timeout,
+                # which it treats as a clean end of session. So ask the game
+                # server directly whether it is still listening.
+                if ! python3 -c "
+                import socket, sys
+                s = socket.socket()
+                s.settimeout(2)
+                sys.exit(0 if s.connect_ex(('127.0.0.1', $server_port)) == 0 else 1)
+                "; then
+                  echo "the game server stopped listening during the session; tail of $log:" >&2
+                  tail -60 "$log" >&2
+                  exit 1
+                fi
+
+                exit "$rc"
               '';
             };
 
