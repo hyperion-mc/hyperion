@@ -1,16 +1,25 @@
 use std::io::Write;
 
 use glam::Vec3;
-use valence_protocol::{
-    packets::play,
-    sound::{SoundCategory, SoundId},
+use hyperion_minecraft_proto::{
+    Holder,
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::clientbound,
+    types::{SoundEventDirect, SoundSource},
 };
 
-use crate::PacketBundle;
+use crate::{PacketBundle, net::protocol::Clientbound};
 
+/// A positioned sound, ready to send to any number of players.
 #[must_use]
 pub struct Sound {
-    raw: play::PlaySoundS2c,
+    id: valence_ident::Ident,
+    /// Position in eighths of a block, which is the fixed point
+    /// `ClientboundSoundPacket` uses.
+    position: glam::IVec3,
+    volume: f32,
+    pitch: f32,
+    seed: i64,
 }
 
 #[must_use]
@@ -40,24 +49,41 @@ impl SoundBuilder {
 
     pub fn build(self) -> Sound {
         Sound {
-            raw: play::PlaySoundS2c {
-                id: SoundId::Direct {
-                    id: self.sound,
-                    range: None,
-                },
-                position: (self.position * 8.0).as_ivec3(),
-                volume: self.volume,
-                pitch: self.pitch,
-                seed: self.seed.unwrap_or_else(|| fastrand::i64(..)),
-                category: SoundCategory::Master,
-            },
+            id: self.sound,
+            // `ClientboundSoundPacket` writes `(int) (x * 8.0)`, so the client
+            // resolves a sound to an eighth of a block and no finer.
+            position: (self.position * 8.0).as_ivec3(),
+            volume: self.volume,
+            pitch: self.pitch,
+            // A seed the server does not choose is one the client cannot
+            // reproduce, which is what makes two players hear the same
+            // variant of a multi-sample sound.
+            seed: self.seed.unwrap_or_else(|| fastrand::i64(..)),
         }
     }
 }
 
 impl PacketBundle for &Sound {
-    fn encode_including_ids(self, mut w: impl Write) -> anyhow::Result<()> {
-        self.raw.encode_including_ids(&mut w)
+    fn encode_including_ids(self, w: impl Write) -> anyhow::Result<()> {
+        let body = clientbound::Sound {
+            // Inline rather than a registry id: hyperion sends the vanilla
+            // registries by name alone, so it has no id table to look a sound
+            // up in, and the inline form is what a name-only server has.
+            sound: Holder::Inline(SoundEventDirect {
+                location: self.id.as_str(),
+                // `None` means the client uses the sound's own attenuation
+                // distance rather than a server override.
+                fixed_range: None,
+            }),
+            source: SoundSource::Master,
+            x: self.position.x,
+            y: self.position.y,
+            z: self.position.z,
+            volume: self.volume,
+            pitch: self.pitch,
+            seed: self.seed,
+        };
+        Clientbound::new(PacketId::Sound.to_raw(), &body).encode_including_ids(w)
     }
 }
 

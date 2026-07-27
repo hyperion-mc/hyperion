@@ -6,13 +6,12 @@ use flecs_ecs::{
     prelude::Module,
 };
 use hyperion::{
-    egress::player_join::{PlayerListActions, PlayerListEntry, PlayerListS2c},
+    egress::player_join::{PlayerInfoActions, PlayerList, PlayerListEntry, SkinProperty},
     net::{Compose, ConnectionId, DataBundle},
     simulation::{event, skin::PlayerSkin},
     storage::EventQueue,
     uuid::Uuid,
     valence_ident::ident,
-    valence_protocol,
     valence_protocol::{
         GameMode, VarInt,
         game_mode::OptGameMode,
@@ -21,7 +20,6 @@ use hyperion::{
 };
 use hyperion_utils::EntityExt;
 use tracing::debug;
-use valence_bytes::Utf8Bytes;
 
 #[derive(Component)]
 pub struct SkinModule;
@@ -62,29 +60,21 @@ fn on_set_skin(id: Entity, compose: &Compose, uuid: Uuid, skin: PlayerSkin, io: 
         })
         .unwrap();
 
-    // todo: in future, do not clone
-    let property = valence_protocol::profile::Property::<Utf8Bytes> {
-        name: "textures".into(),
-        value: skin.textures.into(),
-        signature: Some(skin.signature.into()),
-    };
-
-    let property = &[property];
-
-    // Add player back with new skin
+    // Add player back with new skin. Only `ADD_PLAYER` is set, so the entry's
+    // other fields are not on the wire and are left at their defaults.
     bundle
-        .add_packet(&PlayerListS2c {
-            actions: PlayerListActions::default().with_add_player(true),
-            entries: Cow::Borrowed(&[PlayerListEntry {
-                player_uuid: uuid,
-                username: "Player".into(),
-                properties: Cow::Borrowed(property),
-                chat_data: None,
-                listed: true,
-                ping: 20,
-                game_mode: GameMode::Survival,
-                display_name: None,
-            }]),
+        .add_packet(&PlayerList {
+            actions: PlayerInfoActions::ADD_PLAYER,
+            entries: vec![PlayerListEntry {
+                uuid,
+                username: "Player".to_owned(),
+                properties: vec![SkinProperty {
+                    name: "textures".to_owned(),
+                    value: skin.textures,
+                    signature: Some(skin.signature),
+                }],
+                ..PlayerListEntry::default()
+            }],
         })
         .unwrap();
 
