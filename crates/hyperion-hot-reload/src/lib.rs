@@ -19,7 +19,9 @@ pub use gate::{Plan, Refusal, Refused, Verdict};
 pub use host::{
     Applied, HotReloader, LoadError, component_instance_count, lookup_component, read_raw,
 };
-pub use manifest::{Manifest, ModuleManifest};
+pub use manifest::{
+    Manifest, ModuleManifest, Registrations, WorldSample, describe_module, read_component_schema,
+};
 pub use schema::{ComponentSchema, FieldSchema, Layout, SchemaHash};
 
 /// A field type the migration macro can describe to the gate.

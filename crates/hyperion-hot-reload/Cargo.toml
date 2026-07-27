@@ -8,10 +8,15 @@ version.workspace = true
 
 # One shared instance, always. `flecs_ecs` maps a Rust type onto a flecs component id
 # through a process-global counter, and flecs itself keeps its allocator and builtin
-# component ids in C globals. A second statically-linked copy silently aliases both, so
-# there is deliberately no `rlib` here for a module to accidentally link against.
+# component ids in C globals. A second statically-linked copy silently aliases both.
+#
+# The `rlib` is here only so integration tests can link the crate: a dylib-only crate makes
+# `cargo test` fail with "cannot satisfy dependencies so `memchr` only shows up once",
+# because the test harness wants std static while the dylib has it dynamic. Building a game
+# module without `-C prefer-dynamic` will therefore pick the rlib and get its own copy of
+# everything; `AbiToken` exists to catch exactly that, and `tests/abi.rs` proves it does.
 [lib]
-crate-type = ["dylib"]
+crate-type = ["dylib", "rlib"]
 
 [dependencies]
 flecs_ecs.workspace = true
