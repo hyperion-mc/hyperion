@@ -1,0 +1,18 @@
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+hyperion = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
+
+[package]
+edition.workspace = true
+name = "hyperion-event-runner"
+publish = false
+version.workspace = true

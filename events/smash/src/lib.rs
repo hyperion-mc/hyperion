@@ -99,7 +99,7 @@ impl Module for SmashHost {
 ///
 /// # Errors
 /// If the thread count does not fit in the `i32` flecs wants.
-pub fn init_game(address: SocketAddr, crypto: Crypto) -> Result<(), std::num::TryFromIntError> {
+pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
     let world = World::new();
 
     world.import::<HyperionCore>();
