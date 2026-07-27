@@ -70,7 +70,7 @@ thread_local! {
     /// the broadcast path. The buffer is only live for the body of
     /// `encode_including_ids`, which does not call back into itself, so one
     /// slot per thread is enough and a borrow conflict is not reachable.
-    static ENCODE_BUFFER: RefCell<Writer> = RefCell::new(Writer::new());
+    static ENCODE_BUFFER: RefCell<Writer> = const { RefCell::new(Writer::new()) };
 }
 
 impl<P: Encode> PacketBundle for Clientbound<'_, P> {
