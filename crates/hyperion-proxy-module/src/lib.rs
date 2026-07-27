@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::Path};
+use std::{net::SocketAddr, path::PathBuf};
 
 use flecs_ecs::{core::World, prelude::*};
 use hyperion::runtime::AsyncRuntime;
@@ -11,6 +11,30 @@ pub struct HyperionProxyModule;
 pub struct ProxyAddress {
     pub proxy: String,
     pub server: String,
+    /// Where the in-process proxy finds its mTLS material.
+    ///
+    /// These were hardcoded to bare filenames resolved against the working
+    /// directory, so the embedded proxy could only ever start for a server
+    /// launched from a directory holding files with exactly those names, and
+    /// otherwise died in a background task with the failure only in the log.
+    pub certs: ProxyCerts,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProxyCerts {
+    pub root_ca_cert: PathBuf,
+    pub cert: PathBuf,
+    pub private_key: PathBuf,
+}
+
+impl Default for ProxyCerts {
+    fn default() -> Self {
+        Self {
+            root_ca_cert: PathBuf::from("root_ca.crt"),
+            cert: PathBuf::from("proxy.crt"),
+            private_key: PathBuf::from("proxy_private_key.pem"),
+        }
+    }
 }
 
 impl Default for ProxyAddress {
@@ -18,6 +42,7 @@ impl Default for ProxyAddress {
         Self {
             proxy: "0.0.0.0:25565".to_string(),
             server: "127.0.0.1:35565".to_string(),
+            certs: ProxyCerts::default(),
         }
     }
 }
@@ -44,6 +69,7 @@ fn proxy_address_observer(world: &World) {
     query.each(|(addresses, runtime)| {
         let proxy = addresses.proxy.clone();
         let server = addresses.server.clone();
+        let certs = addresses.certs.clone();
 
         runtime.spawn(async move {
             let listener = TcpListener::bind(&proxy).await.unwrap();
@@ -59,9 +85,9 @@ fn proxy_address_observer(world: &World) {
                 listener,
                 addr,
                 server.clone(),
-                Path::new("root_ca.crt"),
-                Path::new("proxy.crt"),
-                Path::new("proxy_private_key.pem"),
+                &certs.root_ca_cert,
+                &certs.cert,
+                &certs.private_key,
             )
             .await
             .unwrap();
