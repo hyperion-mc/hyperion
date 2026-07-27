@@ -5,7 +5,7 @@ use flecs_ecs::prelude::*;
 use hyperion_utils::EntityExt;
 use serde_json::json;
 use sha2::Digest;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span};
 use valence_protocol::{
     Bounded, VarInt,
     packets::{
@@ -18,7 +18,6 @@ use valence_protocol::{
 
 use crate::{
     Prev, Shutdown,
-    command_channel::CommandChannel,
     egress::sync_chunks::ChunkSendQueue,
     ingress::decode::{DecodeModule, queues},
     net::{Compose, MINECRAFT_VERSION, PROTOCOL_VERSION, PacketDecoder},
@@ -168,24 +167,12 @@ fn process_login_hello(world: &World) {
             &AsyncRuntime,
             &SkinHandler,
             &MojangClient,
-            &CommandChannel,
             &IgnMap,
             &Comms,
         )>("process_login_hello")
         .kind(id::<flecs::pipeline::OnUpdate>())
         .each_iter(
-            |it,
-             _,
-             (
-                queue,
-                compose,
-                runtime,
-                skins_collection,
-                mojang,
-                command_channel,
-                ign_map,
-                comms,
-            )| {
+            |it, _, (queue, compose, runtime, skins_collection, mojang, ign_map, comms)| {
                 let world = it.world();
 
                 for packet in std::mem::take(&mut queue.LoginHello) {
