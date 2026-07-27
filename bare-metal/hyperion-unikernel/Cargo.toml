@@ -1,0 +1,32 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-unikernel"
+publish.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow = "1.0.98"
+bytes = "1.8.0"
+hyperion-platform = { path = "../../crates/hyperion-platform" }
+
+[dependencies.valence_bytes]
+branch = "feat-bytes"
+git = "https://github.com/TestingPlant/valence"
+
+[dependencies.valence_protocol]
+branch = "feat-bytes"
+default-features = false
+git = "https://github.com/TestingPlant/valence"
+
+# Linking the kernel is what turns this from an application into a machine
+# image. On a hosted OS the same source builds as an ordinary binary.
+[target.'cfg(target_os = "hermit")'.dependencies.hermit]
+default-features = false
+features = ["acpi", "dhcpv4", "pci", "pci-ids", "smp", "tcp", "virtio-net"]
+git = "https://github.com/hermit-os/hermit-rs"
+tag = "hermit-0.13.2"
+
+[lints]
+workspace = true

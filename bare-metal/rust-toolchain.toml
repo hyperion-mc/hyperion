@@ -1,0 +1,11 @@
+# Pinned to the Hermit kernel's own nightly, and it has to match.
+#
+# The kernel is compiled by a nested cargo invocation and linked into the
+# application, so application `std` and kernel implement two halves of the same
+# `hermit-abi`. Building the application on the main workspace's
+# nightly-2025-02-22 produces an image that boots, prints, and then fails every
+# socket call with an uncategorised error, because that std was built against
+# hermit-abi 0.4 while kernel 0.13.2 answers 0.5. See docs/bare-metal.md.
+[toolchain]
+channel = "nightly-2026-07-01"
+components = ["rust-src", "llvm-tools", "rustfmt", "clippy"]

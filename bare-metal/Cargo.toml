@@ -1,0 +1,27 @@
+# A workspace of its own, on purpose.
+#
+# The unikernel binary needs the Hermit kernel as a git dependency and a
+# different nightly from the one the main workspace pins, and neither belongs in
+# the lockfile every normal build resolves. Keeping it separate means a plain
+# `cargo build` at the repo root neither sees nor fetches any of it.
+
+[workspace]
+members = ["hyperion-unikernel"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+repository = "https://github.com/andrewgazelka/hyperion"
+version = "0.1.0"
+
+[workspace.lints.clippy]
+complexity = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+
+missing_errors_doc = "allow"
