@@ -18,7 +18,8 @@ pub fn read_to_end<R: Read + ?Sized, A: Allocator>(
         }
 
         let spare = buf.spare_capacity_mut();
-        let mut read_buf: BorrowedBuf<'_> = spare.into();
+        // `BorrowedBuf` gained an element type; this one only ever reads bytes.
+        let mut read_buf: BorrowedBuf<'_, u8> = spare.into();
         let mut cursor = read_buf.unfilled();
 
         r.read_buf(cursor.reborrow())?;

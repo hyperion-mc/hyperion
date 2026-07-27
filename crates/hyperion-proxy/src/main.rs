@@ -1,7 +1,7 @@
 use std::{fmt::Debug, net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
-use hyperion_proxy::run_proxy;
+use hyperion_proxy::{ProxyIdentity, run_proxy};
 use serde::Deserialize;
 use tokio::net::TcpListener;
 #[cfg(unix)]
@@ -122,6 +122,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let proxy_addr = ProxyAddress::parse(&params.proxy_addr)?;
 
+    // Read the certificates before binding anything: a typo in a path should
+    // print a path, not leave a listening socket that never completes a
+    // handshake.
+    let identity =
+        ProxyIdentity::from_pem_files(&params.root_ca_cert, &params.cert, &params.private_key)?;
+
     let server_addr: SocketAddr = tokio::net::lookup_host(&params.server)
         .await?
         .next()
@@ -140,32 +146,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ProxyAddress::Tcp(addr) => {
                 let listener = TcpListener::bind(addr).await.unwrap();
                 let socket = NoDelayTcpListener { listener };
-                run_proxy(
-                    socket,
-                    server_addr,
-                    params.server,
-                    &params.root_ca_cert,
-                    &params.cert,
-                    &params.private_key,
-                )
-                .await
-                .unwrap();
+                run_proxy(socket, server_addr, params.server, identity)
+                    .await
+                    .unwrap();
             }
             #[cfg(unix)]
             ProxyAddress::Unix(path) => {
                 // remove file if already exists
                 let _unused = tokio::fs::remove_file(path).await;
                 let listener = UnixListener::bind(path).unwrap();
-                run_proxy(
-                    listener,
-                    server_addr,
-                    "localhost:0".to_string(),
-                    &params.root_ca_cert,
-                    &params.cert,
-                    &params.private_key,
-                )
-                .await
-                .unwrap();
+                run_proxy(listener, server_addr, "localhost:0".to_string(), identity)
+                    .await
+                    .unwrap();
             }
         }
     });

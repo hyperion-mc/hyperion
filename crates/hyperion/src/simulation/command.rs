@@ -132,8 +132,6 @@ pub fn get_command_packet(
 }
 #[cfg(test)]
 mod tests {
-    use flecs_ecs::prelude::*;
-
     use super::*;
 
     #[test]

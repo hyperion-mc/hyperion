@@ -43,7 +43,7 @@ pub struct Flight {
 pub struct FiredBy;
 
 /// What a projectile does to whoever it touches.
-#[derive(Component, Debug, Copy, Clone, PartialEq)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Payload {
     pub damage: f32,
     pub knockback: f32,
@@ -111,7 +111,7 @@ impl Module for ProjectileModule {
             .each_iter(|it, index, (flight, payload)| {
                 let dt = it.delta_time();
                 let projectile = it.entity(index);
-                flight.velocity.y -= flight.gravity * dt;
+                flight.velocity.y = flight.gravity.mul_add(-dt, flight.velocity.y);
                 flight.position += flight.velocity * dt;
                 flight.seconds_left -= dt;
 

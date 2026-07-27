@@ -38,16 +38,11 @@ jobs:
           cache-on-failure: "true"
       - run: nix run --accept-flake-config .#${{ matrix.app }} ${{ matrix.args }}
 
-  # Reported, not enforced. Both fail today on debt that predates the move to
-  # nix apps: cargo-deny finds RUSTSEC advisories reaching in through the
-  # dependency tree plus a license rejection, and cargo-machete finds 11 unused
-  # dependencies. Blocking on either would wedge every PR on work that belongs
-  # to the dependency bump. Run them locally with `nix run .#deny` and
-  # `nix run .#unused-deps`; they become blocking once that lands.
+  # Blocking as of the dependency bump. Every advisory still ignored and every
+  # licence still excepted is named, with its reason, in deny.toml.
   audit:
-    name: ${{ matrix.app }} (advisory)
+    name: ${{ matrix.app }}
     runs-on: ubuntu-latest
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

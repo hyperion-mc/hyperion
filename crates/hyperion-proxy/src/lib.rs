@@ -1,9 +1,4 @@
-#![feature(maybe_uninit_slice)]
-#![feature(allocator_api)]
-#![feature(let_chains)]
 #![feature(never_type)]
-#![feature(stmt_expr_attributes)]
-#![feature(gen_blocks)]
 #![allow(
     clippy::redundant_pub_crate,
     clippy::cast_possible_truncation,
@@ -63,10 +58,53 @@ async fn connect(addr: impl ToSocketAddrs + Debug + Clone) -> TcpStream {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum ShutdownType {
+/// Why the proxy is tearing a player's connection down.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ShutdownType {
     Reconnect,
     Full,
+}
+
+/// The mTLS material a proxy presents to, and validates, the game server with.
+///
+/// Loading is separate from [`run_proxy`] so a missing or malformed file is
+/// reported by whoever owns the paths, before any socket is bound, instead of
+/// surfacing from inside a spawned task.
+#[derive(Debug)]
+pub struct ProxyIdentity {
+    /// The private certificate authority both ends are signed by.
+    pub root_ca_cert: CertificateDer<'static>,
+    /// This proxy's certificate.
+    pub cert: CertificateDer<'static>,
+    /// This proxy's private key.
+    pub private_key: PrivateKeyDer<'static>,
+}
+
+impl ProxyIdentity {
+    /// Reads the three PEM files a proxy needs.
+    pub fn from_pem_files(
+        root_ca_cert: &Path,
+        cert: &Path,
+        private_key: &Path,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            root_ca_cert: CertificateDer::from_pem_file(root_ca_cert).with_context(|| {
+                format!(
+                    "failed to load root certificate authority certificate from {}",
+                    root_ca_cert.display()
+                )
+            })?,
+            cert: CertificateDer::from_pem_file(cert).with_context(|| {
+                format!("failed to load proxy certificate from {}", cert.display())
+            })?,
+            private_key: PrivateKeyDer::from_pem_file(private_key).with_context(|| {
+                format!(
+                    "failed to load proxy private key from {}",
+                    private_key.display()
+                )
+            })?,
+        })
+    }
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
@@ -74,9 +112,7 @@ pub async fn run_proxy(
     mut listener: impl HyperionListener,
     server_addr: impl ToSocketAddrs + Debug + Clone,
     mut server_name: String,
-    root_ca_cert_path: &Path,
-    proxy_cert_path: &Path,
-    proxy_private_key_path: &Path,
+    identity: ProxyIdentity,
 ) -> anyhow::Result<()> {
     // Remove port
     let Some(port_index) = server_name.rfind(':') else {
@@ -86,27 +122,20 @@ pub async fn run_proxy(
 
     let server_name = ServerName::try_from(server_name).context("failed to parse server name")?;
 
-    let root_ca_cert = CertificateDer::from_pem_file(root_ca_cert_path)
-        .context("failed to load root certificate authority certificate")?;
-    let proxy_cert = CertificateDer::from_pem_file(proxy_cert_path)
-        .context("failed to load proxy certificate")?;
-
     let root_cert_store = Arc::new(RootCertStore {
         roots: vec![
-            webpki::anchor_from_trusted_cert(&root_ca_cert)
+            webpki::anchor_from_trusted_cert(&identity.root_ca_cert)
                 .context("failed to create trust anchor")?
                 .to_owned(),
         ],
     });
 
-    let cert_chain = vec![proxy_cert, root_ca_cert];
-    let key_der = PrivateKeyDer::from_pem_file(proxy_private_key_path)
-        .context("failed to load proxy private key")?;
+    let cert_chain = vec![identity.cert, identity.root_ca_cert];
 
     let config = Arc::new(
         ClientConfig::builder()
             .with_root_certificates(root_cert_store)
-            .with_client_auth_cert(cert_chain, key_der)
+            .with_client_auth_cert(cert_chain, identity.private_key)
             .context("failed to create tls client config")?,
     );
 
@@ -333,6 +362,7 @@ where
     }
 }
 
-trait HyperionListener: Listener<Io: Send, Addr: Debug> + 'static {}
+/// The listeners [`run_proxy`] accepts players from: TCP, or a Unix socket.
+pub trait HyperionListener: Listener<Io: Send, Addr: Debug> + 'static {}
 
 impl<L: Listener<Io: Send, Addr: Debug> + 'static> HyperionListener for L {}

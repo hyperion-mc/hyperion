@@ -42,8 +42,12 @@ pub fn get_first_collision(
     let entity = entity.filter(|(entity, _)| owner.is_none_or(|owner| *entity != owner));
 
     // check which one is closest to the Ray don't forget to account for entity size
-    entity.map_or(block.map(Either::Right), |(entity, _)| {
-        let entity_data = entity.get::<(&Position, &EntitySize)>(|(position, size)| {
+    let Some((entity, _)) = entity else {
+        return block.map(Either::Right);
+    };
+
+    let (entity, distance_to_entity) =
+        entity.get::<(&Position, &EntitySize)>(|(position, size)| {
             let entity_aabb = aabb(**position, *size);
 
             #[allow(clippy::redundant_closure_for_method_calls)]
@@ -54,15 +58,12 @@ pub fn get_first_collision(
             (entity, distance_to_entity)
         });
 
-        let (entity, distance_to_entity) = entity_data;
-        block.map_or(Some(Either::Left(entity)), |block_collision| {
-            if distance_to_entity < block_collision.distance {
-                Some(Either::Left(entity))
-            } else {
-                Some(Either::Right(block_collision))
-            }
-        })
-    })
+    match block {
+        Some(block_collision) if block_collision.distance <= distance_to_entity => {
+            Some(Either::Right(block_collision))
+        }
+        _ => Some(Either::Left(entity)),
+    }
 }
 
 fn get_aabb_func<'a>(world: &'a World) -> impl Fn(&Entity) -> Aabb + Send + Sync {

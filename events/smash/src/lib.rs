@@ -3,12 +3,24 @@
 //! The game is an import list. Every subsystem and every kit is a flecs
 //! [`Module`], so a deployment picks its feature set by choosing which modules
 //! to import and a new kit is a new file plus one import line.
+//!
+//! [`SmashModule`] is the game and knows nothing about a host. [`SmashHost`] is
+//! the game plus hyperion, and everything hyperion-shaped lives under it in
+//! [`adapter`], [`mirror`], [`input`] and [`command`].
 
+pub mod adapter;
+pub mod command;
 pub mod flecs_ext;
+pub mod input;
+pub mod mirror;
 pub mod module;
 pub mod server;
 
+use std::net::SocketAddr;
+
 use flecs_ecs::prelude::*;
+use hyperion::{Crypto, GameServerEndpoint, HyperionCore};
+use hyperion_clap::hyperion_command::CommandRegistry;
 
 use crate::module::{
     ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
@@ -44,4 +56,64 @@ impl Module for SmashModule {
         world.import::<ScoreboardModule>();
         world.import::<StockKits>();
     }
+}
+
+/// The game, hosted on hyperion.
+///
+/// Separate from [`SmashModule`] so the game stays testable in a bare world:
+/// every test under `tests/` imports the game and a mock seam, and neither of
+/// them pays for a Minecraft server.
+#[derive(Component)]
+pub struct SmashHost;
+
+impl Module for SmashHost {
+    fn module(world: &World) {
+        world.import::<hyperion_utils::HyperionUtilsModule>();
+        world.import::<hyperion_permission::PermissionModule>();
+        world.import::<hyperion_clap::ClapCommandModule>();
+        // Registers a handler for hyperion's `InteractEvent`. Without one, every
+        // right-click logs "No handlers registered" and the packet is dropped
+        // before the ability layer ever sees it.
+        world.import::<hyperion_item::ItemModule>();
+        // Super Smash Mobs maps are floating platforms over a kill plane, which
+        // this is not. It is a real world the client can load, which is what
+        // makes the thing playable today; a map loader is the follow-up.
+        world.import::<hyperion_genmap::GenMapModule>();
+
+        world.import::<crate::adapter::SmashAdapterModule>();
+
+        world.get::<&mut CommandRegistry>(|registry| {
+            command::register(registry, world);
+        });
+    }
+}
+
+/// Build the world and run it. The entry point `main.rs` calls.
+///
+/// `embedded_proxy` asks for a proxy inside this process, listening on that
+/// address. Running one is the shortest path to a playable server, but it is
+/// optional because the deployed shape is proxies on their own machines --
+/// and because two proxies racing for one port is the sort of thing that
+/// leaves a dev stack half up with no obvious reason why.
+///
+/// # Errors
+/// If the thread count does not fit in the `i32` flecs wants.
+pub fn init_game(address: SocketAddr, crypto: Crypto) -> Result<(), std::num::TryFromIntError> {
+    let world = World::new();
+
+    world.import::<HyperionCore>();
+    world.import::<SmashHost>();
+
+    world.set(crypto);
+    world.set(GameServerEndpoint::from(address));
+
+    let mut app = world.app();
+
+    app.enable_rest(0)
+        .enable_stats(true)
+        .set_threads(i32::try_from(rayon::current_num_threads())?);
+
+    app.run();
+
+    Ok(())
 }

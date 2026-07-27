@@ -18,9 +18,18 @@ let
     in
     pkgs.${attr} or (throw "nixpkgs has no ${attr}, required by Minecraft ${pin.id}");
 
+  # The jar is the one unfree thing in the tree, so it is named to match the
+  # flake's allowUnfreePredicate ("minecraft-" prefixed) and carries the
+  # licence itself. Without both, the policy that is supposed to gate Mojang's
+  # EULA never actually looks at the file it exists for.
   serverJar = pkgs.fetchurl {
+    name = "minecraft-server-${pin.id}.jar";
     inherit (pin.server) url;
     hash = pin.server.sha256;
+    meta = {
+      description = "Mojang's Minecraft ${pin.id} server jar";
+      license = lib.licenses.unfree;
+    };
   };
 
   # Mojang's own data generator. It needs no mappings and never did, which is
@@ -59,9 +68,11 @@ let
   # generator's packets.json carries ids and names but no field information.
   decompiledSources = pkgs.runCommand "minecraft-decompiled-${pin.id}"
     {
-      nativeBuildInputs = [ jdk pkgs.cfr pkgs.unzip ];
+      # No jdk: nixpkgs wraps cfr with its own runtime, so pulling a second
+      # one into the closure buys nothing.
+      nativeBuildInputs = [ pkgs.cfr pkgs.unzip ];
       meta = {
-        description = "Decompiled net.minecraft.network sources for Minecraft ${pin.id}";
+        description = "Decompiled packet and codec sources for Minecraft ${pin.id}";
         license = lib.licenses.unfree;
       };
     }
@@ -76,20 +87,63 @@ let
         exit 1
       fi
       mkdir -p classes && (cd classes && unzip -q "$inner")
+      cd classes
+
+      # Which classes to decompile is decided from the jar rather than from a
+      # list, so that a version bump cannot silently stop covering something.
+      # Three clauses, each for a reason:
+      #
+      #   net/minecraft/network        every packet class lives here
+      #   any class naming StreamCodec every codec definition a packet layout
+      #                                reaches, wherever it lives: BlockPos in
+      #                                core, ItemStack in world/item, the 111
+      #                                data component types in
+      #                                world/item/component
+      #   net/minecraft/core/registries  the registry key table, which is what
+      #                                turns a registry id into a name
+      #
+      # This is 1137 of the jar's 7434 classes and costs about ten seconds;
+      # decompiling everything is minutes for sources nothing reads.
+      { find net/minecraft/network net/minecraft/core/registries -name '*.class'
+        grep -rl StreamCodec --include='*.class' net/minecraft
+      } | sed 's/\$[^/]*\.class$/.class/' | sort -u > outers.txt
+
+      # Inner classes are decompiled into the file of their outermost class, so
+      # each selected class has to bring its siblings along or cfr writes a file
+      # missing the nested codec the extractor came for. The glob is anchored on
+      # '$' so that picking Foo.class does not also drag in FooBar.class.
+      while read -r outer; do
+        printf '%s\n' "$outer"
+        for nested in "''${outer%.class}"\$*.class; do
+          # An `if` rather than `[ -e ] &&`, whose non-zero status on the last
+          # iteration would become the loop's and trip pipefail.
+          if [ -e "$nested" ]; then
+            printf '%s\n' "$nested"
+          fi
+        done
+      done < outers.txt | sort -u > selected.txt
+
+      echo "decompiling $(wc -l < selected.txt) of $(find net/minecraft -name '*.class' | wc -l) classes" >&2
 
       mkdir -p $out
-      # Only the networking tree is decompiled. Decompiling all 7445 classes
-      # costs minutes and adds nothing the extractor reads.
-      (cd classes && cfr --outputdir $out --silent true --comments false \
-        $(find net/minecraft/network -name '*.class' | sort))
+      cfr --outputdir $out --silent true --comments false $(cat selected.txt)
     '';
 
-  # E501 is ignored because both scripts are code emitters: the long lines are
-  # format strings whose layout mirrors the Rust they produce, and reflowing
-  # them makes the generated output harder to read, not the script.
+  # writePython3Bin runs flake8 over each script, which is what keeps them
+  # honest without a separate lint step. Three checks are turned off, each
+  # because it argues with something the code does on purpose:
+  #
+  #   E501  both scripts are code emitters, and the long lines are format
+  #         strings whose layout mirrors the Rust they produce; reflowing them
+  #         makes the generated output harder to read, not the script
+  #   E203  slice bounds are written `text[a : b]` with the spaces PEP 8 asks
+  #         for around a colon in a complex slice, which E203 rejects and
+  #         every current formatter emits
+  #   W503  PEP 8 recommends breaking *before* a binary operator, which is
+  #         what W503 flags; its opposite W504 is the one to keep
   pythonWriterOptions = {
     libraries = [ ];
-    flakeIgnore = [ "E501" ];
+    flakeIgnore = [ "E501" "E203" "W503" ];
   };
 
   extractor = pkgs.writers.writePython3Bin "extract-minecraft-protocol" pythonWriterOptions
@@ -130,7 +184,10 @@ let
   # is an app rather than a derivation.
   updateScript = pkgs.writeShellApplication {
     name = "update-minecraft-data";
-    runtimeInputs = [ pkgs.curl pkgs.jq pkgs.nix ];
+    # git resolves the repository root. writeShellApplication only prepends
+    # these to PATH, so an undeclared tool silently falls through to whatever
+    # the caller happens to have.
+    runtimeInputs = [ pkgs.curl pkgs.git pkgs.jq pkgs.nix pkgs.unzip ];
     text = ''
       manifest=${lib.escapeShellArg pin.manifestUrl}
       target="''${1:-}"
@@ -167,7 +224,7 @@ let
       # inferred from the version string, which has no stable relationship to it.
       tmp=$(mktemp -d)
       trap 'rm -rf "$tmp"' EXIT
-      ${lib.getExe' pkgs.unzip "unzip"} -p "$store" version.json > "$tmp/version.json"
+      unzip -p "$store" version.json > "$tmp/version.json"
 
       jq -n \
         --arg id "$target" \
@@ -208,7 +265,7 @@ let
   # plain `cargo build` works without nix; the check below keeps the two honest.
   syncScript = pkgs.writeShellApplication {
     name = "sync-minecraft-proto";
-    runtimeInputs = [ ];
+    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
     text = ''
       root=$(git rev-parse --show-toplevel)
       dest="$root/crates/hyperion-minecraft-proto/src/generated"

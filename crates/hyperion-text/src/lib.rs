@@ -54,7 +54,7 @@ pub struct Text<'a> {
     pub hover_event: Option<Box<HoverEvent<'a>>>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extra: Vec<Text<'a>>,
+    pub extra: Vec<Self>,
 }
 
 const MAX_TEXT_CHARS: usize = 262_144;

@@ -16,9 +16,7 @@ bvh = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 glam = { workspace = true }
-heapless = { workspace = true }
 hyperion-proto = { workspace = true }
-more-asserts = { workspace = true }
 slotmap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -39,3 +37,7 @@ version.workspace = true
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tikv-jemallocator.workspace = true
+
+[package.metadata.cargo-machete]
+# The lib is `webpki`, not `rustls_webpki`, so cargo-machete never finds the use.
+ignored = ["rustls-webpki"]

@@ -3,11 +3,17 @@
 
 //! Tables generated from Mojang's own data for this protocol version.
 //!
-//! Nothing in here is hand-written, and nothing in here encodes a wire layout:
-//! layouts live in the hand-written codec modules alongside this one.
+//! Nothing in here is hand-written. [`wire`] carries the layouts the extractor
+//! could read off the server's own stream codecs; where it could not, the
+//! layout is absent rather than approximated, and the hand-written codec
+//! modules alongside this one cover the difference.
 
+pub mod data_component;
 pub mod packet_id;
 pub mod registry;
 pub mod version;
+pub mod wire;
 
+pub use data_component::DataComponent;
 pub use version::{MINECRAFT_VERSION, PROTOCOL_VERSION, WORLD_VERSION};
+pub use wire::{Field, Wire};

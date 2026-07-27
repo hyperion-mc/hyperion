@@ -1,28 +1,15 @@
 //! Hyperion
 
-#![feature(type_alias_impl_trait)]
 #![feature(io_error_more)]
-#![feature(trusted_len)]
 #![feature(allocator_api)]
 #![feature(read_buf)]
 #![feature(core_io_borrowed_buf)]
-#![feature(maybe_uninit_slice)]
-#![feature(duration_millis_float)]
 #![feature(sync_unsafe_cell)]
-#![feature(iter_array_chunks)]
-#![feature(assert_matches)]
 #![feature(try_trait_v2)]
-#![feature(let_chains)]
-#![feature(ptr_metadata)]
 #![feature(stmt_expr_attributes)]
-#![feature(array_try_map)]
 #![feature(split_array)]
 #![feature(never_type)]
-#![feature(duration_constructors)]
-#![feature(array_chunks)]
-#![feature(portable_simd)]
 #![feature(trivial_bounds)]
-#![feature(pointer_is_aligned_to)]
 #![feature(thread_local)]
 
 pub const NUM_THREADS: usize = 1;

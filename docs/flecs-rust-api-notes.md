@@ -13,38 +13,21 @@ boxing, no extra indirection over the upstream call.
 
 ---
 
-## Version choice: 0.2.2 from crates.io, not a git pin
+## Version choice: whatever the workspace pins
 
-Not a coin flip. hyperion's own in-flight `refactor/flecs` branch pins
+This crate takes `flecs_ecs = { workspace = true }` and nothing else. Two
+`flecs_ecs` crates in one process would be two component registries and two
+copies of flecs C, so the version is not smash's to choose.
 
-```toml
-[workspace.dependencies.flecs_ecs]
-features = ['flecs_manual_registration']
-version = '0.2.2'
-```
-
-and bumps `rust-toolchain.toml` to `nightly-2025-05-05`. Building this crate
-against anything else would mean the wiring work later has to reconcile two
-versions, which is the opposite of the point.
-
-Independently, `main` is the wrong choice today anyway: it carries unreleased
-breaking work making `World` and `Query` `!Send` and adding a `QueryHandle` for
-parallel access. That is a change hyperion will care about a great deal, and
-adopting it early — in a crate that is meant to slot into hyperion mechanically
-— would guarantee a conflict.
-
-**A real blocker worth knowing.** `flecs_ecs 0.2.2` declares
-`rust-version = "1.88"`, and the repository's current pin is
-`nightly-2025-02-22` = rustc 1.87.0-nightly. `cargo` refuses outright:
-
-```
-error: rustc 1.87.0-nightly is not supported by the following packages:
-  flecs_ecs@0.2.2 requires rustc 1.88
-```
-
-So until the toolchain bump on `refactor/flecs` merges, this crate builds with
-`RUSTUP_TOOLCHAIN=nightly-2025-05-05`, which is the toolchain that branch
-already pins. Nothing else is needed.
+The original note here argued for crates.io 0.2.2 on the grounds that the
+in-flight `refactor/flecs` branch pinned it and building against anything else
+would mean reconciling two versions later. That reasoning still holds; the
+answer changed because the workspace moved. It now pins upstream `main`, for
+the unreleased `!Send` work this note anticipated: `World` and `Query` are
+`!Send` with a `QueryHandle` for the cross-thread case, which let hyperion
+delete a hand-rolled `unsafe impl Send`. See the comment on
+`[workspace.dependencies.flecs_ecs]` in the root `Cargo.toml` for the pin and
+the upstream fix it carries.
 
 ---
 

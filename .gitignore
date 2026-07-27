@@ -5,6 +5,8 @@
 *.zip
 
 /result
+/result-*
+__pycache__/
 
 # IDE Configs
 /.vscode
@@ -30,6 +32,10 @@ vendor/
 /extractor/classes
 /extractor/run
 /extractor/bin
-.trigger-*
+
+# `nix run .#certs` writes the development certificate authority and both
+# private keys here.
+/certs
 valence/
 .hyperion-dev-certs/
+.dev-certs/

@@ -71,10 +71,10 @@ pub fn read<'a>(reader: &mut Reader<'a>) -> Result<Cow<'a, str>> {
 }
 
 fn decode(bytes: &[u8]) -> Result<Cow<'_, str>> {
-    if bytes.iter().all(|byte| *byte < 0xF0) {
-        if let Ok(text) = std::str::from_utf8(bytes) {
-            return Ok(Cow::Borrowed(text));
-        }
+    if bytes.iter().all(|byte| *byte < 0xF0)
+        && let Ok(text) = std::str::from_utf8(bytes)
+    {
+        return Ok(Cow::Borrowed(text));
     }
     decode_surrogates(bytes).map(Cow::Owned)
 }

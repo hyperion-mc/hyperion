@@ -1,6 +1,3 @@
-#![feature(allocator_api)]
-#![feature(let_chains)]
-#![feature(stmt_expr_attributes)]
 #![feature(exact_size_is_empty)]
 
 use std::net::SocketAddr;
@@ -15,7 +12,7 @@ use crate::{
     module::{
         attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
         damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
-        stats::StatsModule, vanish::VanishModule,
+        tab_list::TabListModule, vanish::VanishModule,
     },
     skin::SkinModule,
 };
@@ -109,7 +106,7 @@ impl Module for BedwarsModule {
 
         world.import::<SpawnModule>();
         world.import::<ChatModule>();
-        world.import::<StatsModule>();
+        world.import::<TabListModule>();
         world.import::<BlockModule>();
         world.import::<AttackModule>();
         world.import::<BowModule>();

@@ -133,17 +133,49 @@ fn has_kind(entity: EntityView<'_>, kind: sys::ecs_entity_t) -> bool {
 }
 
 /// The members of a struct type, in offset order.
+///
+/// Read out of the `EcsStruct` member vector rather than by walking child
+/// entities. flecs 4.1.6 stopped creating a child entity per member unless the
+/// type opts in with `create_member_entities`, so the child walk this used to do
+/// silently found nothing and turned every reflected component into
+/// `Layout::Unknown` -- a gate that sees no fields cannot see a field change.
+/// The member vector is what flecs itself serializes from, so it is the
+/// authoritative list whether or not the entities exist.
 fn members_of(ty: EntityView<'_>) -> Vec<(String, sys::ecs_entity_t, i32, i32)> {
-    let mut out = Vec::new();
-    ty.each_child(|child| {
-        if !child.has(<flecs::meta::Member as FlecsConstantId>::ID) {
-            return;
-        }
-        child.get::<&flecs::meta::Member>(|m| {
-            out.push((child.name(), m.type_, m.offset, m.count));
-        });
-    });
-    // flecs stores members as child entities and does not promise an order.
+    let world = ty.world().ptr_mut();
+    let members = unsafe { sys::ecs_get_id(world, *ty.id(), sys::FLECS_IDEcsStructID_) };
+    if members.is_null() {
+        return Vec::new();
+    }
+
+    // SAFETY: the entity has EcsStruct, so the pointer is one, and flecs keeps
+    // `members` a vector of `ecs_member_t` for the lifetime of the type.
+    let vec = unsafe { &(*members.cast::<sys::EcsStruct>()).members };
+    let count = usize::try_from(vec.count).unwrap_or(0);
+    if vec.array.is_null() || count == 0 {
+        return Vec::new();
+    }
+    let entries =
+        unsafe { std::slice::from_raw_parts(vec.array.cast::<sys::ecs_member_t>(), count) };
+
+    let mut out: Vec<_> = entries
+        .iter()
+        .map(|m| {
+            let name = if m.name.is_null() {
+                String::new()
+            } else {
+                // SAFETY: flecs owns this string and keeps it for the type's lifetime.
+                unsafe { std::ffi::CStr::from_ptr(m.name) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            (name, m.type_, m.offset, m.count)
+        })
+        .collect();
+
+    // Declaration order is the vector's order, but the schema is compared by
+    // layout, so sort by offset to stay stable against a reordered declaration
+    // that produces the same layout.
     out.sort_by(|a, b| (a.2, &a.0).cmp(&(b.2, &b.0)));
     out
 }
@@ -160,7 +192,7 @@ fn constants_of(ty: EntityView<'_>) -> Vec<String> {
         }
         out.push((*child.id(), child.name()));
     });
-    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.sort_by_key(|&(id, _)| id);
     out.into_iter().map(|(_, name)| name).collect()
 }
 
