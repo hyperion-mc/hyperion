@@ -33,15 +33,40 @@ impl MinecraftCommand for KitCommand {
         let world = system.world();
         let player = caller.entity_view(world);
 
-        let message = match lobby::select_kit(&world, player, &self.name) {
-            // select_kit already sends the confirmation and the new hotbar
-            // through the seam, so there is nothing left to say here.
-            Ok(()) => return,
-            Err(reason) => format!("§c{reason}"),
+        // A Minecraft command argument is one whitespace-delimited token, and
+        // half the kit names in Super Smash Mobs have a space in them. Matching
+        // on the squashed name is what lets `/kit irongolem` mean "Iron Golem"
+        // without the game's own registry having to care.
+        let Some(canonical) = resolve(&world, &self.name) else {
+            tell(world, caller, "§cNo such kit. Try /kits.");
+            return;
         };
 
-        tell(world, caller, &message);
+        if let Err(reason) = lobby::select_kit(&world, player, canonical) {
+            tell(world, caller, &format!("§c{reason}"));
+        }
+        // On success select_kit has already sent the confirmation and the new
+        // hotbar through the seam.
     }
+}
+
+/// The registered kit whose name matches `requested` once case and punctuation
+/// are discarded.
+fn resolve(world: &flecs_ecs::core::WorldRef<'_>, requested: &str) -> Option<&'static str> {
+    let wanted = squash(requested);
+    kit::registry(world).into_iter().find_map(|id| {
+        world
+            .entity_from_id(id)
+            .try_get::<&KitName>(|name| name.0)
+            .filter(|name| squash(name) == wanted)
+    })
+}
+
+fn squash(name: &str) -> String {
+    name.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }
 
 #[derive(Parser, CommandPermission, Debug)]

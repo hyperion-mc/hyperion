@@ -18,12 +18,17 @@ use crate::{
         ability,
         arena::Arena,
         damage::{self, DamageKind, Damaged},
-        kit::{KitStats, Playing},
+        kit::{self, KitStats, Playing},
         knockback::Knockback,
         player::{Player, Position},
     },
     server::PlayerId,
 };
+
+/// Set when a player's kit changes and cleared once their hotbar has been
+/// rebuilt from it.
+#[derive(Component)]
+struct HotbarStale;
 
 #[derive(Component)]
 pub struct InputModule;
@@ -102,6 +107,41 @@ impl Module for InputModule {
                         kind: DamageKind::Melee,
                     });
                 }
+            });
+
+        // A kit is picked from inside a command, which runs inside a flecs
+        // system, so every `add` that `kit::apply` makes is deferred: the
+        // ability entities and the `(Grants, ability)` edges do not exist yet
+        // when `select_kit` reads them back to build a hotbar, and the player
+        // gets an empty one.
+        //
+        // Marking the player instead and rebuilding on a later tick is what
+        // makes the hotbar arrive, because by the time a system runs again
+        // every one of those deferred operations has been committed.
+        world.component::<HotbarStale>();
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with((Playing, id::<flecs::Wildcard>()))
+            .with(Player::id())
+            .each_entity(|player, ()| {
+                player.add(HotbarStale::id());
+            });
+
+        world
+            .system_named::<&PlayerId>("smash::push_stale_hotbars")
+            .kind(id::<flecs::pipeline::PostUpdate>())
+            .with(Player::id())
+            .with(HotbarStale::id())
+            .each_entity(|player, id| {
+                let hotbar = kit::hotbar(player);
+                if hotbar.is_empty() {
+                    return;
+                }
+                let id = *id;
+                player
+                    .world()
+                    .get::<&crate::server::ServerHandle>(|server| server.set_hotbar(id, &hotbar));
+                player.remove(HotbarStale::id());
             });
 
         // The game owns health, so the client's bar has to be told about the

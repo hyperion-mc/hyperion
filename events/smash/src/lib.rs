@@ -72,6 +72,10 @@ impl Module for SmashHost {
         world.import::<hyperion_utils::HyperionUtilsModule>();
         world.import::<hyperion_permission::PermissionModule>();
         world.import::<hyperion_clap::ClapCommandModule>();
+        // Registers a handler for hyperion's `InteractEvent`. Without one, every
+        // right-click logs "No handlers registered" and the packet is dropped
+        // before the ability layer ever sees it.
+        world.import::<hyperion_item::ItemModule>();
         // Super Smash Mobs maps are floating platforms over a kill plane, which
         // this is not. It is a real world the client can load, which is what
         // makes the thing playable today; a map loader is the follow-up.

@@ -5703,6 +5703,7 @@ dependencies = [
  "hyperion-clap",
  "hyperion-genmap",
  "hyperion-inventory",
+ "hyperion-item",
  "hyperion-permission",
  "hyperion-proxy-module",
  "hyperion-utils",
