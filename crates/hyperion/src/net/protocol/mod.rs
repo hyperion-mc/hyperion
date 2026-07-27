@@ -1,10 +1,9 @@
 //! Serving Minecraft 26.2 (protocol 776) with `hyperion-minecraft-proto`.
 //!
-//! Everything under here is behind the `proto-776` feature. The 763 path in
-//! [`crate::ingress`] and [`crate::egress::player_join`] is unchanged and still
-//! the default; this module replaces exactly the pre-play state machine and the
-//! packets that put a player in the world, because those are the parts whose
-//! wire format 776 changed beyond porting.
+//! This module holds the seam every clientbound 776 packet goes through: a
+//! body from the proto crate paired with the id for the state it is sent in.
+//! The proto crate deliberately keeps ids out of the bodies, because the same
+//! body has different ids in different states.
 //!
 //! The transport does not change with the protocol. hyperion frames packets
 //! itself -- a `VarInt` length, then an optionally zlib-compressed body with a

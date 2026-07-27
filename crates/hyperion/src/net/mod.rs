@@ -27,7 +27,6 @@ pub mod agnostic;
 pub mod decoder;
 pub mod encoder;
 pub mod intermediate;
-pub mod packets;
 pub mod protocol;
 pub mod proxy;
 
