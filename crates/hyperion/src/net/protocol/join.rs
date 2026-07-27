@@ -35,35 +35,21 @@ const LEVEL: &str = "minecraft:overworld";
 /// at 63; the client uses it for fog and water ambience before it has a chunk.
 const SEA_LEVEL: i32 = 63;
 
-/// Send the join sequence and leave the client in play.
+/// The level description both [`Login`] and a later respawn carry.
+///
+/// Shared rather than written out twice: a respawn whose spawn info disagrees
+/// with the one the client joined on is how a client ends up rendering the
+/// wrong horizon or the wrong water level, and neither is an error anywhere.
 ///
 /// # Errors
-/// Returns an error when a packet fails to encode or when the world has no
-/// `minecraft:overworld` dimension type, which would mean [`registries`] and
-/// the level key here have drifted apart.
-pub fn enter_world(
-    world: &WorldRef<'_>,
-    entity: EntityView<'_>,
-    compose: &Compose,
-    connection_id: ConnectionId,
-) -> anyhow::Result<()> {
+/// Returns an error when the world has no `minecraft:overworld` dimension
+/// type, which would mean [`registries`] and [`LEVEL`] have drifted apart.
+pub fn spawn_info() -> anyhow::Result<CommonPlayerSpawnInfo<'static>> {
     let dimension_type = registries::DIMENSION_TYPE
         .id_of(LEVEL)
         .ok_or_else(|| anyhow::anyhow!("no dimension type named {LEVEL}"))?;
 
-    let (position, yaw, pitch) = entity
-        .try_get::<(&Position, &Yaw, &Pitch)>(|(position, yaw, pitch)| (**position, **yaw, **pitch))
-        .ok_or_else(|| anyhow::anyhow!("player finished configuration without a spawn position"))?;
-
-    let (max_players, chunk_radius, simulation_distance) = world.get::<&Config>(|config| {
-        (
-            config.max_players,
-            i32::from(config.view_distance),
-            config.simulation_distance,
-        )
-    });
-
-    let spawn_info = CommonPlayerSpawnInfo {
+    Ok(CommonPlayerSpawnInfo {
         dimension_type,
         dimension: LEVEL,
         // The client only uses this to seed its own biome noise, and this
@@ -76,7 +62,32 @@ pub fn enter_world(
         last_death_location: None,
         portal_cooldown: 0,
         sea_level: SEA_LEVEL,
-    };
+    })
+}
+
+/// Send the join sequence and leave the client in play.
+///
+/// # Errors
+/// Returns an error when a packet fails to encode or when the world has no
+/// `minecraft:overworld` dimension type, which would mean [`registries`] and
+/// the level key here have drifted apart.
+pub fn enter_world(
+    world: &WorldRef<'_>,
+    entity: EntityView<'_>,
+    compose: &Compose,
+    connection_id: ConnectionId,
+) -> anyhow::Result<()> {
+    let (position, yaw, pitch) = entity
+        .try_get::<(&Position, &Yaw, &Pitch)>(|(position, yaw, pitch)| (**position, **yaw, **pitch))
+        .ok_or_else(|| anyhow::anyhow!("player finished configuration without a spawn position"))?;
+
+    let (max_players, chunk_radius, simulation_distance) = world.get::<&Config>(|config| {
+        (
+            config.max_players,
+            i32::from(config.view_distance),
+            config.simulation_distance,
+        )
+    });
 
     send(compose, connection_id, PacketId::Login.to_raw(), &Login {
         player_id: entity.minecraft_id(),
@@ -88,7 +99,7 @@ pub fn enter_world(
         reduced_debug_info: false,
         show_death_screen: false,
         do_limited_crafting: false,
-        spawn_info,
+        spawn_info: spawn_info()?,
         online_mode: false,
         enforces_secure_chat: false,
     })?;
