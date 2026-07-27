@@ -56,6 +56,18 @@
             inherit components;
           };
 
+          # Anything derived from Mojang's server jar is unfree under their EULA,
+          # so it gets an instance whose unfree allowance is narrowed to exactly
+          # those derivations. Flipping allowUnfree on the shared instance would
+          # quietly relax the policy for the whole flake.
+          minecraftPkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfreePredicate =
+              pkg: nixpkgs.lib.hasPrefix "minecraft-" (nixpkgs.lib.getName pkg);
+          };
+
+          minecraft = import ./nix/minecraft-data.nix { pkgs = minecraftPkgs; };
+
           rustToolchain = rustWith [ "rustfmt" "clippy" "rust-src" ];
           rustWithMiri = rustWith [ "rustfmt" "clippy" "rust-src" "miri" ];
           rustWithCoverage = rustWith [ "rustfmt" "clippy" "rust-src" "llvm-tools-preview" ];
@@ -247,16 +259,32 @@
               type = "app";
               program = lib.getExe script;
             })
-            (scripts // { default = scripts.dev; });
+            (scripts // {
+              default = scripts.dev;
+              update-minecraft-data = minecraft.updateScript;
+              sync-minecraft-proto = minecraft.syncScript;
+              extract-minecraft-protocol = minecraft.extractor;
+            });
 
           packages = {
             default = workspace.binaries.bedwars;
             inherit (workspace.binaries) bedwars hyperion-proxy rust-mc-bot;
+
+            minecraft-server-jar = minecraft.serverJar;
+            minecraft-data = minecraft.generatedData;
+            minecraft-decompiled = minecraft.decompiledSources;
+            minecraft-protocol = minecraft.protocolJson;
+            minecraft-proto-rust = minecraft.generatedRust;
           };
 
           # `nix flake check` builds every app, which is what proves each one
           # passes shellcheck and that its tools resolve.
-          checks = scripts;
+          checks = scripts // {
+            # The committed generated sources must match what the pipeline
+            # produces, or the copy cargo reads is a fiction.
+            minecraft-proto-generated = minecraft.generatedUpToDate;
+            minecraft-protocol = minecraft.protocolJson;
+          };
 
         };
     in
