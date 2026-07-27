@@ -38,7 +38,7 @@ use hyperion_minecraft_proto::{
         status::clientbound::{PongResponse, StatusResponse},
     },
     types::{
-        ClientIntent, GameProfile, Identifier, Uuid as ProtoUuid, VarInt,
+        ClientIntent, GameProfile, Identifier, Uuid as ProtoUuid,
         registry_synchronization::PackedRegistryEntry,
     },
 };
@@ -137,11 +137,11 @@ fn handshake(world: &World) {
                 // path. A client on any version may ping, and answering the
                 // ping is how it learns which version to be.
                 if intention.intention != ClientIntent::Status
-                    && intention.protocol_version.0 != PROTOCOL_VERSION
+                    && intention.protocol_version != PROTOCOL_VERSION
                 {
                     warn!(
                         "client speaks protocol {} but this server speaks {PROTOCOL_VERSION}",
-                        intention.protocol_version.0
+                        intention.protocol_version
                     );
                 }
 
@@ -343,7 +343,7 @@ fn login_hello(
         compose,
         connection_id,
         packet_id::login::clientbound::PacketId::LoginCompression.to_raw(),
-        &LoginCompression(VarInt(threshold.0)),
+        &LoginCompression(threshold.0),
     )?;
     decoder.set_compression(threshold);
 
