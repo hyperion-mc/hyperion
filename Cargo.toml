@@ -40,6 +40,7 @@ members = [
     'crates/packet-channel',
     'crates/simd-utils',
     'events/bedwars',
+    'events/smash',
     'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
