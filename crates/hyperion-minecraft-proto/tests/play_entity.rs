@@ -2,18 +2,18 @@
 //!
 //! # Provenance
 //!
-//! Every hex string below was printed by `nix/java/VanillaEncoder.java`'s
-//! `playPackets()`, which drives the real `StreamCodec`s in the pinned
-//! `server-26.2.jar`. The vectors are not read from
-//! `tests/fixtures/vanilla.json` the way `tests/world.rs` reads its own,
-//! because that harness does not currently run against 26.2: it names
-//! `EntityType.PIG`, which moved to `EntityTypes`, it builds item stacks before
-//! anything has bound item component prototypes, and its
-//! `PalettedContainerFactory` call wants a registry a bare harness has not
-//! loaded. The values here came from running that same file with those three
-//! defects patched out, so they are Mojang's bytes; once the harness builds,
-//! these belong in `vanilla.json` and this file should read them from
-//! [`vanilla_fixtures`] instead. ENG-10435 tracks the three defects.
+//! Every expected value is read from `tests/fixtures/vanilla.json`, which
+//! `nix/java/VanillaEncoder.java` writes by driving the real `StreamCodec`s in
+//! the pinned `server-26.2.jar`. So a failure here says this crate disagrees
+//! with Mojang's encoder, and the `minecraft-encoder-fixtures` flake check
+//! says the committed fixtures still match the jar.
+//!
+//! Two inputs are still spelled out rather than looked up, and both are inputs
+//! rather than expectations: the truncated body in
+//! [`set_entity_data_rejects_a_body_that_is_not_terminated`], which is a
+//! malformed packet no encoder would produce, and the ten serializer ids in
+//! [`entity_data_serializer_ids_match_the_server`], which are compared against
+//! the harness's own `entity_data_serializer.*` values.
 
 mod vanilla_fixtures;
 
@@ -28,12 +28,20 @@ use hyperion_minecraft_proto::{
     types::Vec3,
 };
 
-/// The `minecraft:entity_type` id of `minecraft:pig` in 26.2, from the harness.
-const PIG: RegistryId = RegistryId(100);
-/// The `minecraft:item` id of `minecraft:diamond_sword`, from the harness.
-const DIAMOND_SWORD: i32 = 964;
-/// The `minecraft:item` id of `minecraft:stone`, from the harness.
-const STONE: i32 = 1;
+/// The `minecraft:entity_type` id of `minecraft:pig` in 26.2.
+fn pig() -> RegistryId {
+    RegistryId(vanilla_fixtures::number("entity_type_id.pig"))
+}
+
+/// The `minecraft:item` id of `minecraft:diamond_sword`.
+fn diamond_sword() -> i32 {
+    vanilla_fixtures::number("item_id.diamond_sword")
+}
+
+/// The `minecraft:item` id of `minecraft:stone`.
+fn stone() -> i32 {
+    vanilla_fixtures::number("item_id.stone")
+}
 
 /// A `UUID` with every byte distinct, so a transposed half shows up.
 const PROFILE_ID: Uuid = Uuid(0x0011_2233_4455_6677_8899_aabb_ccdd_eeff);
@@ -47,18 +55,6 @@ impl NbtScan for NoNbt {
     fn tag_len(&self, _bytes: &[u8]) -> Result<usize> {
         panic!("no fixture in this file carries an NBT-shaped component")
     }
-}
-
-fn hex(text: &str) -> Vec<u8> {
-    assert!(
-        text.len().is_multiple_of(2),
-        "hex fixture has an odd length"
-    );
-    (0..text.len() / 2)
-        .map(|index| {
-            u8::from_str_radix(&text[index * 2..index * 2 + 2], 16).expect("hex fixture digit")
-        })
-        .collect()
 }
 
 fn encode<T: Encode>(value: &T) -> Vec<u8> {
@@ -122,11 +118,16 @@ fn packed_degrees_match_mth() {
     // `Mth.packDegrees` floors, so 179.9 and -179.9 land on opposite ends of
     // the byte rather than on the same value; a round-to-nearest port would
     // agree on 0 and 90 and differ on both of these.
-    assert_eq!(pack_degrees(0.0), 0);
-    assert_eq!(pack_degrees(90.0), 64);
-    assert_eq!(pack_degrees(-45.5), -33);
-    assert_eq!(pack_degrees(179.9), 127);
-    assert_eq!(pack_degrees(-179.9), -128);
+    for (degrees, fixture) in [
+        (0.0_f32, "packed_degrees.0"),
+        (90.0, "packed_degrees.90"),
+        (-45.5, "packed_degrees.-45.5"),
+        (179.9, "packed_degrees.179.9"),
+        (-179.9, "packed_degrees.-179.9"),
+    ] {
+        let expected = i8::try_from(vanilla_fixtures::number(fixture)).expect("a byte");
+        assert_eq!(pack_degrees(degrees), expected, "{fixture}");
+    }
 }
 
 #[test]
@@ -141,16 +142,16 @@ fn unpacking_a_degree_byte_inverts_the_packing() {
 /// Every `Vec3.LP_STREAM_CODEC` case the harness printed: the zero shortcut,
 /// scales inside the two marker bits, the first scale needing a continuation,
 /// and the clamping of a vector past `ABS_MAX_VALUE`.
-const LP_VECTORS: &[(&str, [f64; 3], &str)] = &[
-    ("zero", [0.0, 0.0, 0.0], "00"),
-    ("subnormal", [1.0e-6, -1.0e-6, 0.0], "00"),
-    ("small", [0.25, -0.5, 0.125], "f97f8ffe8002"),
-    ("scale_one_exact", [1.0, -1.0, 0.5], "f1ffbffe0003"),
-    ("scale_three", [2.0, -1.0, 3.0], "4b55fffcaaab"),
-    ("scale_four", [1.5, -3.25, 2.0], "fcbfbffe300201"),
-    ("scale_large", [100.5, -0.5, 20.0], "6dfd9956febb19"),
-    ("clamped", [1.0e12, -1.0e12, 0.0], "f7ff7ffe0003ffffffff0f"),
-    ("nan", [f64::NAN, 1.0, f64::NAN], "f9ff7ffffff9"),
+const LP_VECTORS: &[(&str, [f64; 3])] = &[
+    ("zero", [0.0, 0.0, 0.0]),
+    ("subnormal", [1.0e-6, -1.0e-6, 0.0]),
+    ("small", [0.25, -0.5, 0.125]),
+    ("scale_one_exact", [1.0, -1.0, 0.5]),
+    ("scale_three", [2.0, -1.0, 3.0]),
+    ("scale_four", [1.5, -3.25, 2.0]),
+    ("scale_large", [100.5, -0.5, 20.0]),
+    ("clamped", [1.0e12, -1.0e12, 0.0]),
+    ("nan", [f64::NAN, 1.0, f64::NAN]),
 ];
 
 const fn vec3(components: [f64; 3]) -> Vec3 {
@@ -163,12 +164,12 @@ const fn vec3(components: [f64; 3]) -> Vec3 {
 
 #[test]
 fn lp_vec3_matches_the_server() {
-    for (name, components, expected) in LP_VECTORS {
+    for (name, components) in LP_VECTORS {
         let mut writer = Writer::new();
         lp_vec3::encode(&vec3(*components), &mut writer).expect("encode");
         assert_eq!(
             vanilla_fixtures::hex(writer.as_slice()),
-            *expected,
+            vanilla_fixtures::get(&format!("lp_vec3.{name}")),
             "lp_vec3.{name}"
         );
     }
@@ -180,8 +181,9 @@ fn lp_vec3_decodes_to_a_value_that_re_encodes_identically() {
     // through the bytes rather than the one through the value: a decoder that
     // shifted a component would produce a different vector and, on the way
     // back, different bytes.
-    for (name, _, expected) in LP_VECTORS {
-        let bytes = hex(expected);
+    for (name, _) in LP_VECTORS {
+        let fixture = format!("lp_vec3.{name}");
+        let bytes = vanilla_fixtures::bytes(&fixture);
         let mut reader = Reader::new(&bytes);
         let decoded = lp_vec3::decode(&mut reader).expect("decode");
         reader.finish().expect("consumed");
@@ -190,8 +192,8 @@ fn lp_vec3_decodes_to_a_value_that_re_encodes_identically() {
         lp_vec3::encode(&decoded, &mut writer).expect("encode");
         assert_eq!(
             vanilla_fixtures::hex(writer.as_slice()),
-            *expected,
-            "lp_vec3.{name}"
+            vanilla_fixtures::get(&fixture),
+            "{fixture}"
         );
     }
 }
@@ -203,7 +205,7 @@ fn set_entity_motion_matches_the_server() {
             id: 0x2A,
             movement: vec3([0.25, -0.5, 0.125]),
         },
-        &hex("2af97f8ffe8002"),
+        &vanilla_fixtures::bytes("packet.set_entity_motion.small"),
     );
 }
 
@@ -216,7 +218,7 @@ fn a_still_entity_costs_one_velocity_byte() {
             id: 0x2A,
             movement: vec3([0.0, 0.0, 0.0]),
         }),
-        hex("2a00")
+        vanilla_fixtures::bytes("packet.set_entity_motion.zero")
     );
 }
 
@@ -228,7 +230,7 @@ fn add_entity_matches_the_server() {
         &AddEntity {
             id: 0x2A,
             uuid: PROFILE_ID,
-            r#type: PIG,
+            r#type: pig(),
             x: 1.5,
             y: 64.0625,
             z: -2.25,
@@ -238,10 +240,7 @@ fn add_entity_matches_the_server() {
             y_head_rot: pack_degrees(179.9),
             data: 7,
         },
-        &hex(
-            "2a00112233445566778899aabbccddeeff643ff80000000000004050040000000000c0020000000000\
-             00f97f8ffe800208df7f07",
-        ),
+        &vanilla_fixtures::bytes("packet.add_entity"),
     );
 }
 
@@ -290,7 +289,7 @@ fn harness_data_values() -> DataValues {
         )
         .expect("absent optional component");
     values
-        .push(9, EntityDataSerializer::ItemStack, &stack(DIAMOND_SWORD, 3))
+        .push(9, EntityDataSerializer::ItemStack, &stack(diamond_sword(), 3))
         .expect("item stack");
     values
         .push(10, EntityDataSerializer::ItemStack, &Slot::Empty)
@@ -308,10 +307,7 @@ fn text(literal: &str) -> Component<'_> {
 #[test]
 fn set_entity_data_matches_the_server() {
     let values = harness_data_values();
-    let expected = hex(
-        "2a0000210101aef6ffff0f0202cb89ec8ff72303034148000004040568656c6c6f0508010605080002686907\
-         06010800026869080600090703c40700000a07000b0a0000004000003ffeff",
-    );
+    let expected = vanilla_fixtures::bytes("packet.set_entity_data");
     round_trip(
         &SetEntityData {
             id: 0x2A,
@@ -335,13 +331,16 @@ fn set_entity_data_with_nothing_to_send_is_the_terminator_alone() {
             id: 1,
             packed_items: &[],
         },
-        &hex("01ff"),
+        &vanilla_fixtures::bytes("packet.set_entity_data.empty"),
     );
 }
 
 #[test]
 fn set_entity_data_rejects_a_body_that_is_not_terminated() {
-    let bytes = hex("2a000021");
+    // Hand-made rather than a fixture: this is a body the harness cannot
+    // produce, being the first entry of `packet.set_entity_data` with its
+    // terminator cut off.
+    let bytes = [0x2A, 0x00, 0x00, 0x21];
     let mut reader = Reader::new(&bytes);
     SetEntityData::decode(&mut reader).expect_err("unterminated run");
 }
@@ -350,16 +349,21 @@ fn set_entity_data_rejects_a_body_that_is_not_terminated() {
 fn entity_data_serializer_ids_match_the_server() {
     // The ten the harness pinned. Nothing else in the table is exercised by a
     // fixture, which is why the ids are stated here rather than assumed.
-    assert_eq!(EntityDataSerializer::Byte.to_raw(), 0);
-    assert_eq!(EntityDataSerializer::Int.to_raw(), 1);
-    assert_eq!(EntityDataSerializer::Long.to_raw(), 2);
-    assert_eq!(EntityDataSerializer::Float.to_raw(), 3);
-    assert_eq!(EntityDataSerializer::String.to_raw(), 4);
-    assert_eq!(EntityDataSerializer::Component.to_raw(), 5);
-    assert_eq!(EntityDataSerializer::OptionalComponent.to_raw(), 6);
-    assert_eq!(EntityDataSerializer::ItemStack.to_raw(), 7);
-    assert_eq!(EntityDataSerializer::Boolean.to_raw(), 8);
-    assert_eq!(EntityDataSerializer::BlockPos.to_raw(), 10);
+    for (serializer, fixture) in [
+        (EntityDataSerializer::Byte, "byte"),
+        (EntityDataSerializer::Int, "int"),
+        (EntityDataSerializer::Long, "long"),
+        (EntityDataSerializer::Float, "float"),
+        (EntityDataSerializer::String, "string"),
+        (EntityDataSerializer::Component, "component"),
+        (EntityDataSerializer::OptionalComponent, "optional_component"),
+        (EntityDataSerializer::ItemStack, "item_stack"),
+        (EntityDataSerializer::Boolean, "boolean"),
+        (EntityDataSerializer::BlockPos, "block_pos"),
+    ] {
+        let name = format!("entity_data_serializer.{fixture}");
+        assert_eq!(serializer.to_raw(), vanilla_fixtures::number(&name), "{name}");
+    }
 }
 
 // --- equipment ------------------------------------------------------------
@@ -368,8 +372,14 @@ fn entity_data_serializer_ids_match_the_server() {
 fn equipment_slot_ordinals_match_the_server() {
     // `SetEquipment` sends the ordinal, not `EquipmentSlot.STREAM_CODEC`'s id,
     // and the two disagree on exactly these two constants.
-    assert_eq!(EquipmentSlot::OffHand.to_raw(), 1);
-    assert_eq!(EquipmentSlot::Head.to_raw(), 5);
+    assert_eq!(
+        EquipmentSlot::OffHand.to_raw(),
+        u8::try_from(vanilla_fixtures::number("equipment_slot.offhand")).expect("a byte")
+    );
+    assert_eq!(
+        EquipmentSlot::Head.to_raw(),
+        u8::try_from(vanilla_fixtures::number("equipment_slot.head")).expect("a byte")
+    );
     for (ordinal, slot) in EquipmentSlot::VALUES.iter().enumerate() {
         let raw = u8::try_from(ordinal).expect("eight slots");
         assert_eq!(slot.to_raw(), raw);
@@ -402,7 +412,7 @@ fn set_equipment_matches_the_server() {
             slots: vec![
                 EquipmentEntry {
                     slot: EquipmentSlot::MainHand,
-                    item: stack(DIAMOND_SWORD, 1),
+                    item: stack(diamond_sword(), 1),
                 },
                 EquipmentEntry {
                     slot: EquipmentSlot::Head,
@@ -410,11 +420,11 @@ fn set_equipment_matches_the_server() {
                 },
                 EquipmentEntry {
                     slot: EquipmentSlot::Saddle,
-                    item: stack(STONE, 64),
+                    item: stack(stone(), 64),
                 },
             ],
         },
-        &hex("2a8001c407000085000740010000"),
+        &vanilla_fixtures::bytes("packet.set_equipment"),
     );
 }
 
@@ -425,10 +435,10 @@ fn a_single_equipment_slot_carries_no_continuation_bit() {
             entity: 1,
             slots: vec![EquipmentEntry {
                 slot: EquipmentSlot::OffHand,
-                item: stack(STONE, 2),
+                item: stack(stone(), 2),
             }],
         },
-        &hex("010102010000"),
+        &vanilla_fixtures::bytes("packet.set_equipment.single"),
     );
 }
 
@@ -454,21 +464,21 @@ fn damage_event_folds_absence_into_the_entity_id() {
     round_trip(
         &DamageEvent {
             entity_id: 0x2A,
-            source_type: RegistryId(3),
+            source_type: RegistryId(vanilla_fixtures::number("damage_type_id.arrow")),
             source_cause_id: Some(0),
             source_direct_id: None,
             source_position: None,
         },
-        &hex("2a03010000"),
+        &vanilla_fixtures::bytes("packet.damage_event"),
     );
     round_trip(
         &DamageEvent {
             entity_id: 1,
-            source_type: RegistryId(0),
+            source_type: RegistryId(vanilla_fixtures::number("damage_type_id.generic")),
             source_cause_id: Some(7),
             source_direct_id: Some(9),
             source_position: Some(vec3([1.5, -2.0, 0.25])),
         },
-        &hex("0100080a013ff8000000000000c0000000000000003fd0000000000000"),
+        &vanilla_fixtures::bytes("packet.damage_event.full"),
     );
 }

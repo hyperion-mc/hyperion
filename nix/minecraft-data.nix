@@ -244,12 +244,14 @@ let
       mkdir -p $out
       minecraft-encode registries $out
 
-      # A registry that fails to encode is reported rather than dropped, and
-      # the three a client cannot render without must never be among them.
+      # An element codec that throws now kills the dump, so the only way a
+      # registry goes missing is `RegistryDataLoader.SYNCHRONIZED_REGISTRIES`
+      # naming one this build does not carry. The three a client cannot render
+      # without are checked by name, because a short dump is otherwise a
+      # perfectly well-formed one.
       for required in dimension_type worldgen.biome chat_type; do
         if [ ! -s "$out/minecraft.$required.nbt" ]; then
           echo "registry dump is missing minecraft.$required" >&2
-          cat $out/skipped.json >&2
           exit 1
         fi
       done
