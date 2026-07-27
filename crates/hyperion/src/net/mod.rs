@@ -2,10 +2,10 @@
 
 use std::{cell::RefCell, fmt::Debug};
 
-use flecs_ecs::prelude::*;
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
+use flecs_ecs::prelude::*;
 use glam::I16Vec2;
 use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
 use hyperion_utils::EntityExt;

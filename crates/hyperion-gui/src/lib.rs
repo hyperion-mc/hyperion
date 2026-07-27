@@ -67,8 +67,7 @@ impl Gui {
         world.get::<&mut HandlerRegistry>(|registry| {
             let items = self.items.clone();
             registry.add_handler(Box::new(
-                move |event: &ClickSlotC2s<'_>,
-                      query: &mut PacketSwitchQuery<'_>| {
+                move |event: &ClickSlotC2s<'_>, query: &mut PacketSwitchQuery<'_>| {
                     let world = query.world;
                     let button = event.mode;
                     query

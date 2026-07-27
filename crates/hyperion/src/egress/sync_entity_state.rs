@@ -100,25 +100,30 @@ impl Module for EntityStateSyncModule {
                 *prev_xp = *current;
             });
 
-        system!("entity_metadata_sync", world, &Compose, &mut MetadataChanges)
-            .kind(id::<flecs::pipeline::OnStore>())
-            .each_iter(move |it, row, (compose, metadata_changes)| {
-                let entity = it.entity(row);
-                let entity_id = VarInt(entity.minecraft_id());
+        system!(
+            "entity_metadata_sync",
+            world,
+            &Compose,
+            &mut MetadataChanges
+        )
+        .kind(id::<flecs::pipeline::OnStore>())
+        .each_iter(move |it, row, (compose, metadata_changes)| {
+            let entity = it.entity(row);
+            let entity_id = VarInt(entity.minecraft_id());
 
-                let metadata = get_and_clear_metadata(metadata_changes);
+            let metadata = get_and_clear_metadata(metadata_changes);
 
-                if let Some(view) = metadata {
-                    let pkt = play::EntityTrackerUpdateS2c {
-                        entity_id,
-                        tracked_values: RawBytes(CowBytes::Borrowed(&view)),
-                    };
-                    compose
-                        .broadcast_channel(&pkt, entity.into())
-                        .send()
-                        .unwrap();
-                }
-            });
+            if let Some(view) = metadata {
+                let pkt = play::EntityTrackerUpdateS2c {
+                    entity_id,
+                    tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+                };
+                compose
+                    .broadcast_channel(&pkt, entity.into())
+                    .send()
+                    .unwrap();
+            }
+        });
 
         system!(
         "active_animation_sync",

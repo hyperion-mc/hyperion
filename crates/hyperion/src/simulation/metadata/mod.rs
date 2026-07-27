@@ -36,7 +36,13 @@ pub struct MetadataPrefabs {
 
 fn component_and_track<T>(world: &World) -> fn(&mut EntityView<'_>)
 where
-    T: ComponentId + Clone + PartialEq + Metadata + Default + flecs_ecs::core::DataComponent + Debug,
+    T: ComponentId
+        + Clone
+        + PartialEq
+        + Metadata
+        + Default
+        + flecs_ecs::core::DataComponent
+        + Debug,
 {
     world.component::<T>();
     let type_name = core::any::type_name::<T>();

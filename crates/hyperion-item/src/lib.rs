@@ -27,8 +27,7 @@ impl Module for ItemModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |event: &InteractEvent,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |event: &InteractEvent, query: &mut PacketSwitchQuery<'_>| {
                     let world = query.world;
                     let inventory = &mut *query.inventory;
 

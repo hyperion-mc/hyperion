@@ -46,7 +46,9 @@ impl CommandChannel {
 
 /// Registers [`CommandChannel`] and the system that drains it.
 pub fn register(world: &World) {
-    world.component::<CommandChannel>().add_trait::<flecs::Singleton>();
+    world
+        .component::<CommandChannel>()
+        .add_trait::<flecs::Singleton>();
     world.set(CommandChannel::default());
 
     system!("sync_command_channel", world, &mut CommandChannel)

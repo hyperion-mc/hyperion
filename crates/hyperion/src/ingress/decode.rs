@@ -263,13 +263,9 @@ fn register_play(world: &World) {
                 crafting_registry,
             };
 
-            while let Some(frame) = try_next_frame(
-                compose,
-                connection_id,
-                decoder,
-                &mut decompressor,
-                receiver,
-            ) {
+            while let Some(frame) =
+                try_next_frame(compose, connection_id, decoder, &mut decompressor, receiver)
+            {
                 let frame_id = frame.id;
                 if let Err(e) = packet_switch(frame, &mut query) {
                     error!("error while processing packet (id: {frame_id}): {e}");

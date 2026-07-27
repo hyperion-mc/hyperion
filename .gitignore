@@ -30,7 +30,5 @@ vendor/
 /extractor/classes
 /extractor/run
 /extractor/bin
-.trigger-release
-.trigger-debug
-.trigger
+.trigger-*
 valence/

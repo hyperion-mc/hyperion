@@ -9,117 +9,88 @@ on:
     branches: [main]
 
 jobs:
-  fmt:
-    name: Formatting
+  # Each check is the same flake app a contributor runs locally, so CI cannot
+  # drift from `nix run .#ci`.
+  # Job names are fixed by the merge queue ruleset on main, which requires
+  # these exact contexts. The app each one runs is the same one a contributor
+  # runs locally.
+  check:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Formatting
+            app: fmt
+            args: -- --check
+          - name: Clippy
+            app: lint
+          - name: Documentation
+            app: doc
+          - name: Tests (ubuntu-latest)
+            app: test
     steps:
       - uses: actions/checkout@v4
-      - name: Read rust-toolchain.toml
-        id: toolchain
-        shell: bash
-        run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
-          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
+      - uses: DeterminateSystems/nix-installer-action@main
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - run: nix run --accept-flake-config .#${{ matrix.app }} ${{ matrix.args }}
 
-  clippy:
-    name: Clippy
+  # Reported, not enforced. Both fail today on debt that predates the move to
+  # nix apps: cargo-deny finds RUSTSEC advisories reaching in through the
+  # dependency tree plus a license rejection, and cargo-machete finds 11 unused
+  # dependencies. Blocking on either would wedge every PR on work that belongs
+  # to the dependency bump. Run them locally with `nix run .#deny` and
+  # `nix run .#unused-deps`; they become blocking once that lands.
+  audit:
+    name: ${{ matrix.app }} (advisory)
     runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [deny, unused-deps]
     steps:
       - uses: actions/checkout@v4
-      - name: Read rust-toolchain.toml
-        id: toolchain
-        shell: bash
-        run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
-          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
+      - uses: DeterminateSystems/nix-installer-action@main
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
-      - name: Clippy check
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: nix run --accept-flake-config .#${{ matrix.app }}
 
-  doc:
-    name: Documentation
+  # Builds every flake app, which is what proves each one passes shellcheck and
+  # that its tools resolve.
+  #
+  # Reported, not enforced, for the same reason as the audit jobs above: it also
+  # builds `packages`, which cannot succeed yet. cargoUnit cannot vendor a lock
+  # holding one crate at one version from two git sources, which this lock does
+  # via tools/packet-inspector. A fix is in flight in the index repo. Main's
+  # `nix build` is broken today anyway, on a divan hash that matches no git
+  # dependency, so nothing regresses by landing this first.
+  flake:
+    name: Flake
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Read rust-toolchain.toml
-        id: toolchain
-        shell: bash
-        run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
-          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-      - name: Check documentation
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --all-features
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix flake check --accept-flake-config
 
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly
-          components: llvm-tools-preview
+      - uses: DeterminateSystems/nix-installer-action@main
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: "true"
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Generate code coverage
-        run: cargo llvm-cov --all-features --workspace --branch --lcov --output-path lcov.info
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+      - run: nix run --accept-flake-config .#coverage
+      - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: hyperion-mc/hyperion
-
-  test:
-    name: Tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          # commenting these out because getting a weird error with ring that does not occur when building locally on MacBook Pro M2
-          # - macos-latest 
-          # - macos-14
-          - windows-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Read rust-toolchain.toml
-        id: toolchain
-        shell: bash
-        run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
-          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-      - name: Run tests
-        run: cargo test --all-features

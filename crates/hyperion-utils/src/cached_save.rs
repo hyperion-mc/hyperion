@@ -48,9 +48,8 @@ pub fn cached_save<U: reqwest::IntoUrl + 'static>(
             let byte_stream = response.bytes_stream();
             // Convert the byte stream into an AsyncRead
 
-            let reader = StreamReader::new(byte_stream.map(|result| {
-                result.map_err(std::io::Error::other)
-            }));
+            let reader =
+                StreamReader::new(byte_stream.map(|result| result.map_err(std::io::Error::other)));
 
             let directory = directory.clone();
             let handle = tokio::task::spawn_blocking(move || {

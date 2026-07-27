@@ -150,15 +150,11 @@ impl Module for SpatialModule {
             .add_trait::<flecs::Singleton>();
         world.set(SpatialIndex::default());
 
-        system!(
-            "recalculate_spatial_index",
-            world,
-            &mut SpatialIndex,
-        )
-        .kind(id::<flecs::pipeline::OnStore>())
-        .each_iter(|it, _, index| {
-            let world = it.world();
-            index.recalculate(&world);
-        });
+        system!("recalculate_spatial_index", world, &mut SpatialIndex,)
+            .kind(id::<flecs::pipeline::OnStore>())
+            .each_iter(|it, _, index| {
+                let world = it.world();
+                index.recalculate(&world);
+            });
     }
 }

@@ -105,79 +105,81 @@ impl Module for ChannelModule {
                     &Yaw,
                     &Velocity,
                     Option<&ConnectionId>,
-                )>(|(uuid, position, pitch, yaw, velocity, connection_id)| {
-                    let mut packet_buf;
+                )>(
+                    |(uuid, position, pitch, yaw, velocity, connection_id)| {
+                        let mut packet_buf;
 
-                    match entity_kind {
-                        EntityKind::Player => {
-                            let spawn_packet = play::PlayerSpawnS2c {
-                                entity_id: VarInt(minecraft_id),
-                                player_uuid: uuid.0,
-                                position: position.as_dvec3(),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                            };
-                            packet_buf = compose
-                                .io_buf()
-                                .encode_packet(&spawn_packet, compose)
-                                .unwrap();
-
-                            let show_all = show_all(minecraft_id);
-                            packet_buf.extend_from_slice(
-                                &compose.io_buf().encode_packet(&show_all, compose).unwrap(),
-                            );
-                        }
-                        _ => {
-                            let velocity = velocity.to_packet_units();
-
-                            let spawn_packet = play::EntitySpawnS2c {
-                                entity_id: VarInt(minecraft_id),
-                                object_uuid: uuid.0,
-                                kind: VarInt(entity_kind as i32),
-                                position: position.as_dvec3(),
-                                pitch: ByteAngle::from_degrees(**pitch),
-                                yaw: ByteAngle::from_degrees(**yaw),
-                                head_yaw: ByteAngle::from_degrees(0.0), // todo:
-                                data: VarInt::default(),                // todo:
-                                velocity,
-                            };
-                            packet_buf = compose
-                                .io_buf()
-                                .encode_packet(&spawn_packet, compose)
-                                .unwrap();
-
-                            let velocity_packet = play::EntityVelocityUpdateS2c {
-                                entity_id: VarInt(minecraft_id),
-                                velocity,
-                            };
-                            packet_buf.extend_from_slice(
-                                &compose
+                        match entity_kind {
+                            EntityKind::Player => {
+                                let spawn_packet = play::PlayerSpawnS2c {
+                                    entity_id: VarInt(minecraft_id),
+                                    player_uuid: uuid.0,
+                                    position: position.as_dvec3(),
+                                    yaw: ByteAngle::from_degrees(**yaw),
+                                    pitch: ByteAngle::from_degrees(**pitch),
+                                };
+                                packet_buf = compose
                                     .io_buf()
-                                    .encode_packet(&velocity_packet, compose)
-                                    .unwrap(),
+                                    .encode_packet(&spawn_packet, compose)
+                                    .unwrap();
+
+                                let show_all = show_all(minecraft_id);
+                                packet_buf.extend_from_slice(
+                                    &compose.io_buf().encode_packet(&show_all, compose).unwrap(),
+                                );
+                            }
+                            _ => {
+                                let velocity = velocity.to_packet_units();
+
+                                let spawn_packet = play::EntitySpawnS2c {
+                                    entity_id: VarInt(minecraft_id),
+                                    object_uuid: uuid.0,
+                                    kind: VarInt(entity_kind as i32),
+                                    position: position.as_dvec3(),
+                                    pitch: ByteAngle::from_degrees(**pitch),
+                                    yaw: ByteAngle::from_degrees(**yaw),
+                                    head_yaw: ByteAngle::from_degrees(0.0), // todo:
+                                    data: VarInt::default(),                // todo:
+                                    velocity,
+                                };
+                                packet_buf = compose
+                                    .io_buf()
+                                    .encode_packet(&spawn_packet, compose)
+                                    .unwrap();
+
+                                let velocity_packet = play::EntityVelocityUpdateS2c {
+                                    entity_id: VarInt(minecraft_id),
+                                    velocity,
+                                };
+                                packet_buf.extend_from_slice(
+                                    &compose
+                                        .io_buf()
+                                        .encode_packet(&velocity_packet, compose)
+                                        .unwrap(),
+                                );
+                            }
+                        }
+
+                        let mut metadata = MetadataChanges::default();
+                        metadata.encode_non_default_components(entity);
+
+                        if let Some(view) = get_and_clear_metadata(&mut metadata) {
+                            let pkt = play::EntityTrackerUpdateS2c {
+                                entity_id: VarInt(minecraft_id),
+                                tracked_values: RawBytes(CowBytes::Borrowed(&view)),
+                            };
+                            packet_buf.extend_from_slice(
+                                &compose.io_buf().encode_packet(&pkt, compose).unwrap(),
                             );
                         }
-                    }
 
-                    let mut metadata = MetadataChanges::default();
-                    metadata.encode_non_default_components(entity);
-
-                    if let Some(view) = get_and_clear_metadata(&mut metadata) {
-                        let pkt = play::EntityTrackerUpdateS2c {
-                            entity_id: VarInt(minecraft_id),
-                            tracked_values: RawBytes(CowBytes::Borrowed(&view)),
-                        };
-                        packet_buf.extend_from_slice(
-                            &compose.io_buf().encode_packet(&pkt, compose).unwrap(),
+                        compose.io_buf().send_subscribe_channel_packets(
+                            ChannelId::from(entity),
+                            &packet_buf,
+                            connection_id.copied(),
                         );
-                    }
-
-                    compose.io_buf().send_subscribe_channel_packets(
-                        ChannelId::from(entity),
-                        &packet_buf,
-                        connection_id.copied(),
-                    );
-                });
+                    },
+                );
 
                 if found.is_none() {
                     error!(

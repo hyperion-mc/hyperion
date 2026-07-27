@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use flecs_ecs::{
     core::{
-        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI,
-        SystemAPI, TableIter, World, WorldGet, flecs, id,
+        Builder, ComponentOrPairId, EntityView, EntityViewGet, QueryAPI, SystemAPI, TableIter,
+        World, WorldGet, flecs, id,
     },
     macros::{Component, system},
     prelude::Module,
@@ -284,8 +284,7 @@ impl Module for AttackModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |client_status: &ClientStatusEvent,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |client_status: &ClientStatusEvent, query: &mut PacketSwitchQuery<'_>| {
                     if client_status.status == ClientStatusCommand::RequestStats {
                         return Ok(());
                     }

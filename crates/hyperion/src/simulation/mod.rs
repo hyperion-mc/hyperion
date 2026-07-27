@@ -807,27 +807,32 @@ impl Module for SimModule {
 
         observer!(
             world,
-            flecs::OnSet, &PendingTeleportation,
-            &Compose, &Yaw, &Pitch, &ConnectionId
+            flecs::OnSet,
+            &PendingTeleportation,
+            &Compose,
+            &Yaw,
+            &Pitch,
+            &ConnectionId
         )
-        .each(
-            |(pending_teleportation, compose, yaw, pitch, connection)| {
-                let pkt = play::PlayerPositionLookS2c {
-                    position: pending_teleportation.destination.as_dvec3(),
-                    yaw: **yaw,
-                    pitch: **pitch,
-                    flags: PlayerPositionLookFlags::default(),
-                    teleport_id: VarInt(pending_teleportation.teleport_id),
-                };
+        .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
+            let pkt = play::PlayerPositionLookS2c {
+                position: pending_teleportation.destination.as_dvec3(),
+                yaw: **yaw,
+                pitch: **pitch,
+                flags: PlayerPositionLookFlags::default(),
+                teleport_id: VarInt(pending_teleportation.teleport_id),
+            };
 
-                compose.unicast(&pkt, *connection).unwrap();
-            },
-        );
+            compose.unicast(&pkt, *connection).unwrap();
+        });
 
         observer!(
             world,
-            flecs::OnSet, &FlyingSpeed,
-            &Compose, &ConnectionId, &Flight
+            flecs::OnSet,
+            &FlyingSpeed,
+            &Compose,
+            &ConnectionId,
+            &Flight
         )
         .each(|(flying_speed, compose, connection, flight)| {
             let pkt = PlayerAbilitiesS2c {
@@ -843,8 +848,11 @@ impl Module for SimModule {
 
         observer!(
             world,
-            flecs::OnSet, &Flight,
-            &Compose, &ConnectionId, &FlyingSpeed
+            flecs::OnSet,
+            &Flight,
+            &Compose,
+            &ConnectionId,
+            &FlyingSpeed
         )
         .each(|(flight, compose, connection, flying_speed)| {
             let pkt = play::PlayerAbilitiesS2c {

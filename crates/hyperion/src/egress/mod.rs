@@ -39,74 +39,63 @@ impl Module for EgressModule {
         world.import::<EntityStateSyncModule>();
         world.import::<ChannelModule>();
 
-        system!(
-            "broadcast_chunk_deltas",
-            world,
-            &Compose,
-            &mut Blocks,
-        )
-        .kind(id::<flecs::pipeline::OnUpdate>())
-        .each_iter(move |it: TableIter<'_, false>, _, (compose, mc)| {
-            let span = info_span!("broadcast_chunk_deltas");
-            let _enter = span.enter();
+        system!("broadcast_chunk_deltas", world, &Compose, &mut Blocks,)
+            .kind(id::<flecs::pipeline::OnUpdate>())
+            .each_iter(move |it: TableIter<'_, false>, _, (compose, mc)| {
+                let span = info_span!("broadcast_chunk_deltas");
+                let _enter = span.enter();
 
-            let world = it.world();
+                let world = it.world();
 
-            mc.for_each_to_update_mut(|chunk| {
-                for packet in chunk.delta_drain_packets() {
-                    if let Err(e) = compose.broadcast(packet).send() {
-                        error!("failed to send chunk delta packet: {e}");
-                        return;
-                    }
-                }
-            });
-            mc.clear_should_update();
-
-            for to_confirm in mc.to_confirm.drain(..) {
-                let entity = world.entity_from_id(to_confirm.entity);
-
-                let pkt = play::PlayerActionResponseS2c {
-                    sequence: VarInt(to_confirm.sequence),
-                };
-
-                entity.get::<&ConnectionId>(|stream| {
-                    if let Err(e) = compose.unicast(&pkt, *stream) {
-                        error!("failed to send player action response: {e}");
+                mc.for_each_to_update_mut(|chunk| {
+                    for packet in chunk.delta_drain_packets() {
+                        if let Err(e) = compose.broadcast(packet).send() {
+                            error!("failed to send chunk delta packet: {e}");
+                            return;
+                        }
                     }
                 });
-            }
-        });
+                mc.clear_should_update();
+
+                for to_confirm in mc.to_confirm.drain(..) {
+                    let entity = world.entity_from_id(to_confirm.entity);
+
+                    let pkt = play::PlayerActionResponseS2c {
+                        sequence: VarInt(to_confirm.sequence),
+                    };
+
+                    entity.get::<&ConnectionId>(|stream| {
+                        if let Err(e) = compose.unicast(&pkt, *stream) {
+                            error!("failed to send player action response: {e}");
+                        }
+                    });
+                }
+            });
 
         let player_location_query = world.new_query::<(&ConnectionId, &Position)>();
 
-        system!(
-            "send_chunk_positions",
-            world,
-            &Compose,
-        )
-        .kind(pipeline)
-        .each(move |compose| {
-            let span = info_span!("send_chunk_positions");
-            let _enter = span.enter();
+        system!("send_chunk_positions", world, &Compose,)
+            .kind(pipeline)
+            .each(move |compose| {
+                let span = info_span!("send_chunk_positions");
+                let _enter = span.enter();
 
-            let count = player_location_query.count();
-            let count = usize::try_from(count).unwrap_or_default();
+                let count = player_location_query.count();
+                let count = usize::try_from(count).unwrap_or_default();
 
-            let mut stream = Vec::with_capacity(count);
-            let mut positions = Vec::with_capacity(count);
+                let mut stream = Vec::with_capacity(count);
+                let mut positions = Vec::with_capacity(count);
 
-            player_location_query.each(|(&io, pos)| {
-                stream.push(io);
-                positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
+                player_location_query.each(|(&io, pos)| {
+                    stream.push(io);
+                    positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
+                });
+
+                let packet = UpdatePlayerPositions { stream, positions };
+
+                compose.io_buf().add_proxy_message(
+                    &IntermediateServerToProxyMessage::UpdatePlayerPositions(packet),
+                );
             });
-
-            let packet = UpdatePlayerPositions { stream, positions };
-
-            compose
-                .io_buf()
-                .add_proxy_message(&IntermediateServerToProxyMessage::UpdatePlayerPositions(
-                    packet,
-                ));
-        });
     }
 }

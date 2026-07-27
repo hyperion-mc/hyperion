@@ -70,7 +70,10 @@ type DeserializerFn =
     fn(&HandlerRegistry, BorrowedPacketFrame, &mut PacketSwitchQuery<'_>) -> Result<()>;
 type AnyFn = Box<dyn Send + Sync>;
 type Handler<T> = Box<
-    dyn for<'packet> Fn(&<T as Lifetime>::WithLifetime<'packet>, &mut PacketSwitchQuery<'_>) -> Result<()>
+    dyn for<'packet> Fn(
+            &<T as Lifetime>::WithLifetime<'packet>,
+            &mut PacketSwitchQuery<'_>,
+        ) -> Result<()>
         + Send
         + Sync,
 >;

@@ -259,7 +259,9 @@ impl HyperionCore {
         world.component::<Crypto>().add_trait::<flecs::Singleton>();
         command_channel::register(world);
 
-        world.component::<Shutdown>().add_trait::<flecs::Singleton>();
+        world
+            .component::<Shutdown>()
+            .add_trait::<flecs::Singleton>();
         let shutdown = Arc::new(AtomicBool::new(false));
 
         world.set(Shutdown {
@@ -311,7 +313,9 @@ impl HyperionCore {
             .add_trait::<flecs::Singleton>();
         world.component::<Events>().add_trait::<flecs::Singleton>();
         world.component::<Comms>().add_trait::<flecs::Singleton>();
-        world.component::<EgressComm>().add_trait::<flecs::Singleton>();
+        world
+            .component::<EgressComm>()
+            .add_trait::<flecs::Singleton>();
 
         world
             .component::<AsyncRuntime>()

@@ -155,70 +155,75 @@ impl Module for SyncChunksModule {
             },
         );
 
-        system!("send_full_loaded_chunks", world, &Blocks, &Compose, &ConnectionId, &mut ChunkSendQueue)
-            .with_enum(PacketState::Play)
-            .kind(id::<flecs::pipeline::OnUpdate>())
-            .each(
-                move |(chunks, compose, &stream_id, queue)| {
-                    const MAX_CHUNKS_PER_TICK: usize = 16;
+        system!(
+            "send_full_loaded_chunks",
+            world,
+            &Blocks,
+            &Compose,
+            &ConnectionId,
+            &mut ChunkSendQueue
+        )
+        .with_enum(PacketState::Play)
+        .kind(id::<flecs::pipeline::OnUpdate>())
+        .each(move |(chunks, compose, &stream_id, queue)| {
+            const MAX_CHUNKS_PER_TICK: usize = 16;
 
-                    let last = None;
+            let last = None;
 
-                    let mut iter_count = 0;
+            let mut iter_count = 0;
 
-                    let mut bundle = DataBundle::new(compose);
+            let mut bundle = DataBundle::new(compose);
 
-                    #[expect(
-                        clippy::cast_possible_wrap,
-                        reason = "realistically queue.changes.len() will never be large enough to wrap"
-                    )]
-                    let mut idx = (queue.changes.len() as isize) - 1;
+            #[expect(
+                clippy::cast_possible_wrap,
+                reason = "realistically queue.changes.len() will never be large enough to wrap"
+            )]
+            let mut idx = (queue.changes.len() as isize) - 1;
 
-                    while idx >= 0 {
-                        #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-                        let Some(elem) = queue.changes.get(idx as usize).copied() else {
-                            // should never happen but we do not want to panic if wrong
-                            // logic/assumptions are made
-                            error!("failed to get element from queue.changes");
-                            continue;
-                        };
+            while idx >= 0 {
+                #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
+                let Some(elem) = queue.changes.get(idx as usize).copied() else {
+                    // should never happen but we do not want to panic if wrong
+                    // logic/assumptions are made
+                    error!("failed to get element from queue.changes");
+                    continue;
+                };
 
-                        // de-duplicate. todo: there are cases where duplicate will not be removed properly
-                        // since sort is unstable
-                        if last == Some(elem) {
-                            #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-                            queue.changes.swap_remove(idx as usize);
-                            idx -= 1;
-                            continue;
-                        }
+                // de-duplicate. todo: there are cases where duplicate will not be removed properly
+                // since sort is unstable
+                if last == Some(elem) {
+                    #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
+                    queue.changes.swap_remove(idx as usize);
+                    idx -= 1;
+                    continue;
+                }
 
-                        if iter_count >= MAX_CHUNKS_PER_TICK {
-                            break;
-                        }
+                if iter_count >= MAX_CHUNKS_PER_TICK {
+                    break;
+                }
 
-                        match chunks.get_cached_or_load(elem) {
-                            GetChunk::Loaded(chunk) => {
-                                bundle.add_raw(&chunk.base_packet_bytes);
+                match chunks.get_cached_or_load(elem) {
+                    GetChunk::Loaded(chunk) => {
+                        bundle.add_raw(&chunk.base_packet_bytes);
 
-                                for packet in chunk.original_delta_packets() {
-                                    if let Err(e) = bundle.add_packet(packet) {
-                                        error!("failed to send chunk delta packet: {e}");
-                                        return;
-                                    }
-                                }
-
-                                iter_count += 1;
-                                #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
-                                queue.changes.swap_remove(idx as usize);
+                        for packet in chunk.original_delta_packets() {
+                            if let Err(e) = bundle.add_packet(packet) {
+                                error!("failed to send chunk delta packet: {e}");
+                                return;
                             }
-                            GetChunk::Loading => {}
                         }
 
-                        idx -= 1;
+                        iter_count += 1;
+                        #[expect(clippy::cast_sign_loss, reason = "we are checking if < 0")]
+                        queue.changes.swap_remove(idx as usize);
                     }
+                    GetChunk::Loading => {}
+                }
 
-                    bundle.unicast(stream_id).unwrap();
-                },
-            );
+                idx -= 1;
+            }
+
+            bundle.unicast(stream_id).unwrap();
+        });
     }
 }

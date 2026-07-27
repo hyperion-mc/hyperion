@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 
 use flecs_ecs::{
-    core::{
-        EntityViewGet, SystemAPI, World, flecs, id,
-    },
+    core::{EntityViewGet, SystemAPI, World, flecs, id},
     macros::{Component, observer, system},
     prelude::Module,
 };
@@ -118,83 +116,89 @@ impl Module for InventoryModule {
             ?&OpenInventory,
             &ConnectionId,
         )
-            .kind(id::<flecs_ecs::prelude::flecs::pipeline::OnStore>())
-            .each_iter(
-                |it, row, (compose, inventory, inv_state, cursor_item, open_inventory, io)| {
-                    let world = it.world();
-                    let entity = it.entity(row);
-                    let entity_id = VarInt(entity.minecraft_id());
-                    let stream_id = *io;
+        .kind(id::<flecs_ecs::prelude::flecs::pipeline::OnStore>())
+        .each_iter(
+            |it, row, (compose, inventory, inv_state, cursor_item, open_inventory, io)| {
+                let world = it.world();
+                let entity = it.entity(row);
+                let entity_id = VarInt(entity.minecraft_id());
+                let stream_id = *io;
 
-                    // update held item, offhand, and equipment
-                    let mut equipment_changes: Vec<EquipmentEntry> = Vec::new();
-                    let hand_slot = inventory.get_cursor_index();
-                    for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
-                        if slot.changed {
-                            if idx == usize::from(hand_slot) {
-                                equipment_changes.push(EquipmentEntry {
-                                    slot: 0,
-                                    item: slot.stack.clone(),
-                                });
-                            }
+                // update held item, offhand, and equipment
+                let mut equipment_changes: Vec<EquipmentEntry> = Vec::new();
+                let hand_slot = inventory.get_cursor_index();
+                for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
+                    if slot.changed {
+                        if idx == usize::from(hand_slot) {
+                            equipment_changes.push(EquipmentEntry {
+                                slot: 0,
+                                item: slot.stack.clone(),
+                            });
+                        }
 
-                            if idx == 45 {
-                                equipment_changes.push(EquipmentEntry {
-                                    slot: 1,
-                                    item: slot.stack.clone(),
-                                });
-                            }
+                        if idx == 45 {
+                            equipment_changes.push(EquipmentEntry {
+                                slot: 1,
+                                item: slot.stack.clone(),
+                            });
+                        }
 
-                            if (5..=8).contains(&idx) {
-                                let index = match idx {
-                                    5 => 5,
-                                    6 => 4,
-                                    7 => 3,
-                                    8 => 2,
-                                    _ => 0,
-                                };
-                                equipment_changes.push(EquipmentEntry {
-                                    slot: index,
-                                    item: slot.stack.clone(),
-                                });
-                            }
+                        if (5..=8).contains(&idx) {
+                            let index = match idx {
+                                5 => 5,
+                                6 => 4,
+                                7 => 3,
+                                8 => 2,
+                                _ => 0,
+                            };
+                            equipment_changes.push(EquipmentEntry {
+                                slot: index,
+                                item: slot.stack.clone(),
+                            });
                         }
                     }
+                }
 
-                    if !equipment_changes.is_empty() {
-                        let packet = &(play::EntityEquipmentUpdateS2c {
-                            entity_id,
-                            equipment: equipment_changes,
-                        });
+                if !equipment_changes.is_empty() {
+                    let packet = &(play::EntityEquipmentUpdateS2c {
+                        entity_id,
+                        equipment: equipment_changes,
+                    });
 
-                        compose
-                            .broadcast_channel(packet, entity.into())
-                            .exclude(stream_id)
-                            .send()
-                            .unwrap();
-                    }
+                    compose
+                        .broadcast_channel(packet, entity.into())
+                        .exclude(stream_id)
+                        .send()
+                        .unwrap();
+                }
 
-                    if let Some(open_inventory) = open_inventory {
-                        open_inventory.entity.entity_view(world).get::<&mut Inventory>(|open_inv| {
+                if let Some(open_inventory) = open_inventory {
+                    open_inventory
+                        .entity
+                        .entity_view(world)
+                        .get::<&mut Inventory>(|open_inv| {
                             update_player_inventory_inner(
                                 compose,
                                 stream_id,
                                 inv_state,
                                 cursor_item,
-                                open_inv.slots_mut().iter_mut().chain(inventory.slots_inventory_mut().iter_mut()),
+                                open_inv
+                                    .slots_mut()
+                                    .iter_mut()
+                                    .chain(inventory.slots_inventory_mut().iter_mut()),
                             );
                         });
-                    } else {
-                        update_player_inventory_inner(
-                            compose,
-                            stream_id,
-                            inv_state,
-                            cursor_item,
-                            inventory.slots_mut().iter_mut(),
-                        );
-                    }
+                } else {
+                    update_player_inventory_inner(
+                        compose,
+                        stream_id,
+                        inv_state,
+                        cursor_item,
+                        inventory.slots_mut().iter_mut(),
+                    );
                 }
-            );
+            },
+        );
     }
 }
 

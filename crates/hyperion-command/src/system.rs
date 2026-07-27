@@ -68,8 +68,7 @@ impl Module for CommandSystemModule {
 
         world.get::<&mut HandlerRegistry>(|registry| {
             registry.add_handler(Box::new(
-                |completion: &CommandCompletionRequest,
-                 query: &mut PacketSwitchQuery<'_>| {
+                |completion: &CommandCompletionRequest, query: &mut PacketSwitchQuery<'_>| {
                     let input = completion.query.as_str();
 
                     // should be in form "/{command}"
