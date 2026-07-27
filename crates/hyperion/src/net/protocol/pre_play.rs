@@ -26,7 +26,7 @@ use hyperion_minecraft_proto::{
     packets::{
         common::serverbound::PingRequest,
         configuration::{
-            self, ClientInformation, UpdateTags,
+            self, ClientInformation,
             clientbound::{FinishConfiguration, RegistryData, UpdateEnabledFeatures},
             serverbound::SelectKnownPacks,
         },
@@ -37,6 +37,7 @@ use hyperion_minecraft_proto::{
         },
         status::clientbound::{PongResponse, StatusResponse},
     },
+    tag_data,
     types::{
         ClientIntent, GameProfile, Identifier, Uuid as ProtoUuid,
         registry_synchronization::PackedRegistryEntry,
@@ -576,13 +577,18 @@ fn select_known_packs(
         )?;
     }
 
-    // Vanilla follows the registries with the tag sets. Sending none is
-    // well-formed: the client keeps the tags it loaded from its own packs.
+    // Vanilla follows the registries with the tag map, and so must this: a
+    // client throws away the tags it loaded from its own packs the moment
+    // `update_tags` arrives, so an empty one leaves it with none. The very next
+    // thing it does is parse the registry elements it kept, several of which
+    // name an item, block or entity-type tag, and one element that fails to
+    // parse fails the whole registry load and `finish_configuration` with it.
+    // That is the "Network Protocol Error" a real 26.2 client used to hit here.
     send(
         compose,
         connection_id,
         PacketId::UpdateTags.to_raw(),
-        &UpdateTags { tags: Vec::new() },
+        &tag_data::VanillaTags,
     )?;
 
     send(

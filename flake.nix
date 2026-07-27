@@ -524,6 +524,7 @@
               update-minecraft-data = minecraft.updateScript;
               sync-minecraft-proto = minecraft.syncScript;
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
+              sync-minecraft-tag-data = minecraft.syncTagDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;
               sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
               extract-minecraft-protocol = minecraft.extractor;
@@ -546,7 +547,9 @@
             minecraft-proto-rust = minecraft.generatedRust;
             minecraft-encoder-fixtures = minecraft.encoderFixtures;
             minecraft-registry-contents = minecraft.registryContents;
+            minecraft-tag-contents = minecraft.tagContents;
             minecraft-registry-data-rust = minecraft.generatedRegistryData;
+            minecraft-tag-data-rust = minecraft.generatedTagData;
             minecraft-block-states-rust = minecraft.generatedBlockStates;
             minecraft-entity-types-rust = minecraft.generatedEntityTypes;
           };
@@ -558,6 +561,8 @@
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
+            minecraft-tag-data = minecraft.tagDataUpToDate;
+            minecraft-tags-load = minecraft.tagsLoadForClient;
             minecraft-block-states = minecraft.blockStatesUpToDate;
             minecraft-entity-types = minecraft.entityTypesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;

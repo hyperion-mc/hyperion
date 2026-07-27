@@ -14,12 +14,24 @@
 //   registries <dir>    writes the network NBT of every synchronised registry
 //                       element, which `nix/generate-rust.py` turns into the
 //                       tables under `src/generated`.
+//   tags <dir>          writes the whole tag map as `ClientboundUpdateTagsPacket`
+//                       puts it on the wire, which `nix/generate-tag-data.py`
+//                       turns into `src/tag_data`.
+//   verify-tags <dir>   binds only the tags in that dump and then loads the
+//                       registries the way a joining client does, so a tag set
+//                       too small to join fails here instead of on a player's
+//                       screen.
 //
 // Adding a fixture means adding a `put` call below and a matching assertion in
 // Rust. Both halves live in version control, which is the point: issue #970 is
 // that this used to be retyped from scratch every time somebody needed it.
 
 import com.google.common.collect.ImmutableMultimap;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
@@ -30,6 +42,8 @@ import com.mojang.serialization.DynamicOps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
+
+import it.unimi.dsi.fastutil.ints.IntList;
 
 import it.unimi.dsi.fastutil.shorts.ShortArraySet;
 import it.unimi.dsi.fastutil.shorts.ShortSet;
@@ -42,6 +56,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -99,6 +114,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryDataLoader;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.server.RegistryLayer;
 import net.minecraft.server.packs.PackType;
@@ -106,6 +122,7 @@ import net.minecraft.server.packs.repository.ServerPacksSource;
 import net.minecraft.server.packs.resources.CloseableResourceManager;
 import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.minecraft.tags.TagLoader;
+import net.minecraft.tags.TagNetworkSerialization;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.EntityType;
@@ -137,7 +154,9 @@ public final class VanillaEncoder {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1 || (args.length < 2 && !args[0].equals("packets"))) {
-            System.err.println("usage: VanillaEncoder (fixtures <file> | packets | registries <dir>)");
+            System.err.println(
+                    "usage: VanillaEncoder (fixtures <file> | packets | registries <dir>"
+                            + " | tags <dir> | verify-tags <dir>)");
             System.exit(2);
         }
 
@@ -152,10 +171,16 @@ public final class VanillaEncoder {
         Bootstrap.bootStrap();
 
         VanillaEncoder encoder = new VanillaEncoder();
+        // `loadServerLayers` is per command rather than hoisted: it ends by
+        // applying the data pack's tags to the built-in registries, and
+        // `verify-tags` exists precisely to load with no tags but the dumped
+        // ones bound.
         switch (args[0]) {
-            case "fixtures" -> encoder.fixtures(Path.of(args[1]), loadServerRegistries());
-            case "packets" -> encoder.printPackets(stdout, loadServerRegistries());
-            case "registries" -> encoder.registries(Path.of(args[1]), loadServerRegistries());
+            case "fixtures" -> encoder.fixtures(Path.of(args[1]), loadServerLayers().compositeAccess());
+            case "packets" -> encoder.printPackets(stdout, loadServerLayers().compositeAccess());
+            case "registries" -> encoder.registries(Path.of(args[1]), loadServerLayers().compositeAccess());
+            case "tags" -> encoder.tags(Path.of(args[1]), loadServerLayers());
+            case "verify-tags" -> verifyTags(Path.of(args[1]));
             default -> {
                 System.err.println("unknown command: " + args[0]);
                 System.exit(2);
@@ -163,7 +188,7 @@ public final class VanillaEncoder {
         }
     }
 
-    /// The registries a running server has, not the built-in ones alone.
+    /// The registry layers a running server has, not the built-in ones alone.
     ///
     /// `Bootstrap.bootStrap` only fills `BuiltInRegistries`. Three things a
     /// server does afterwards are load bearing here, and each one is its own
@@ -183,11 +208,15 @@ public final class VanillaEncoder {
     /// invent, so the same steps run here in the same order. The last two
     /// mirror `ReloadableServerResources.updateComponentsAndStaticRegistryTags`,
     /// which is the jar's only caller of `PendingComponents.apply`.
-    private static RegistryAccess.Frozen loadServerRegistries() {
+    ///
+    /// The layers rather than the composite access they flatten into, because
+    /// `TagNetworkSerialization.serializeTagsToNetwork` takes the layered form
+    /// and `RegistrySynchronization.networkSafeRegistries` reads the layer a
+    /// registry came from to decide whether a client tracks it at all.
+    private static LayeredRegistryAccess<RegistryLayer> loadServerLayers() {
         // Closing the manager is safe: `TagLoader` and `RegistryDataLoader`
         // both read eagerly, so nothing below holds a resource open.
-        try (CloseableResourceManager resources = new MultiPackResourceManager(
-                PackType.SERVER_DATA, List.of(ServerPacksSource.createVanillaPackSource()))) {
+        try (CloseableResourceManager resources = vanillaResources()) {
             LayeredRegistryAccess<RegistryLayer> layers = RegistryLayer.createRegistryAccess();
             List<Registry.PendingTags<?>> staticTags = TagLoader.loadTagsForExistingRegistries(
                     resources, layers.getLayer(RegistryLayer.STATIC));
@@ -208,8 +237,13 @@ public final class VanillaEncoder {
                     .build(full)
                     .forEach(DataComponentInitializers.PendingComponents::apply);
 
-            return layers.replaceFrom(RegistryLayer.WORLDGEN, worldgen).compositeAccess();
+            return layers.replaceFrom(RegistryLayer.WORLDGEN, worldgen);
         }
+    }
+
+    private static CloseableResourceManager vanillaResources() {
+        return new MultiPackResourceManager(
+                PackType.SERVER_DATA, List.of(ServerPacksSource.createVanillaPackSource()));
     }
 
     // --- fixtures ---------------------------------------------------------
@@ -851,7 +885,7 @@ public final class VanillaEncoder {
             }
 
             String registryName = registryData.key().identifier().toString();
-            Path file = outDir.resolve(fileNameFor(registryName));
+            Path file = outDir.resolve(fileNameFor(registryName, "nbt"));
             ByteBuf blob = Unpooled.buffer();
             for (byte[] payload : payloads) {
                 blob.writeBytes(payload);
@@ -940,6 +974,171 @@ public final class VanillaEncoder {
         return true;
     }
 
+    // --- tag dump ---------------------------------------------------------
+
+    /// Writes the whole tag map, laid out as `ClientboundUpdateTagsPacket`
+    /// puts it on the wire.
+    ///
+    /// One `.bin` per registry holding, for each of its tags, the bytes
+    /// `FriendlyByteBuf.writeIntIdList` produces: a `VarInt` count then the
+    /// network id of every element. An `index.json` names the tags and how many
+    /// bytes each one occupies, so the Rust generator never parses the blob.
+    ///
+    /// The ids are positions in the registry the tag indexes into, so this dump
+    /// is only usable by a server that sends `registry_data` in exactly the
+    /// element order `registries` dumped. Both come from the same
+    /// `MappedRegistry` iteration, which is by id.
+    private void tags(Path outDir, LayeredRegistryAccess<RegistryLayer> layers) throws IOException {
+        Files.createDirectories(outDir);
+
+        Map<ResourceKey<? extends Registry<?>>, TagNetworkSerialization.NetworkPayload> payloads =
+                TagNetworkSerialization.serializeTagsToNetwork(layers);
+
+        // `serializeTagsToNetwork` collects into a `HashMap` keyed on
+        // `ResourceKey`, which does not override `hashCode`, and each payload
+        // holds a second `HashMap`. Both iteration orders therefore change from
+        // one JVM to the next, so registries and tag names are sorted for the
+        // same reason `canonicalize` sorts NBT keys: a map is unordered on the
+        // wire, and the committed tables have to be reproducible.
+        List<ResourceKey<? extends Registry<?>>> registryKeys = new ArrayList<>(payloads.keySet());
+        registryKeys.sort(Comparator.comparing(key -> key.identifier().toString()));
+
+        StringBuilder index = new StringBuilder("[\n");
+        boolean firstRegistry = true;
+        for (ResourceKey<? extends Registry<?>> registryKey : registryKeys) {
+            // The map inside a `NetworkPayload` is private, so the payload is
+            // written and read straight back rather than reached into. That
+            // also proves the bytes below are the ones vanilla would send.
+            FriendlyByteBuf written = new FriendlyByteBuf(Unpooled.buffer());
+            payloads.get(registryKey).write(written);
+            Map<Identifier, IntList> tags =
+                    written.readMap(FriendlyByteBuf::readIdentifier, FriendlyByteBuf::readIntIdList);
+
+            List<Identifier> names = new ArrayList<>(tags.keySet());
+            names.sort(Comparator.comparing(Identifier::toString));
+
+            String registryName = registryKey.identifier().toString();
+            Path file = outDir.resolve(fileNameFor(registryName, "bin"));
+            ByteBuf blob = Unpooled.buffer();
+
+            if (!firstRegistry) {
+                index.append(",\n");
+            }
+            firstRegistry = false;
+            index.append("  {\"registry\": ").append(quote(registryName));
+            index.append(", \"file\": ").append(quote(file.getFileName().toString()));
+            index.append(", \"tags\": [");
+            for (int i = 0; i < names.size(); i++) {
+                Identifier name = names.get(i);
+                IntList ids = tags.get(name);
+                FriendlyByteBuf encoded = new FriendlyByteBuf(Unpooled.buffer());
+                encoded.writeIntIdList(ids);
+                byte[] payload = drain(encoded);
+                blob.writeBytes(payload);
+
+                if (i > 0) {
+                    index.append(", ");
+                }
+                index.append("{\"name\": ").append(quote(name.toString()));
+                index.append(", \"entries\": ").append(ids.size());
+                index.append(", \"length\": ").append(payload.length).append("}");
+            }
+            index.append("]}");
+
+            Files.write(file, drain(blob));
+        }
+        index.append("\n]\n");
+        Files.writeString(outDir.resolve("index.json"), index.toString(), StandardCharsets.UTF_8);
+    }
+
+    // --- tag verification -------------------------------------------------
+
+    /// Loads the registries the way a joining client does, with only the tags
+    /// in `dumpDir` bound.
+    ///
+    /// This is the check the disconnect that motivated this command would have
+    /// failed. A client does not keep the tags it read from its own packs:
+    /// `update_tags` replaces the whole map, and only then does it parse the
+    /// registry elements from its vanilla pack. An element naming a tag that is
+    /// not bound throws "Missing tag", one throw fails the whole registry load,
+    /// and that fails `finish_configuration` with "Network Protocol Error".
+    ///
+    /// So the tags come from the dump rather than from `TagLoader`, and
+    /// `RegistryDataLoader` then parses the same files the client parses with
+    /// the same codecs. Running it against an empty dump reproduces the
+    /// disconnect; running it against the full one is what the check asserts.
+    ///
+    /// Not a rendering client: this proves the data a client is sent loads, not
+    /// that the socket dance around it works. `nix run .#e2e` covers the wire.
+    private static void verifyTags(Path dumpDir) throws IOException {
+        Map<String, TagNetworkSerialization.NetworkPayload> dumped = readTagDump(dumpDir);
+
+        try (CloseableResourceManager resources = vanillaResources()) {
+            LayeredRegistryAccess<RegistryLayer> layers = RegistryLayer.createRegistryAccess();
+
+            List<Registry.PendingTags<?>> pending = new ArrayList<>();
+            layers.getLayer(RegistryLayer.STATIC).registries().forEach(entry -> {
+                TagNetworkSerialization.NetworkPayload payload =
+                        dumped.get(entry.key().identifier().toString());
+                if (payload != null) {
+                    pending.add(prepareTags(entry.value(), payload));
+                }
+            });
+
+            List<HolderLookup.RegistryLookup<?>> tagged = TagLoader.buildUpdatedLookups(
+                    layers.getAccessForLoading(RegistryLayer.WORLDGEN), pending);
+            RegistryAccess.Frozen worldgen = RegistryDataLoader
+                    .load(resources, tagged, RegistryDataLoader.WORLDGEN_REGISTRIES, Runnable::run)
+                    .join();
+
+            long elements = worldgen.registries()
+                    .mapToLong(entry -> entry.value().size())
+                    .sum();
+            System.err.printf(
+                    "loaded %d registries (%d elements) against %d tagged registries%n",
+                    worldgen.registries().count(), elements, pending.size());
+        }
+    }
+
+    /// Splitting this out is what gives the wildcard in `registries()` a name
+    /// to bind to, so `resolve` and `prepareTagReload` agree on one `T`.
+    private static <T> Registry.PendingTags<T> prepareTags(
+            Registry<T> registry, TagNetworkSerialization.NetworkPayload payload) {
+        return registry.prepareTagReload(payload.resolve(registry));
+    }
+
+    /// The dump read back into the payloads a client would have decoded from
+    /// `update_tags`. The `.bin` holds each tag's id list back to back, and
+    /// `index.json` says which tag each one belongs to and how long it is.
+    private static Map<String, TagNetworkSerialization.NetworkPayload> readTagDump(Path dumpDir)
+            throws IOException {
+        Map<String, TagNetworkSerialization.NetworkPayload> payloads = new LinkedHashMap<>();
+        JsonArray index = JsonParser
+                .parseString(Files.readString(dumpDir.resolve("index.json"), StandardCharsets.UTF_8))
+                .getAsJsonArray();
+
+        for (JsonElement element : index) {
+            JsonObject registry = element.getAsJsonObject();
+            byte[] blob = Files.readAllBytes(dumpDir.resolve(registry.get("file").getAsString()));
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(blob));
+
+            Map<Identifier, IntList> tags = new LinkedHashMap<>();
+            for (JsonElement tag : registry.getAsJsonArray("tags")) {
+                String name = tag.getAsJsonObject().get("name").getAsString();
+                tags.put(Identifier.parse(name), buffer.readIntIdList());
+            }
+            if (buffer.isReadable()) {
+                throw new IllegalStateException(
+                        registry.get("file").getAsString() + " has "
+                                + buffer.readableBytes() + " bytes index.json does not account for");
+            }
+            payloads.put(
+                    registry.get("registry").getAsString(),
+                    new TagNetworkSerialization.NetworkPayload(tags));
+        }
+        return payloads;
+    }
+
     // --- plumbing ---------------------------------------------------------
 
     private void put(String name, String value) {
@@ -1016,8 +1215,8 @@ public final class VanillaEncoder {
         return builder.toString();
     }
 
-    private static String fileNameFor(String registryName) {
-        return registryName.replace(':', '.').replace('/', '.') + ".nbt";
+    private static String fileNameFor(String registryName, String extension) {
+        return registryName.replace(':', '.').replace('/', '.') + "." + extension;
     }
 
     private static String quote(String value) {
