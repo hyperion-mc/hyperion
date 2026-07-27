@@ -5,7 +5,7 @@ use crate::simulation::metadata::Metadata;
 
 // todo: can be u8
 #[derive(Component, PartialEq, Eq, Copy, Clone, Debug, Deref)]
-#[meta]
+#[flecs(meta)]
 pub struct EntityFlags {
     value: u8,
 }

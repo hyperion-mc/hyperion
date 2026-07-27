@@ -45,9 +45,16 @@ fn track_previous<T: ComponentId + Copy + Debug + PartialEq>(world: &World) {
     let observer_name = format!("init_prev_{component_name}");
     let system_name = format!("track_prev_{component_name}");
 
+    // flecs 0.2.2 cannot infer the pair kind for a generic `(Id<Prev>, Id<T>)`, so build the pair
+    // id by hand
+    let prev_pair = Entity(ecs_pair(
+        *world.component_id::<Prev>(),
+        *world.component_id::<T>(),
+    ));
+
     world
         .observer_named::<flecs::OnSet, &T>(&observer_name)
-        .without((id::<Prev>(), id::<T>())) // we have not set Prev yet
+        .without(prev_pair) // we have not set Prev yet
         .each_entity(|entity, value| {
             entity.set_pair::<Prev, T>(*value);
         });

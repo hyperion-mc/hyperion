@@ -70,7 +70,7 @@ impl Default for TicksFrozenInPowderSnow {
 
 #[derive(Encode, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[derive(Component)]
-#[meta]
+#[flecs(meta)]
 #[repr(C)] // ideally this would be u8
 pub enum Pose {
     #[default]

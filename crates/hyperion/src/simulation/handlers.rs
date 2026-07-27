@@ -549,7 +549,11 @@ pub fn request_command_completions<'a>(
     handle: &dyn LifetimeHandle<'a>,
     query: &mut PacketSwitchQuery<'_>,
 ) -> anyhow::Result<()> {
-    let text = text.0;
+    // TODO(flecs-port): valence's `RequestCommandCompletionsC2s::text` is now a
+    // `CowUtf8Bytes<'a>` rather than a `&'a str`, so this borrow is tied to the packet reference
+    // rather than to `'a`. `CommandCompletionRequest` in crates/hyperion/src/storage/event/sync.rs
+    // has to hold an owned (or `CowUtf8Bytes`) query before this compiles.
+    let text: &str = &text.0;
     let transaction_id = transaction_id.0;
 
     let completion = CommandCompletionRequest {
@@ -648,6 +652,12 @@ pub fn add_builtin_handlers(registry: &mut HandlerRegistry) {
     registry.add_handler(Box::new(player_abilities));
 }
 
+// TODO(flecs-port): this still assumes the old zero-copy net layer. The ported
+// `crates/hyperion/src/net/decoder.rs` gives a lifetime-free `BorrowedPacketFrame` whose `body` is
+// an owned `Either<Bytes, RawPacket>`, and the ported `Compose` has no `bump`/`bump_tracker`, so
+// there is nothing left to hand a `LifetimeHandle` out of. Deciding whether `HandlerRegistry`
+// keeps `RuntimeLifetime` or moves to `DecodeBytes` spans net/, simulation/packet.rs and
+// hyperion-utils/src/lifetime.rs, so it is left for whoever owns that contract.
 /// # Safety
 /// The [`BorrowedPacketFrame`] must borrow data from the [`Compose::bump`] in
 /// [`PacketSwitchQuery::compose`]

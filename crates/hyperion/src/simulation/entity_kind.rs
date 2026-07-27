@@ -2,7 +2,7 @@ use flecs_ecs::{core::ComponentOrPairId, macros::Component};
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(C)]
-#[meta]
+#[flecs(meta)]
 pub enum EntityKind {
     Allay = 0,
     AreaEffectCloud = 1,
