@@ -7,13 +7,32 @@ readme = "README.md"
 version.workspace = true
 
 [dependencies]
-# Pinned to the crates.io release rather than git `main`: see
-# docs/flecs-rust-api-notes.md for the version decision.
-flecs_ecs = "0.2.2"
+clap = { workspace = true }
+dotenvy = { workspace = true }
+envy = "0.4"
+fastrand = { workspace = true }
+flecs_ecs = { workspace = true }
 glam = { workspace = true }
+hyperion = { workspace = true }
+hyperion-clap = { workspace = true }
+hyperion-genmap = { workspace = true }
+hyperion-inventory = { workspace = true }
+hyperion-permission = { workspace = true }
+hyperion-proxy-module = { workspace = true }
+hyperion-utils = { workspace = true }
+rayon = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+valence_nbt = { workspace = true }
+valence_protocol = { workspace = true }
+valence_text = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 
 [lints]
 workspace = true
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tikv-jemallocator.workspace = true

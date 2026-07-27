@@ -32,3 +32,4 @@ vendor/
 /extractor/bin
 .trigger-*
 valence/
+.dev-certs/
