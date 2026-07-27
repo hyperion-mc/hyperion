@@ -211,13 +211,13 @@ impl Proxy {
                     .process(PacketSide::Serverbound, state, threshold, &packet)
                     .await?;
 
-                if state == PacketState::Handshaking {
-                    if let Some(handshake) = extrapolate_packet::<HandshakeC2s<'_>>(&packet) {
-                        *state_lock.write().await = match handshake.next_state {
-                            HandshakeNextState::Status => PacketState::Status,
-                            HandshakeNextState::Login => PacketState::Login,
-                        };
-                    }
+                if state == PacketState::Handshaking
+                    && let Some(handshake) = extrapolate_packet::<HandshakeC2s<'_>>(&packet)
+                {
+                    *state_lock.write().await = match handshake.next_state {
+                        HandshakeNextState::Status => PacketState::Status,
+                        HandshakeNextState::Login => PacketState::Login,
+                    };
                 }
 
                 server_writer.send_packet_raw(&packet).await?;

@@ -1,8 +1,9 @@
 #![feature(portable_simd)]
-#![feature(array_chunks)]
-#![feature(iter_array_chunks)]
 
 use std::simd::{f64x4, num::SimdFloat};
+
+/// Width of [`f64x4`], and so of every chunk `update` hands to `simd_update`.
+const LANES: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct ParallelStats {
@@ -32,19 +33,15 @@ impl ParallelStats {
     pub fn update(&mut self, values: &[f64]) {
         assert_eq!(values.len(), self.width, "Input length must match width");
 
-        let mut chunks = (0..self.width).array_chunks::<4>();
-
-        // Process in SIMD chunks of 4 parallel stats
-        for indices in chunks.by_ref() {
-            let chunk_start = indices[0];
-            let chunk_end = indices.last().unwrap() + 1;
+        // Process in SIMD chunks of 4 parallel stats.
+        let simd_end = self.width - self.width % LANES;
+        for chunk_start in (0..simd_end).step_by(LANES) {
+            let chunk_end = chunk_start + LANES;
             self.simd_update(chunk_start, chunk_end, &values[chunk_start..chunk_end]);
         }
 
-        if let Some(remainder) = chunks.into_remainder() {
-            for i in remainder {
-                self.update_single(i, values[i]);
-            }
+        for (i, value) in values.iter().enumerate().skip(simd_end) {
+            self.update_single(i, *value);
         }
     }
 
@@ -100,7 +97,7 @@ impl ParallelStats {
         let delta = value - self.means[idx];
         self.means[idx] += delta / count;
         let delta2 = value - self.means[idx];
-        self.m2s[idx] += delta * delta2;
+        self.m2s[idx] = delta.mul_add(delta2, self.m2s[idx]);
     }
 
     #[must_use]

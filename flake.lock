@@ -259,11 +259,11 @@
         "tests": "tests"
       },
       "locked": {
-        "lastModified": 1785128174,
-        "narHash": "sha256-gaV21ovlpOJanO6TOoXqLO/5yMYDbCkp4dQTayjaB+g=",
+        "lastModified": 1785144006,
+        "narHash": "sha256-rDYx8+THQQqodP3r7Re5KkwtjwqqXToEjYbPnQ2ji3k=",
         "owner": "indexable-inc",
         "repo": "index",
-        "rev": "11ccea5ccbd5940bac8ee4753bf6794787700529",
+        "rev": "d817f9d340ad9594311ed1bb2ea188be6776dac4",
         "type": "github"
       },
       "original": {
@@ -641,11 +641,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1785044261,
-        "narHash": "sha256-ehF/c4fLdgmNu7YXEClnmwhoBYddhYIVoSQpsZoorC4=",
+        "lastModified": 1785131767,
+        "narHash": "sha256-VNbQv2P0zgaNh96mT4LrnX7hdXgiC5nBH+uvyrrVX7U=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "fe2124391e739e7b3e8720cd8a73f06edd0aceba",
+        "rev": "c67ce00525464a710971351c183ce67acb6ca827",
         "type": "github"
       },
       "original": {

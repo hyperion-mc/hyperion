@@ -113,10 +113,10 @@ pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
     let language = "rs";
     let theme = CodeTheme::from_memory(ui.ctx());
 
-    let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-        let mut layout_job = highlight(ui.ctx(), &theme, string, language);
+    let mut layouter = |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
+        let mut layout_job = highlight(ui.ctx(), &theme, buffer.as_str(), language);
         layout_job.wrap.max_width = wrap_width; // no wrapping
-        ui.fonts(|f| f.layout_job(layout_job))
+        ui.ctx().fonts_mut(|f| f.layout_job(layout_job))
     };
 
     ui.add(
@@ -132,12 +132,13 @@ pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
 
 /// Memoized Code highlighting
 pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &str) -> LayoutJob {
-    type HighlightCache = egui::util::cache::FrameCache<LayoutJob, Highlighter>;
+    type HighlightCache = egui::cache::FrameCache<LayoutJob, Highlighter>;
 
     ctx.memory_mut(|mem| {
         mem.caches
             .cache::<HighlightCache>()
             .get((theme, code, language))
+            .clone()
     })
 }
 
@@ -232,7 +233,7 @@ impl CodeTheme {
     }
 
     pub(crate) fn from_memory(ctx: &egui::Context) -> Self {
-        if ctx.style().visuals.dark_mode {
+        if ctx.theme() == egui::Theme::Dark {
             ctx.data_mut(|d| {
                 d.get_persisted(egui::Id::new("dark"))
                     .unwrap_or_else(Self::dark)
@@ -271,8 +272,9 @@ impl CodeTheme {
     }
 
     pub(crate) fn ui(&mut self, ui: &mut egui::Ui) {
-        #[allow(deprecated)]
-        egui::widgets::global_dark_light_mode_buttons(ui);
+        // Renamed in egui 0.32 when "dark/light" grew a third, follow-the-system
+        // option; the deprecated shim is gone as of 0.35.
+        egui::widgets::global_theme_preference_buttons(ui);
 
         for theme in SyntectTheme::all() {
             if theme.is_dark() == self.dark_mode {
@@ -298,7 +300,7 @@ impl Default for Highlighter {
     }
 }
 
-impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &str), LayoutJob> for Highlighter {
+impl egui::cache::ComputerMut<(&CodeTheme, &str, &str), LayoutJob> for Highlighter {
     fn compute(&mut self, (theme, code, lang): (&CodeTheme, &str, &str)) -> LayoutJob {
         self.highlight(theme, code, lang)
     }
@@ -368,11 +370,11 @@ impl Highlighter {
     }
 }
 
-fn as_byte_range(whole: &str, range: &str) -> std::ops::Range<usize> {
+fn as_byte_range(whole: &str, range: &str) -> egui::text::ByteRange {
     let whole_start = whole.as_ptr() as usize;
     let range_start = range.as_ptr() as usize;
     assert!(whole_start <= range_start);
     assert!(range_start + range.len() <= whole_start + whole.len());
     let offset = range_start - whole_start;
-    offset..(offset + range.len())
+    egui::text::ByteIndex(offset)..egui::text::ByteIndex(offset + range.len())
 }

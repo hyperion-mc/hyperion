@@ -330,7 +330,8 @@ impl Module for EntityStateSyncModule {
                 }
 
                 tracking.server_velocity.x *= friction * 0.98;
-                tracking.server_velocity.y -= 0.08 * 0.980_000_019_073_486_3;
+                tracking.server_velocity.y =
+                    0.08f64.mul_add(-0.980_000_019_073_486_3, tracking.server_velocity.y);
                 tracking.server_velocity.z *= friction * 0.98;
 
                 if tracking.server_velocity.x.abs() < 0.003 {

@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use geometry::{aabb::Aabb, ray::Ray};
 use glam::Vec3;
-use rand::{Rng, SeedableRng, rngs::SmallRng};
+use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use tango_bench::{
     DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn, tango_benchmarks,
     tango_main,

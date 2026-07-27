@@ -12,7 +12,13 @@ tar = {workspace = true}
 tokio-util = {workspace = true}
 tokio = {workspace = true}
 futures-util = {workspace = true}
+
+# `hyperion_packet_macros` expands to paths rooted at `valence_protocol`, which
+# cargo-machete cannot see.
 valence_protocol = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["valence_protocol"]
 
 [lints]
 workspace = true

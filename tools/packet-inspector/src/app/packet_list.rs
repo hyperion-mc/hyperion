@@ -81,7 +81,7 @@ fn draw_packet_counter(state: &SharedState, ui: &mut Ui) {
         .filter(|p| state.packet_filter.get(p).unwrap_or(true))
         .count();
 
-    ui.label(format!("({filtered_packets}/{length})",));
+    ui.label(format!("({filtered_packets}/{length})"));
 }
 
 fn draw_clear_button(state: &mut SharedState, ui: &mut Ui) {
@@ -98,10 +98,10 @@ fn draw_packet_list(state: &mut SharedState, ui: &mut Ui) {
         .stick_to_bottom(!state.update_scroll)
         .show(ui, |ui| {
             for (i, packet) in packets.iter().enumerate() {
-                if let Some(filtered) = state.packet_filter.get(packet) {
-                    if !filtered {
-                        continue;
-                    }
+                if let Some(filtered) = state.packet_filter.get(packet)
+                    && !filtered
+                {
+                    continue;
                 }
 
                 let selected = { state.selected_packet == Some(i) };

@@ -1,0 +1,24 @@
+[dependencies]
+arrayvec = { workspace = true }
+bytes = { workspace = true }
+fast_hilbert = { workspace = true }
+glam = { workspace = true }
+heapless = { workspace = true }
+more-asserts = { workspace = true }
+
+[dev-dependencies]
+fastrand = { workspace = true }
+itertools = { workspace = true }
+proptest = { workspace = true }
+
+[lints]
+workspace = true
+
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+license.workspace = true
+name = "bvh"
+publish = false
+readme = "README.md"
+version.workspace = true

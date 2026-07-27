@@ -35,7 +35,7 @@ use crate::{
         skin::PlayerSkin,
         util::registry_codec_raw,
     },
-    util::{SendableQuery, SendableRef},
+    util::SendableRef,
 };
 
 #[expect(
@@ -55,7 +55,7 @@ pub fn player_join_world(
     world: &WorldRef<'_>,
     skin: &PlayerSkin,
     root_command: Entity,
-    query: &Query<(&Uuid, &Name)>,
+    query: &QueryHandle<(&Uuid, &Name)>,
     crafting_registry: &CraftingRegistry,
     config: &Config,
 ) -> anyhow::Result<()> {
@@ -395,9 +395,7 @@ impl Index<usize> for RayonWorldStages {
 
 impl Module for PlayerJoinModule {
     fn module(world: &World) {
-        let query = world.new_query::<(&Uuid, &Name)>();
-
-        let query = SendableQuery(query);
+        let query = world.new_query::<(&Uuid, &Name)>().handle();
 
         let rayon_threads = rayon::current_num_threads();
 
@@ -466,7 +464,6 @@ impl Module for PlayerJoinModule {
                     entity.get::<(&Uuid, &Name, &Position, &Yaw, &Pitch, &ConnectionId)>(
                         |(uuid, name, position, yaw, pitch, &stream_id)| {
                             let query = &query;
-                            let query = &query.0;
                             entity.set_name(name);
 
                             // if we get an error joining, we should kick the player

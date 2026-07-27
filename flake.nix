@@ -344,10 +344,10 @@
             # Keyed by the exact source string in Cargo.lock. Refresh with
             # `nix-prefetch-git --fetch-submodules --url <url> --rev <rev>`.
             outputHashes = {
-              "git+https://github.com/TestingPlant/bvh-data#9bffb03a4b894a7884c9ec0da986bdde732ac704" =
-                "sha256-QjsyP9XdR53JDNFC8IX1qgTlJQZmanAZU+246QG4v9s=";
-              "git+https://github.com/nvzqz/divan#bca5c9676a35751d0a8164df7d79bda70f23286b" =
-                "sha256-WmzYLzLwXUGuX0K151Kh+fEV6nJJQLq/vb4ijXu01Vg=";
+              "git+https://github.com/nvzqz/divan#55ec68e31526c28c7825fa1bb884f326b619a879" =
+                "sha256-xL0b6ZGmG4lhVcBjbBpobODZye6MAIr/gGBwMIrxmwM=";
+              "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950" =
+                "sha256-3qUAXDHkeRFVfovZT+fW7VXW6aDteAiqCrLeCG/jd40=";
               "git+https://github.com/TestingPlant/valence?branch=feat-bytes#fb792dcb6669b64c5dc2366eb3d074b293def046" =
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
               "git+https://github.com/TestingPlant/valence?branch=feat-open#7c664716cd1e7b30de4e38cfc0ee8d1ecc7b0bd5" =

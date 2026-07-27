@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 #![feature(sync_unsafe_cell)]
 
 use std::{
@@ -22,7 +21,7 @@ use valence_protocol::MAX_PACKET_SIZE;
 struct Fragment {
     /// Points to the next fragment, if available. Once this is set to `Some`, this fragment's `read_cursor` will never be
     /// updated and `next` will never be modified.
-    next: ArcSwapOption<Fragment>,
+    next: ArcSwapOption<Self>,
 
     /// Bytes `0..read_cursor` in the `data` field have been initialized, can be read, will never
     /// be modified again, and contain entire packets.
@@ -347,29 +346,27 @@ impl Receiver {
             let fragment_read_cursor = self.current.read_cursor.load(Ordering::Acquire);
 
             if self.read_cursor == fragment_read_cursor {
-                if let Some(next_fragment) = self.current.next.load_full() {
-                    // The next fragment is available. This needs to check if the read cursor for
-                    // the current fragment has been updated to check for the following situation:
-                    // - Reader notices that the reader's read cursor is the same as the fragment's
-                    //   read cursor, indicating that there are no new packets available in the
-                    //   current fragment
-                    // - Writer (in another thread) writes a packet to the current fragment and
-                    //   updates the read cursor
-                    // - Writer allocates a new fragment to store another packet
-                    // - Reader notices that the next fragment is available and reaches this code
-                    // In this situation, checking the read cursor again will allow the reader to
-                    // read the remaining packets in the current fragment by allowing the loop to
-                    // continue to its next iteration
-                    let new_fragment_read_cursor = self.current.read_cursor.load(Ordering::Acquire);
-                    if fragment_read_cursor == new_fragment_read_cursor {
-                        // There are no more packets on the current fragment.
-                        // Start reading from the next fragment
-                        self.current = next_fragment;
-                        self.read_cursor = 0;
-                    }
-                } else {
-                    // There are no packets at the moment
-                    return None;
+                // No next fragment means there are no packets at the moment.
+                let next_fragment = self.current.next.load_full()?;
+
+                // The next fragment is available. This needs to check if the read cursor for
+                // the current fragment has been updated to check for the following situation:
+                // - Reader notices that the reader's read cursor is the same as the fragment's
+                //   read cursor, indicating that there are no new packets available in the
+                //   current fragment
+                // - Writer (in another thread) writes a packet to the current fragment and
+                //   updates the read cursor
+                // - Writer allocates a new fragment to store another packet
+                // - Reader notices that the next fragment is available and reaches this code
+                // In this situation, checking the read cursor again will allow the reader to
+                // read the remaining packets in the current fragment by allowing the loop to
+                // continue to its next iteration
+                let new_fragment_read_cursor = self.current.read_cursor.load(Ordering::Acquire);
+                if fragment_read_cursor == new_fragment_read_cursor {
+                    // There are no more packets on the current fragment.
+                    // Start reading from the next fragment
+                    self.current = next_fragment;
+                    self.read_cursor = 0;
                 }
             } else {
                 // Since the fragment's read cursor is only updated when entire packet(s) have been

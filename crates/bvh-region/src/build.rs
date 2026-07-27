@@ -33,7 +33,7 @@ where
     T: Debug + Send + Copy + Sync,
 {
     #[tracing::instrument(skip_all, fields(elements_len = elements.len()))]
-    pub fn build(mut elements: Vec<T>, get_aabb: (impl GetAabb<T> + Sync)) -> Self {
+    pub fn build(mut elements: Vec<T>, get_aabb: impl GetAabb<T> + Sync) -> Self {
         let max_threads = utils::thread_count_pow2();
 
         let len = elements.len();

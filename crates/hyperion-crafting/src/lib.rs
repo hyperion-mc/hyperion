@@ -272,7 +272,7 @@ impl CraftingRegistry {
 
                 Recipe {
                     kind: "minecraft:crafting_shapeless",
-                    recipe_id: recipe_id.to_string(),
+                    recipe_id: recipe_id.clone(),
                     data: RecipeData::CraftingShapeless(data.clone()),
                 }
             })
