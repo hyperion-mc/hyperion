@@ -1,11 +1,11 @@
 use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
-    generated::packet_id::play::clientbound::PacketId, packets::play::entity::SetEntityData,
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::{clientbound::RemoveEntities, entity::SetEntityData},
 };
 use hyperion_proto::UpdateChannelPosition;
 use hyperion_utils::EntityExt;
 use tracing::error;
-use valence_protocol::{VarInt, packets::play};
 
 use crate::{
     egress::metadata::show_all,
@@ -32,12 +32,16 @@ impl Module for ChannelModule {
             .observer::<flecs::OnAdd, ()>()
             .with(id::<Channel>())
             .each_entity(|entity, ()| {
-                let packet = play::EntitiesDestroyS2c {
-                    entity_ids: vec![VarInt(entity.minecraft_id())].into(),
-                };
+                let packet = RemoveEntities(vec![entity.minecraft_id()]);
 
                 entity.world().get::<&Compose>(|compose| {
-                    let packet_buf = compose.io_buf().encode_packet(&packet, compose).unwrap();
+                    let packet_buf = compose
+                        .io_buf()
+                        .encode_packet(
+                            Clientbound::new(PacketId::RemoveEntities.to_raw(), &packet),
+                            compose,
+                        )
+                        .unwrap();
 
                     compose
                         .io_buf()

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::LazyLock};
+use std::sync::LazyLock;
 
 use flecs_ecs::{
     core::{
@@ -15,6 +15,7 @@ use hyperion::{
         RegistryId,
         generated::{packet_id::play::clientbound::PacketId, registry::ATTRIBUTE},
         packets::play::{
+            chunk::{LevelParticles, Particle},
             clientbound::{
                 PlayerCombatKill, UpdateAttributes, update_attributes::AttributeSnapshot,
             },
@@ -37,10 +38,8 @@ use hyperion::{
     },
     storage::EventQueue,
     valence_protocol::{
-        ItemKind, ItemStack, Particle, ident,
+        ItemKind, ItemStack, ident,
         math::{DVec3, Vec3},
-        packets::play,
-        text::IntoText,
     },
 };
 use hyperion_inventory::PlayerInventory;
@@ -74,6 +73,35 @@ static ARMOR: LazyLock<RegistryId> = LazyLock::new(|| {
         .expect("minecraft:armor is a vanilla attribute");
     RegistryId(i32::try_from(id).expect("a registry index fits in an i32"))
 });
+
+/// A burst of `count` particles scattered through a box centred on `at`.
+///
+/// `override_limiter` is set on every one of these: a kill or a critical hit
+/// is exactly the thing a spectator further out still wants to see, and the
+/// client would otherwise cull it at its normal particle radius.
+const fn particles(
+    at: DVec3,
+    spread: Vec3,
+    max_speed: f32,
+    count: i32,
+    particle: Particle,
+) -> LevelParticles {
+    LevelParticles {
+        override_limiter: true,
+        // The client's particle setting is the player's own choice, so a
+        // combat effect does not override it.
+        always_show: false,
+        x: at.x,
+        y: at.y,
+        z: at.z,
+        x_dist: spread.x,
+        y_dist: spread.y,
+        z_dist: spread.z,
+        max_speed,
+        count,
+        particle,
+    }
+}
 
 #[derive(Component)]
 pub struct AttackModule;
@@ -162,12 +190,7 @@ impl Module for AttackModule {
                                     }
 
                                     if target_team == origin_team {
-                                        let msg = "§cCannot attack teammates";
-                                        let pkt_msg = play::GameMessageS2c {
-                                            chat: msg.into_cow_text(),
-                                            overlay: false,
-                                        };
-
+                                        let pkt_msg = agnostic::chat("§cCannot attack teammates");
                                         compose.unicast(&pkt_msg, *origin_connection).unwrap();
                                         return;
                                     }
@@ -213,18 +236,21 @@ impl Module for AttackModule {
                                     send(compose, *target_connection, PacketId::HurtAnimation.to_raw(), &pkt_hurt).unwrap();
 
                                     if critical_hit {
-                                    let particle_pkt = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::Crit),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
-                                            max_speed: 0.5,
-                                            count: 100,
-                                            offset: Vec3::new(0.5, 0.5, 0.5),
-                                        };
+                                        let particle_pkt = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            Vec3::new(0.5, 0.5, 0.5),
+                                            0.5,
+                                            100,
+                                            Particle::Crit,
+                                        );
 
                                         // origin is excluded because the crit particles are
                                         // already generated on the client side of the attacker
-                                        compose.broadcast(&particle_pkt).exclude(*origin_connection).send().unwrap();
+                                        compose
+                                            .broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt))
+                                            .exclude(*origin_connection)
+                                            .send()
+                                            .unwrap();
                                     }
 
                                     if health.is_dead() {
@@ -244,24 +270,24 @@ impl Module for AttackModule {
 
                                     if health.is_dead() {
                                         // Create particle effect at the attacker's position
-                                        let particle_pkt = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::Explosion),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
-                                            max_speed: 0.5,
-                                            count: 100,
-                                            offset: Vec3::new(0.5, 0.5, 0.5),
-                                        };
+                                        let particle_pkt = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.0, 0.0),
+                                            Vec3::new(0.5, 0.5, 0.5),
+                                            0.5,
+                                            100,
+                                            Particle::Explosion,
+                                        );
 
                                         // Add a second particle effect for more visual impact
-                                        let particle_pkt2 = play::ParticleS2c {
-                                            particle: Cow::Owned(Particle::DragonBreath),
-                                            long_distance: true,
-                                            position: target_position.as_dvec3() + DVec3::new(0.0, 1.5, 0.0),
-                                            max_speed: 0.2,
-                                            count: 75,
-                                            offset: Vec3::new(0.3, 0.3, 0.3),
-                                        };
+                                        let particle_pkt2 = particles(
+                                            target_position.as_dvec3() + DVec3::new(0.0, 1.5, 0.0),
+                                            Vec3::new(0.3, 0.3, 0.3),
+                                            0.2,
+                                            75,
+                                            // `PowerParticleOption.power`, at the default the
+                                            // datapack codec would have supplied.
+                                            Particle::DragonBreath { power: 1.0 },
+                                        );
                                         // `EntityEvent` 3 is `Entity.DEATH`, which starts the
                                         // death animation on every client that can see the body.
                                         let pkt_entity_status = EntityEvent {
@@ -288,8 +314,8 @@ impl Module for AttackModule {
                                         *target_pose = Pose::Dying;
                                         target.modified(id::<Pose>());
                                         compose.broadcast(Clientbound::new(PacketId::UpdateAttributes.to_raw(), &pkt)).send().unwrap();
-                                        compose.broadcast(&particle_pkt).send().unwrap();
-                                        compose.broadcast(&particle_pkt2).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt)).send().unwrap();
+                                        compose.broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &particle_pkt2)).send().unwrap();
                                         compose.broadcast(Clientbound::new(PacketId::EntityEvent.to_raw(), &pkt_entity_status)).send().unwrap();
                                         compose.broadcast(Clientbound::new(PacketId::RemoveEntities.to_raw(), &pkt_remove_entities)).send().unwrap();
 
