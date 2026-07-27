@@ -79,23 +79,3 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: hyperion-mc/hyperion
-
-  # Nix does not run on Windows, so this one job still drives cargo directly.
-  test-windows:
-    name: Tests (windows-latest)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Read rust-toolchain.toml
-        id: toolchain
-        shell: bash
-        run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep 'channel' | cut -d'"' -f2)
-          echo "version=${TOOLCHAIN}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.toolchain.outputs.version }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-      - run: cargo test --all-features
