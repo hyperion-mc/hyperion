@@ -465,6 +465,7 @@
               sync-minecraft-proto = minecraft.syncScript;
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;
+              sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
               extract-minecraft-protocol = minecraft.extractor;
               # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
               # from the server's own codecs, so a new codec can be checked
@@ -485,6 +486,7 @@
             minecraft-registry-contents = minecraft.registryContents;
             minecraft-registry-data-rust = minecraft.generatedRegistryData;
             minecraft-block-states-rust = minecraft.generatedBlockStates;
+            minecraft-entity-types-rust = minecraft.generatedEntityTypes;
           };
 
           # `nix flake check` builds every app, which is what proves each one
@@ -495,6 +497,7 @@
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-block-states = minecraft.blockStatesUpToDate;
+            minecraft-entity-types = minecraft.entityTypesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;

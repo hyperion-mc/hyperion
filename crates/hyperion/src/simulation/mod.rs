@@ -5,6 +5,12 @@ use derive_more::{Constructor, Deref, DerefMut, Display, From};
 use flecs_ecs::prelude::*;
 use geometry::aabb::Aabb;
 use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
+use hyperion_minecraft_proto::{
+    Uuid as ProtoUuid,
+    generated::packet_id::play::clientbound::PacketId,
+    packets::play::entity::{AddEntity, pack_degrees},
+    types::Vec3 as ProtoVec3,
+};
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -13,7 +19,7 @@ use tracing::{debug, error};
 use uuid;
 use valence_generated::block::BlockState;
 use valence_protocol::{
-    ByteAngle, VarInt,
+    VarInt,
     packets::play::{
         self, PlayerAbilitiesS2c, player_abilities_s2c::PlayerAbilitiesFlags,
         player_position_look_s2c::PlayerPositionLookFlags,
@@ -22,7 +28,7 @@ use valence_protocol::{
 
 use crate::{
     Global,
-    net::{Compose, ConnectionId, DataBundle},
+    net::{Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
         command::Command,
         entity_kind::EntityKind,
@@ -581,6 +587,45 @@ impl Velocity {
     }
 }
 
+/// The `add_entity` that puts this entity in a client's world.
+///
+/// One packet rather than the spawn-plus-velocity pair 1.20.1 needed: since
+/// 26.2 `add_entity` carries the velocity itself, through the same packed
+/// `Vec3.LP_STREAM_CODEC` that `set_entity_motion` uses.
+pub(crate) fn add_entity(
+    minecraft_id: i32,
+    kind: EntityKind,
+    uuid: &Uuid,
+    position: &Position,
+    pitch: Pitch,
+    yaw: Yaw,
+    velocity: &Velocity,
+) -> AddEntity {
+    let location = position.as_dvec3();
+
+    AddEntity {
+        id: minecraft_id,
+        uuid: ProtoUuid(uuid.0.as_u128()),
+        r#type: kind.expect_entity_type().id(),
+        x: location.x,
+        y: location.y,
+        z: location.z,
+        // Blocks per tick, which is what `Velocity` already holds.
+        movement: ProtoVec3 {
+            x: f64::from(velocity.0.x),
+            y: f64::from(velocity.0.y),
+            z: f64::from(velocity.0.z),
+        },
+        x_rot: pack_degrees(*pitch),
+        y_rot: pack_degrees(*yaw),
+        // The client tracks head yaw separately rather than deriving it from
+        // the body, so a zero here spawns everything facing north.
+        y_head_rot: pack_degrees(*yaw),
+        // No entity this server spawns defines type-specific spawn data.
+        data: 0,
+    }
+}
+
 #[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
 pub struct PendingTeleportation {
     pub teleport_id: i32,
@@ -736,32 +781,10 @@ impl Module for SimModule {
             let mut bundle = DataBundle::new(compose);
 
             let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
-                let kind = kind as i32;
+                let packet = add_entity(minecraft_id, kind, uuid, position, *pitch, *yaw, velocity);
 
-                let velocity = velocity.to_packet_units();
-
-                let packet = play::EntitySpawnS2c {
-                    entity_id: VarInt(minecraft_id),
-                    object_uuid: uuid.0,
-                    kind: VarInt(kind),
-                    position: position.as_dvec3(),
-                    pitch: ByteAngle::from_degrees(**pitch),
-                    yaw: ByteAngle::from_degrees(**yaw),
-                    head_yaw: ByteAngle::from_degrees(0.0), // todo:
-                    data: VarInt::default(),                // todo:
-                    velocity,
-                };
-
-                bundle.add_packet(&packet).unwrap();
-
-                let packet = play::EntityVelocityUpdateS2c {
-                    entity_id: VarInt(minecraft_id),
-                    velocity,
-                };
-
-                bundle.add_packet(&packet).unwrap();
-
-                bundle.broadcast_local(position.to_chunk()).unwrap();
+                bundle.add_packet(Clientbound::new(PacketId::AddEntity.to_raw(), &packet))?;
+                bundle.broadcast_local(position.to_chunk())?;
 
                 Ok(())
             };
