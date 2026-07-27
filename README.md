@@ -248,8 +248,12 @@ nix run .#dev
 
 Build optimised instead with `HYPERION_PROFILE=release-full nix run .#dev`.
 
+Two checkouts on one machine both want 25565, 35565 and process-compose's own
+8080. `HYPERION_PLAYER_PORT` and `HYPERION_SERVER_PORT` move the second one out
+of the way, and the process-compose port follows the player port:
+
 ```bash
-nix run .#dev
+HYPERION_PLAYER_PORT=25567 HYPERION_SERVER_PORT=35567 nix run .#dev
 ```
 
 Point bots at it with `nix run .#bots -- 127.0.0.1:25565 100`.

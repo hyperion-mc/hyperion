@@ -180,6 +180,10 @@
 
           certsDir = ".hyperion-dev-certs";
 
+          # Defaults, not constants: HYPERION_PLAYER_PORT and
+          # HYPERION_SERVER_PORT override them, and process-compose's own API
+          # port moves with them. Two checkouts on one machine otherwise fight
+          # over all three, and the loser dies on "address already in use".
           gameServerPort = 35565;
           proxyPort = 25565;
 
@@ -192,12 +196,12 @@
             version = "0.5";
             processes = {
               game-server = {
-                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port ${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
                 availability.restart = "on_failure";
               };
 
               proxy = {
-                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:${toString gameServerPort} --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:${toString proxyPort}";
+                command = "ulimit -Sn ${fileDescriptors}; exec cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" --bin hyperion-proxy -- --server 127.0.0.1:\"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/proxy.crt --private-key ${certsDir}/proxy_private_key.pem 0.0.0.0:\"$\{HYPERION_PLAYER_PORT:-${toString proxyPort}}\"";
                 # Started, not healthy: a TCP readiness probe would connect and
                 # immediately disconnect every few seconds, and the game server
                 # logs an error for each half-open connection. The proxy already
@@ -307,7 +311,12 @@
                   "${lib.getExe runners.certs}"
                 fi
                 cd "$root"
-                exec process-compose --config ${processComposeConfig} "$@"
+                # process-compose's own API port has to move with the game
+                # ports, or a second checkout dies on 8080 before either process
+                # starts.
+                api_port="''${HYPERION_PC_PORT:-$(( 8080 + ''${HYPERION_PLAYER_PORT:-${toString proxyPort}} - ${toString proxyPort} ))}"
+                echo "players: 0.0.0.0:''${HYPERION_PLAYER_PORT:-${toString proxyPort}} | game server: 127.0.0.1:''${HYPERION_SERVER_PORT:-${toString gameServerPort}}"
+                exec process-compose --config ${processComposeConfig} --port "$api_port" "$@"
               '';
             };
           };

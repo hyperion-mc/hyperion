@@ -50,6 +50,7 @@ pub fn process_decode(
     compression: &mut Compression,
 ) -> Option<()> {
     let packet_id = buffer.read_var_u32().0 as u8;
+    tracing::debug!("clientbound state={} id=0x{packet_id:02X}", bot.state);
     lookup_packet(bot.state, packet_id)?(buffer, bot, compression);
     Some(())
 }

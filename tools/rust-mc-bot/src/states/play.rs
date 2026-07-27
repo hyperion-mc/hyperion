@@ -11,6 +11,11 @@ pub fn process_kick(buffer: &mut Buf, bot: &mut Bot, _compression: &mut Compress
 
 pub fn process_join_game(buffer: &mut Buf, bot: &mut Bot, compression: &mut Compression) {
     bot.entity_id = buffer.read_u32();
+    tracing::info!(
+        "{} reached PLAY state: JOIN_GAME (0x28) entity_id={}",
+        bot.name,
+        bot.entity_id
+    );
     bot.send_packet(write_client_settings(), compression);
 }
 
