@@ -46,7 +46,6 @@ members = [
     'crates/simd-utils',
     'events/bedwars',
     'events/smash',
-    'tools/packet-inspector',
     'tools/rust-mc-bot',
 ]
 resolver = '2'

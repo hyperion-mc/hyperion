@@ -189,6 +189,10 @@ let
       meta = {
         description = "Harness printing Minecraft ${pin.id} bytes from the server's own codecs";
         license = lib.licenses.unfree;
+        # Without this `lib.getExe` guesses the derivation name, and
+        # `nix run .#minecraft-encode` dies on a missing
+        # `bin/minecraft-vanilla-encoder`.
+        mainProgram = "minecraft-encode";
       };
     }
     ''
