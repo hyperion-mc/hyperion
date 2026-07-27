@@ -159,8 +159,8 @@ impl Module for PlayerModule {
         world
             .system_named::<&mut Energy>("smash::regen_energy")
             .each_iter(|it, _, energy| {
-                energy.current = (energy.regen.mul_add(it.delta_time(), energy.current))
-                    .min(energy.max);
+                energy.current =
+                    (energy.regen.mul_add(it.delta_time(), energy.current)).min(energy.max);
             });
     }
 }

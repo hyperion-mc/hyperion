@@ -54,8 +54,8 @@ impl Default for Armor {
 }
 
 impl Armor {
-    const PER_POINT: f32 = 0.04;
     const MAX_REDUCTION: f32 = 0.8;
+    const PER_POINT: f32 = 0.04;
 
     #[must_use]
     pub fn reduction(self) -> f32 {

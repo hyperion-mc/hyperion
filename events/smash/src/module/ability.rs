@@ -12,6 +12,7 @@
 //! tempted to call from a per-tick system.
 
 use flecs_ecs::prelude::*;
+use glam::Vec3;
 
 use crate::{
     flecs_ext::{EntityViewExt, WorldRefExt},
@@ -153,9 +154,7 @@ fn check(ability: EntityView<'_>, player: EntityView<'_>) -> Result<(), Refusal>
     if ability.try_get::<&Cooldown>(|c| c.remaining > 0.0) == Some(true) {
         return Err(Refusal::OnCooldown);
     }
-    if ability.has(RequiresGround::id())
-        && player.try_get::<&OnGround>(|g| g.0) != Some(true)
-    {
+    if ability.has(RequiresGround::id()) && player.try_get::<&OnGround>(|g| g.0) != Some(true) {
         return Err(Refusal::NotGrounded);
     }
     if let Some(cost) = ability.try_get::<&EnergyCost>(|c| c.0)
@@ -298,7 +297,10 @@ impl Module for AbilityModule {
                 let full = ability.try_get::<&ChargeTime>(|c| c.0).unwrap_or(1.0);
                 ability.remove(Charging::id());
 
-                report(player, activate(player, slot, (held / full).clamp(0.0, 1.0)));
+                report(
+                    player,
+                    activate(player, slot, (held / full).clamp(0.0, 1.0)),
+                );
             });
     }
 }
@@ -315,25 +317,24 @@ fn report(player: EntityView<'_>, outcome: Result<(), Refusal>) {
     });
 }
 
-/// Helper for ability implementations: hurt everything within `radius` of
-/// `origin` except the caster.
-pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) {
+/// Hurt everything within `radius` of `at`, except the caster.
+///
+/// The one geometric primitive the kits share. Collecting the victims before
+/// hurting any of them is deliberate: the damage observers mutate components
+/// the query is reading, and flecs will catch that at runtime if you nest them.
+pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier: f32) {
     use crate::module::{
-        damage::{Damaged, DamageKind},
+        damage::{DamageKind, Damaged},
         knockback::Knockback,
     };
 
-    let origin = cast.position.0;
     let caster = cast.caster.id();
     let mut victims = Vec::new();
     cast.world
         .query::<(&Position, &Health)>()
         .build()
         .each_entity(|entity, (position, health)| {
-            if entity.id() == caster || health.is_dead() {
-                return;
-            }
-            if position.0.distance(origin) <= radius {
+            if entity.id() != caster && !health.is_dead() && position.0.distance(at) <= radius {
                 victims.push(entity.id());
             }
         });
@@ -342,9 +343,14 @@ pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) {
         crate::module::damage::hurt(cast.world.entity_at(victim), Damaged {
             attacker: Some(caster),
             amount: damage,
-            knockback: Knockback::from(origin).times(multiplier),
+            knockback: Knockback::from(at).times(multiplier),
             kind: DamageKind::Ability,
         });
     }
-    cast.server.cue(origin, Cue::Explosion);
+}
+
+/// [`splash_at`] centred on the caster, with the bang.
+pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) {
+    splash_at(cast, cast.position.0, radius, damage, multiplier);
+    cast.server.cue(cast.position.0, Cue::Explosion);
 }

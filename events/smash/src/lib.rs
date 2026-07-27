@@ -12,7 +12,8 @@ use flecs_ecs::prelude::*;
 
 use crate::module::{
     ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
-    knockback::KnockbackModule, lives::LivesModule, player::PlayerModule,
+    kits::StockKits, knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule,
+    player::PlayerModule, projectile::ProjectileModule, scoreboard::ScoreboardModule,
 };
 
 /// The whole game.
@@ -29,5 +30,9 @@ impl Module for SmashModule {
         world.import::<KitModule>();
         world.import::<ArenaModule>();
         world.import::<LivesModule>();
+        world.import::<ProjectileModule>();
+        world.import::<LobbyModule>();
+        world.import::<ScoreboardModule>();
+        world.import::<StockKits>();
     }
 }

@@ -28,12 +28,25 @@ use flecs_ecs::core::{
 pub trait WorldRefExt<'a> {
     /// Like `entity_from_id`, but the view lives as long as the world does.
     fn entity_at(self, id: impl IntoEntity) -> EntityView<'a>;
+
+    /// Like `entity`, but the view lives as long as the world does.
+    ///
+    /// `WorldRef::entity` has the same `&self` return-lifetime problem as
+    /// `entity_from_id`, so a helper that creates an entity and returns it —
+    /// which is every spawn function in a game — does not compile.
+    fn new_entity(self) -> EntityView<'a>;
 }
 
 impl<'a> WorldRefExt<'a> for WorldRef<'a> {
     #[inline]
     fn entity_at(self, id: impl IntoEntity) -> EntityView<'a> {
         EntityView::new_from(self, id)
+    }
+
+    #[inline]
+    fn new_entity(self) -> EntityView<'a> {
+        let id = self.entity().id();
+        self.entity_at(id)
     }
 }
 

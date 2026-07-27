@@ -3,12 +3,11 @@
 mod harness;
 
 use flecs_ecs::prelude::*;
-use smash::module::damage::hurt;
 use glam::Vec3;
 use harness::Game;
 use smash::{
     module::{
-        damage::{DamageKind, Damaged},
+        damage::{DamageKind, Damaged, hurt},
         knockback::{Knockback, KnockbackTaken},
         player::Health,
     },
@@ -28,16 +27,19 @@ fn a_hit_lowers_health_and_launches_the_victim_away() {
         kind: DamageKind::Melee,
     });
 
-    let health = game
-        .world
-        .entity_from_id(victim)
-        .cloned::<&Health>();
+    let health = game.world.entity_from_id(victim).cloned::<&Health>();
     assert!(health.current < health.max, "the hit did not land");
 
     let impulse = game.server.total_velocity(PlayerId(2));
-    assert!(impulse.x > 0.0, "victim was not launched away from the attacker");
+    assert!(
+        impulse.x > 0.0,
+        "victim was not launched away from the attacker"
+    );
     assert_eq!(impulse.z, 0.0, "no sideways drift from a head-on hit");
-    assert!(impulse.y > 0.0, "a grounded victim should be popped upwards");
+    assert!(
+        impulse.y > 0.0,
+        "a grounded victim should be popped upwards"
+    );
 }
 
 #[test]
@@ -47,12 +49,10 @@ fn the_same_hit_launches_a_hurt_victim_further() {
     let fresh = game.player("fresh", Vec3::new(4.0, 0.0, 0.0));
     let hurt_player = game.player("hurt", Vec3::new(4.0, 0.0, 0.0));
 
-    game.world
-        .entity_from_id(hurt_player)
-        .set(Health {
-            current: 4.0,
-            max: 20.0,
-        });
+    game.world.entity_from_id(hurt_player).set(Health {
+        current: 4.0,
+        max: 20.0,
+    });
 
     let hit = Damaged {
         attacker: Some(attacker),
@@ -89,9 +89,7 @@ fn kill_credit_is_recorded_as_a_relationship() {
     });
 
     assert!(
-        game.world
-            .entity_from_id(victim)
-            .has((LastHitBy, attacker)),
+        game.world.entity_from_id(victim).has((LastHitBy, attacker)),
         "the victim does not remember who hit them"
     );
 }
