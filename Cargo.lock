@@ -2971,6 +2971,7 @@ dependencies = [
  "hyperion-event-macros",
  "hyperion-genmap",
  "hyperion-inventory",
+ "hyperion-minecraft-proto",
  "hyperion-nerd-font",
  "hyperion-packet-macros",
  "hyperion-palette",

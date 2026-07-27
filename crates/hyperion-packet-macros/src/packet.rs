@@ -52,37 +52,6 @@ impl SpecialIdentReplacer<Packet> for PacketIdentReplacer {
     }
 }
 
-pub static HANDSHAKE_C2S_PACKETS: &[Packet] = &[Packet {
-    name: "HandshakeC2s",
-    lifetime: true,
-}];
-
-pub static STATUS_C2S_PACKETS: &[Packet] = &[
-    Packet {
-        name: "QueryPingC2s",
-        lifetime: false,
-    },
-    Packet {
-        name: "QueryRequestC2s",
-        lifetime: false,
-    },
-];
-
-pub static LOGIN_C2S_PACKETS: &[Packet] = &[
-    Packet {
-        name: "LoginQueryResponseC2s",
-        lifetime: true,
-    },
-    Packet {
-        name: "LoginHelloC2s",
-        lifetime: true,
-    },
-    Packet {
-        name: "LoginKeyC2s",
-        lifetime: true,
-    },
-];
-
 pub static PLAY_C2S_PACKETS: &[Packet] = &[
     Packet {
         name: "AdvancementTabC2s",

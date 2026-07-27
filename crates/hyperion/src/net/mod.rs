@@ -28,17 +28,18 @@ pub mod decoder;
 pub mod encoder;
 pub mod intermediate;
 pub mod packets;
+pub mod protocol;
 pub mod proxy;
 
 /// The Minecraft protocol version this library currently targets.
-pub const PROTOCOL_VERSION: i32 = 763;
+pub const PROTOCOL_VERSION: i32 = hyperion_minecraft_proto::PROTOCOL_VERSION;
 
 /// The maximum number of bytes that can be sent in a single packet.
 pub const MAX_PACKET_SIZE: usize = valence_protocol::MAX_PACKET_SIZE as usize;
 
 /// The stringified name of the Minecraft version this library currently
 /// targets.
-pub const MINECRAFT_VERSION: &str = "1.20.1";
+pub const MINECRAFT_VERSION: &str = hyperion_minecraft_proto::MINECRAFT_VERSION;
 
 /// A unique identifier for a proxy to game server connection
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
