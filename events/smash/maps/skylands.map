@@ -1,0 +1,81 @@
+# Skylands
+#
+# A Super Smash Mobs arena. The name and the author are the real map's;
+# the layout is not. Mineplex never published the world files, so this is a
+# reconstruction of an SSM arena in the Skylands theme -- floating grass islands
+# over open sky -- and not a copy of Chiss's build.
+#
+# Mineplex's own map spec for SSM (mineplex.com/threads/super-smash-mobs.20592)
+# is followed exactly where it is specific: separate islands with gaps between
+# them, height differences between islands, no camping pockets, no random water
+# or lava, sixteen green spawn points and three red Smash Crystal points.
+#
+# Coordinates are local to this map's region.
+
+name Skylands
+author Chiss (original build; layout here is a reconstruction)
+
+kill_y 20
+
+# --- the main island ------------------------------------------------------
+cylinder 0 64 0 16 1 minecraft:grass_block
+cylinder 0 62 0 16 2 minecraft:dirt
+cone 0 61 0 15 12 minecraft:stone
+
+# --- four outer islands, each at a different height ------------------------
+cylinder 0 70 -40 10 1 minecraft:grass_block
+cylinder 0 68 -40 10 2 minecraft:dirt
+cone 0 67 -40 9 9 minecraft:stone
+
+cylinder 0 58 40 10 1 minecraft:grass_block
+cylinder 0 56 40 10 2 minecraft:dirt
+cone 0 55 40 9 9 minecraft:stone
+
+cylinder 40 66 0 11 1 minecraft:grass_block
+cylinder 40 64 0 11 2 minecraft:dirt
+cone 40 63 0 10 10 minecraft:stone
+
+cylinder -40 62 0 11 1 minecraft:grass_block
+cylinder -40 60 0 11 2 minecraft:dirt
+cone -40 59 0 10 10 minecraft:stone
+
+# --- two small high perches, reachable only by double jump ------------------
+cylinder 26 76 -26 5 1 minecraft:grass_block
+cylinder 26 74 -26 5 2 minecraft:dirt
+cone 26 73 -26 4 6 minecraft:stone
+
+cylinder -26 54 26 5 1 minecraft:grass_block
+cylinder -26 52 26 5 2 minecraft:dirt
+cone -26 51 26 4 6 minecraft:stone
+
+# --- obstacles, so the main island is not one flat circle -------------------
+box -6 65 -2 -4 67 2 minecraft:stone
+box 4 65 -2 6 67 2 minecraft:stone
+cylinder -8 65 -8 1 5 minecraft:oak_log
+sphere -8 71 -8 3 minecraft:oak_leaves
+cylinder 8 65 8 1 5 minecraft:oak_log
+sphere 8 71 8 3 minecraft:oak_leaves
+
+
+# --- sixteen spawn points ---------------------------------------------------
+spawn -10 65 -10
+spawn 10 65 -10
+spawn -10 65 10
+spawn 10 65 10
+spawn 0 65 -13
+spawn 0 65 13
+spawn -3 71 -40
+spawn 3 71 -40
+spawn -3 59 40
+spawn 3 59 40
+spawn 40 67 -3
+spawn 40 67 3
+spawn -40 63 -3
+spawn -40 63 3
+spawn 26 77 -26
+spawn -26 55 26
+
+# --- three Smash Crystal points ---------------------------------------------
+crystal 0 68 0
+crystal 0 74 -40
+crystal 40 70 0

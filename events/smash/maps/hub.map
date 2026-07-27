@@ -1,0 +1,69 @@
+# The waiting lobby.
+#
+# Mineplex's SSM lobby was a separate world with an NPC per kit around a central
+# platform; players stood on it until the countdown fired. This is a
+# reconstruction of the shape, not of any particular build: a round quartz
+# platform, a raised centre, and a ring of pillars where the kit NPCs stood.
+#
+# Coordinates are local to the hub region, which sits at the world origin.
+
+name Lobby
+author hyperion (reconstruction of the SSM waiting lobby)
+
+# Well below the floor. Nobody should ever reach it, but a lobby with no death
+# plane is a lobby where a bug leaves someone falling forever.
+kill_y 20
+
+# Eight standing spots around the centre, so a full lobby is not one pile.
+spawn 0 65 -6
+spawn 4 65 -4
+spawn 6 65 0
+spawn 4 65 4
+spawn 0 65 6
+spawn -4 65 4
+spawn -6 65 0
+spawn -4 65 -4
+
+# The floor: a quartz disc on a stone underside.
+cylinder 0 64 0 20 1 minecraft:quartz_block
+cylinder 0 63 0 20 1 minecraft:smooth_stone
+cone 0 62 0 19 12 minecraft:stone
+
+# A raised centre the countdown is read from.
+cylinder 0 65 0 4 1 minecraft:chiseled_quartz_block
+cylinder 0 66 0 2 1 minecraft:sea_lantern
+
+# The ring the kit stands sit on. Twelve pillars, laid out by hand rather than
+# generated, because a map file that needs a loop is a map file that should have
+# been code.
+box -18 65 0 -18 68 0 minecraft:quartz_pillar
+box 18 65 0 18 68 0 minecraft:quartz_pillar
+box 0 65 -18 0 68 -18 minecraft:quartz_pillar
+box 0 65 18 0 68 18 minecraft:quartz_pillar
+box -13 65 -13 -13 68 -13 minecraft:quartz_pillar
+box 13 65 -13 13 68 -13 minecraft:quartz_pillar
+box -13 65 13 -13 68 13 minecraft:quartz_pillar
+box 13 65 13 13 68 13 minecraft:quartz_pillar
+box -9 65 -16 -9 68 -16 minecraft:quartz_pillar
+box 9 65 -16 9 68 -16 minecraft:quartz_pillar
+box -9 65 16 -9 68 16 minecraft:quartz_pillar
+box 9 65 16 9 68 16 minecraft:quartz_pillar
+
+# Lanterns on top of each pillar, so the ring reads at night.
+box -18 69 0 -18 69 0 minecraft:sea_lantern
+box 18 69 0 18 69 0 minecraft:sea_lantern
+box 0 69 -18 0 69 -18 minecraft:sea_lantern
+box 0 69 18 0 69 18 minecraft:sea_lantern
+box -13 69 -13 -13 69 -13 minecraft:sea_lantern
+box 13 69 -13 13 69 -13 minecraft:sea_lantern
+box -13 69 13 -13 69 13 minecraft:sea_lantern
+box 13 69 13 13 69 13 minecraft:sea_lantern
+box -9 69 -16 -9 69 -16 minecraft:sea_lantern
+box 9 69 -16 9 69 -16 minecraft:sea_lantern
+box -9 69 16 -9 69 16 minecraft:sea_lantern
+box 9 69 16 9 69 16 minecraft:sea_lantern
+
+# A low wall, so a player who walks off the edge in the lobby bumps instead of
+# falling. Mineplex used a barrier; this is glass, which at least is visible.
+cylinder 0 65 0 20 3 minecraft:glass
+cylinder 0 65 0 19 3 minecraft:air
