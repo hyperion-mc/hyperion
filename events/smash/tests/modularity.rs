@@ -12,8 +12,6 @@
 
 mod harness;
 
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 use harness::Game;
@@ -30,7 +28,15 @@ use smash::{
 
 /// How many times the passive fired, so the test can prove an out-of-crate
 /// module can hook the damage pipeline.
-static SHIELD_TRIGGERS: AtomicU32 = AtomicU32::new(0);
+/// How many times this world's Porcupine passive has armed.
+///
+/// A world rather than a `static`: nine tests in this file build a Porcupine
+/// world, `cargo test` runs them as threads in one process, and any two that
+/// deal non-melee damage at the same moment would share one counter. That is
+/// invisible under nextest, which gives each test its own process, and it
+/// failed exactly once in CI under `cargo test --all-features`.
+#[derive(Component, Debug, Default, Clone, Copy)]
+struct ShieldTriggers(u32);
 
 /// A kit that exists only in this test file.
 #[derive(Component)]
@@ -93,6 +99,15 @@ impl Module for Porcupine {
         })
         .register();
 
+        // Registered explicitly: this workspace builds flecs with
+        // `flecs_manual_registration`, so first use of an unregistered
+        // component aborts rather than registering it lazily.
+        world.component::<ShieldTriggers>();
+
+        // Set before the observer that reads it, or the first non-melee hit
+        // asks for a component the world does not have.
+        world.set(ShieldTriggers::default());
+
         // A passive, as an observer this module owns. Nothing in the crate
         // knows it exists.
         world
@@ -100,7 +115,8 @@ impl Module for Porcupine {
             .with(Player::id())
             .each_iter(|it, _index, _health| {
                 if it.param().kind != DamageKind::Melee {
-                    SHIELD_TRIGGERS.fetch_add(1, Ordering::SeqCst);
+                    it.world()
+                        .get::<&mut ShieldTriggers>(|triggers| triggers.0 += 1);
                 }
             });
     }
@@ -287,14 +303,13 @@ fn a_passive_owned_by_the_kit_module_sees_the_damage_pipeline() {
     let mut game = game_with_porcupine();
     let victim = game.player("victim", Vec3::new(3.0, 0.0, 0.0));
 
-    SHIELD_TRIGGERS.store(0, Ordering::SeqCst);
     hurt(game.world.entity_from_id(victim), Damaged {
         attacker: None,
         amount: 2.0,
         knockback: smash::module::knockback::Knockback::from(Vec3::ZERO),
         kind: DamageKind::Projectile,
     });
-    assert_eq!(SHIELD_TRIGGERS.load(Ordering::SeqCst), 1);
+    assert_eq!(game.world.cloned::<&ShieldTriggers>().0, 1);
 
     hurt(game.world.entity_from_id(victim), Damaged {
         attacker: None,
@@ -303,7 +318,7 @@ fn a_passive_owned_by_the_kit_module_sees_the_damage_pipeline() {
         kind: DamageKind::Melee,
     });
     assert_eq!(
-        SHIELD_TRIGGERS.load(Ordering::SeqCst),
+        game.world.cloned::<&ShieldTriggers>().0,
         1,
         "the passive should only arm against non-melee"
     );
