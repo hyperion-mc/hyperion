@@ -196,7 +196,7 @@
             version = "0.5";
             processes = {
               game-server = {
-                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p bedwars -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p \"$\{HYPERION_EVENT:-bedwars}\" -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
                 availability.restart = "on_failure";
               };
 
@@ -289,6 +289,22 @@
               '';
             };
 
+            # Super Smash Mobs, the second event. Same shape as bedwars: one
+            # game server per process, each binding its own port, so the two
+            # are selected at run time rather than sharing anything.
+            smash = {
+              deps = [ pkgs.git ];
+              text = ''
+                certs="$(git rev-parse --show-toplevel)/${certsDir}"
+                exec cargo run --profile release-full -p smash -- \
+                  --ip 0.0.0.0 --port "''${HYPERION_SERVER_PORT:-${toString gameServerPort}}" \
+                  --root-ca-cert "$certs/root_ca.crt" \
+                  --cert "$certs/server.crt" \
+                  --private-key "$certs/server_private_key.pem" \
+                  "$@"
+              '';
+            };
+
             bots.text = ''
               ulimit -Sn ${fileDescriptors}
               exec cargo run --release -p rust-mc-bot -- \
@@ -317,6 +333,15 @@
                 api_port="''${HYPERION_PC_PORT:-$(( 8080 + ''${HYPERION_PLAYER_PORT:-${toString proxyPort}} - ${toString proxyPort} ))}"
                 echo "players: 0.0.0.0:''${HYPERION_PLAYER_PORT:-${toString proxyPort}} | game server: 127.0.0.1:''${HYPERION_SERVER_PORT:-${toString gameServerPort}}"
                 exec process-compose --config ${processComposeConfig} --port "$api_port" "$@"
+              '';
+            };
+
+            # `nix run .#dev` runs bedwars; this runs the same stack on smash.
+            smash-dev = {
+              deps = [ pkgs.process-compose pkgs.git ];
+              text = ''
+                export HYPERION_EVENT=smash
+                exec "${lib.getExe runners.dev}" "$@"
               '';
             };
           };

@@ -34,7 +34,7 @@ pub mod handshake {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:intention` (`ClientIntentionPacket`)
+            /// `minecraft:intention` (`net.minecraft.network.protocol.handshake.ClientIntentionPacket`)
             Intention = 0,
         }
 
@@ -71,7 +71,19 @@ pub mod handshake {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::Intention => Some("ClientIntentionPacket"),
+                    Self::Intention => {
+                        Some("net.minecraft.network.protocol.handshake.ClientIntentionPacket")
+                    }
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::Intention => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_HANDSHAKE_CLIENTINTENTIONPACKET_STREAM_CODEC),
                 }
             }
         }
@@ -89,9 +101,9 @@ pub mod status {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:status_request` (`ServerboundStatusRequestPacket`)
+            /// `minecraft:status_request` (`net.minecraft.network.protocol.status.ServerboundStatusRequestPacket`)
             StatusRequest = 0,
-            /// `minecraft:ping_request` (`ServerboundPingRequestPacket`)
+            /// `minecraft:ping_request` (`net.minecraft.network.protocol.ping.ServerboundPingRequestPacket`)
             PingRequest = 1,
         }
 
@@ -130,8 +142,23 @@ pub mod status {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::StatusRequest => Some("ServerboundStatusRequestPacket"),
-                    Self::PingRequest => Some("ServerboundPingRequestPacket"),
+                    Self::StatusRequest => {
+                        Some("net.minecraft.network.protocol.status.ServerboundStatusRequestPacket")
+                    }
+                    Self::PingRequest => {
+                        Some("net.minecraft.network.protocol.ping.ServerboundPingRequestPacket")
+                    }
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::StatusRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_STATUS_SERVERBOUNDSTATUSREQUESTPACKET_STREAM_CODEC),
+                    Self::PingRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_PING_SERVERBOUNDPINGREQUESTPACKET_STREAM_CODEC),
                 }
             }
         }
@@ -148,9 +175,9 @@ pub mod status {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:status_response` (`ClientboundStatusResponsePacket`)
+            /// `minecraft:status_response` (`net.minecraft.network.protocol.status.ClientboundStatusResponsePacket`)
             StatusResponse = 0,
-            /// `minecraft:pong_response` (`ClientboundPongResponsePacket`)
+            /// `minecraft:pong_response` (`net.minecraft.network.protocol.ping.ClientboundPongResponsePacket`)
             PongResponse = 1,
         }
 
@@ -189,8 +216,23 @@ pub mod status {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::StatusResponse => Some("ClientboundStatusResponsePacket"),
-                    Self::PongResponse => Some("ClientboundPongResponsePacket"),
+                    Self::StatusResponse => Some(
+                        "net.minecraft.network.protocol.status.ClientboundStatusResponsePacket",
+                    ),
+                    Self::PongResponse => {
+                        Some("net.minecraft.network.protocol.ping.ClientboundPongResponsePacket")
+                    }
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::StatusResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_STATUS_CLIENTBOUNDSTATUSRESPONSEPACKET_STREAM_CODEC),
+                    Self::PongResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_PING_CLIENTBOUNDPONGRESPONSEPACKET_STREAM_CODEC),
                 }
             }
         }
@@ -208,15 +250,15 @@ pub mod login {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:hello` (`ServerboundHelloPacket`)
+            /// `minecraft:hello` (`net.minecraft.network.protocol.login.ServerboundHelloPacket`)
             Hello = 0,
-            /// `minecraft:key` (`ServerboundKeyPacket`)
+            /// `minecraft:key` (`net.minecraft.network.protocol.login.ServerboundKeyPacket`)
             Key = 1,
-            /// `minecraft:custom_query_answer` (`ServerboundCustomQueryAnswerPacket`)
+            /// `minecraft:custom_query_answer` (`net.minecraft.network.protocol.login.ServerboundCustomQueryAnswerPacket`)
             CustomQueryAnswer = 2,
-            /// `minecraft:login_acknowledged` (`ServerboundLoginAcknowledgedPacket`)
+            /// `minecraft:login_acknowledged` (`net.minecraft.network.protocol.login.ServerboundLoginAcknowledgedPacket`)
             LoginAcknowledged = 3,
-            /// `minecraft:cookie_response` (`ServerboundCookieResponsePacket`)
+            /// `minecraft:cookie_response` (`net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket`)
             CookieResponse = 4,
         }
 
@@ -267,11 +309,33 @@ pub mod login {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::Hello => Some("ServerboundHelloPacket"),
-                    Self::Key => Some("ServerboundKeyPacket"),
-                    Self::CustomQueryAnswer => Some("ServerboundCustomQueryAnswerPacket"),
-                    Self::LoginAcknowledged => Some("ServerboundLoginAcknowledgedPacket"),
-                    Self::CookieResponse => Some("ServerboundCookieResponsePacket"),
+                    Self::Hello => {
+                        Some("net.minecraft.network.protocol.login.ServerboundHelloPacket")
+                    }
+                    Self::Key => Some("net.minecraft.network.protocol.login.ServerboundKeyPacket"),
+                    Self::CustomQueryAnswer => Some(
+                        "net.minecraft.network.protocol.login.ServerboundCustomQueryAnswerPacket",
+                    ),
+                    Self::LoginAcknowledged => Some(
+                        "net.minecraft.network.protocol.login.ServerboundLoginAcknowledgedPacket",
+                    ),
+                    Self::CookieResponse => Some(
+                        "net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket",
+                    ),
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::Hello => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_SERVERBOUNDHELLOPACKET_STREAM_CODEC),
+                    Self::Key => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_SERVERBOUNDKEYPACKET_STREAM_CODEC),
+                    Self::LoginAcknowledged => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_SERVERBOUNDLOGINACKNOWLEDGEDPACKET_STREAM_CODEC),
+                    Self::CookieResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_SERVERBOUNDCOOKIERESPONSEPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }
@@ -288,17 +352,17 @@ pub mod login {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:login_disconnect` (`ClientboundLoginDisconnectPacket`)
+            /// `minecraft:login_disconnect` (`net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket`)
             LoginDisconnect = 0,
-            /// `minecraft:hello` (`ClientboundHelloPacket`)
+            /// `minecraft:hello` (`net.minecraft.network.protocol.login.ClientboundHelloPacket`)
             Hello = 1,
-            /// `minecraft:login_finished` (`ClientboundLoginFinishedPacket`)
+            /// `minecraft:login_finished` (`net.minecraft.network.protocol.login.ClientboundLoginFinishedPacket`)
             LoginFinished = 2,
-            /// `minecraft:login_compression` (`ClientboundLoginCompressionPacket`)
+            /// `minecraft:login_compression` (`net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket`)
             LoginCompression = 3,
-            /// `minecraft:custom_query` (`ClientboundCustomQueryPacket`)
+            /// `minecraft:custom_query` (`net.minecraft.network.protocol.login.ClientboundCustomQueryPacket`)
             CustomQuery = 4,
-            /// `minecraft:cookie_request` (`ClientboundCookieRequestPacket`)
+            /// `minecraft:cookie_request` (`net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket`)
             CookieRequest = 5,
         }
 
@@ -352,12 +416,39 @@ pub mod login {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::LoginDisconnect => Some("ClientboundLoginDisconnectPacket"),
-                    Self::Hello => Some("ClientboundHelloPacket"),
-                    Self::LoginFinished => Some("ClientboundLoginFinishedPacket"),
-                    Self::LoginCompression => Some("ClientboundLoginCompressionPacket"),
-                    Self::CustomQuery => Some("ClientboundCustomQueryPacket"),
-                    Self::CookieRequest => Some("ClientboundCookieRequestPacket"),
+                    Self::LoginDisconnect => Some(
+                        "net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket",
+                    ),
+                    Self::Hello => {
+                        Some("net.minecraft.network.protocol.login.ClientboundHelloPacket")
+                    }
+                    Self::LoginFinished => {
+                        Some("net.minecraft.network.protocol.login.ClientboundLoginFinishedPacket")
+                    }
+                    Self::LoginCompression => Some(
+                        "net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket",
+                    ),
+                    Self::CustomQuery => {
+                        Some("net.minecraft.network.protocol.login.ClientboundCustomQueryPacket")
+                    }
+                    Self::CookieRequest => {
+                        Some("net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket")
+                    }
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::LoginDisconnect => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_CLIENTBOUNDLOGINDISCONNECTPACKET_STREAM_CODEC),
+                    Self::Hello => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_CLIENTBOUNDHELLOPACKET_STREAM_CODEC),
+                    Self::LoginFinished => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_CLIENTBOUNDLOGINFINISHEDPACKET_STREAM_CODEC),
+                    Self::LoginCompression => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_LOGIN_CLIENTBOUNDLOGINCOMPRESSIONPACKET_STREAM_CODEC),
+                    Self::CookieRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_CLIENTBOUNDCOOKIEREQUESTPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }
@@ -375,25 +466,25 @@ pub mod configuration {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:client_information` (`ServerboundClientInformationPacket`)
+            /// `minecraft:client_information` (`net.minecraft.network.protocol.common.ServerboundClientInformationPacket`)
             ClientInformation = 0,
-            /// `minecraft:cookie_response` (`ServerboundCookieResponsePacket`)
+            /// `minecraft:cookie_response` (`net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket`)
             CookieResponse = 1,
-            /// `minecraft:custom_payload` (`ServerboundCustomPayloadPacket`)
+            /// `minecraft:custom_payload` (`net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket`)
             CustomPayload = 2,
-            /// `minecraft:finish_configuration` (`ServerboundFinishConfigurationPacket`)
+            /// `minecraft:finish_configuration` (`net.minecraft.network.protocol.configuration.ServerboundFinishConfigurationPacket`)
             FinishConfiguration = 3,
-            /// `minecraft:keep_alive` (`ServerboundKeepAlivePacket`)
+            /// `minecraft:keep_alive` (`net.minecraft.network.protocol.common.ServerboundKeepAlivePacket`)
             KeepAlive = 4,
-            /// `minecraft:pong` (`ServerboundPongPacket`)
+            /// `minecraft:pong` (`net.minecraft.network.protocol.common.ServerboundPongPacket`)
             Pong = 5,
-            /// `minecraft:resource_pack` (`ServerboundResourcePackPacket`)
+            /// `minecraft:resource_pack` (`net.minecraft.network.protocol.common.ServerboundResourcePackPacket`)
             ResourcePack = 6,
-            /// `minecraft:select_known_packs` (`ServerboundSelectKnownPacks`)
+            /// `minecraft:select_known_packs` (`net.minecraft.network.protocol.configuration.ServerboundSelectKnownPacks`)
             SelectKnownPacks = 7,
-            /// `minecraft:custom_click_action` (`ServerboundCustomClickActionPacket`)
+            /// `minecraft:custom_click_action` (`net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket`)
             CustomClickAction = 8,
-            /// `minecraft:accept_code_of_conduct` (`ServerboundAcceptCodeOfConductPacket`)
+            /// `minecraft:accept_code_of_conduct` (`net.minecraft.network.protocol.configuration.ServerboundAcceptCodeOfConductPacket`)
             AcceptCodeOfConduct = 9,
         }
 
@@ -459,16 +550,56 @@ pub mod configuration {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::ClientInformation => Some("ServerboundClientInformationPacket"),
-                    Self::CookieResponse => Some("ServerboundCookieResponsePacket"),
-                    Self::CustomPayload => Some("ServerboundCustomPayloadPacket"),
-                    Self::FinishConfiguration => Some("ServerboundFinishConfigurationPacket"),
-                    Self::KeepAlive => Some("ServerboundKeepAlivePacket"),
-                    Self::Pong => Some("ServerboundPongPacket"),
-                    Self::ResourcePack => Some("ServerboundResourcePackPacket"),
-                    Self::SelectKnownPacks => Some("ServerboundSelectKnownPacks"),
-                    Self::CustomClickAction => Some("ServerboundCustomClickActionPacket"),
-                    Self::AcceptCodeOfConduct => Some("ServerboundAcceptCodeOfConductPacket"),
+                    Self::ClientInformation => Some(
+                        "net.minecraft.network.protocol.common.ServerboundClientInformationPacket",
+                    ),
+                    Self::CookieResponse => Some(
+                        "net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket",
+                    ),
+                    Self::CustomPayload => {
+                        Some("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket")
+                    }
+                    Self::FinishConfiguration => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ServerboundFinishConfigurationPacket",
+                    ),
+                    Self::KeepAlive => {
+                        Some("net.minecraft.network.protocol.common.ServerboundKeepAlivePacket")
+                    }
+                    Self::Pong => {
+                        Some("net.minecraft.network.protocol.common.ServerboundPongPacket")
+                    }
+                    Self::ResourcePack => {
+                        Some("net.minecraft.network.protocol.common.ServerboundResourcePackPacket")
+                    }
+                    Self::SelectKnownPacks => Some(
+                        "net.minecraft.network.protocol.configuration.ServerboundSelectKnownPacks",
+                    ),
+                    Self::CustomClickAction => Some(
+                        "net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket",
+                    ),
+                    Self::AcceptCodeOfConduct => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ServerboundAcceptCodeOfConductPacket",
+                    ),
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::CookieResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_SERVERBOUNDCOOKIERESPONSEPACKET_STREAM_CODEC),
+                    Self::FinishConfiguration => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_SERVERBOUNDFINISHCONFIGURATIONPACKET_STREAM_CODEC),
+                    Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDKEEPALIVEPACKET_STREAM_CODEC),
+                    Self::Pong => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDPONGPACKET_STREAM_CODEC),
+                    Self::ResourcePack => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDRESOURCEPACKPACKET_STREAM_CODEC),
+                    Self::SelectKnownPacks => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_SERVERBOUNDSELECTKNOWNPACKS_STREAM_CODEC),
+                    Self::CustomClickAction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDCUSTOMCLICKACTIONPACKET_STREAM_CODEC),
+                    Self::AcceptCodeOfConduct => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_SERVERBOUNDACCEPTCODEOFCONDUCTPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }
@@ -485,45 +616,45 @@ pub mod configuration {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:cookie_request` (`ClientboundCookieRequestPacket`)
+            /// `minecraft:cookie_request` (`net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket`)
             CookieRequest = 0,
-            /// `minecraft:custom_payload` (`ClientboundCustomPayloadPacket`)
+            /// `minecraft:custom_payload` (`net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket`)
             CustomPayload = 1,
-            /// `minecraft:disconnect` (`ClientboundDisconnectPacket`)
+            /// `minecraft:disconnect` (`net.minecraft.network.protocol.common.ClientboundDisconnectPacket`)
             Disconnect = 2,
-            /// `minecraft:finish_configuration` (`ClientboundFinishConfigurationPacket`)
+            /// `minecraft:finish_configuration` (`net.minecraft.network.protocol.configuration.ClientboundFinishConfigurationPacket`)
             FinishConfiguration = 3,
-            /// `minecraft:keep_alive` (`ClientboundKeepAlivePacket`)
+            /// `minecraft:keep_alive` (`net.minecraft.network.protocol.common.ClientboundKeepAlivePacket`)
             KeepAlive = 4,
-            /// `minecraft:ping` (`ClientboundPingPacket`)
+            /// `minecraft:ping` (`net.minecraft.network.protocol.common.ClientboundPingPacket`)
             Ping = 5,
-            /// `minecraft:reset_chat` (`ClientboundResetChatPacket`)
+            /// `minecraft:reset_chat` (`net.minecraft.network.protocol.configuration.ClientboundResetChatPacket`)
             ResetChat = 6,
-            /// `minecraft:registry_data` (`ClientboundRegistryDataPacket`)
+            /// `minecraft:registry_data` (`net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket`)
             RegistryData = 7,
-            /// `minecraft:resource_pack_pop` (`ClientboundResourcePackPopPacket`)
+            /// `minecraft:resource_pack_pop` (`net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket`)
             ResourcePackPop = 8,
-            /// `minecraft:resource_pack_push` (`ClientboundResourcePackPushPacket`)
+            /// `minecraft:resource_pack_push` (`net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket`)
             ResourcePackPush = 9,
-            /// `minecraft:store_cookie` (`ClientboundStoreCookiePacket`)
+            /// `minecraft:store_cookie` (`net.minecraft.network.protocol.common.ClientboundStoreCookiePacket`)
             StoreCookie = 10,
-            /// `minecraft:transfer` (`ClientboundTransferPacket`)
+            /// `minecraft:transfer` (`net.minecraft.network.protocol.common.ClientboundTransferPacket`)
             Transfer = 11,
-            /// `minecraft:update_enabled_features` (`ClientboundUpdateEnabledFeaturesPacket`)
+            /// `minecraft:update_enabled_features` (`net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket`)
             UpdateEnabledFeatures = 12,
-            /// `minecraft:update_tags` (`ClientboundUpdateTagsPacket`)
+            /// `minecraft:update_tags` (`net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket`)
             UpdateTags = 13,
-            /// `minecraft:select_known_packs` (`ClientboundSelectKnownPacks`)
+            /// `minecraft:select_known_packs` (`net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks`)
             SelectKnownPacks = 14,
-            /// `minecraft:custom_report_details` (`ClientboundCustomReportDetailsPacket`)
+            /// `minecraft:custom_report_details` (`net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket`)
             CustomReportDetails = 15,
-            /// `minecraft:server_links` (`ClientboundServerLinksPacket`)
+            /// `minecraft:server_links` (`net.minecraft.network.protocol.common.ClientboundServerLinksPacket`)
             ServerLinks = 16,
-            /// `minecraft:clear_dialog` (`ClientboundClearDialogPacket`)
+            /// `minecraft:clear_dialog` (`net.minecraft.network.protocol.common.ClientboundClearDialogPacket`)
             ClearDialog = 17,
-            /// `minecraft:show_dialog` (`ClientboundShowDialogPacket`)
+            /// `minecraft:show_dialog` (`net.minecraft.network.protocol.common.ClientboundShowDialogPacket`)
             ShowDialog = 18,
-            /// `minecraft:code_of_conduct` (`ClientboundCodeOfConductPacket`)
+            /// `minecraft:code_of_conduct` (`net.minecraft.network.protocol.configuration.ClientboundCodeOfConductPacket`)
             CodeOfConduct = 19,
         }
 
@@ -619,26 +750,99 @@ pub mod configuration {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::CookieRequest => Some("ClientboundCookieRequestPacket"),
-                    Self::CustomPayload => Some("ClientboundCustomPayloadPacket"),
-                    Self::Disconnect => Some("ClientboundDisconnectPacket"),
-                    Self::FinishConfiguration => Some("ClientboundFinishConfigurationPacket"),
-                    Self::KeepAlive => Some("ClientboundKeepAlivePacket"),
-                    Self::Ping => Some("ClientboundPingPacket"),
-                    Self::ResetChat => Some("ClientboundResetChatPacket"),
-                    Self::RegistryData => Some("ClientboundRegistryDataPacket"),
-                    Self::ResourcePackPop => Some("ClientboundResourcePackPopPacket"),
-                    Self::ResourcePackPush => Some("ClientboundResourcePackPushPacket"),
-                    Self::StoreCookie => Some("ClientboundStoreCookiePacket"),
-                    Self::Transfer => Some("ClientboundTransferPacket"),
-                    Self::UpdateEnabledFeatures => Some("ClientboundUpdateEnabledFeaturesPacket"),
-                    Self::UpdateTags => Some("ClientboundUpdateTagsPacket"),
-                    Self::SelectKnownPacks => Some("ClientboundSelectKnownPacks"),
-                    Self::CustomReportDetails => Some("ClientboundCustomReportDetailsPacket"),
-                    Self::ServerLinks => Some("ClientboundServerLinksPacket"),
-                    Self::ClearDialog => Some("ClientboundClearDialogPacket"),
-                    Self::ShowDialog => Some("ClientboundShowDialogPacket"),
-                    Self::CodeOfConduct => Some("ClientboundCodeOfConductPacket"),
+                    Self::CookieRequest => {
+                        Some("net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket")
+                    }
+                    Self::CustomPayload => {
+                        Some("net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket")
+                    }
+                    Self::Disconnect => {
+                        Some("net.minecraft.network.protocol.common.ClientboundDisconnectPacket")
+                    }
+                    Self::FinishConfiguration => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundFinishConfigurationPacket",
+                    ),
+                    Self::KeepAlive => {
+                        Some("net.minecraft.network.protocol.common.ClientboundKeepAlivePacket")
+                    }
+                    Self::Ping => {
+                        Some("net.minecraft.network.protocol.common.ClientboundPingPacket")
+                    }
+                    Self::ResetChat => Some(
+                        "net.minecraft.network.protocol.configuration.ClientboundResetChatPacket",
+                    ),
+                    Self::RegistryData => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundRegistryDataPacket",
+                    ),
+                    Self::ResourcePackPop => Some(
+                        "net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket",
+                    ),
+                    Self::ResourcePackPush => Some(
+                        "net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket",
+                    ),
+                    Self::StoreCookie => {
+                        Some("net.minecraft.network.protocol.common.ClientboundStoreCookiePacket")
+                    }
+                    Self::Transfer => {
+                        Some("net.minecraft.network.protocol.common.ClientboundTransferPacket")
+                    }
+                    Self::UpdateEnabledFeatures => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundUpdateEnabledFeaturesPacket",
+                    ),
+                    Self::UpdateTags => {
+                        Some("net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket")
+                    }
+                    Self::SelectKnownPacks => Some(
+                        "net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks",
+                    ),
+                    Self::CustomReportDetails => Some(
+                        "net.minecraft.network.protocol.common.\
+                         ClientboundCustomReportDetailsPacket",
+                    ),
+                    Self::ServerLinks => {
+                        Some("net.minecraft.network.protocol.common.ClientboundServerLinksPacket")
+                    }
+                    Self::ClearDialog => {
+                        Some("net.minecraft.network.protocol.common.ClientboundClearDialogPacket")
+                    }
+                    Self::ShowDialog => {
+                        Some("net.minecraft.network.protocol.common.ClientboundShowDialogPacket")
+                    }
+                    Self::CodeOfConduct => Some(
+                        "net.minecraft.network.protocol.configuration.\
+                         ClientboundCodeOfConductPacket",
+                    ),
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::CookieRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_CLIENTBOUNDCOOKIEREQUESTPACKET_STREAM_CODEC),
+                    Self::Disconnect => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_CONTEXT_FREE_STREAM_CODEC),
+                    Self::FinishConfiguration => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDFINISHCONFIGURATIONPACKET_STREAM_CODEC),
+                    Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDKEEPALIVEPACKET_STREAM_CODEC),
+                    Self::Ping => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDPINGPACKET_STREAM_CODEC),
+                    Self::ResetChat => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDRESETCHATPACKET_STREAM_CODEC),
+                    Self::RegistryData => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDREGISTRYDATAPACKET_STREAM_CODEC),
+                    Self::ResourcePackPop => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDRESOURCEPACKPOPPACKET_STREAM_CODEC),
+                    Self::ResourcePackPush => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDRESOURCEPACKPUSHPACKET_STREAM_CODEC),
+                    Self::StoreCookie => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSTORECOOKIEPACKET_STREAM_CODEC),
+                    Self::Transfer => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDTRANSFERPACKET_STREAM_CODEC),
+                    Self::UpdateEnabledFeatures => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDUPDATEENABLEDFEATURESPACKET_STREAM_CODEC),
+                    Self::SelectKnownPacks => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDSELECTKNOWNPACKS_STREAM_CODEC),
+                    Self::CustomReportDetails => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDCUSTOMREPORTDETAILSPACKET_STREAM_CODEC),
+                    Self::ServerLinks => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSERVERLINKSPACKET_STREAM_CODEC),
+                    Self::ClearDialog => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDCLEARDIALOGPACKET_STREAM_CODEC),
+                    Self::ShowDialog => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSHOWDIALOGPACKET_STREAM_CODEC),
+                    Self::CodeOfConduct => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_CONFIGURATION_CLIENTBOUNDCODEOFCONDUCTPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }
@@ -656,143 +860,143 @@ pub mod play {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:accept_teleportation` (`ServerboundAcceptTeleportationPacket`)
+            /// `minecraft:accept_teleportation` (`net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket`)
             AcceptTeleportation = 0,
-            /// `minecraft:attack` (`ServerboundAttackPacket`)
+            /// `minecraft:attack` (`net.minecraft.network.protocol.game.ServerboundAttackPacket`)
             Attack = 1,
-            /// `minecraft:block_entity_tag_query` (`ServerboundBlockEntityTagQueryPacket`)
+            /// `minecraft:block_entity_tag_query` (`net.minecraft.network.protocol.game.ServerboundBlockEntityTagQueryPacket`)
             BlockEntityTagQuery = 2,
-            /// `minecraft:bundle_item_selected` (`ServerboundSelectBundleItemPacket`)
+            /// `minecraft:bundle_item_selected` (`net.minecraft.network.protocol.game.ServerboundSelectBundleItemPacket`)
             BundleItemSelected = 3,
-            /// `minecraft:change_difficulty` (`ServerboundChangeDifficultyPacket`)
+            /// `minecraft:change_difficulty` (`net.minecraft.network.protocol.game.ServerboundChangeDifficultyPacket`)
             ChangeDifficulty = 4,
-            /// `minecraft:change_game_mode` (`ServerboundChangeGameModePacket`)
+            /// `minecraft:change_game_mode` (`net.minecraft.network.protocol.game.ServerboundChangeGameModePacket`)
             ChangeGameMode = 5,
-            /// `minecraft:chat_ack` (`ServerboundChatAckPacket`)
+            /// `minecraft:chat_ack` (`net.minecraft.network.protocol.game.ServerboundChatAckPacket`)
             ChatAck = 6,
-            /// `minecraft:chat_command` (`ServerboundChatCommandPacket`)
+            /// `minecraft:chat_command` (`net.minecraft.network.protocol.game.ServerboundChatCommandPacket`)
             ChatCommand = 7,
-            /// `minecraft:chat_command_signed` (`ServerboundChatCommandSignedPacket`)
+            /// `minecraft:chat_command_signed` (`net.minecraft.network.protocol.game.ServerboundChatCommandSignedPacket`)
             ChatCommandSigned = 8,
-            /// `minecraft:chat` (`ServerboundChatPacket`)
+            /// `minecraft:chat` (`net.minecraft.network.protocol.game.ServerboundChatPacket`)
             Chat = 9,
-            /// `minecraft:chat_session_update` (`ServerboundChatSessionUpdatePacket`)
+            /// `minecraft:chat_session_update` (`net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket`)
             ChatSessionUpdate = 10,
-            /// `minecraft:chunk_batch_received` (`ServerboundChunkBatchReceivedPacket`)
+            /// `minecraft:chunk_batch_received` (`net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket`)
             ChunkBatchReceived = 11,
-            /// `minecraft:client_command` (`ServerboundClientCommandPacket`)
+            /// `minecraft:client_command` (`net.minecraft.network.protocol.game.ServerboundClientCommandPacket`)
             ClientCommand = 12,
-            /// `minecraft:client_tick_end` (`ServerboundClientTickEndPacket`)
+            /// `minecraft:client_tick_end` (`net.minecraft.network.protocol.game.ServerboundClientTickEndPacket`)
             ClientTickEnd = 13,
-            /// `minecraft:client_information` (`ServerboundClientInformationPacket`)
+            /// `minecraft:client_information` (`net.minecraft.network.protocol.common.ServerboundClientInformationPacket`)
             ClientInformation = 14,
-            /// `minecraft:command_suggestion` (`ServerboundCommandSuggestionPacket`)
+            /// `minecraft:command_suggestion` (`net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket`)
             CommandSuggestion = 15,
-            /// `minecraft:configuration_acknowledged` (`ServerboundConfigurationAcknowledgedPacket`)
+            /// `minecraft:configuration_acknowledged` (`net.minecraft.network.protocol.game.ServerboundConfigurationAcknowledgedPacket`)
             ConfigurationAcknowledged = 16,
-            /// `minecraft:container_button_click` (`ServerboundContainerButtonClickPacket`)
+            /// `minecraft:container_button_click` (`net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket`)
             ContainerButtonClick = 17,
-            /// `minecraft:container_click` (`ServerboundContainerClickPacket`)
+            /// `minecraft:container_click` (`net.minecraft.network.protocol.game.ServerboundContainerClickPacket`)
             ContainerClick = 18,
-            /// `minecraft:container_close` (`ServerboundContainerClosePacket`)
+            /// `minecraft:container_close` (`net.minecraft.network.protocol.game.ServerboundContainerClosePacket`)
             ContainerClose = 19,
-            /// `minecraft:container_slot_state_changed` (`ServerboundContainerSlotStateChangedPacket`)
+            /// `minecraft:container_slot_state_changed` (`net.minecraft.network.protocol.game.ServerboundContainerSlotStateChangedPacket`)
             ContainerSlotStateChanged = 20,
-            /// `minecraft:cookie_response` (`ServerboundCookieResponsePacket`)
+            /// `minecraft:cookie_response` (`net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket`)
             CookieResponse = 21,
-            /// `minecraft:custom_payload` (`ServerboundCustomPayloadPacket`)
+            /// `minecraft:custom_payload` (`net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket`)
             CustomPayload = 22,
-            /// `minecraft:debug_subscription_request` (`ServerboundDebugSubscriptionRequestPacket`)
+            /// `minecraft:debug_subscription_request` (`net.minecraft.network.protocol.game.ServerboundDebugSubscriptionRequestPacket`)
             DebugSubscriptionRequest = 23,
-            /// `minecraft:edit_book` (`ServerboundEditBookPacket`)
+            /// `minecraft:edit_book` (`net.minecraft.network.protocol.game.ServerboundEditBookPacket`)
             EditBook = 24,
-            /// `minecraft:entity_tag_query` (`ServerboundEntityTagQueryPacket`)
+            /// `minecraft:entity_tag_query` (`net.minecraft.network.protocol.game.ServerboundEntityTagQueryPacket`)
             EntityTagQuery = 25,
-            /// `minecraft:interact` (`ServerboundInteractPacket`)
+            /// `minecraft:interact` (`net.minecraft.network.protocol.game.ServerboundInteractPacket`)
             Interact = 26,
-            /// `minecraft:jigsaw_generate` (`ServerboundJigsawGeneratePacket`)
+            /// `minecraft:jigsaw_generate` (`net.minecraft.network.protocol.game.ServerboundJigsawGeneratePacket`)
             JigsawGenerate = 27,
-            /// `minecraft:keep_alive` (`ServerboundKeepAlivePacket`)
+            /// `minecraft:keep_alive` (`net.minecraft.network.protocol.common.ServerboundKeepAlivePacket`)
             KeepAlive = 28,
-            /// `minecraft:lock_difficulty` (`ServerboundLockDifficultyPacket`)
+            /// `minecraft:lock_difficulty` (`net.minecraft.network.protocol.game.ServerboundLockDifficultyPacket`)
             LockDifficulty = 29,
-            /// `minecraft:move_player_pos` (`Pos`)
+            /// `minecraft:move_player_pos` (`net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos`)
             MovePlayerPos = 30,
-            /// `minecraft:move_player_pos_rot` (`PosRot`)
+            /// `minecraft:move_player_pos_rot` (`net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$PosRot`)
             MovePlayerPosRot = 31,
-            /// `minecraft:move_player_rot` (`Rot`)
+            /// `minecraft:move_player_rot` (`net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Rot`)
             MovePlayerRot = 32,
-            /// `minecraft:move_player_status_only` (`StatusOnly`)
+            /// `minecraft:move_player_status_only` (`net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$StatusOnly`)
             MovePlayerStatusOnly = 33,
-            /// `minecraft:move_vehicle` (`ServerboundMoveVehiclePacket`)
+            /// `minecraft:move_vehicle` (`net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket`)
             MoveVehicle = 34,
-            /// `minecraft:paddle_boat` (`ServerboundPaddleBoatPacket`)
+            /// `minecraft:paddle_boat` (`net.minecraft.network.protocol.game.ServerboundPaddleBoatPacket`)
             PaddleBoat = 35,
-            /// `minecraft:pick_item_from_block` (`ServerboundPickItemFromBlockPacket`)
+            /// `minecraft:pick_item_from_block` (`net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket`)
             PickItemFromBlock = 36,
-            /// `minecraft:pick_item_from_entity` (`ServerboundPickItemFromEntityPacket`)
+            /// `minecraft:pick_item_from_entity` (`net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket`)
             PickItemFromEntity = 37,
-            /// `minecraft:ping_request` (`ServerboundPingRequestPacket`)
+            /// `minecraft:ping_request` (`net.minecraft.network.protocol.ping.ServerboundPingRequestPacket`)
             PingRequest = 38,
-            /// `minecraft:place_recipe` (`ServerboundPlaceRecipePacket`)
+            /// `minecraft:place_recipe` (`net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket`)
             PlaceRecipe = 39,
-            /// `minecraft:player_abilities` (`ServerboundPlayerAbilitiesPacket`)
+            /// `minecraft:player_abilities` (`net.minecraft.network.protocol.game.ServerboundPlayerAbilitiesPacket`)
             PlayerAbilities = 40,
-            /// `minecraft:player_action` (`ServerboundPlayerActionPacket`)
+            /// `minecraft:player_action` (`net.minecraft.network.protocol.game.ServerboundPlayerActionPacket`)
             PlayerAction = 41,
-            /// `minecraft:player_command` (`ServerboundPlayerCommandPacket`)
+            /// `minecraft:player_command` (`net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket`)
             PlayerCommand = 42,
-            /// `minecraft:player_input` (`ServerboundPlayerInputPacket`)
+            /// `minecraft:player_input` (`net.minecraft.network.protocol.game.ServerboundPlayerInputPacket`)
             PlayerInput = 43,
-            /// `minecraft:player_loaded` (`ServerboundPlayerLoadedPacket`)
+            /// `minecraft:player_loaded` (`net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket`)
             PlayerLoaded = 44,
-            /// `minecraft:pong` (`ServerboundPongPacket`)
+            /// `minecraft:pong` (`net.minecraft.network.protocol.common.ServerboundPongPacket`)
             Pong = 45,
-            /// `minecraft:recipe_book_change_settings` (`ServerboundRecipeBookChangeSettingsPacket`)
+            /// `minecraft:recipe_book_change_settings` (`net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket`)
             RecipeBookChangeSettings = 46,
-            /// `minecraft:recipe_book_seen_recipe` (`ServerboundRecipeBookSeenRecipePacket`)
+            /// `minecraft:recipe_book_seen_recipe` (`net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket`)
             RecipeBookSeenRecipe = 47,
-            /// `minecraft:rename_item` (`ServerboundRenameItemPacket`)
+            /// `minecraft:rename_item` (`net.minecraft.network.protocol.game.ServerboundRenameItemPacket`)
             RenameItem = 48,
-            /// `minecraft:resource_pack` (`ServerboundResourcePackPacket`)
+            /// `minecraft:resource_pack` (`net.minecraft.network.protocol.common.ServerboundResourcePackPacket`)
             ResourcePack = 49,
-            /// `minecraft:seen_advancements` (`ServerboundSeenAdvancementsPacket`)
+            /// `minecraft:seen_advancements` (`net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket`)
             SeenAdvancements = 50,
-            /// `minecraft:select_trade` (`ServerboundSelectTradePacket`)
+            /// `minecraft:select_trade` (`net.minecraft.network.protocol.game.ServerboundSelectTradePacket`)
             SelectTrade = 51,
-            /// `minecraft:set_beacon` (`ServerboundSetBeaconPacket`)
+            /// `minecraft:set_beacon` (`net.minecraft.network.protocol.game.ServerboundSetBeaconPacket`)
             SetBeacon = 52,
-            /// `minecraft:set_carried_item` (`ServerboundSetCarriedItemPacket`)
+            /// `minecraft:set_carried_item` (`net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket`)
             SetCarriedItem = 53,
-            /// `minecraft:set_command_block` (`ServerboundSetCommandBlockPacket`)
+            /// `minecraft:set_command_block` (`net.minecraft.network.protocol.game.ServerboundSetCommandBlockPacket`)
             SetCommandBlock = 54,
-            /// `minecraft:set_command_minecart` (`ServerboundSetCommandMinecartPacket`)
+            /// `minecraft:set_command_minecart` (`net.minecraft.network.protocol.game.ServerboundSetCommandMinecartPacket`)
             SetCommandMinecart = 55,
-            /// `minecraft:set_creative_mode_slot` (`ServerboundSetCreativeModeSlotPacket`)
+            /// `minecraft:set_creative_mode_slot` (`net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket`)
             SetCreativeModeSlot = 56,
-            /// `minecraft:set_game_rule` (`ServerboundSetGameRulePacket`)
+            /// `minecraft:set_game_rule` (`net.minecraft.network.protocol.game.ServerboundSetGameRulePacket`)
             SetGameRule = 57,
-            /// `minecraft:set_jigsaw_block` (`ServerboundSetJigsawBlockPacket`)
+            /// `minecraft:set_jigsaw_block` (`net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket`)
             SetJigsawBlock = 58,
-            /// `minecraft:set_structure_block` (`ServerboundSetStructureBlockPacket`)
+            /// `minecraft:set_structure_block` (`net.minecraft.network.protocol.game.ServerboundSetStructureBlockPacket`)
             SetStructureBlock = 59,
-            /// `minecraft:set_test_block` (`ServerboundSetTestBlockPacket`)
+            /// `minecraft:set_test_block` (`net.minecraft.network.protocol.game.ServerboundSetTestBlockPacket`)
             SetTestBlock = 60,
-            /// `minecraft:sign_update` (`ServerboundSignUpdatePacket`)
+            /// `minecraft:sign_update` (`net.minecraft.network.protocol.game.ServerboundSignUpdatePacket`)
             SignUpdate = 61,
-            /// `minecraft:spectator_action` (`ServerboundSpectatorActionPacket`)
+            /// `minecraft:spectator_action` (`net.minecraft.network.protocol.game.ServerboundSpectatorActionPacket`)
             SpectatorAction = 62,
-            /// `minecraft:swing` (`ServerboundSwingPacket`)
+            /// `minecraft:swing` (`net.minecraft.network.protocol.game.ServerboundSwingPacket`)
             Swing = 63,
-            /// `minecraft:teleport_to_entity` (`ServerboundTeleportToEntityPacket`)
+            /// `minecraft:teleport_to_entity` (`net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket`)
             TeleportToEntity = 64,
-            /// `minecraft:test_instance_block_action` (`ServerboundTestInstanceBlockActionPacket`)
+            /// `minecraft:test_instance_block_action` (`net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket`)
             TestInstanceBlockAction = 65,
-            /// `minecraft:use_item_on` (`ServerboundUseItemOnPacket`)
+            /// `minecraft:use_item_on` (`net.minecraft.network.protocol.game.ServerboundUseItemOnPacket`)
             UseItemOn = 66,
-            /// `minecraft:use_item` (`ServerboundUseItemPacket`)
+            /// `minecraft:use_item` (`net.minecraft.network.protocol.game.ServerboundUseItemPacket`)
             UseItem = 67,
-            /// `minecraft:custom_click_action` (`ServerboundCustomClickActionPacket`)
+            /// `minecraft:custom_click_action` (`net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket`)
             CustomClickAction = 68,
         }
 
@@ -1035,85 +1239,283 @@ pub mod play {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::AcceptTeleportation => Some("ServerboundAcceptTeleportationPacket"),
-                    Self::Attack => Some("ServerboundAttackPacket"),
-                    Self::BlockEntityTagQuery => Some("ServerboundBlockEntityTagQueryPacket"),
-                    Self::BundleItemSelected => Some("ServerboundSelectBundleItemPacket"),
-                    Self::ChangeDifficulty => Some("ServerboundChangeDifficultyPacket"),
-                    Self::ChangeGameMode => Some("ServerboundChangeGameModePacket"),
-                    Self::ChatAck => Some("ServerboundChatAckPacket"),
-                    Self::ChatCommand => Some("ServerboundChatCommandPacket"),
-                    Self::ChatCommandSigned => Some("ServerboundChatCommandSignedPacket"),
-                    Self::Chat => Some("ServerboundChatPacket"),
-                    Self::ChatSessionUpdate => Some("ServerboundChatSessionUpdatePacket"),
-                    Self::ChunkBatchReceived => Some("ServerboundChunkBatchReceivedPacket"),
-                    Self::ClientCommand => Some("ServerboundClientCommandPacket"),
-                    Self::ClientTickEnd => Some("ServerboundClientTickEndPacket"),
-                    Self::ClientInformation => Some("ServerboundClientInformationPacket"),
-                    Self::CommandSuggestion => Some("ServerboundCommandSuggestionPacket"),
-                    Self::ConfigurationAcknowledged => {
-                        Some("ServerboundConfigurationAcknowledgedPacket")
+                    Self::AcceptTeleportation => Some(
+                        "net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket",
+                    ),
+                    Self::Attack => {
+                        Some("net.minecraft.network.protocol.game.ServerboundAttackPacket")
                     }
-                    Self::ContainerButtonClick => Some("ServerboundContainerButtonClickPacket"),
-                    Self::ContainerClick => Some("ServerboundContainerClickPacket"),
-                    Self::ContainerClose => Some("ServerboundContainerClosePacket"),
-                    Self::ContainerSlotStateChanged => {
-                        Some("ServerboundContainerSlotStateChangedPacket")
+                    Self::BlockEntityTagQuery => Some(
+                        "net.minecraft.network.protocol.game.ServerboundBlockEntityTagQueryPacket",
+                    ),
+                    Self::BundleItemSelected => Some(
+                        "net.minecraft.network.protocol.game.ServerboundSelectBundleItemPacket",
+                    ),
+                    Self::ChangeDifficulty => Some(
+                        "net.minecraft.network.protocol.game.ServerboundChangeDifficultyPacket",
+                    ),
+                    Self::ChangeGameMode => {
+                        Some("net.minecraft.network.protocol.game.ServerboundChangeGameModePacket")
                     }
-                    Self::CookieResponse => Some("ServerboundCookieResponsePacket"),
-                    Self::CustomPayload => Some("ServerboundCustomPayloadPacket"),
-                    Self::DebugSubscriptionRequest => {
-                        Some("ServerboundDebugSubscriptionRequestPacket")
+                    Self::ChatAck => {
+                        Some("net.minecraft.network.protocol.game.ServerboundChatAckPacket")
                     }
-                    Self::EditBook => Some("ServerboundEditBookPacket"),
-                    Self::EntityTagQuery => Some("ServerboundEntityTagQueryPacket"),
-                    Self::Interact => Some("ServerboundInteractPacket"),
-                    Self::JigsawGenerate => Some("ServerboundJigsawGeneratePacket"),
-                    Self::KeepAlive => Some("ServerboundKeepAlivePacket"),
-                    Self::LockDifficulty => Some("ServerboundLockDifficultyPacket"),
-                    Self::MovePlayerPos => Some("Pos"),
-                    Self::MovePlayerPosRot => Some("PosRot"),
-                    Self::MovePlayerRot => Some("Rot"),
-                    Self::MovePlayerStatusOnly => Some("StatusOnly"),
-                    Self::MoveVehicle => Some("ServerboundMoveVehiclePacket"),
-                    Self::PaddleBoat => Some("ServerboundPaddleBoatPacket"),
-                    Self::PickItemFromBlock => Some("ServerboundPickItemFromBlockPacket"),
-                    Self::PickItemFromEntity => Some("ServerboundPickItemFromEntityPacket"),
-                    Self::PingRequest => Some("ServerboundPingRequestPacket"),
-                    Self::PlaceRecipe => Some("ServerboundPlaceRecipePacket"),
-                    Self::PlayerAbilities => Some("ServerboundPlayerAbilitiesPacket"),
-                    Self::PlayerAction => Some("ServerboundPlayerActionPacket"),
-                    Self::PlayerCommand => Some("ServerboundPlayerCommandPacket"),
-                    Self::PlayerInput => Some("ServerboundPlayerInputPacket"),
-                    Self::PlayerLoaded => Some("ServerboundPlayerLoadedPacket"),
-                    Self::Pong => Some("ServerboundPongPacket"),
-                    Self::RecipeBookChangeSettings => {
-                        Some("ServerboundRecipeBookChangeSettingsPacket")
+                    Self::ChatCommand => {
+                        Some("net.minecraft.network.protocol.game.ServerboundChatCommandPacket")
                     }
-                    Self::RecipeBookSeenRecipe => Some("ServerboundRecipeBookSeenRecipePacket"),
-                    Self::RenameItem => Some("ServerboundRenameItemPacket"),
-                    Self::ResourcePack => Some("ServerboundResourcePackPacket"),
-                    Self::SeenAdvancements => Some("ServerboundSeenAdvancementsPacket"),
-                    Self::SelectTrade => Some("ServerboundSelectTradePacket"),
-                    Self::SetBeacon => Some("ServerboundSetBeaconPacket"),
-                    Self::SetCarriedItem => Some("ServerboundSetCarriedItemPacket"),
-                    Self::SetCommandBlock => Some("ServerboundSetCommandBlockPacket"),
-                    Self::SetCommandMinecart => Some("ServerboundSetCommandMinecartPacket"),
-                    Self::SetCreativeModeSlot => Some("ServerboundSetCreativeModeSlotPacket"),
-                    Self::SetGameRule => Some("ServerboundSetGameRulePacket"),
-                    Self::SetJigsawBlock => Some("ServerboundSetJigsawBlockPacket"),
-                    Self::SetStructureBlock => Some("ServerboundSetStructureBlockPacket"),
-                    Self::SetTestBlock => Some("ServerboundSetTestBlockPacket"),
-                    Self::SignUpdate => Some("ServerboundSignUpdatePacket"),
-                    Self::SpectatorAction => Some("ServerboundSpectatorActionPacket"),
-                    Self::Swing => Some("ServerboundSwingPacket"),
-                    Self::TeleportToEntity => Some("ServerboundTeleportToEntityPacket"),
-                    Self::TestInstanceBlockAction => {
-                        Some("ServerboundTestInstanceBlockActionPacket")
+                    Self::ChatCommandSigned => Some(
+                        "net.minecraft.network.protocol.game.ServerboundChatCommandSignedPacket",
+                    ),
+                    Self::Chat => Some("net.minecraft.network.protocol.game.ServerboundChatPacket"),
+                    Self::ChatSessionUpdate => Some(
+                        "net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket",
+                    ),
+                    Self::ChunkBatchReceived => Some(
+                        "net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket",
+                    ),
+                    Self::ClientCommand => {
+                        Some("net.minecraft.network.protocol.game.ServerboundClientCommandPacket")
                     }
-                    Self::UseItemOn => Some("ServerboundUseItemOnPacket"),
-                    Self::UseItem => Some("ServerboundUseItemPacket"),
-                    Self::CustomClickAction => Some("ServerboundCustomClickActionPacket"),
+                    Self::ClientTickEnd => {
+                        Some("net.minecraft.network.protocol.game.ServerboundClientTickEndPacket")
+                    }
+                    Self::ClientInformation => Some(
+                        "net.minecraft.network.protocol.common.ServerboundClientInformationPacket",
+                    ),
+                    Self::CommandSuggestion => Some(
+                        "net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket",
+                    ),
+                    Self::ConfigurationAcknowledged => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundConfigurationAcknowledgedPacket",
+                    ),
+                    Self::ContainerButtonClick => Some(
+                        "net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket",
+                    ),
+                    Self::ContainerClick => {
+                        Some("net.minecraft.network.protocol.game.ServerboundContainerClickPacket")
+                    }
+                    Self::ContainerClose => {
+                        Some("net.minecraft.network.protocol.game.ServerboundContainerClosePacket")
+                    }
+                    Self::ContainerSlotStateChanged => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundContainerSlotStateChangedPacket",
+                    ),
+                    Self::CookieResponse => Some(
+                        "net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket",
+                    ),
+                    Self::CustomPayload => {
+                        Some("net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket")
+                    }
+                    Self::DebugSubscriptionRequest => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundDebugSubscriptionRequestPacket",
+                    ),
+                    Self::EditBook => {
+                        Some("net.minecraft.network.protocol.game.ServerboundEditBookPacket")
+                    }
+                    Self::EntityTagQuery => {
+                        Some("net.minecraft.network.protocol.game.ServerboundEntityTagQueryPacket")
+                    }
+                    Self::Interact => {
+                        Some("net.minecraft.network.protocol.game.ServerboundInteractPacket")
+                    }
+                    Self::JigsawGenerate => {
+                        Some("net.minecraft.network.protocol.game.ServerboundJigsawGeneratePacket")
+                    }
+                    Self::KeepAlive => {
+                        Some("net.minecraft.network.protocol.common.ServerboundKeepAlivePacket")
+                    }
+                    Self::LockDifficulty => {
+                        Some("net.minecraft.network.protocol.game.ServerboundLockDifficultyPacket")
+                    }
+                    Self::MovePlayerPos => {
+                        Some("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Pos")
+                    }
+                    Self::MovePlayerPosRot => Some(
+                        "net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$PosRot",
+                    ),
+                    Self::MovePlayerRot => {
+                        Some("net.minecraft.network.protocol.game.ServerboundMovePlayerPacket$Rot")
+                    }
+                    Self::MovePlayerStatusOnly => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundMovePlayerPacket$StatusOnly",
+                    ),
+                    Self::MoveVehicle => {
+                        Some("net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket")
+                    }
+                    Self::PaddleBoat => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPaddleBoatPacket")
+                    }
+                    Self::PickItemFromBlock => Some(
+                        "net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket",
+                    ),
+                    Self::PickItemFromEntity => Some(
+                        "net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket",
+                    ),
+                    Self::PingRequest => {
+                        Some("net.minecraft.network.protocol.ping.ServerboundPingRequestPacket")
+                    }
+                    Self::PlaceRecipe => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket")
+                    }
+                    Self::PlayerAbilities => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlayerAbilitiesPacket")
+                    }
+                    Self::PlayerAction => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlayerActionPacket")
+                    }
+                    Self::PlayerCommand => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket")
+                    }
+                    Self::PlayerInput => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlayerInputPacket")
+                    }
+                    Self::PlayerLoaded => {
+                        Some("net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket")
+                    }
+                    Self::Pong => {
+                        Some("net.minecraft.network.protocol.common.ServerboundPongPacket")
+                    }
+                    Self::RecipeBookChangeSettings => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundRecipeBookChangeSettingsPacket",
+                    ),
+                    Self::RecipeBookSeenRecipe => Some(
+                        "net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket",
+                    ),
+                    Self::RenameItem => {
+                        Some("net.minecraft.network.protocol.game.ServerboundRenameItemPacket")
+                    }
+                    Self::ResourcePack => {
+                        Some("net.minecraft.network.protocol.common.ServerboundResourcePackPacket")
+                    }
+                    Self::SeenAdvancements => Some(
+                        "net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket",
+                    ),
+                    Self::SelectTrade => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSelectTradePacket")
+                    }
+                    Self::SetBeacon => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetBeaconPacket")
+                    }
+                    Self::SetCarriedItem => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket")
+                    }
+                    Self::SetCommandBlock => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetCommandBlockPacket")
+                    }
+                    Self::SetCommandMinecart => Some(
+                        "net.minecraft.network.protocol.game.ServerboundSetCommandMinecartPacket",
+                    ),
+                    Self::SetCreativeModeSlot => Some(
+                        "net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket",
+                    ),
+                    Self::SetGameRule => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetGameRulePacket")
+                    }
+                    Self::SetJigsawBlock => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket")
+                    }
+                    Self::SetStructureBlock => Some(
+                        "net.minecraft.network.protocol.game.ServerboundSetStructureBlockPacket",
+                    ),
+                    Self::SetTestBlock => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSetTestBlockPacket")
+                    }
+                    Self::SignUpdate => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSignUpdatePacket")
+                    }
+                    Self::SpectatorAction => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSpectatorActionPacket")
+                    }
+                    Self::Swing => {
+                        Some("net.minecraft.network.protocol.game.ServerboundSwingPacket")
+                    }
+                    Self::TeleportToEntity => Some(
+                        "net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket",
+                    ),
+                    Self::TestInstanceBlockAction => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ServerboundTestInstanceBlockActionPacket",
+                    ),
+                    Self::UseItemOn => {
+                        Some("net.minecraft.network.protocol.game.ServerboundUseItemOnPacket")
+                    }
+                    Self::UseItem => {
+                        Some("net.minecraft.network.protocol.game.ServerboundUseItemPacket")
+                    }
+                    Self::CustomClickAction => Some(
+                        "net.minecraft.network.protocol.common.ServerboundCustomClickActionPacket",
+                    ),
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::AcceptTeleportation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDACCEPTTELEPORTATIONPACKET_STREAM_CODEC),
+                    Self::Attack => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDATTACKPACKET_STREAM_CODEC),
+                    Self::BlockEntityTagQuery => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDBLOCKENTITYTAGQUERYPACKET_STREAM_CODEC),
+                    Self::BundleItemSelected => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSELECTBUNDLEITEMPACKET_STREAM_CODEC),
+                    Self::ChangeDifficulty => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHANGEDIFFICULTYPACKET_STREAM_CODEC),
+                    Self::ChangeGameMode => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHANGEGAMEMODEPACKET_STREAM_CODEC),
+                    Self::ChatAck => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHATACKPACKET_STREAM_CODEC),
+                    Self::ChatCommand => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHATCOMMANDPACKET_STREAM_CODEC),
+                    Self::ChunkBatchReceived => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHUNKBATCHRECEIVEDPACKET_STREAM_CODEC),
+                    Self::ClientCommand => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCLIENTCOMMANDPACKET_STREAM_CODEC),
+                    Self::ClientTickEnd => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCLIENTTICKENDPACKET_STREAM_CODEC),
+                    Self::CommandSuggestion => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCOMMANDSUGGESTIONPACKET_STREAM_CODEC),
+                    Self::ConfigurationAcknowledged => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONFIGURATIONACKNOWLEDGEDPACKET_STREAM_CODEC),
+                    Self::ContainerButtonClick => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONTAINERBUTTONCLICKPACKET_STREAM_CODEC),
+                    Self::ContainerClick => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONTAINERCLICKPACKET_STREAM_CODEC),
+                    Self::ContainerClose => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONTAINERCLOSEPACKET_STREAM_CODEC),
+                    Self::ContainerSlotStateChanged => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCONTAINERSLOTSTATECHANGEDPACKET_STREAM_CODEC),
+                    Self::CookieResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_SERVERBOUNDCOOKIERESPONSEPACKET_STREAM_CODEC),
+                    Self::DebugSubscriptionRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDDEBUGSUBSCRIPTIONREQUESTPACKET_SET_STREAM_CODEC),
+                    Self::EditBook => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDEDITBOOKPACKET_STREAM_CODEC),
+                    Self::EntityTagQuery => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDENTITYTAGQUERYPACKET_STREAM_CODEC),
+                    Self::JigsawGenerate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDJIGSAWGENERATEPACKET_STREAM_CODEC),
+                    Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDKEEPALIVEPACKET_STREAM_CODEC),
+                    Self::LockDifficulty => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDLOCKDIFFICULTYPACKET_STREAM_CODEC),
+                    Self::MovePlayerPos => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POS_STREAM_CODEC),
+                    Self::MovePlayerPosRot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_POSROT_STREAM_CODEC),
+                    Self::MovePlayerRot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_ROT_STREAM_CODEC),
+                    Self::MovePlayerStatusOnly => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEPLAYERPACKET_STATUSONLY_STREAM_CODEC),
+                    Self::MoveVehicle => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDMOVEVEHICLEPACKET_STREAM_CODEC),
+                    Self::PaddleBoat => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPADDLEBOATPACKET_STREAM_CODEC),
+                    Self::PickItemFromBlock => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPICKITEMFROMBLOCKPACKET_STREAM_CODEC),
+                    Self::PickItemFromEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPICKITEMFROMENTITYPACKET_STREAM_CODEC),
+                    Self::PingRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_PING_SERVERBOUNDPINGREQUESTPACKET_STREAM_CODEC),
+                    Self::PlaceRecipe => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPLACERECIPEPACKET_STREAM_CODEC),
+                    Self::PlayerAction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPLAYERACTIONPACKET_STREAM_CODEC),
+                    Self::PlayerCommand => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPLAYERCOMMANDPACKET_STREAM_CODEC),
+                    Self::PlayerLoaded => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDPLAYERLOADEDPACKET_STREAM_CODEC),
+                    Self::Pong => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDPONGPACKET_STREAM_CODEC),
+                    Self::RecipeBookChangeSettings => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDRECIPEBOOKCHANGESETTINGSPACKET_STREAM_CODEC),
+                    Self::RecipeBookSeenRecipe => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDRECIPEBOOKSEENRECIPEPACKET_STREAM_CODEC),
+                    Self::RenameItem => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDRENAMEITEMPACKET_STREAM_CODEC),
+                    Self::ResourcePack => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDRESOURCEPACKPACKET_STREAM_CODEC),
+                    Self::SelectTrade => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSELECTTRADEPACKET_STREAM_CODEC),
+                    Self::SetBeacon => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETBEACONPACKET_STREAM_CODEC),
+                    Self::SetCarriedItem => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETCARRIEDITEMPACKET_STREAM_CODEC),
+                    Self::SetCommandMinecart => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETCOMMANDMINECARTPACKET_STREAM_CODEC),
+                    Self::SetGameRule => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETGAMERULEPACKET_STREAM_CODEC),
+                    Self::SetJigsawBlock => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETJIGSAWBLOCKPACKET_STREAM_CODEC),
+                    Self::SetTestBlock => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETTESTBLOCKPACKET_STREAM_CODEC),
+                    Self::SpectatorAction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSPECTATORACTIONPACKET_STREAM_CODEC),
+                    Self::Swing => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSWINGPACKET_STREAM_CODEC),
+                    Self::TeleportToEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTELEPORTTOENTITYPACKET_STREAM_CODEC),
+                    Self::TestInstanceBlockAction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTESTINSTANCEBLOCKACTIONPACKET_STREAM_CODEC),
+                    Self::UseItemOn => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDUSEITEMONPACKET_STREAM_CODEC),
+                    Self::UseItem => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDUSEITEMPACKET_STREAM_CODEC),
+                    Self::CustomClickAction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDCUSTOMCLICKACTIONPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }
@@ -1130,287 +1532,287 @@ pub mod play {
         #[repr(i32)]
         #[non_exhaustive]
         pub enum PacketId {
-            /// `minecraft:bundle_delimiter` (`ClientboundBundleDelimiterPacket`)
+            /// `minecraft:bundle_delimiter` (`net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket`)
             BundleDelimiter = 0,
-            /// `minecraft:add_entity` (`ClientboundAddEntityPacket`)
+            /// `minecraft:add_entity` (`net.minecraft.network.protocol.game.ClientboundAddEntityPacket`)
             AddEntity = 1,
-            /// `minecraft:animate` (`ClientboundAnimatePacket`)
+            /// `minecraft:animate` (`net.minecraft.network.protocol.game.ClientboundAnimatePacket`)
             Animate = 2,
-            /// `minecraft:award_stats` (`ClientboundAwardStatsPacket`)
+            /// `minecraft:award_stats` (`net.minecraft.network.protocol.game.ClientboundAwardStatsPacket`)
             AwardStats = 3,
-            /// `minecraft:block_changed_ack` (`ClientboundBlockChangedAckPacket`)
+            /// `minecraft:block_changed_ack` (`net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket`)
             BlockChangedAck = 4,
-            /// `minecraft:block_destruction` (`ClientboundBlockDestructionPacket`)
+            /// `minecraft:block_destruction` (`net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket`)
             BlockDestruction = 5,
-            /// `minecraft:block_entity_data` (`ClientboundBlockEntityDataPacket`)
+            /// `minecraft:block_entity_data` (`net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket`)
             BlockEntityData = 6,
-            /// `minecraft:block_event` (`ClientboundBlockEventPacket`)
+            /// `minecraft:block_event` (`net.minecraft.network.protocol.game.ClientboundBlockEventPacket`)
             BlockEvent = 7,
-            /// `minecraft:block_update` (`ClientboundBlockUpdatePacket`)
+            /// `minecraft:block_update` (`net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket`)
             BlockUpdate = 8,
-            /// `minecraft:boss_event` (`ClientboundBossEventPacket`)
+            /// `minecraft:boss_event` (`net.minecraft.network.protocol.game.ClientboundBossEventPacket`)
             BossEvent = 9,
-            /// `minecraft:change_difficulty` (`ClientboundChangeDifficultyPacket`)
+            /// `minecraft:change_difficulty` (`net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket`)
             ChangeDifficulty = 10,
-            /// `minecraft:chunk_batch_finished` (`ClientboundChunkBatchFinishedPacket`)
+            /// `minecraft:chunk_batch_finished` (`net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket`)
             ChunkBatchFinished = 11,
-            /// `minecraft:chunk_batch_start` (`ClientboundChunkBatchStartPacket`)
+            /// `minecraft:chunk_batch_start` (`net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket`)
             ChunkBatchStart = 12,
-            /// `minecraft:chunks_biomes` (`ClientboundChunksBiomesPacket`)
+            /// `minecraft:chunks_biomes` (`net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket`)
             ChunksBiomes = 13,
-            /// `minecraft:clear_titles` (`ClientboundClearTitlesPacket`)
+            /// `minecraft:clear_titles` (`net.minecraft.network.protocol.game.ClientboundClearTitlesPacket`)
             ClearTitles = 14,
-            /// `minecraft:command_suggestions` (`ClientboundCommandSuggestionsPacket`)
+            /// `minecraft:command_suggestions` (`net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket`)
             CommandSuggestions = 15,
-            /// `minecraft:commands` (`ClientboundCommandsPacket`)
+            /// `minecraft:commands` (`net.minecraft.network.protocol.game.ClientboundCommandsPacket`)
             Commands = 16,
-            /// `minecraft:container_close` (`ClientboundContainerClosePacket`)
+            /// `minecraft:container_close` (`net.minecraft.network.protocol.game.ClientboundContainerClosePacket`)
             ContainerClose = 17,
-            /// `minecraft:container_set_content` (`ClientboundContainerSetContentPacket`)
+            /// `minecraft:container_set_content` (`net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket`)
             ContainerSetContent = 18,
-            /// `minecraft:container_set_data` (`ClientboundContainerSetDataPacket`)
+            /// `minecraft:container_set_data` (`net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket`)
             ContainerSetData = 19,
-            /// `minecraft:container_set_slot` (`ClientboundContainerSetSlotPacket`)
+            /// `minecraft:container_set_slot` (`net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket`)
             ContainerSetSlot = 20,
-            /// `minecraft:cookie_request` (`ClientboundCookieRequestPacket`)
+            /// `minecraft:cookie_request` (`net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket`)
             CookieRequest = 21,
-            /// `minecraft:cooldown` (`ClientboundCooldownPacket`)
+            /// `minecraft:cooldown` (`net.minecraft.network.protocol.game.ClientboundCooldownPacket`)
             Cooldown = 22,
-            /// `minecraft:custom_chat_completions` (`ClientboundCustomChatCompletionsPacket`)
+            /// `minecraft:custom_chat_completions` (`net.minecraft.network.protocol.game.ClientboundCustomChatCompletionsPacket`)
             CustomChatCompletions = 23,
-            /// `minecraft:custom_payload` (`ClientboundCustomPayloadPacket`)
+            /// `minecraft:custom_payload` (`net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket`)
             CustomPayload = 24,
-            /// `minecraft:damage_event` (`ClientboundDamageEventPacket`)
+            /// `minecraft:damage_event` (`net.minecraft.network.protocol.game.ClientboundDamageEventPacket`)
             DamageEvent = 25,
-            /// `minecraft:debug/block_value` (`ClientboundDebugBlockValuePacket`)
+            /// `minecraft:debug/block_value` (`net.minecraft.network.protocol.game.ClientboundDebugBlockValuePacket`)
             DebugBlockValue = 26,
-            /// `minecraft:debug/chunk_value` (`ClientboundDebugChunkValuePacket`)
+            /// `minecraft:debug/chunk_value` (`net.minecraft.network.protocol.game.ClientboundDebugChunkValuePacket`)
             DebugChunkValue = 27,
-            /// `minecraft:debug/entity_value` (`ClientboundDebugEntityValuePacket`)
+            /// `minecraft:debug/entity_value` (`net.minecraft.network.protocol.game.ClientboundDebugEntityValuePacket`)
             DebugEntityValue = 28,
-            /// `minecraft:debug/event` (`ClientboundDebugEventPacket`)
+            /// `minecraft:debug/event` (`net.minecraft.network.protocol.game.ClientboundDebugEventPacket`)
             DebugEvent = 29,
-            /// `minecraft:debug_sample` (`ClientboundDebugSamplePacket`)
+            /// `minecraft:debug_sample` (`net.minecraft.network.protocol.game.ClientboundDebugSamplePacket`)
             DebugSample = 30,
-            /// `minecraft:delete_chat` (`ClientboundDeleteChatPacket`)
+            /// `minecraft:delete_chat` (`net.minecraft.network.protocol.game.ClientboundDeleteChatPacket`)
             DeleteChat = 31,
-            /// `minecraft:disconnect` (`ClientboundDisconnectPacket`)
+            /// `minecraft:disconnect` (`net.minecraft.network.protocol.common.ClientboundDisconnectPacket`)
             Disconnect = 32,
-            /// `minecraft:disguised_chat` (`ClientboundDisguisedChatPacket`)
+            /// `minecraft:disguised_chat` (`net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket`)
             DisguisedChat = 33,
-            /// `minecraft:entity_event` (`ClientboundEntityEventPacket`)
+            /// `minecraft:entity_event` (`net.minecraft.network.protocol.game.ClientboundEntityEventPacket`)
             EntityEvent = 34,
-            /// `minecraft:entity_position_sync` (`ClientboundEntityPositionSyncPacket`)
+            /// `minecraft:entity_position_sync` (`net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket`)
             EntityPositionSync = 35,
-            /// `minecraft:explode` (`ClientboundExplodePacket`)
+            /// `minecraft:explode` (`net.minecraft.network.protocol.game.ClientboundExplodePacket`)
             Explode = 36,
-            /// `minecraft:forget_level_chunk` (`ClientboundForgetLevelChunkPacket`)
+            /// `minecraft:forget_level_chunk` (`net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket`)
             ForgetLevelChunk = 37,
-            /// `minecraft:game_event` (`ClientboundGameEventPacket`)
+            /// `minecraft:game_event` (`net.minecraft.network.protocol.game.ClientboundGameEventPacket`)
             GameEvent = 38,
-            /// `minecraft:game_rule_values` (`ClientboundGameRuleValuesPacket`)
+            /// `minecraft:game_rule_values` (`net.minecraft.network.protocol.game.ClientboundGameRuleValuesPacket`)
             GameRuleValues = 39,
-            /// `minecraft:game_test_highlight_pos` (`ClientboundGameTestHighlightPosPacket`)
+            /// `minecraft:game_test_highlight_pos` (`net.minecraft.network.protocol.game.ClientboundGameTestHighlightPosPacket`)
             GameTestHighlightPos = 40,
-            /// `minecraft:mount_screen_open` (`ClientboundMountScreenOpenPacket`)
+            /// `minecraft:mount_screen_open` (`net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket`)
             MountScreenOpen = 41,
-            /// `minecraft:hurt_animation` (`ClientboundHurtAnimationPacket`)
+            /// `minecraft:hurt_animation` (`net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket`)
             HurtAnimation = 42,
-            /// `minecraft:initialize_border` (`ClientboundInitializeBorderPacket`)
+            /// `minecraft:initialize_border` (`net.minecraft.network.protocol.game.ClientboundInitializeBorderPacket`)
             InitializeBorder = 43,
-            /// `minecraft:keep_alive` (`ClientboundKeepAlivePacket`)
+            /// `minecraft:keep_alive` (`net.minecraft.network.protocol.common.ClientboundKeepAlivePacket`)
             KeepAlive = 44,
-            /// `minecraft:level_chunk_with_light` (`ClientboundLevelChunkWithLightPacket`)
+            /// `minecraft:level_chunk_with_light` (`net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket`)
             LevelChunkWithLight = 45,
-            /// `minecraft:level_event` (`ClientboundLevelEventPacket`)
+            /// `minecraft:level_event` (`net.minecraft.network.protocol.game.ClientboundLevelEventPacket`)
             LevelEvent = 46,
-            /// `minecraft:level_particles` (`ClientboundLevelParticlesPacket`)
+            /// `minecraft:level_particles` (`net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket`)
             LevelParticles = 47,
-            /// `minecraft:light_update` (`ClientboundLightUpdatePacket`)
+            /// `minecraft:light_update` (`net.minecraft.network.protocol.game.ClientboundLightUpdatePacket`)
             LightUpdate = 48,
-            /// `minecraft:login` (`ClientboundLoginPacket`)
+            /// `minecraft:login` (`net.minecraft.network.protocol.game.ClientboundLoginPacket`)
             Login = 49,
-            /// `minecraft:low_disk_space_warning` (`ClientboundLowDiskSpaceWarningPacket`)
+            /// `minecraft:low_disk_space_warning` (`net.minecraft.network.protocol.game.ClientboundLowDiskSpaceWarningPacket`)
             LowDiskSpaceWarning = 50,
-            /// `minecraft:map_item_data` (`ClientboundMapItemDataPacket`)
+            /// `minecraft:map_item_data` (`net.minecraft.network.protocol.game.ClientboundMapItemDataPacket`)
             MapItemData = 51,
-            /// `minecraft:merchant_offers` (`ClientboundMerchantOffersPacket`)
+            /// `minecraft:merchant_offers` (`net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket`)
             MerchantOffers = 52,
-            /// `minecraft:move_entity_pos` (`Pos`)
+            /// `minecraft:move_entity_pos` (`net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$Pos`)
             MoveEntityPos = 53,
-            /// `minecraft:move_entity_pos_rot` (`PosRot`)
+            /// `minecraft:move_entity_pos_rot` (`net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$PosRot`)
             MoveEntityPosRot = 54,
-            /// `minecraft:move_minecart_along_track` (`ClientboundMoveMinecartPacket`)
+            /// `minecraft:move_minecart_along_track` (`net.minecraft.network.protocol.game.ClientboundMoveMinecartPacket`)
             MoveMinecartAlongTrack = 55,
-            /// `minecraft:move_entity_rot` (`Rot`)
+            /// `minecraft:move_entity_rot` (`net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$Rot`)
             MoveEntityRot = 56,
-            /// `minecraft:move_vehicle` (`ClientboundMoveVehiclePacket`)
+            /// `minecraft:move_vehicle` (`net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket`)
             MoveVehicle = 57,
-            /// `minecraft:open_book` (`ClientboundOpenBookPacket`)
+            /// `minecraft:open_book` (`net.minecraft.network.protocol.game.ClientboundOpenBookPacket`)
             OpenBook = 58,
-            /// `minecraft:open_screen` (`ClientboundOpenScreenPacket`)
+            /// `minecraft:open_screen` (`net.minecraft.network.protocol.game.ClientboundOpenScreenPacket`)
             OpenScreen = 59,
-            /// `minecraft:open_sign_editor` (`ClientboundOpenSignEditorPacket`)
+            /// `minecraft:open_sign_editor` (`net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket`)
             OpenSignEditor = 60,
-            /// `minecraft:ping` (`ClientboundPingPacket`)
+            /// `minecraft:ping` (`net.minecraft.network.protocol.common.ClientboundPingPacket`)
             Ping = 61,
-            /// `minecraft:pong_response` (`ClientboundPongResponsePacket`)
+            /// `minecraft:pong_response` (`net.minecraft.network.protocol.ping.ClientboundPongResponsePacket`)
             PongResponse = 62,
-            /// `minecraft:place_ghost_recipe` (`ClientboundPlaceGhostRecipePacket`)
+            /// `minecraft:place_ghost_recipe` (`net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket`)
             PlaceGhostRecipe = 63,
-            /// `minecraft:player_abilities` (`ClientboundPlayerAbilitiesPacket`)
+            /// `minecraft:player_abilities` (`net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket`)
             PlayerAbilities = 64,
-            /// `minecraft:player_chat` (`ClientboundPlayerChatPacket`)
+            /// `minecraft:player_chat` (`net.minecraft.network.protocol.game.ClientboundPlayerChatPacket`)
             PlayerChat = 65,
-            /// `minecraft:player_combat_end` (`ClientboundPlayerCombatEndPacket`)
+            /// `minecraft:player_combat_end` (`net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket`)
             PlayerCombatEnd = 66,
-            /// `minecraft:player_combat_enter` (`ClientboundPlayerCombatEnterPacket`)
+            /// `minecraft:player_combat_enter` (`net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket`)
             PlayerCombatEnter = 67,
-            /// `minecraft:player_combat_kill` (`ClientboundPlayerCombatKillPacket`)
+            /// `minecraft:player_combat_kill` (`net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket`)
             PlayerCombatKill = 68,
-            /// `minecraft:player_info_remove` (`ClientboundPlayerInfoRemovePacket`)
+            /// `minecraft:player_info_remove` (`net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket`)
             PlayerInfoRemove = 69,
-            /// `minecraft:player_info_update` (`ClientboundPlayerInfoUpdatePacket`)
+            /// `minecraft:player_info_update` (`net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket`)
             PlayerInfoUpdate = 70,
-            /// `minecraft:player_look_at` (`ClientboundPlayerLookAtPacket`)
+            /// `minecraft:player_look_at` (`net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket`)
             PlayerLookAt = 71,
-            /// `minecraft:player_position` (`ClientboundPlayerPositionPacket`)
+            /// `minecraft:player_position` (`net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket`)
             PlayerPosition = 72,
-            /// `minecraft:player_rotation` (`ClientboundPlayerRotationPacket`)
+            /// `minecraft:player_rotation` (`net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket`)
             PlayerRotation = 73,
-            /// `minecraft:recipe_book_add` (`ClientboundRecipeBookAddPacket`)
+            /// `minecraft:recipe_book_add` (`net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket`)
             RecipeBookAdd = 74,
-            /// `minecraft:recipe_book_remove` (`ClientboundRecipeBookRemovePacket`)
+            /// `minecraft:recipe_book_remove` (`net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket`)
             RecipeBookRemove = 75,
-            /// `minecraft:recipe_book_settings` (`ClientboundRecipeBookSettingsPacket`)
+            /// `minecraft:recipe_book_settings` (`net.minecraft.network.protocol.game.ClientboundRecipeBookSettingsPacket`)
             RecipeBookSettings = 76,
-            /// `minecraft:remove_entities` (`ClientboundRemoveEntitiesPacket`)
+            /// `minecraft:remove_entities` (`net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket`)
             RemoveEntities = 77,
-            /// `minecraft:remove_mob_effect` (`ClientboundRemoveMobEffectPacket`)
+            /// `minecraft:remove_mob_effect` (`net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket`)
             RemoveMobEffect = 78,
-            /// `minecraft:reset_score` (`ClientboundResetScorePacket`)
+            /// `minecraft:reset_score` (`net.minecraft.network.protocol.game.ClientboundResetScorePacket`)
             ResetScore = 79,
-            /// `minecraft:resource_pack_pop` (`ClientboundResourcePackPopPacket`)
+            /// `minecraft:resource_pack_pop` (`net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket`)
             ResourcePackPop = 80,
-            /// `minecraft:resource_pack_push` (`ClientboundResourcePackPushPacket`)
+            /// `minecraft:resource_pack_push` (`net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket`)
             ResourcePackPush = 81,
-            /// `minecraft:respawn` (`ClientboundRespawnPacket`)
+            /// `minecraft:respawn` (`net.minecraft.network.protocol.game.ClientboundRespawnPacket`)
             Respawn = 82,
-            /// `minecraft:rotate_head` (`ClientboundRotateHeadPacket`)
+            /// `minecraft:rotate_head` (`net.minecraft.network.protocol.game.ClientboundRotateHeadPacket`)
             RotateHead = 83,
-            /// `minecraft:section_blocks_update` (`ClientboundSectionBlocksUpdatePacket`)
+            /// `minecraft:section_blocks_update` (`net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket`)
             SectionBlocksUpdate = 84,
-            /// `minecraft:select_advancements_tab` (`ClientboundSelectAdvancementsTabPacket`)
+            /// `minecraft:select_advancements_tab` (`net.minecraft.network.protocol.game.ClientboundSelectAdvancementsTabPacket`)
             SelectAdvancementsTab = 85,
-            /// `minecraft:server_data` (`ClientboundServerDataPacket`)
+            /// `minecraft:server_data` (`net.minecraft.network.protocol.game.ClientboundServerDataPacket`)
             ServerData = 86,
-            /// `minecraft:set_action_bar_text` (`ClientboundSetActionBarTextPacket`)
+            /// `minecraft:set_action_bar_text` (`net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket`)
             SetActionBarText = 87,
-            /// `minecraft:set_border_center` (`ClientboundSetBorderCenterPacket`)
+            /// `minecraft:set_border_center` (`net.minecraft.network.protocol.game.ClientboundSetBorderCenterPacket`)
             SetBorderCenter = 88,
-            /// `minecraft:set_border_lerp_size` (`ClientboundSetBorderLerpSizePacket`)
+            /// `minecraft:set_border_lerp_size` (`net.minecraft.network.protocol.game.ClientboundSetBorderLerpSizePacket`)
             SetBorderLerpSize = 89,
-            /// `minecraft:set_border_size` (`ClientboundSetBorderSizePacket`)
+            /// `minecraft:set_border_size` (`net.minecraft.network.protocol.game.ClientboundSetBorderSizePacket`)
             SetBorderSize = 90,
-            /// `minecraft:set_border_warning_delay` (`ClientboundSetBorderWarningDelayPacket`)
+            /// `minecraft:set_border_warning_delay` (`net.minecraft.network.protocol.game.ClientboundSetBorderWarningDelayPacket`)
             SetBorderWarningDelay = 91,
-            /// `minecraft:set_border_warning_distance` (`ClientboundSetBorderWarningDistancePacket`)
+            /// `minecraft:set_border_warning_distance` (`net.minecraft.network.protocol.game.ClientboundSetBorderWarningDistancePacket`)
             SetBorderWarningDistance = 92,
-            /// `minecraft:set_camera` (`ClientboundSetCameraPacket`)
+            /// `minecraft:set_camera` (`net.minecraft.network.protocol.game.ClientboundSetCameraPacket`)
             SetCamera = 93,
-            /// `minecraft:set_chunk_cache_center` (`ClientboundSetChunkCacheCenterPacket`)
+            /// `minecraft:set_chunk_cache_center` (`net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket`)
             SetChunkCacheCenter = 94,
-            /// `minecraft:set_chunk_cache_radius` (`ClientboundSetChunkCacheRadiusPacket`)
+            /// `minecraft:set_chunk_cache_radius` (`net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket`)
             SetChunkCacheRadius = 95,
-            /// `minecraft:set_cursor_item` (`ClientboundSetCursorItemPacket`)
+            /// `minecraft:set_cursor_item` (`net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket`)
             SetCursorItem = 96,
-            /// `minecraft:set_default_spawn_position` (`ClientboundSetDefaultSpawnPositionPacket`)
+            /// `minecraft:set_default_spawn_position` (`net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket`)
             SetDefaultSpawnPosition = 97,
-            /// `minecraft:set_display_objective` (`ClientboundSetDisplayObjectivePacket`)
+            /// `minecraft:set_display_objective` (`net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket`)
             SetDisplayObjective = 98,
-            /// `minecraft:set_entity_data` (`ClientboundSetEntityDataPacket`)
+            /// `minecraft:set_entity_data` (`net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket`)
             SetEntityData = 99,
-            /// `minecraft:set_entity_link` (`ClientboundSetEntityLinkPacket`)
+            /// `minecraft:set_entity_link` (`net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket`)
             SetEntityLink = 100,
-            /// `minecraft:set_entity_motion` (`ClientboundSetEntityMotionPacket`)
+            /// `minecraft:set_entity_motion` (`net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket`)
             SetEntityMotion = 101,
-            /// `minecraft:set_equipment` (`ClientboundSetEquipmentPacket`)
+            /// `minecraft:set_equipment` (`net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket`)
             SetEquipment = 102,
-            /// `minecraft:set_experience` (`ClientboundSetExperiencePacket`)
+            /// `minecraft:set_experience` (`net.minecraft.network.protocol.game.ClientboundSetExperiencePacket`)
             SetExperience = 103,
-            /// `minecraft:set_health` (`ClientboundSetHealthPacket`)
+            /// `minecraft:set_health` (`net.minecraft.network.protocol.game.ClientboundSetHealthPacket`)
             SetHealth = 104,
-            /// `minecraft:set_held_slot` (`ClientboundSetHeldSlotPacket`)
+            /// `minecraft:set_held_slot` (`net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket`)
             SetHeldSlot = 105,
-            /// `minecraft:set_objective` (`ClientboundSetObjectivePacket`)
+            /// `minecraft:set_objective` (`net.minecraft.network.protocol.game.ClientboundSetObjectivePacket`)
             SetObjective = 106,
-            /// `minecraft:set_passengers` (`ClientboundSetPassengersPacket`)
+            /// `minecraft:set_passengers` (`net.minecraft.network.protocol.game.ClientboundSetPassengersPacket`)
             SetPassengers = 107,
-            /// `minecraft:set_player_inventory` (`ClientboundSetPlayerInventoryPacket`)
+            /// `minecraft:set_player_inventory` (`net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket`)
             SetPlayerInventory = 108,
-            /// `minecraft:set_player_team` (`ClientboundSetPlayerTeamPacket`)
+            /// `minecraft:set_player_team` (`net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket`)
             SetPlayerTeam = 109,
-            /// `minecraft:set_score` (`ClientboundSetScorePacket`)
+            /// `minecraft:set_score` (`net.minecraft.network.protocol.game.ClientboundSetScorePacket`)
             SetScore = 110,
-            /// `minecraft:set_simulation_distance` (`ClientboundSetSimulationDistancePacket`)
+            /// `minecraft:set_simulation_distance` (`net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket`)
             SetSimulationDistance = 111,
-            /// `minecraft:set_subtitle_text` (`ClientboundSetSubtitleTextPacket`)
+            /// `minecraft:set_subtitle_text` (`net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket`)
             SetSubtitleText = 112,
-            /// `minecraft:set_time` (`ClientboundSetTimePacket`)
+            /// `minecraft:set_time` (`net.minecraft.network.protocol.game.ClientboundSetTimePacket`)
             SetTime = 113,
-            /// `minecraft:set_title_text` (`ClientboundSetTitleTextPacket`)
+            /// `minecraft:set_title_text` (`net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket`)
             SetTitleText = 114,
-            /// `minecraft:set_titles_animation` (`ClientboundSetTitlesAnimationPacket`)
+            /// `minecraft:set_titles_animation` (`net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket`)
             SetTitlesAnimation = 115,
-            /// `minecraft:sound_entity` (`ClientboundSoundEntityPacket`)
+            /// `minecraft:sound_entity` (`net.minecraft.network.protocol.game.ClientboundSoundEntityPacket`)
             SoundEntity = 116,
-            /// `minecraft:sound` (`ClientboundSoundPacket`)
+            /// `minecraft:sound` (`net.minecraft.network.protocol.game.ClientboundSoundPacket`)
             Sound = 117,
-            /// `minecraft:start_configuration` (`ClientboundStartConfigurationPacket`)
+            /// `minecraft:start_configuration` (`net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket`)
             StartConfiguration = 118,
-            /// `minecraft:stop_sound` (`ClientboundStopSoundPacket`)
+            /// `minecraft:stop_sound` (`net.minecraft.network.protocol.game.ClientboundStopSoundPacket`)
             StopSound = 119,
-            /// `minecraft:store_cookie` (`ClientboundStoreCookiePacket`)
+            /// `minecraft:store_cookie` (`net.minecraft.network.protocol.common.ClientboundStoreCookiePacket`)
             StoreCookie = 120,
-            /// `minecraft:system_chat` (`ClientboundSystemChatPacket`)
+            /// `minecraft:system_chat` (`net.minecraft.network.protocol.game.ClientboundSystemChatPacket`)
             SystemChat = 121,
-            /// `minecraft:tab_list` (`ClientboundTabListPacket`)
+            /// `minecraft:tab_list` (`net.minecraft.network.protocol.game.ClientboundTabListPacket`)
             TabList = 122,
-            /// `minecraft:tag_query` (`ClientboundTagQueryPacket`)
+            /// `minecraft:tag_query` (`net.minecraft.network.protocol.game.ClientboundTagQueryPacket`)
             TagQuery = 123,
-            /// `minecraft:take_item_entity` (`ClientboundTakeItemEntityPacket`)
+            /// `minecraft:take_item_entity` (`net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket`)
             TakeItemEntity = 124,
-            /// `minecraft:teleport_entity` (`ClientboundTeleportEntityPacket`)
+            /// `minecraft:teleport_entity` (`net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket`)
             TeleportEntity = 125,
-            /// `minecraft:test_instance_block_status` (`ClientboundTestInstanceBlockStatus`)
+            /// `minecraft:test_instance_block_status` (`net.minecraft.network.protocol.game.ClientboundTestInstanceBlockStatus`)
             TestInstanceBlockStatus = 126,
-            /// `minecraft:ticking_state` (`ClientboundTickingStatePacket`)
+            /// `minecraft:ticking_state` (`net.minecraft.network.protocol.game.ClientboundTickingStatePacket`)
             TickingState = 127,
-            /// `minecraft:ticking_step` (`ClientboundTickingStepPacket`)
+            /// `minecraft:ticking_step` (`net.minecraft.network.protocol.game.ClientboundTickingStepPacket`)
             TickingStep = 128,
-            /// `minecraft:transfer` (`ClientboundTransferPacket`)
+            /// `minecraft:transfer` (`net.minecraft.network.protocol.common.ClientboundTransferPacket`)
             Transfer = 129,
-            /// `minecraft:update_advancements` (`ClientboundUpdateAdvancementsPacket`)
+            /// `minecraft:update_advancements` (`net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket`)
             UpdateAdvancements = 130,
-            /// `minecraft:update_attributes` (`ClientboundUpdateAttributesPacket`)
+            /// `minecraft:update_attributes` (`net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket`)
             UpdateAttributes = 131,
-            /// `minecraft:update_mob_effect` (`ClientboundUpdateMobEffectPacket`)
+            /// `minecraft:update_mob_effect` (`net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket`)
             UpdateMobEffect = 132,
-            /// `minecraft:update_recipes` (`ClientboundUpdateRecipesPacket`)
+            /// `minecraft:update_recipes` (`net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket`)
             UpdateRecipes = 133,
-            /// `minecraft:update_tags` (`ClientboundUpdateTagsPacket`)
+            /// `minecraft:update_tags` (`net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket`)
             UpdateTags = 134,
-            /// `minecraft:projectile_power` (`ClientboundProjectilePowerPacket`)
+            /// `minecraft:projectile_power` (`net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket`)
             ProjectilePower = 135,
-            /// `minecraft:custom_report_details` (`ClientboundCustomReportDetailsPacket`)
+            /// `minecraft:custom_report_details` (`net.minecraft.network.protocol.common.ClientboundCustomReportDetailsPacket`)
             CustomReportDetails = 136,
-            /// `minecraft:server_links` (`ClientboundServerLinksPacket`)
+            /// `minecraft:server_links` (`net.minecraft.network.protocol.common.ClientboundServerLinksPacket`)
             ServerLinks = 137,
-            /// `minecraft:waypoint` (`ClientboundTrackedWaypointPacket`)
+            /// `minecraft:waypoint` (`net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket`)
             Waypoint = 138,
-            /// `minecraft:clear_dialog` (`ClientboundClearDialogPacket`)
+            /// `minecraft:clear_dialog` (`net.minecraft.network.protocol.common.ClientboundClearDialogPacket`)
             ClearDialog = 139,
-            /// `minecraft:show_dialog` (`ClientboundShowDialogPacket`)
+            /// `minecraft:show_dialog` (`net.minecraft.network.protocol.common.ClientboundShowDialogPacket`)
             ShowDialog = 140,
         }
 
@@ -1869,151 +2271,550 @@ pub mod play {
             #[must_use]
             pub const fn java_class(self) -> Option<&'static str> {
                 match self {
-                    Self::BundleDelimiter => Some("ClientboundBundleDelimiterPacket"),
-                    Self::AddEntity => Some("ClientboundAddEntityPacket"),
-                    Self::Animate => Some("ClientboundAnimatePacket"),
-                    Self::AwardStats => Some("ClientboundAwardStatsPacket"),
-                    Self::BlockChangedAck => Some("ClientboundBlockChangedAckPacket"),
-                    Self::BlockDestruction => Some("ClientboundBlockDestructionPacket"),
-                    Self::BlockEntityData => Some("ClientboundBlockEntityDataPacket"),
-                    Self::BlockEvent => Some("ClientboundBlockEventPacket"),
-                    Self::BlockUpdate => Some("ClientboundBlockUpdatePacket"),
-                    Self::BossEvent => Some("ClientboundBossEventPacket"),
-                    Self::ChangeDifficulty => Some("ClientboundChangeDifficultyPacket"),
-                    Self::ChunkBatchFinished => Some("ClientboundChunkBatchFinishedPacket"),
-                    Self::ChunkBatchStart => Some("ClientboundChunkBatchStartPacket"),
-                    Self::ChunksBiomes => Some("ClientboundChunksBiomesPacket"),
-                    Self::ClearTitles => Some("ClientboundClearTitlesPacket"),
-                    Self::CommandSuggestions => Some("ClientboundCommandSuggestionsPacket"),
-                    Self::Commands => Some("ClientboundCommandsPacket"),
-                    Self::ContainerClose => Some("ClientboundContainerClosePacket"),
-                    Self::ContainerSetContent => Some("ClientboundContainerSetContentPacket"),
-                    Self::ContainerSetData => Some("ClientboundContainerSetDataPacket"),
-                    Self::ContainerSetSlot => Some("ClientboundContainerSetSlotPacket"),
-                    Self::CookieRequest => Some("ClientboundCookieRequestPacket"),
-                    Self::Cooldown => Some("ClientboundCooldownPacket"),
-                    Self::CustomChatCompletions => Some("ClientboundCustomChatCompletionsPacket"),
-                    Self::CustomPayload => Some("ClientboundCustomPayloadPacket"),
-                    Self::DamageEvent => Some("ClientboundDamageEventPacket"),
-                    Self::DebugBlockValue => Some("ClientboundDebugBlockValuePacket"),
-                    Self::DebugChunkValue => Some("ClientboundDebugChunkValuePacket"),
-                    Self::DebugEntityValue => Some("ClientboundDebugEntityValuePacket"),
-                    Self::DebugEvent => Some("ClientboundDebugEventPacket"),
-                    Self::DebugSample => Some("ClientboundDebugSamplePacket"),
-                    Self::DeleteChat => Some("ClientboundDeleteChatPacket"),
-                    Self::Disconnect => Some("ClientboundDisconnectPacket"),
-                    Self::DisguisedChat => Some("ClientboundDisguisedChatPacket"),
-                    Self::EntityEvent => Some("ClientboundEntityEventPacket"),
-                    Self::EntityPositionSync => Some("ClientboundEntityPositionSyncPacket"),
-                    Self::Explode => Some("ClientboundExplodePacket"),
-                    Self::ForgetLevelChunk => Some("ClientboundForgetLevelChunkPacket"),
-                    Self::GameEvent => Some("ClientboundGameEventPacket"),
-                    Self::GameRuleValues => Some("ClientboundGameRuleValuesPacket"),
-                    Self::GameTestHighlightPos => Some("ClientboundGameTestHighlightPosPacket"),
-                    Self::MountScreenOpen => Some("ClientboundMountScreenOpenPacket"),
-                    Self::HurtAnimation => Some("ClientboundHurtAnimationPacket"),
-                    Self::InitializeBorder => Some("ClientboundInitializeBorderPacket"),
-                    Self::KeepAlive => Some("ClientboundKeepAlivePacket"),
-                    Self::LevelChunkWithLight => Some("ClientboundLevelChunkWithLightPacket"),
-                    Self::LevelEvent => Some("ClientboundLevelEventPacket"),
-                    Self::LevelParticles => Some("ClientboundLevelParticlesPacket"),
-                    Self::LightUpdate => Some("ClientboundLightUpdatePacket"),
-                    Self::Login => Some("ClientboundLoginPacket"),
-                    Self::LowDiskSpaceWarning => Some("ClientboundLowDiskSpaceWarningPacket"),
-                    Self::MapItemData => Some("ClientboundMapItemDataPacket"),
-                    Self::MerchantOffers => Some("ClientboundMerchantOffersPacket"),
-                    Self::MoveEntityPos => Some("Pos"),
-                    Self::MoveEntityPosRot => Some("PosRot"),
-                    Self::MoveMinecartAlongTrack => Some("ClientboundMoveMinecartPacket"),
-                    Self::MoveEntityRot => Some("Rot"),
-                    Self::MoveVehicle => Some("ClientboundMoveVehiclePacket"),
-                    Self::OpenBook => Some("ClientboundOpenBookPacket"),
-                    Self::OpenScreen => Some("ClientboundOpenScreenPacket"),
-                    Self::OpenSignEditor => Some("ClientboundOpenSignEditorPacket"),
-                    Self::Ping => Some("ClientboundPingPacket"),
-                    Self::PongResponse => Some("ClientboundPongResponsePacket"),
-                    Self::PlaceGhostRecipe => Some("ClientboundPlaceGhostRecipePacket"),
-                    Self::PlayerAbilities => Some("ClientboundPlayerAbilitiesPacket"),
-                    Self::PlayerChat => Some("ClientboundPlayerChatPacket"),
-                    Self::PlayerCombatEnd => Some("ClientboundPlayerCombatEndPacket"),
-                    Self::PlayerCombatEnter => Some("ClientboundPlayerCombatEnterPacket"),
-                    Self::PlayerCombatKill => Some("ClientboundPlayerCombatKillPacket"),
-                    Self::PlayerInfoRemove => Some("ClientboundPlayerInfoRemovePacket"),
-                    Self::PlayerInfoUpdate => Some("ClientboundPlayerInfoUpdatePacket"),
-                    Self::PlayerLookAt => Some("ClientboundPlayerLookAtPacket"),
-                    Self::PlayerPosition => Some("ClientboundPlayerPositionPacket"),
-                    Self::PlayerRotation => Some("ClientboundPlayerRotationPacket"),
-                    Self::RecipeBookAdd => Some("ClientboundRecipeBookAddPacket"),
-                    Self::RecipeBookRemove => Some("ClientboundRecipeBookRemovePacket"),
-                    Self::RecipeBookSettings => Some("ClientboundRecipeBookSettingsPacket"),
-                    Self::RemoveEntities => Some("ClientboundRemoveEntitiesPacket"),
-                    Self::RemoveMobEffect => Some("ClientboundRemoveMobEffectPacket"),
-                    Self::ResetScore => Some("ClientboundResetScorePacket"),
-                    Self::ResourcePackPop => Some("ClientboundResourcePackPopPacket"),
-                    Self::ResourcePackPush => Some("ClientboundResourcePackPushPacket"),
-                    Self::Respawn => Some("ClientboundRespawnPacket"),
-                    Self::RotateHead => Some("ClientboundRotateHeadPacket"),
-                    Self::SectionBlocksUpdate => Some("ClientboundSectionBlocksUpdatePacket"),
-                    Self::SelectAdvancementsTab => Some("ClientboundSelectAdvancementsTabPacket"),
-                    Self::ServerData => Some("ClientboundServerDataPacket"),
-                    Self::SetActionBarText => Some("ClientboundSetActionBarTextPacket"),
-                    Self::SetBorderCenter => Some("ClientboundSetBorderCenterPacket"),
-                    Self::SetBorderLerpSize => Some("ClientboundSetBorderLerpSizePacket"),
-                    Self::SetBorderSize => Some("ClientboundSetBorderSizePacket"),
-                    Self::SetBorderWarningDelay => Some("ClientboundSetBorderWarningDelayPacket"),
-                    Self::SetBorderWarningDistance => {
-                        Some("ClientboundSetBorderWarningDistancePacket")
+                    Self::BundleDelimiter => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBundleDelimiterPacket")
                     }
-                    Self::SetCamera => Some("ClientboundSetCameraPacket"),
-                    Self::SetChunkCacheCenter => Some("ClientboundSetChunkCacheCenterPacket"),
-                    Self::SetChunkCacheRadius => Some("ClientboundSetChunkCacheRadiusPacket"),
-                    Self::SetCursorItem => Some("ClientboundSetCursorItemPacket"),
-                    Self::SetDefaultSpawnPosition => {
-                        Some("ClientboundSetDefaultSpawnPositionPacket")
+                    Self::AddEntity => {
+                        Some("net.minecraft.network.protocol.game.ClientboundAddEntityPacket")
                     }
-                    Self::SetDisplayObjective => Some("ClientboundSetDisplayObjectivePacket"),
-                    Self::SetEntityData => Some("ClientboundSetEntityDataPacket"),
-                    Self::SetEntityLink => Some("ClientboundSetEntityLinkPacket"),
-                    Self::SetEntityMotion => Some("ClientboundSetEntityMotionPacket"),
-                    Self::SetEquipment => Some("ClientboundSetEquipmentPacket"),
-                    Self::SetExperience => Some("ClientboundSetExperiencePacket"),
-                    Self::SetHealth => Some("ClientboundSetHealthPacket"),
-                    Self::SetHeldSlot => Some("ClientboundSetHeldSlotPacket"),
-                    Self::SetObjective => Some("ClientboundSetObjectivePacket"),
-                    Self::SetPassengers => Some("ClientboundSetPassengersPacket"),
-                    Self::SetPlayerInventory => Some("ClientboundSetPlayerInventoryPacket"),
-                    Self::SetPlayerTeam => Some("ClientboundSetPlayerTeamPacket"),
-                    Self::SetScore => Some("ClientboundSetScorePacket"),
-                    Self::SetSimulationDistance => Some("ClientboundSetSimulationDistancePacket"),
-                    Self::SetSubtitleText => Some("ClientboundSetSubtitleTextPacket"),
-                    Self::SetTime => Some("ClientboundSetTimePacket"),
-                    Self::SetTitleText => Some("ClientboundSetTitleTextPacket"),
-                    Self::SetTitlesAnimation => Some("ClientboundSetTitlesAnimationPacket"),
-                    Self::SoundEntity => Some("ClientboundSoundEntityPacket"),
-                    Self::Sound => Some("ClientboundSoundPacket"),
-                    Self::StartConfiguration => Some("ClientboundStartConfigurationPacket"),
-                    Self::StopSound => Some("ClientboundStopSoundPacket"),
-                    Self::StoreCookie => Some("ClientboundStoreCookiePacket"),
-                    Self::SystemChat => Some("ClientboundSystemChatPacket"),
-                    Self::TabList => Some("ClientboundTabListPacket"),
-                    Self::TagQuery => Some("ClientboundTagQueryPacket"),
-                    Self::TakeItemEntity => Some("ClientboundTakeItemEntityPacket"),
-                    Self::TeleportEntity => Some("ClientboundTeleportEntityPacket"),
-                    Self::TestInstanceBlockStatus => Some("ClientboundTestInstanceBlockStatus"),
-                    Self::TickingState => Some("ClientboundTickingStatePacket"),
-                    Self::TickingStep => Some("ClientboundTickingStepPacket"),
-                    Self::Transfer => Some("ClientboundTransferPacket"),
-                    Self::UpdateAdvancements => Some("ClientboundUpdateAdvancementsPacket"),
-                    Self::UpdateAttributes => Some("ClientboundUpdateAttributesPacket"),
-                    Self::UpdateMobEffect => Some("ClientboundUpdateMobEffectPacket"),
-                    Self::UpdateRecipes => Some("ClientboundUpdateRecipesPacket"),
-                    Self::UpdateTags => Some("ClientboundUpdateTagsPacket"),
-                    Self::ProjectilePower => Some("ClientboundProjectilePowerPacket"),
-                    Self::CustomReportDetails => Some("ClientboundCustomReportDetailsPacket"),
-                    Self::ServerLinks => Some("ClientboundServerLinksPacket"),
-                    Self::Waypoint => Some("ClientboundTrackedWaypointPacket"),
-                    Self::ClearDialog => Some("ClientboundClearDialogPacket"),
-                    Self::ShowDialog => Some("ClientboundShowDialogPacket"),
+                    Self::Animate => {
+                        Some("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
+                    }
+                    Self::AwardStats => {
+                        Some("net.minecraft.network.protocol.game.ClientboundAwardStatsPacket")
+                    }
+                    Self::BlockChangedAck => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket")
+                    }
+                    Self::BlockDestruction => Some(
+                        "net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket",
+                    ),
+                    Self::BlockEntityData => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket")
+                    }
+                    Self::BlockEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBlockEventPacket")
+                    }
+                    Self::BlockUpdate => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket")
+                    }
+                    Self::BossEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundBossEventPacket")
+                    }
+                    Self::ChangeDifficulty => Some(
+                        "net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket",
+                    ),
+                    Self::ChunkBatchFinished => Some(
+                        "net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket",
+                    ),
+                    Self::ChunkBatchStart => {
+                        Some("net.minecraft.network.protocol.game.ClientboundChunkBatchStartPacket")
+                    }
+                    Self::ChunksBiomes => {
+                        Some("net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket")
+                    }
+                    Self::ClearTitles => {
+                        Some("net.minecraft.network.protocol.game.ClientboundClearTitlesPacket")
+                    }
+                    Self::CommandSuggestions => Some(
+                        "net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket",
+                    ),
+                    Self::Commands => {
+                        Some("net.minecraft.network.protocol.game.ClientboundCommandsPacket")
+                    }
+                    Self::ContainerClose => {
+                        Some("net.minecraft.network.protocol.game.ClientboundContainerClosePacket")
+                    }
+                    Self::ContainerSetContent => Some(
+                        "net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket",
+                    ),
+                    Self::ContainerSetData => Some(
+                        "net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket",
+                    ),
+                    Self::ContainerSetSlot => Some(
+                        "net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket",
+                    ),
+                    Self::CookieRequest => {
+                        Some("net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket")
+                    }
+                    Self::Cooldown => {
+                        Some("net.minecraft.network.protocol.game.ClientboundCooldownPacket")
+                    }
+                    Self::CustomChatCompletions => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundCustomChatCompletionsPacket",
+                    ),
+                    Self::CustomPayload => {
+                        Some("net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket")
+                    }
+                    Self::DamageEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDamageEventPacket")
+                    }
+                    Self::DebugBlockValue => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDebugBlockValuePacket")
+                    }
+                    Self::DebugChunkValue => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDebugChunkValuePacket")
+                    }
+                    Self::DebugEntityValue => Some(
+                        "net.minecraft.network.protocol.game.ClientboundDebugEntityValuePacket",
+                    ),
+                    Self::DebugEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDebugEventPacket")
+                    }
+                    Self::DebugSample => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDebugSamplePacket")
+                    }
+                    Self::DeleteChat => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDeleteChatPacket")
+                    }
+                    Self::Disconnect => {
+                        Some("net.minecraft.network.protocol.common.ClientboundDisconnectPacket")
+                    }
+                    Self::DisguisedChat => {
+                        Some("net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket")
+                    }
+                    Self::EntityEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundEntityEventPacket")
+                    }
+                    Self::EntityPositionSync => Some(
+                        "net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket",
+                    ),
+                    Self::Explode => {
+                        Some("net.minecraft.network.protocol.game.ClientboundExplodePacket")
+                    }
+                    Self::ForgetLevelChunk => Some(
+                        "net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket",
+                    ),
+                    Self::GameEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundGameEventPacket")
+                    }
+                    Self::GameRuleValues => {
+                        Some("net.minecraft.network.protocol.game.ClientboundGameRuleValuesPacket")
+                    }
+                    Self::GameTestHighlightPos => Some(
+                        "net.minecraft.network.protocol.game.ClientboundGameTestHighlightPosPacket",
+                    ),
+                    Self::MountScreenOpen => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket")
+                    }
+                    Self::HurtAnimation => {
+                        Some("net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket")
+                    }
+                    Self::InitializeBorder => Some(
+                        "net.minecraft.network.protocol.game.ClientboundInitializeBorderPacket",
+                    ),
+                    Self::KeepAlive => {
+                        Some("net.minecraft.network.protocol.common.ClientboundKeepAlivePacket")
+                    }
+                    Self::LevelChunkWithLight => Some(
+                        "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket",
+                    ),
+                    Self::LevelEvent => {
+                        Some("net.minecraft.network.protocol.game.ClientboundLevelEventPacket")
+                    }
+                    Self::LevelParticles => {
+                        Some("net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket")
+                    }
+                    Self::LightUpdate => {
+                        Some("net.minecraft.network.protocol.game.ClientboundLightUpdatePacket")
+                    }
+                    Self::Login => {
+                        Some("net.minecraft.network.protocol.game.ClientboundLoginPacket")
+                    }
+                    Self::LowDiskSpaceWarning => Some(
+                        "net.minecraft.network.protocol.game.ClientboundLowDiskSpaceWarningPacket",
+                    ),
+                    Self::MapItemData => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMapItemDataPacket")
+                    }
+                    Self::MerchantOffers => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket")
+                    }
+                    Self::MoveEntityPos => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$Pos")
+                    }
+                    Self::MoveEntityPosRot => Some(
+                        "net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$PosRot",
+                    ),
+                    Self::MoveMinecartAlongTrack => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMoveMinecartPacket")
+                    }
+                    Self::MoveEntityRot => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMoveEntityPacket$Rot")
+                    }
+                    Self::MoveVehicle => {
+                        Some("net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket")
+                    }
+                    Self::OpenBook => {
+                        Some("net.minecraft.network.protocol.game.ClientboundOpenBookPacket")
+                    }
+                    Self::OpenScreen => {
+                        Some("net.minecraft.network.protocol.game.ClientboundOpenScreenPacket")
+                    }
+                    Self::OpenSignEditor => {
+                        Some("net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket")
+                    }
+                    Self::Ping => {
+                        Some("net.minecraft.network.protocol.common.ClientboundPingPacket")
+                    }
+                    Self::PongResponse => {
+                        Some("net.minecraft.network.protocol.ping.ClientboundPongResponsePacket")
+                    }
+                    Self::PlaceGhostRecipe => Some(
+                        "net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket",
+                    ),
+                    Self::PlayerAbilities => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket")
+                    }
+                    Self::PlayerChat => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerChatPacket")
+                    }
+                    Self::PlayerCombatEnd => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket")
+                    }
+                    Self::PlayerCombatEnter => Some(
+                        "net.minecraft.network.protocol.game.ClientboundPlayerCombatEnterPacket",
+                    ),
+                    Self::PlayerCombatKill => Some(
+                        "net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket",
+                    ),
+                    Self::PlayerInfoRemove => Some(
+                        "net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket",
+                    ),
+                    Self::PlayerInfoUpdate => Some(
+                        "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket",
+                    ),
+                    Self::PlayerLookAt => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerLookAtPacket")
+                    }
+                    Self::PlayerPosition => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket")
+                    }
+                    Self::PlayerRotation => {
+                        Some("net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket")
+                    }
+                    Self::RecipeBookAdd => {
+                        Some("net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket")
+                    }
+                    Self::RecipeBookRemove => Some(
+                        "net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket",
+                    ),
+                    Self::RecipeBookSettings => Some(
+                        "net.minecraft.network.protocol.game.ClientboundRecipeBookSettingsPacket",
+                    ),
+                    Self::RemoveEntities => {
+                        Some("net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket")
+                    }
+                    Self::RemoveMobEffect => {
+                        Some("net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket")
+                    }
+                    Self::ResetScore => {
+                        Some("net.minecraft.network.protocol.game.ClientboundResetScorePacket")
+                    }
+                    Self::ResourcePackPop => Some(
+                        "net.minecraft.network.protocol.common.ClientboundResourcePackPopPacket",
+                    ),
+                    Self::ResourcePackPush => Some(
+                        "net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket",
+                    ),
+                    Self::Respawn => {
+                        Some("net.minecraft.network.protocol.game.ClientboundRespawnPacket")
+                    }
+                    Self::RotateHead => {
+                        Some("net.minecraft.network.protocol.game.ClientboundRotateHeadPacket")
+                    }
+                    Self::SectionBlocksUpdate => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket",
+                    ),
+                    Self::SelectAdvancementsTab => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSelectAdvancementsTabPacket",
+                    ),
+                    Self::ServerData => {
+                        Some("net.minecraft.network.protocol.game.ClientboundServerDataPacket")
+                    }
+                    Self::SetActionBarText => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket",
+                    ),
+                    Self::SetBorderCenter => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetBorderCenterPacket")
+                    }
+                    Self::SetBorderLerpSize => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetBorderLerpSizePacket",
+                    ),
+                    Self::SetBorderSize => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetBorderSizePacket")
+                    }
+                    Self::SetBorderWarningDelay => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetBorderWarningDelayPacket",
+                    ),
+                    Self::SetBorderWarningDistance => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetBorderWarningDistancePacket",
+                    ),
+                    Self::SetCamera => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetCameraPacket")
+                    }
+                    Self::SetChunkCacheCenter => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetChunkCacheCenterPacket",
+                    ),
+                    Self::SetChunkCacheRadius => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetChunkCacheRadiusPacket",
+                    ),
+                    Self::SetCursorItem => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket")
+                    }
+                    Self::SetDefaultSpawnPosition => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetDefaultSpawnPositionPacket",
+                    ),
+                    Self::SetDisplayObjective => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket",
+                    ),
+                    Self::SetEntityData => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket")
+                    }
+                    Self::SetEntityLink => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket")
+                    }
+                    Self::SetEntityMotion => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket")
+                    }
+                    Self::SetEquipment => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket")
+                    }
+                    Self::SetExperience => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetExperiencePacket")
+                    }
+                    Self::SetHealth => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetHealthPacket")
+                    }
+                    Self::SetHeldSlot => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket")
+                    }
+                    Self::SetObjective => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetObjectivePacket")
+                    }
+                    Self::SetPassengers => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetPassengersPacket")
+                    }
+                    Self::SetPlayerInventory => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket",
+                    ),
+                    Self::SetPlayerTeam => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket")
+                    }
+                    Self::SetScore => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetScorePacket")
+                    }
+                    Self::SetSimulationDistance => Some(
+                        "net.minecraft.network.protocol.game.\
+                         ClientboundSetSimulationDistancePacket",
+                    ),
+                    Self::SetSubtitleText => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket")
+                    }
+                    Self::SetTime => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetTimePacket")
+                    }
+                    Self::SetTitleText => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket")
+                    }
+                    Self::SetTitlesAnimation => Some(
+                        "net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket",
+                    ),
+                    Self::SoundEntity => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSoundEntityPacket")
+                    }
+                    Self::Sound => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSoundPacket")
+                    }
+                    Self::StartConfiguration => Some(
+                        "net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket",
+                    ),
+                    Self::StopSound => {
+                        Some("net.minecraft.network.protocol.game.ClientboundStopSoundPacket")
+                    }
+                    Self::StoreCookie => {
+                        Some("net.minecraft.network.protocol.common.ClientboundStoreCookiePacket")
+                    }
+                    Self::SystemChat => {
+                        Some("net.minecraft.network.protocol.game.ClientboundSystemChatPacket")
+                    }
+                    Self::TabList => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTabListPacket")
+                    }
+                    Self::TagQuery => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTagQueryPacket")
+                    }
+                    Self::TakeItemEntity => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket")
+                    }
+                    Self::TeleportEntity => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket")
+                    }
+                    Self::TestInstanceBlockStatus => Some(
+                        "net.minecraft.network.protocol.game.ClientboundTestInstanceBlockStatus",
+                    ),
+                    Self::TickingState => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTickingStatePacket")
+                    }
+                    Self::TickingStep => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTickingStepPacket")
+                    }
+                    Self::Transfer => {
+                        Some("net.minecraft.network.protocol.common.ClientboundTransferPacket")
+                    }
+                    Self::UpdateAdvancements => Some(
+                        "net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket",
+                    ),
+                    Self::UpdateAttributes => Some(
+                        "net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket",
+                    ),
+                    Self::UpdateMobEffect => {
+                        Some("net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket")
+                    }
+                    Self::UpdateRecipes => {
+                        Some("net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket")
+                    }
+                    Self::UpdateTags => {
+                        Some("net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket")
+                    }
+                    Self::ProjectilePower => {
+                        Some("net.minecraft.network.protocol.game.ClientboundProjectilePowerPacket")
+                    }
+                    Self::CustomReportDetails => Some(
+                        "net.minecraft.network.protocol.common.\
+                         ClientboundCustomReportDetailsPacket",
+                    ),
+                    Self::ServerLinks => {
+                        Some("net.minecraft.network.protocol.common.ClientboundServerLinksPacket")
+                    }
+                    Self::Waypoint => {
+                        Some("net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket")
+                    }
+                    Self::ClearDialog => {
+                        Some("net.minecraft.network.protocol.common.ClientboundClearDialogPacket")
+                    }
+                    Self::ShowDialog => {
+                        Some("net.minecraft.network.protocol.common.ClientboundShowDialogPacket")
+                    }
+                }
+            }
+
+            /// Wire layout of the packet body, or `None` where the server's
+            /// own codec branches on a runtime value and no fixed layout
+            /// exists.
+            #[must_use]
+            pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
+                match self {
+                    Self::BundleDelimiter => Some(&crate::generated::wire::LAYOUT_PLAY_CLIENTBOUND_MINECRAFT_BUNDLE_DELIMITER),
+                    Self::Animate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDANIMATEPACKET_STREAM_CODEC),
+                    Self::BlockChangedAck => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKCHANGEDACKPACKET_STREAM_CODEC),
+                    Self::BlockDestruction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKDESTRUCTIONPACKET_STREAM_CODEC),
+                    Self::BlockEntityData => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKENTITYDATAPACKET_STREAM_CODEC),
+                    Self::BlockEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKEVENTPACKET_STREAM_CODEC),
+                    Self::BlockUpdate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKUPDATEPACKET_STREAM_CODEC),
+                    Self::BossEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBOSSEVENTPACKET_STREAM_CODEC),
+                    Self::ChangeDifficulty => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHANGEDIFFICULTYPACKET_STREAM_CODEC),
+                    Self::ChunkBatchFinished => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHUNKBATCHFINISHEDPACKET_STREAM_CODEC),
+                    Self::ChunkBatchStart => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHUNKBATCHSTARTPACKET_STREAM_CODEC),
+                    Self::ClearTitles => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCLEARTITLESPACKET_STREAM_CODEC),
+                    Self::CommandSuggestions => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCOMMANDSUGGESTIONSPACKET_STREAM_CODEC),
+                    Self::ContainerClose => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCONTAINERCLOSEPACKET_STREAM_CODEC),
+                    Self::ContainerSetData => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCONTAINERSETDATAPACKET_STREAM_CODEC),
+                    Self::CookieRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COOKIE_CLIENTBOUNDCOOKIEREQUESTPACKET_STREAM_CODEC),
+                    Self::Cooldown => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCOOLDOWNPACKET_STREAM_CODEC),
+                    Self::CustomChatCompletions => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCUSTOMCHATCOMPLETIONSPACKET_STREAM_CODEC),
+                    Self::DamageEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDDAMAGEEVENTPACKET_STREAM_CODEC),
+                    Self::DebugSample => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDDEBUGSAMPLEPACKET_STREAM_CODEC),
+                    Self::Disconnect => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_CONTEXT_FREE_STREAM_CODEC),
+                    Self::DisguisedChat => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDDISGUISEDCHATPACKET_STREAM_CODEC),
+                    Self::EntityEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDENTITYEVENTPACKET_STREAM_CODEC),
+                    Self::EntityPositionSync => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDENTITYPOSITIONSYNCPACKET_STREAM_CODEC),
+                    Self::ForgetLevelChunk => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDFORGETLEVELCHUNKPACKET_STREAM_CODEC),
+                    Self::GameEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDGAMEEVENTPACKET_STREAM_CODEC),
+                    Self::GameRuleValues => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDGAMERULEVALUESPACKET_STREAM_CODEC),
+                    Self::GameTestHighlightPos => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDGAMETESTHIGHLIGHTPOSPACKET_STREAM_CODEC),
+                    Self::MountScreenOpen => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOUNTSCREENOPENPACKET_STREAM_CODEC),
+                    Self::HurtAnimation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDHURTANIMATIONPACKET_STREAM_CODEC),
+                    Self::InitializeBorder => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDINITIALIZEBORDERPACKET_STREAM_CODEC),
+                    Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDKEEPALIVEPACKET_STREAM_CODEC),
+                    Self::LevelEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLEVELEVENTPACKET_STREAM_CODEC),
+                    Self::LightUpdate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLIGHTUPDATEPACKET_STREAM_CODEC),
+                    Self::Login => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLOGINPACKET_STREAM_CODEC),
+                    Self::LowDiskSpaceWarning => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDLOWDISKSPACEWARNINGPACKET_STREAM_CODEC),
+                    Self::MoveEntityPos => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOVEENTITYPACKET_POS_STREAM_CODEC),
+                    Self::MoveEntityPosRot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOVEENTITYPACKET_POSROT_STREAM_CODEC),
+                    Self::MoveMinecartAlongTrack => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOVEMINECARTPACKET_STREAM_CODEC),
+                    Self::MoveEntityRot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOVEENTITYPACKET_ROT_STREAM_CODEC),
+                    Self::MoveVehicle => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDMOVEVEHICLEPACKET_STREAM_CODEC),
+                    Self::OpenBook => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENBOOKPACKET_STREAM_CODEC),
+                    Self::OpenScreen => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENSCREENPACKET_STREAM_CODEC),
+                    Self::OpenSignEditor => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDOPENSIGNEDITORPACKET_STREAM_CODEC),
+                    Self::Ping => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDPINGPACKET_STREAM_CODEC),
+                    Self::PongResponse => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_PING_CLIENTBOUNDPONGRESPONSEPACKET_STREAM_CODEC),
+                    Self::PlayerCombatEnd => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERCOMBATENDPACKET_STREAM_CODEC),
+                    Self::PlayerCombatEnter => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERCOMBATENTERPACKET_STREAM_CODEC),
+                    Self::PlayerCombatKill => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERCOMBATKILLPACKET_STREAM_CODEC),
+                    Self::PlayerInfoRemove => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERINFOREMOVEPACKET_STREAM_CODEC),
+                    Self::PlayerPosition => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERPOSITIONPACKET_STREAM_CODEC),
+                    Self::PlayerRotation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPLAYERROTATIONPACKET_STREAM_CODEC),
+                    Self::RecipeBookRemove => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRECIPEBOOKREMOVEPACKET_STREAM_CODEC),
+                    Self::RecipeBookSettings => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRECIPEBOOKSETTINGSPACKET_STREAM_CODEC),
+                    Self::RemoveEntities => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDREMOVEENTITIESPACKET_STREAM_CODEC),
+                    Self::RemoveMobEffect => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDREMOVEMOBEFFECTPACKET_STREAM_CODEC),
+                    Self::ResetScore => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRESETSCOREPACKET_STREAM_CODEC),
+                    Self::ResourcePackPop => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDRESOURCEPACKPOPPACKET_STREAM_CODEC),
+                    Self::ResourcePackPush => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDRESOURCEPACKPUSHPACKET_STREAM_CODEC),
+                    Self::Respawn => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDRESPAWNPACKET_STREAM_CODEC),
+                    Self::RotateHead => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDROTATEHEADPACKET_STREAM_CODEC),
+                    Self::SelectAdvancementsTab => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSELECTADVANCEMENTSTABPACKET_STREAM_CODEC),
+                    Self::ServerData => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSERVERDATAPACKET_STREAM_CODEC),
+                    Self::SetActionBarText => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETACTIONBARTEXTPACKET_STREAM_CODEC),
+                    Self::SetBorderCenter => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETBORDERCENTERPACKET_STREAM_CODEC),
+                    Self::SetBorderLerpSize => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETBORDERLERPSIZEPACKET_STREAM_CODEC),
+                    Self::SetBorderSize => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETBORDERSIZEPACKET_STREAM_CODEC),
+                    Self::SetBorderWarningDelay => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETBORDERWARNINGDELAYPACKET_STREAM_CODEC),
+                    Self::SetBorderWarningDistance => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETBORDERWARNINGDISTANCEPACKET_STREAM_CODEC),
+                    Self::SetCamera => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETCAMERAPACKET_STREAM_CODEC),
+                    Self::SetChunkCacheCenter => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETCHUNKCACHECENTERPACKET_STREAM_CODEC),
+                    Self::SetChunkCacheRadius => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETCHUNKCACHERADIUSPACKET_STREAM_CODEC),
+                    Self::SetDefaultSpawnPosition => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETDEFAULTSPAWNPOSITIONPACKET_STREAM_CODEC),
+                    Self::SetDisplayObjective => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETDISPLAYOBJECTIVEPACKET_STREAM_CODEC),
+                    Self::SetEntityLink => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETENTITYLINKPACKET_STREAM_CODEC),
+                    Self::SetExperience => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETEXPERIENCEPACKET_STREAM_CODEC),
+                    Self::SetHealth => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETHEALTHPACKET_STREAM_CODEC),
+                    Self::SetHeldSlot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETHELDSLOTPACKET_STREAM_CODEC),
+                    Self::SetPassengers => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETPASSENGERSPACKET_STREAM_CODEC),
+                    Self::SetSimulationDistance => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETSIMULATIONDISTANCEPACKET_STREAM_CODEC),
+                    Self::SetSubtitleText => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETSUBTITLETEXTPACKET_STREAM_CODEC),
+                    Self::SetTime => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETTIMEPACKET_STREAM_CODEC),
+                    Self::SetTitleText => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETTITLETEXTPACKET_STREAM_CODEC),
+                    Self::SetTitlesAnimation => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETTITLESANIMATIONPACKET_STREAM_CODEC),
+                    Self::SoundEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSOUNDENTITYPACKET_STREAM_CODEC),
+                    Self::Sound => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSOUNDPACKET_STREAM_CODEC),
+                    Self::StartConfiguration => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSTARTCONFIGURATIONPACKET_STREAM_CODEC),
+                    Self::StoreCookie => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSTORECOOKIEPACKET_STREAM_CODEC),
+                    Self::SystemChat => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSYSTEMCHATPACKET_STREAM_CODEC),
+                    Self::TabList => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTABLISTPACKET_STREAM_CODEC),
+                    Self::TagQuery => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTAGQUERYPACKET_STREAM_CODEC),
+                    Self::TakeItemEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTAKEITEMENTITYPACKET_STREAM_CODEC),
+                    Self::TeleportEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTELEPORTENTITYPACKET_STREAM_CODEC),
+                    Self::TestInstanceBlockStatus => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTESTINSTANCEBLOCKSTATUS_STREAM_CODEC),
+                    Self::TickingState => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTICKINGSTATEPACKET_STREAM_CODEC),
+                    Self::TickingStep => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDTICKINGSTEPPACKET_STREAM_CODEC),
+                    Self::Transfer => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDTRANSFERPACKET_STREAM_CODEC),
+                    Self::UpdateAttributes => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_STREAM_CODEC),
+                    Self::UpdateMobEffect => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEMOBEFFECTPACKET_STREAM_CODEC),
+                    Self::ProjectilePower => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDPROJECTILEPOWERPACKET_STREAM_CODEC),
+                    Self::CustomReportDetails => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDCUSTOMREPORTDETAILSPACKET_STREAM_CODEC),
+                    Self::ServerLinks => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSERVERLINKSPACKET_STREAM_CODEC),
+                    Self::ClearDialog => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDCLEARDIALOGPACKET_STREAM_CODEC),
+                    Self::ShowDialog => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDSHOWDIALOGPACKET_STREAM_CODEC),
+                    _ => None,
                 }
             }
         }

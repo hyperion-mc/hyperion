@@ -5,6 +5,8 @@
 *.zip
 
 /result
+/result-*
+__pycache__/
 
 # IDE Configs
 /.vscode
