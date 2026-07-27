@@ -10,6 +10,9 @@
 ///
 /// Callers should treat a returned value below `recommended_min` as a warning,
 /// not an error, because it is one.
+///
+/// # Errors
+/// Whatever the platform reports when reading or setting the limit fails.
 pub fn raise_open_files(recommended_min: u64) -> std::io::Result<u64> {
     crate::backend::raise_open_files(recommended_min)
 }

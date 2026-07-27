@@ -1,15 +1,26 @@
+# Package fields are spelled out rather than inherited, and the lint table is
+# local, because this crate is a member of two workspaces: the main one, and
+# bare-metal/, which builds it for a target the main lockfile does not know
+# about. `x.workspace = true` only resolves against one root.
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
-edition.workspace = true
+edition = "2024"
+license = "Apache-2.0"
 name = "hyperion-platform"
 publish = false
 readme = "README.md"
-version.workspace = true
+repository = "https://github.com/andrewgazelka/hyperion"
+version = "0.1.0"
 
 [dependencies]
 
 [target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
+libc = "0.2.172"
 
-[lints]
-workspace = true
+[lints.clippy]
+complexity = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }

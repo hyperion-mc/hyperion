@@ -7,9 +7,16 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # The bare-metal target needs nightly-2026-07-01, which the pinned
+    # rust-overlay above predates. Kept as a second input so that bumping it
+    # cannot move the toolchain every normal build uses.
+    rust-overlay-bare-metal = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, ... }:
+  outputs = { self, nixpkgs, rust-overlay, rust-overlay-bare-metal, ... }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [
         "x86_64-linux"
@@ -102,6 +109,21 @@
               };
             };
           };
+          # Experimental: hyperion's protocol layer as a unikernel image, with
+          # no operating system under it. Pinned to the Hermit kernel's own
+          # nightly, which is not the one the rest of the tree uses; see
+          # docs/bare-metal.md.
+          bareMetal = pkgs.callPackage ./nix/bare-metal.nix {
+            rustToolchain =
+              (import nixpkgs {
+                inherit system;
+                overlays = [ (import rust-overlay-bare-metal) ];
+              }).rust-bin.nightly."2026-07-01".default.override {
+                extensions = [ "rust-src" "llvm-tools" ];
+                # The kernel's loader stub is built for x86_64-unknown-none.
+                targets = [ "x86_64-unknown-none" ];
+              };
+          };
         in
         {
           devShells.default = pkgs.mkShell {
@@ -113,10 +135,18 @@
             default = hyperion;
             docker-hyperion-proxy = hyperion-proxy-image;
             docker-bedwars = bedwars-image;
+            bare-metal = bareMetal.image;
+            bare-metal-vendor = bareMetal.image.passthru.vendor;
+          };
+
+          apps.bare-metal-vm = {
+            type = "app";
+            program = pkgs.lib.getExe bareMetal.vm;
           };
         };
     in
     {
+      apps = forAllSystems (system: (mkSystem system).apps);
       devShells = forAllSystems (system: (mkSystem system).devShells);
       packages = forAllSystems (system: (mkSystem system).packages);
     };

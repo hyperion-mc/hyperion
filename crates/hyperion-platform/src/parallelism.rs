@@ -17,6 +17,9 @@ pub fn available() -> NonZeroUsize {
 /// Hyperion sizes its rayon workers deliberately, and a unikernel's default
 /// stack is much smaller than Linux's 8 MiB, so the size is not optional here
 /// the way it is in [`std::thread::spawn`].
+///
+/// # Errors
+/// If the platform will not give us another thread.
 pub fn spawn_worker<F>(
     name: &str,
     stack_size: usize,
