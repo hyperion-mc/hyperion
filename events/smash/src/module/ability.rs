@@ -499,7 +499,9 @@ impl Module for AbilityModule {
         world.component::<Charging>();
         world.component::<UseSlot>();
         world.component::<ReleaseSlot>();
-        world.component::<Grants>();
+        world
+            .component::<Grants>()
+            .add_trait::<flecs::Relationship>();
         world.component::<Proves>();
         world.component::<GrantedFor>();
 
