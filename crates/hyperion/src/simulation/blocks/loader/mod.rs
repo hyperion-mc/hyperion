@@ -15,7 +15,6 @@ use hyperion_minecraft_proto::{
         },
     },
 };
-use hyperion_nerd_font::NERD_ROCKET;
 use itertools::Itertools;
 use libdeflater::{CompressionLvl, Compressor};
 use parse::ColumnData;
@@ -37,6 +36,12 @@ use crate::{
     runtime::AsyncRuntime,
     simulation::{blocks::loader::parse::section::Section, util::heightmap},
 };
+
+/// Nerd Font's rocket glyph, prefixed to the per-chunk load line.
+///
+/// Private and used once. It lived in a `hyperion-nerd-font` crate whose
+/// entire content was this constant and one more that nothing referenced.
+const NERD_ROCKET: char = '\u{F14DE}';
 
 struct TasksState {
     bytes: BytesMut,

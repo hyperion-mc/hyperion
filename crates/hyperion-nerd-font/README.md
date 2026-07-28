@@ -1,1 +1,0 @@
-# hyperion-nerd-font

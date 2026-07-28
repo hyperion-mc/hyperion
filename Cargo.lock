@@ -1864,7 +1864,6 @@ dependencies = [
  "hyperion-genmap",
  "hyperion-inventory",
  "hyperion-minecraft-proto",
- "hyperion-nerd-font",
  "hyperion-palette",
  "hyperion-proto",
  "hyperion-utils",
@@ -2063,10 +2062,6 @@ dependencies = [
  "quote",
  "syn 3.0.3",
 ]
-
-[[package]]
-name = "hyperion-nerd-font"
-version = "0.1.0"
 
 [[package]]
 name = "hyperion-packet-macros"
