@@ -1,0 +1,52 @@
+# Mutation testing scope and budget. `nix run .#mutants` reads this.
+#
+# A mutant is a deliberate change to the source -- a `>` flipped to `>=`, a
+# return value replaced with a default. A mutant that survives is a line the
+# test suite executes without checking, so the surviving count is the honest
+# measure of how much of this game the tests actually verify. `nix run .#test`
+# staying green while a mutant lives is exactly the failure mode this catches.
+
+# The game logic, and only the game logic.
+#
+# Excluded on purpose, each for a reason rather than to flatter the number:
+#
+# * `module/kits/**` -- 700-odd mutants of declarative kit data. A kit is a
+#   `KitStats` literal and a handful of `splash` calls, so nearly every mutant
+#   there is "this ability's radius is a different number", which is a balance
+#   question and not a correctness one. `tests/modularity.rs` already proves the
+#   kit machinery works by defining a kit from outside the crate. Including them
+#   would quadruple the gate's runtime to test constants.
+# * `map.rs`, `terrain.rs` -- world loading. Needs chunk data on disk, which the
+#   headless harness deliberately does not have.
+# * `adapter.rs`, `input.rs`, `mirror.rs`, `command.rs` -- the hyperion seam.
+#   Untestable without a running server; `nix run .#smash-e2e` is what covers
+#   these, and it covers them end to end rather than per line.
+# * `server/mock.rs` -- test infrastructure. Mutating the recorder that the
+#   assertions read is measuring the tape measure.
+examine_globs = ["events/smash/src/module/*.rs"]
+
+# Mutants no test can distinguish, excluded with the argument rather than
+# absorbed into the budget.
+exclude_re = [
+    # `smash::tick_cooldowns` guards its decrement with `remaining > 0.0`.
+    # Relaxing that to `>=` changes nothing for any reachable value: at exactly
+    # zero the body computes `(0.0 - dt).max(0.0)`, which is zero, and a
+    # cooldown is never negative because that same `max` is the only thing that
+    # writes it. There is no input on which the two versions differ, so no test
+    # can kill this and a budget that carried it would be one mutant of
+    # permanent slack.
+    "ability\\.rs.*replace > with >= in <impl Module for AbilityModule>::module",
+
+    # `nearest_target` keeps the closest candidate with `distance < closest`.
+    # Relaxing that to `<=` changes the answer only when two players stand at
+    # exactly the same distance from the projectile, and then it returns the
+    # last one the query yielded instead of the first. Both are the nearest, and
+    # the function promises the nearest rather than a particular one of them.
+    # Killing this would mean asserting a tie-break that is really flecs' table
+    # iteration order, which is not a thing the game should be able to depend
+    # on and not a thing a test should freeze.
+    "projectile\\.rs.*replace < with <= in nearest_target",
+]
+
+# `-p smash` alone would still build the whole workspace.
+additional_cargo_test_args = ["-p", "smash"]
