@@ -89,7 +89,7 @@ impl Module for ChannelModule {
         .each_iter(|it: TableIter<'_, false>, _, (compose, event_queue)| {
             let world = it.world();
 
-            for RequestSubscribeChannelPackets(channel) in event_queue.drain() {
+            for RequestSubscribeChannelPackets { channel, receiver } in event_queue.drain() {
                 let Some(entity) = world.try_get_alive(channel) else {
                     error!("failed to send subscribe channel packets: entity is not alive");
                     continue;
@@ -172,6 +172,7 @@ impl Module for ChannelModule {
                             ChannelId::from(entity),
                             &packet_buf,
                             connection_id.copied(),
+                            receiver,
                         );
                     },
                 );

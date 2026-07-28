@@ -74,6 +74,10 @@ approx = { workspace = true }
 divan = { workspace = true }
 fastrand = { workspace = true }
 hyperion-genmap = { workspace = true }
+# tests/multi_proxy.rs drives the real proxy-side consumer, so that the two halves of the
+# server-to-proxy wire types are checked against each other rather than each against itself.
+hyperion-proxy = { workspace = true }
+papaya = { workspace = true }
 serial_test = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }

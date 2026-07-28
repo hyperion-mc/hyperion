@@ -32,7 +32,7 @@ use hyperion_minecraft_proto::{
         },
         handshake::serverbound::Intention,
         login::{
-            clientbound::{LoginCompression, LoginFinished},
+            clientbound::{LoginCompression, LoginDisconnect, LoginFinished},
             serverbound::Hello,
         },
         status::clientbound::{PongResponse, StatusResponse},
@@ -142,9 +142,24 @@ fn handshake(world: &World) {
                     && intention.protocol_version != PROTOCOL_VERSION
                 {
                     warn!(
-                        "client speaks protocol {} but this server speaks {PROTOCOL_VERSION}",
+                        "refusing client on protocol {}; this server speaks {PROTOCOL_VERSION}",
                         intention.protocol_version
                     );
+                    if let Err(e) =
+                        refuse_protocol_version(compose, connection_id, intention.protocol_version)
+                    {
+                        error!("handshake: failed to tell the client why it was refused: {e}");
+                    }
+                    // Sending a reason and then shutting down is only safe because this connection
+                    // has no output in flight yet. `Shutdown` reaches the proxy as
+                    // `PlayerHandle::shutdown`, which calls `kanal::Sender::close`, and that
+                    // clears the queue rather than draining it -- so anything still queued for the
+                    // player is dropped and the client gets a bare TCP close. A brand-new
+                    // connection's writer task is parked in `recv()`, so the reason is handed
+                    // straight to it and never sits in the queue. Do not copy this pattern for a
+                    // player already in play without fixing the proxy first: ENG-10895.
+                    compose.io_buf().shutdown(connection_id);
+                    return;
                 }
 
                 // PacketState is an exclusive relationship, so adding the next
@@ -159,6 +174,43 @@ fn handshake(world: &World) {
                 entity.add_enum(next);
             },
         );
+}
+
+/// The chat component a refused client is shown, as a JSON string.
+///
+/// Split out so the test can build the exact bytes the server should have sent and compare against
+/// them: the framing is the thing that needs checking, and it cannot be checked without knowing
+/// the body.
+fn refusal_reason(client_protocol: i32) -> anyhow::Result<String> {
+    let reason = json!({
+        "text": format!(
+            "This server runs Minecraft {MINECRAFT_VERSION} (protocol {PROTOCOL_VERSION}). Your \
+             client speaks protocol {client_protocol}."
+        ),
+    });
+    Ok(serde_json::to_string(&reason)?)
+}
+
+/// Tells a client on the wrong protocol why it cannot join.
+///
+/// The client switches to login state the moment it sends its intention, so a `login_disconnect`
+/// is the one refusal it will render; anything sent in handshake state is read against the wrong
+/// codec. Compression is negotiated later in login, so this goes out uncompressed: until
+/// `login_compression` arrives the client reads frames with no data-length prefix, and a
+/// compressed frame would have it read the length byte as the packet id.
+fn refuse_protocol_version(
+    compose: &Compose,
+    connection_id: ConnectionId,
+    client_protocol: i32,
+) -> anyhow::Result<()> {
+    let reason = refusal_reason(client_protocol)?;
+
+    send_uncompressed(
+        compose,
+        connection_id,
+        packet_id::login::clientbound::PacketId::LoginDisconnect.to_raw(),
+        &LoginDisconnect { reason: &reason },
+    )
 }
 
 fn status(world: &World) {
@@ -655,5 +707,78 @@ impl Module for PrePlayModule {
         status(world);
         login(world);
         configuration(world);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use hyperion_proxy_proto::ArchivedServerToProxyMessage;
+
+    use super::*;
+    use crate::net::{ProxyId, protocol::Clientbound, tests::two_proxies};
+
+    /// A client on the wrong protocol used to get a `warn!` and a seat on the server. It now gets
+    /// a `login_disconnect` it can render, on the connection that asked and on no other.
+    ///
+    /// This checks the packet reaches the wire rather than that the function returns `Ok`: the
+    /// refusal has to be encoded uncompressed and addressed to one connection, and both of those
+    /// are wrong in ways `Ok(())` cannot tell you about.
+    #[test]
+    fn a_refused_client_is_told_why() {
+        let (compose, mut zero_rx, mut one_rx) = two_proxies();
+        let connection = ConnectionId::new(1, ProxyId::new(0));
+
+        refuse_protocol_version(&compose, connection, 999).unwrap();
+
+        let bytes = zero_rx
+            .try_recv()
+            .expect("the refused client's proxy must be sent the reason");
+        let body = &bytes[size_of::<u64>()..];
+        let message = unsafe { rkyv::access_unchecked::<ArchivedServerToProxyMessage<'_>>(body) };
+
+        let ArchivedServerToProxyMessage::Unicast(unicast) = message else {
+            panic!("a refusal is addressed to one client, so it goes out as a unicast");
+        };
+        assert_eq!(
+            u64::from(unicast.stream),
+            1,
+            "the refusal must be addressed to the client that was refused"
+        );
+
+        // Byte for byte against the uncompressed encoding, not just "is the id right". The
+        // refused client has not been sent `login_compression` yet, so it reads frames with no
+        // data-length prefix; a compressed frame is one byte longer and it would read that length
+        // byte as the packet id. Checking a single byte cannot tell the two apart, because both
+        // framings put a zero at that offset and `LoginDisconnect` is itself id 0.
+        let payload = unicast.data.as_ref();
+        let reason = refusal_reason(999).unwrap();
+        let expected = compose
+            .io_buf()
+            .encode_packet_no_compression(Clientbound::new(
+                packet_id::login::clientbound::PacketId::LoginDisconnect.to_raw(),
+                &LoginDisconnect { reason: &reason },
+            ))
+            .unwrap();
+        assert_eq!(
+            payload,
+            expected.as_ref(),
+            "the refusal must be the uncompressed login_disconnect frame, byte for byte"
+        );
+
+        // The reason is what a player actually sees, so it has to name both versions.
+        let text = String::from_utf8_lossy(payload);
+        assert!(
+            text.contains(MINECRAFT_VERSION) && text.contains(&PROTOCOL_VERSION.to_string()),
+            "the reason must say what this server speaks, got: {text}"
+        );
+        assert!(
+            text.contains("999"),
+            "the reason must say what the client spoke, got: {text}"
+        );
+
+        assert!(
+            crate::net::tests::next_variant(&mut one_rx).is_none(),
+            "a proxy the refused client is not on must hear nothing"
+        );
     }
 }

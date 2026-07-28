@@ -12,12 +12,18 @@ use derive_more::{Deref, DerefMut, From};
 use flecs_ecs::prelude::*;
 use rustc_hash::FxHashMap;
 
-use crate::{simulation::Uuid, storage::ThreadLocalVec};
+use crate::{net::ConnectionId, simulation::Uuid, storage::ThreadLocalVec};
 
+/// Every player entity, by the connection it arrived on.
+///
+/// Keyed on the whole [`ConnectionId`] rather than the bare stream id, because each proxy numbers
+/// its own players from 1 and knows nothing of the others. On the bare id, proxy-0's first player
+/// and proxy-1's first player are one entry: the second connect overwrites the first, the first
+/// disconnect destructs the wrong entity, and the second finds nothing and panics. The proxy id is
+/// the half that makes the key unique.
 #[derive(Component, Default, Debug, Deref, DerefMut)]
 pub struct StreamLookup {
-    /// The UUID of all players
-    inner: FxHashMap<u64, Entity>,
+    inner: FxHashMap<ConnectionId, Entity>,
 }
 
 #[derive(Component, Default, Debug, Deref, DerefMut)]

@@ -7,7 +7,9 @@ use tracing::{error, info_span};
 use crate::{
     net::{
         Compose, ConnectionId,
-        intermediate::{IntermediateServerToProxyMessage, UpdatePlayerPositions},
+        intermediate::{
+            IntermediateServerToProxyMessage, UpdatePlayerPosition, UpdatePlayerPositions,
+        },
         protocol::send,
     },
     simulation::{Position, blocks::Blocks},
@@ -92,15 +94,16 @@ impl Module for EgressModule {
                 let count = player_location_query.count();
                 let count = usize::try_from(count).unwrap_or_default();
 
-                let mut stream = Vec::with_capacity(count);
-                let mut positions = Vec::with_capacity(count);
+                let mut players = Vec::with_capacity(count);
 
                 player_location_query.each(|(&io, pos)| {
-                    stream.push(io);
-                    positions.push(hyperion_proxy_proto::ChunkPosition::from(pos.to_chunk()));
+                    players.push(UpdatePlayerPosition {
+                        stream: io,
+                        position: hyperion_proxy_proto::ChunkPosition::from(pos.to_chunk()),
+                    });
                 });
 
-                let packet = UpdatePlayerPositions { stream, positions };
+                let packet = UpdatePlayerPositions { players };
 
                 compose.io_buf().add_proxy_message(
                     &IntermediateServerToProxyMessage::UpdatePlayerPositions(packet),

@@ -2,10 +2,18 @@ use hyperion_proxy_proto::{ChunkPosition, ServerToProxyMessage, UpdateChannelPos
 
 use crate::net::{ConnectionId, ProxyId};
 
+#[derive(Clone, Copy, PartialEq)]
+pub struct UpdatePlayerPosition {
+    pub stream: ConnectionId,
+    pub position: ChunkPosition,
+}
+
+/// One entry per player. See [`hyperion_proxy_proto::UpdatePlayerPositions`] for why this is not
+/// two parallel `Vec`s: `transform_for_proxy` filters this list, and a filter over one of two
+/// parallel lists silently desynchronises them.
 #[derive(Clone, PartialEq)]
 pub struct UpdatePlayerPositions {
-    pub stream: Vec<ConnectionId>,
-    pub positions: Vec<ChunkPosition>,
+    pub players: Vec<UpdatePlayerPosition>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -29,6 +37,9 @@ pub struct RemoveChannel {
 pub struct SubscribeChannelPackets<'a> {
     pub channel_id: u32,
     pub exclude: Option<ConnectionId>,
+
+    /// The proxy that asked for these packets, and the only one they are sent to.
+    pub receiver: ProxyId,
 
     pub data: &'a [u8],
 }
@@ -116,13 +127,16 @@ impl IntermediateServerToProxyMessage<'_> {
             Self::UpdatePlayerPositions(message) => {
                 Some(ServerToProxyMessage::UpdatePlayerPositions(
                     hyperion_proxy_proto::UpdatePlayerPositions {
-                        stream: message
-                            .stream
+                        players: message
+                            .players
                             .iter()
-                            .copied()
-                            .filter_map(filter_map_connection_id)
+                            .filter_map(|player| {
+                                Some(hyperion_proxy_proto::UpdatePlayerPosition {
+                                    stream: filter_map_connection_id(player.stream)?,
+                                    position: player.position,
+                                })
+                            })
                             .collect::<Vec<_>>(),
-                        positions: message.positions.clone(),
                     },
                 ))
             }
@@ -145,6 +159,12 @@ impl IntermediateServerToProxyMessage<'_> {
                 },
             )),
             Self::SubscribeChannelPackets(message) => {
+                // Only the proxy that asked has a player waiting on the answer. Delivering it to
+                // the others subscribes their players to a channel nobody asked them about.
+                if message.receiver != proxy_id {
+                    return None;
+                }
+
                 Some(ServerToProxyMessage::SubscribeChannelPackets(
                     hyperion_proxy_proto::SubscribeChannelPackets {
                         channel_id: message.channel_id,
@@ -266,8 +286,10 @@ mod tests {
         // without adding it here is a non-exhaustive-match compile error, not a silent gap.
         let messages = [
             IntermediateServerToProxyMessage::UpdatePlayerPositions(UpdatePlayerPositions {
-                stream: vec![connection],
-                positions: vec![ChunkPosition::new(1, 2)],
+                players: vec![UpdatePlayerPosition {
+                    stream: connection,
+                    position: ChunkPosition::new(1, 2),
+                }],
             }),
             IntermediateServerToProxyMessage::AddChannel(AddChannel {
                 channel_id: 1,
@@ -280,6 +302,7 @@ mod tests {
             IntermediateServerToProxyMessage::SubscribeChannelPackets(SubscribeChannelPackets {
                 channel_id: 1,
                 exclude: Some(connection),
+                receiver: proxy,
                 data,
             }),
             IntermediateServerToProxyMessage::BroadcastGlobal(BroadcastGlobal {
@@ -317,6 +340,23 @@ mod tests {
                 "{expected} transformed into a {} on the wire",
                 proxy_variant(&transformed)
             );
+
+            // `affected_by_proxy` is a hand-written list of which arms below read `proxy_id`, and
+            // nothing else checks the two agree. Getting it wrong is not loud: the `false` branch
+            // of `IoBuf::add_proxy_message` encodes once against `ProxyId::new(0)`, which is the
+            // real id of the first proxy to connect, so a variant that does depend on the proxy
+            // but is listed as not would quietly route everything as proxy 0.
+            if !message.affected_by_proxy() {
+                let elsewhere = message
+                    .transform_for_proxy(ProxyId::new(99))
+                    .map(|sent| proxy_variant(&sent));
+                assert_eq!(
+                    Some(proxy_variant(&transformed)),
+                    elsewhere,
+                    "{expected} says it does not depend on the proxy, but transforms differently \
+                     for two of them"
+                );
+            }
         }
     }
 
@@ -339,6 +379,99 @@ mod tests {
         assert!(
             message.transform_for_proxy(ProxyId::new(1)).is_none(),
             "a shutdown must not reach a proxy the connection is not on"
+        );
+    }
+
+    /// Positions used to travel as a `Vec` of streams beside a `Vec` of positions, and
+    /// `transform_for_proxy` filtered the streams but shipped the positions whole. The proxy
+    /// zipped them, so with two proxies every player landed at somebody else's chunk in the
+    /// regional-broadcast BVH.
+    ///
+    /// Interleaving the two proxies' players is what makes this bite: a filter that drops entry 0
+    /// shifts every later position by one.
+    #[test]
+    fn each_proxy_sees_its_own_players_at_their_own_positions() {
+        let zero = ProxyId::new(0);
+        let one = ProxyId::new(1);
+
+        // Interleaved, and each player's chunk x is their stream id, so a pairing error is
+        // impossible to read as anything else.
+        let players = vec![
+            UpdatePlayerPosition {
+                stream: ConnectionId::new(10, zero),
+                position: ChunkPosition::new(10, 0),
+            },
+            UpdatePlayerPosition {
+                stream: ConnectionId::new(20, one),
+                position: ChunkPosition::new(20, 0),
+            },
+            UpdatePlayerPosition {
+                stream: ConnectionId::new(30, zero),
+                position: ChunkPosition::new(30, 0),
+            },
+            UpdatePlayerPosition {
+                stream: ConnectionId::new(40, one),
+                position: ChunkPosition::new(40, 0),
+            },
+        ];
+        let message =
+            IntermediateServerToProxyMessage::UpdatePlayerPositions(UpdatePlayerPositions {
+                players,
+            });
+
+        for (proxy, expected) in [(zero, [10u64, 30]), (one, [20, 40])] {
+            let Some(ServerToProxyMessage::UpdatePlayerPositions(sent)) =
+                message.transform_for_proxy(proxy)
+            else {
+                panic!("every proxy is told where its own players are");
+            };
+
+            let streams = sent.players.iter().map(|p| p.stream).collect::<Vec<_>>();
+            assert_eq!(
+                streams,
+                expected.to_vec(),
+                "proxy {} was sent the wrong players",
+                proxy.inner()
+            );
+
+            for player in &sent.players {
+                assert_eq!(
+                    i64::from(player.position.x),
+                    i64::try_from(player.stream).unwrap(),
+                    "player {} was sent to another player's chunk",
+                    player.stream
+                );
+            }
+        }
+    }
+
+    /// A subscribe answers one proxy's request. `SubscribeChannelPackets` was listed in
+    /// `affected_by_proxy` but transformed unconditionally, so the answer also went to proxies
+    /// that never asked and subscribed their players to a channel nobody had requested.
+    #[test]
+    fn a_subscribe_reaches_only_the_proxy_that_asked() {
+        let asker = ProxyId::new(0);
+        let bystander = ProxyId::new(1);
+
+        let message =
+            IntermediateServerToProxyMessage::SubscribeChannelPackets(SubscribeChannelPackets {
+                channel_id: 7,
+                exclude: None,
+                receiver: asker,
+                data: &[1, 2, 3],
+            });
+
+        assert!(
+            matches!(
+                message.transform_for_proxy(asker),
+                Some(ServerToProxyMessage::SubscribeChannelPackets(sent))
+                    if sent.channel_id == 7
+            ),
+            "the proxy that asked must get its answer"
+        );
+        assert!(
+            message.transform_for_proxy(bystander).is_none(),
+            "a proxy that never asked must not be told to subscribe anyone"
         );
     }
 }

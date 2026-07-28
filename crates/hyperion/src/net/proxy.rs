@@ -108,17 +108,19 @@ async fn handle_proxy_messages(
                     );
                 }
 
+                let connection_id = ConnectionId::new(stream, proxy_id);
+
                 command_channel.push(move |world: &World| {
                     let player = world
                         .entity()
-                        .set(ConnectionId::new(stream, proxy_id))
+                        .set(connection_id)
                         .add_enum(PacketState::Handshake)
                         .set(PacketDecoder::default())
                         .set(receiver)
                         .id();
 
                     world.get::<&mut StreamLookup>(|lookup| {
-                        lookup.insert(stream, player);
+                        lookup.insert(connection_id, player);
                     });
                 });
             }
@@ -131,9 +133,11 @@ async fn handle_proxy_messages(
                     );
                 }
 
+                let connection_id = ConnectionId::new(stream, proxy_id);
+
                 command_channel.push(move |world: &World| {
                     let player = world.get::<&mut StreamLookup>(|lookup| {
-                        lookup.remove(&stream).expect(
+                        lookup.remove(&connection_id).expect(
                             "player from PlayerDisconnect must exist in the stream lookup map",
                         )
                     });
@@ -202,7 +206,13 @@ async fn handle_proxy_messages(
                                 continue;
                             }
 
-                            events.push(RequestSubscribeChannelPackets(channel), world);
+                            events.push(
+                                RequestSubscribeChannelPackets {
+                                    channel,
+                                    receiver: proxy_id,
+                                },
+                                world,
+                            );
                         }
                     });
                 });
@@ -216,13 +226,22 @@ async fn handle_proxy_messages(
 
         world
             .new_query::<&ConnectionId>()
-            .each_entity(|entity, connection_id| {
+            .each_entity(|entity, &connection_id| {
                 if connection_id.proxy_id() == proxy_id {
-                    players_to_remove.push(entity.id());
+                    players_to_remove.push((connection_id, entity.id()));
                 }
             });
 
-        for player in players_to_remove {
+        // The lookup outlives the entities, so dropping the entry has to happen here too. No
+        // `PlayerDisconnect` is coming for these players: the connection that would have carried
+        // it is the one that just died.
+        world.get::<&mut StreamLookup>(|lookup| {
+            for (connection_id, _) in &players_to_remove {
+                lookup.remove(connection_id);
+            }
+        });
+
+        for (_, player) in players_to_remove {
             world.entity_from_id(player).destruct();
         }
     });
@@ -443,5 +462,132 @@ where
         self.server_read.read_exact(buffer).await?;
 
         Ok(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use flecs_ecs::core::WorldGet;
+    use hyperion_proxy_proto::{
+        PlayerConnect, PlayerDisconnect, PlayerDisconnectReason, ProxyToServerMessage,
+    };
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+
+    /// Frames a proxy-to-server message the way `server_sender::launch_server_writer` does: an
+    /// eight-byte big-endian length, then the rkyv body.
+    fn frame(message: &ProxyToServerMessage<'_>) -> Vec<u8> {
+        let body = rkyv::api::high::to_bytes::<rkyv::rancor::Error>(message).unwrap();
+        let mut framed = u64::try_from(body.len()).unwrap().to_be_bytes().to_vec();
+        framed.extend_from_slice(&body);
+        framed
+    }
+
+    /// Two proxies, each numbering its first player 1, exactly as `hyperion-proxy` does: its
+    /// counter is a local `let mut player_id_on = 1` reset on every reconnect to the game server.
+    ///
+    /// Keyed on the bare stream id these two are one entry in [`StreamLookup`]. The second connect
+    /// overwrote the first, so the first disconnect destructed the second player's entity and the
+    /// second disconnect found nothing and panicked inside the command closure. Nothing about this
+    /// is visible with one proxy, which is why it survived.
+    #[test]
+    fn colliding_stream_ids_on_two_proxies_are_two_players() {
+        let world = World::new();
+        world.component::<PacketState>();
+        world.component::<ConnectionId>();
+        world.component::<PacketDecoder>();
+        world.component::<packet_channel::Receiver>();
+        world
+            .component::<StreamLookup>()
+            .add_trait::<flecs::Singleton>();
+        world.set(StreamLookup::default());
+
+        let command_channel = CommandChannel::default();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        // A duplex rather than a cursor: `handle_proxy_messages` treats end of input as the proxy
+        // hanging up and destructs every player on it, which would erase what this is measuring.
+        // Holding the write half open keeps both proxies connected.
+        let (mut zero_write, zero_read) = tokio::io::duplex(4096);
+        let (mut one_write, one_read) = tokio::io::duplex(4096);
+
+        let zero = ProxyId::new(0);
+        let one = ProxyId::new(1);
+
+        runtime.spawn(handle_proxy_messages(
+            zero_read,
+            command_channel.clone(),
+            zero,
+        ));
+        runtime.spawn(handle_proxy_messages(
+            one_read,
+            command_channel.clone(),
+            one,
+        ));
+
+        // Both proxies hand the game server a player numbered 1.
+        let connect = frame(&ProxyToServerMessage::PlayerConnect(PlayerConnect {
+            stream: 1,
+        }));
+        runtime.block_on(async {
+            zero_write.write_all(&connect).await.unwrap();
+            one_write.write_all(&connect).await.unwrap();
+            // Let both reader tasks drain what was just written.
+            for _ in 0..64 {
+                tokio::task::yield_now().await;
+            }
+        });
+        command_channel.apply(&world);
+
+        let players = world.get::<&StreamLookup>(|lookup| {
+            (
+                lookup.get(&ConnectionId::new(1, zero)).copied(),
+                lookup.get(&ConnectionId::new(1, one)).copied(),
+            )
+        });
+        let (zero_player, one_player) = players;
+        let zero_player = zero_player.expect("proxy 0's player 1 must be in the lookup");
+        let one_player = one_player.expect("proxy 1's player 1 must be in the lookup");
+        assert_ne!(
+            zero_player, one_player,
+            "two proxies' player 1 must be two entities, not one"
+        );
+
+        // Proxy 0's player leaves. Proxy 1's must not notice.
+        let disconnect = frame(&ProxyToServerMessage::PlayerDisconnect(PlayerDisconnect {
+            stream: 1,
+            reason: PlayerDisconnectReason::LostConnection,
+        }));
+        runtime.block_on(async {
+            zero_write.write_all(&disconnect).await.unwrap();
+            for _ in 0..64 {
+                tokio::task::yield_now().await;
+            }
+        });
+        command_channel.apply(&world);
+
+        assert!(
+            !world.entity_from_id(zero_player).is_alive(),
+            "the player who disconnected must be gone"
+        );
+        assert!(
+            world.entity_from_id(one_player).is_alive(),
+            "a player on another proxy must survive someone else's disconnect"
+        );
+        world.get::<&StreamLookup>(|lookup| {
+            assert!(
+                lookup.get(&ConnectionId::new(1, zero)).is_none(),
+                "the departed player's entry must be gone"
+            );
+            assert_eq!(
+                lookup.get(&ConnectionId::new(1, one)).copied(),
+                Some(one_player),
+                "the surviving player's entry must still point at them"
+            );
+        });
     }
 }
