@@ -168,6 +168,9 @@
       "minecraft:fall",
       "minecraft:fall"
     ],
+    "events/smash/src/module/arena.rs": [
+      "minecraft:item.shield.block"
+    ],
     "events/smash/src/module/kit.rs": [
       "minecraft:armor_stand",
       "minecraft:stick"
@@ -421,6 +424,9 @@
       "minecraft:stick",
       "minecraft:stick",
       "minecraft:stone"
+    ],
+    "events/smash/tests/visuals.rs": [
+      "minecraft:entity.player.hurt_on_fire"
     ]
   }
 }
