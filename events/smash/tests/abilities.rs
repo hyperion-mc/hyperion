@@ -16,7 +16,7 @@ mod harness;
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-use harness::Game;
+use harness::{Game, TICK};
 use smash::{
     module::{
         ability::{self, Declared, Observable},
@@ -443,6 +443,13 @@ fn every_declared_effect_actually_happens() {
                 entry.proves.contains(&Observable::ShieldsCaster) && probe_hit(&bench);
             let before = snapshot(&bench);
             bench.press(&entry);
+            // One tick, because a real client's probe cannot arrive sooner
+            // than the next one. Reading with zero ticks elapsed is the one
+            // thing a scripted client can never do, and it is what let this
+            // check pass while `nix run .#smash-e2e` failed on the same
+            // commit: a shield that exists for exactly zero ticks satisfied
+            // the bench and nothing else.
+            bench.game.advance(TICK, 1);
             let immediate = Immediate::taken(&bench, &entry, landed_before);
             bench.settle();
             outstanding
@@ -617,6 +624,76 @@ fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
         Ok(()),
         "an expired ultimate should be nothing at all in that slot, not a refusal"
     );
+}
+
+/// A shield is up before anybody can hit you, including when the cast is
+/// deferred.
+///
+/// This is the test the sweep could not be. `every_declared_effect_actually_happens`
+/// drives `ability::use_slot` from test code, which is *outside* any flecs
+/// system, so every `add` an ability makes lands immediately and the sweep sees
+/// a world nobody in production ever sees. On a real server the press arrives as
+/// a packet, `smash::on_item_interact` drains it from inside a system, and every
+/// mutation the payload makes is queued until the end of the frame.
+///
+/// `smash::on_attack` is registered in the same pipeline, after it. So a client
+/// that swings in the same tick as it right-clicks is answered by a damage
+/// observer that cannot see the shield the press just armed, and the hit lands
+/// through a window the ability says is closed. `nix run .#smash-e2e` failed on
+/// exactly that while `cargo nextest run -p smash` was 259 for 259.
+///
+/// `defer_begin`/`defer_end` is that condition, in-process: it is the same
+/// suspension flecs puts a system body under.
+#[test]
+fn a_shield_is_up_before_anybody_can_swing() {
+    let manifest = ability::manifest(&Game::new().world);
+    let shields: Vec<_> = manifest
+        .into_iter()
+        .filter(|entry| entry.proves.contains(&Observable::ShieldsCaster))
+        .collect();
+    assert!(
+        !shields.is_empty(),
+        "no ability declares a shield, so this test is checking nothing"
+    );
+
+    let mut failures = Vec::new();
+    for entry in shields {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(&entry);
+
+        assert!(
+            probe_hit(&bench),
+            "{} / {}: the probe has to land before the cast, or this proves nothing",
+            entry.kit,
+            entry.name
+        );
+        bench.place(Vec3::ZERO);
+
+        // Everything between `defer_begin` and `defer_end` is one frame, which
+        // is exactly the suspension a system body runs under.
+        bench.game.world.defer_begin();
+        let fired = ability::activate(bench.caster(), entry.slot, 1.0);
+        let landed_inside_the_frame = probe_hit(&bench);
+        bench.game.world.defer_end();
+
+        assert_eq!(
+            fired,
+            Ok(()),
+            "{} / {} refused to fire, so nothing was armed",
+            entry.kit,
+            entry.name
+        );
+        if landed_inside_the_frame {
+            failures.push(format!(
+                "{} / {} armed its shield and a swing in the same frame still landed: the arm was \
+                 deferred and the damage observer could not see it",
+                entry.kit, entry.name
+            ));
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 /// No ultimate leaves a player permanently changed.

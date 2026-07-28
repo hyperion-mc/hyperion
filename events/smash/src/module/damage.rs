@@ -100,7 +100,7 @@ impl MeleeBonus {
     }
 }
 
-/// While this is on a player, no hit lands on them.
+/// The players nothing can currently hurt.
 ///
 /// Deliberately *not* [`crate::module::lives::InvulnerableUntil`], which the
 /// arena's kill plane reads as well. A respawn's immunity has to cover both,
@@ -108,17 +108,53 @@ impl MeleeBonus {
 /// by a mirror the host has not refreshed yet. A combat shield must cover
 /// exactly one: Sky Squid's Super Squid says nothing can *touch* you, and a
 /// version of it that also caught you when you flew off the edge would be a
-/// one-second immortality rather than a one-second escape.
+/// one-second immortality rather than a one-second escape. The two were the
+/// same flag for exactly as long as it took `tests/properties.rs` to find a
+/// Squid falling past the kill plane and living.
 ///
-/// The two were the same flag for exactly as long as it took
-/// `tests/properties.rs` to find a Squid falling past the kill plane and living.
+/// # Why a singleton list and not a tag on the player
 ///
-/// Owned by this module and not by the one that writes it, so that
-/// `smash::apply_damage` -- the hottest observer in the game -- reads a tag it
-/// already has in scope, and so that `Effect` depends on `Damage` without
-/// `Damage` depending back.
-#[derive(Component, Debug)]
-pub struct Immune;
+/// A shield has to be true within the frame that armed it, and a component
+/// added from inside a system is not: flecs queues structural changes until the
+/// end of the frame. An ability fires from `smash::on_item_interact` and
+/// `smash::on_attack` runs after it in the same pipeline, so a client that
+/// swings on the tick it right-clicks was answered by a damage observer that
+/// could not yet see the tag the press had just armed. `nix run .#smash-e2e`
+/// failed on exactly that while the in-process suite was 259 for 259, because
+/// the bench drives abilities from outside any system and so never defers.
+///
+/// Suspending deferral is not the fix. An `add` moves the entity between
+/// tables, and flecs locks the table an observer is iterating:
+/// `assert(!src_table->_->lock)`, which aborts the process.
+///
+/// A singleton's *value* can be written straight through `get::<&mut _>` from
+/// inside a system. No structural change, no queue, visible to the next system
+/// in the same frame -- which is how `MatchClock` is already ticked.
+///
+/// A `Vec` because shields are rare: nought to two players in a match, scanned
+/// once per hit. Anything cleverer would be a data structure defending a cost
+/// nobody is paying.
+#[derive(Component, Debug, Default)]
+pub struct Shielded(Vec<Entity>);
+
+impl Shielded {
+    /// Start refusing hits on `player`. Idempotent.
+    pub fn arm(&mut self, player: Entity) {
+        if !self.0.contains(&player) {
+            self.0.push(player);
+        }
+    }
+
+    /// Stop refusing them.
+    pub fn disarm(&mut self, player: Entity) {
+        self.0.retain(|held| *held != player);
+    }
+
+    #[must_use]
+    pub fn holds(&self, player: Entity) -> bool {
+        self.0.contains(&player)
+    }
+}
 
 /// Relationship: `(LastHitBy, attacker)` on the victim.
 ///
@@ -173,7 +209,10 @@ impl Module for DamageModule {
 
         world.component::<Armor>();
         world.component::<Damaged>();
-        world.component::<Immune>();
+        world
+            .component::<Shielded>()
+            .add_trait::<flecs::Singleton>();
+        world.set(Shielded::default());
         world.component::<MeleeBonus>();
         // This module is what makes armour mean anything, so this module is
         // what says every player has some.
@@ -201,9 +240,10 @@ impl Module for DamageModule {
                 let world = it.world();
 
                 let clock = world.cloned::<&MatchClock>().0;
-                // Two questions, not one. See [`Immune`] for why they are not
-                // the same flag.
-                if crate::module::lives::is_invulnerable(victim, clock) || victim.has(Immune::id())
+                // Two questions, not one. See [`Shielded`] for why they are not
+                // the same thing.
+                if crate::module::lives::is_invulnerable(victim, clock)
+                    || world.get::<&Shielded>(|shielded| shielded.holds(victim.id()))
                 {
                     return;
                 }
