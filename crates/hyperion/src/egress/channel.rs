@@ -3,7 +3,7 @@ use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     packets::play::{clientbound::RemoveEntities, entity::SetEntityData},
 };
-use hyperion_proto::UpdateChannelPosition;
+use hyperion_proxy_proto::UpdateChannelPosition;
 use hyperion_utils::EntityExt;
 use tracing::error;
 

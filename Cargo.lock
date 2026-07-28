@@ -1865,7 +1865,7 @@ dependencies = [
  "hyperion-inventory",
  "hyperion-minecraft-proto",
  "hyperion-palette",
- "hyperion-proto",
+ "hyperion-proxy-proto",
  "hyperion-utils",
  "indexmap",
  "itertools 0.15.0",
@@ -2097,14 +2097,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperion-proto"
-version = "0.1.0"
-dependencies = [
- "glam",
- "rkyv",
-]
-
-[[package]]
 name = "hyperion-proxy"
 version = "0.1.0"
 dependencies = [
@@ -2117,7 +2109,7 @@ dependencies = [
  "dotenvy",
  "envy",
  "glam",
- "hyperion-proto",
+ "hyperion-proxy-proto",
  "kanal",
  "papaya",
  "rkyv",
@@ -2133,6 +2125,14 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "hyperion-proxy-proto"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "rkyv",
 ]
 
 [[package]]

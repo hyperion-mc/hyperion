@@ -1,4 +1,4 @@
-use hyperion_proto::{ChunkPosition, ServerToProxyMessage, UpdateChannelPosition};
+use hyperion_proxy_proto::{ChunkPosition, ServerToProxyMessage, UpdateChannelPosition};
 
 use crate::net::{ConnectionId, ProxyId};
 
@@ -115,7 +115,7 @@ impl IntermediateServerToProxyMessage<'_> {
         match self {
             Self::UpdatePlayerPositions(message) => {
                 Some(ServerToProxyMessage::UpdatePlayerPositions(
-                    hyperion_proto::UpdatePlayerPositions {
+                    hyperion_proxy_proto::UpdatePlayerPositions {
                         stream: message
                             .stream
                             .iter()
@@ -127,26 +127,26 @@ impl IntermediateServerToProxyMessage<'_> {
                 ))
             }
             Self::AddChannel(message) => Some(ServerToProxyMessage::AddChannel(
-                hyperion_proto::AddChannel {
+                hyperion_proxy_proto::AddChannel {
                     channel_id: message.channel_id,
                     unsubscribe_packets: message.unsubscribe_packets,
                 },
             )),
             Self::UpdateChannelPositions(message) => {
                 Some(ServerToProxyMessage::UpdateChannelPositions(
-                    hyperion_proto::UpdateChannelPositions {
+                    hyperion_proxy_proto::UpdateChannelPositions {
                         updates: message.updates,
                     },
                 ))
             }
             Self::RemoveChannel(message) => Some(ServerToProxyMessage::RemoveChannel(
-                hyperion_proto::RemoveChannel {
+                hyperion_proxy_proto::RemoveChannel {
                     channel_id: message.channel_id,
                 },
             )),
             Self::SubscribeChannelPackets(message) => {
                 Some(ServerToProxyMessage::SubscribeChannelPackets(
-                    hyperion_proto::SubscribeChannelPackets {
+                    hyperion_proxy_proto::SubscribeChannelPackets {
                         channel_id: message.channel_id,
                         exclude: message
                             .exclude
@@ -157,7 +157,7 @@ impl IntermediateServerToProxyMessage<'_> {
                 ))
             }
             Self::BroadcastGlobal(message) => Some(ServerToProxyMessage::BroadcastGlobal(
-                hyperion_proto::BroadcastGlobal {
+                hyperion_proxy_proto::BroadcastGlobal {
                     exclude: message
                         .exclude
                         .and_then(filter_map_connection_id)
@@ -166,7 +166,7 @@ impl IntermediateServerToProxyMessage<'_> {
                 },
             )),
             Self::BroadcastLocal(message) => Some(ServerToProxyMessage::BroadcastLocal(
-                hyperion_proto::BroadcastLocal {
+                hyperion_proxy_proto::BroadcastLocal {
                     center: message.center,
                     exclude: message
                         .exclude
@@ -176,7 +176,7 @@ impl IntermediateServerToProxyMessage<'_> {
                 },
             )),
             Self::BroadcastChannel(message) => Some(ServerToProxyMessage::BroadcastChannel(
-                hyperion_proto::BroadcastChannel {
+                hyperion_proxy_proto::BroadcastChannel {
                     channel_id: message.channel_id,
                     exclude: message
                         .exclude
@@ -186,18 +186,18 @@ impl IntermediateServerToProxyMessage<'_> {
                 },
             )),
             Self::Unicast(message) => {
-                Some(ServerToProxyMessage::Unicast(hyperion_proto::Unicast {
+                Some(ServerToProxyMessage::Unicast(hyperion_proxy_proto::Unicast {
                     stream: filter_map_connection_id(message.stream)?,
                     data: message.data,
                 }))
             }
             Self::SetReceiveBroadcasts(message) => Some(
-                ServerToProxyMessage::SetReceiveBroadcasts(hyperion_proto::SetReceiveBroadcasts {
+                ServerToProxyMessage::SetReceiveBroadcasts(hyperion_proxy_proto::SetReceiveBroadcasts {
                     stream: filter_map_connection_id(message.stream)?,
                 }),
             ),
             Self::Shutdown(message) => Some(ServerToProxyMessage::SetReceiveBroadcasts(
-                hyperion_proto::SetReceiveBroadcasts {
+                hyperion_proxy_proto::SetReceiveBroadcasts {
                     stream: filter_map_connection_id(message.stream)?,
                 },
             )),

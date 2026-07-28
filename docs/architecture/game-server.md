@@ -37,7 +37,7 @@ This means that the egress system will send thread-local 8 [
 to the tokio egress task at the end of every tick.
 
 The contents in the buffers are [rkyv-encoded](https://github.com/rkyv/rkyv) packets
-specified [here](https://github.com/andrewgazelka/hyperion/blob/main/crates/hyperion-proto/src/server_to_proxy.rs):
+specified [here](https://github.com/andrewgazelka/hyperion/blob/main/crates/hyperion-proxy-proto/src/server_to_proxy.rs):
 
 ```rust
 #[derive(Archive, Deserialize, Serialize, Clone, PartialEq)]

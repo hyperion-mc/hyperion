@@ -1,5 +1,3 @@
-[build-dependencies]
-
 [dependencies]
 rkyv = {workspace = true}
 glam = {workspace = true}
@@ -10,10 +8,6 @@ workspace = true
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
-name = "hyperion-proto"
+name = "hyperion-proxy-proto"
 publish = false
-readme = "README.md"
 version.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["prost"]

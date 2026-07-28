@@ -91,7 +91,7 @@ impl Module for EgressModule {
 
                 player_location_query.each(|(&io, pos)| {
                     stream.push(io);
-                    positions.push(hyperion_proto::ChunkPosition::from(pos.to_chunk()));
+                    positions.push(hyperion_proxy_proto::ChunkPosition::from(pos.to_chunk()));
                 });
 
                 let packet = UpdatePlayerPositions { stream, positions };

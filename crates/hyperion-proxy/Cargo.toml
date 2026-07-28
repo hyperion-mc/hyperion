@@ -16,7 +16,7 @@ bvh = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 glam = { workspace = true }
-hyperion-proto = { workspace = true }
+hyperion-proxy-proto = { workspace = true }
 slotmap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

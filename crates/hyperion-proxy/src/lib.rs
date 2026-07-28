@@ -15,7 +15,7 @@ use std::{fmt::Debug, path::Path, sync::Arc};
 
 use anyhow::Context;
 use colored::Colorize;
-use hyperion_proto::ArchivedServerToProxyMessage;
+use hyperion_proxy_proto::ArchivedServerToProxyMessage;
 use rustc_hash::FxBuildHasher;
 use rustls::{RootCertStore, client::ClientConfig};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, ServerName, pem::PemObject};
