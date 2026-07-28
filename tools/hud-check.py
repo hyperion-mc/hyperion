@@ -18,8 +18,8 @@ Two halves, because they need different numbers of players.
      claim the whole feature rests on and the one that a bar wired to the wrong
      slot would still pass half of.
 
-  2. Eight clients, which is `full_players`, so the lobby runs its shortest
-     countdown rather than its sixty second one. That gets the phase machine
+  2. Enough clients to fill the lobby, so it runs its shortest countdown
+     rather than its sixty second one. That gets the phase machine
      through Countdown, Preparing and into Playing inside twenty seconds, and
      the titles, subtitles and the percentage bar with it.
 

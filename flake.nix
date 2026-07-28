@@ -413,8 +413,8 @@
               ]) uuids;
             };
 
-          # The lobby `smash-e2e` runs against, which is deliberately not the
-          # one the product ships.
+          # The lobby `smash-e2e` and `smash-selector-e2e` run against, which
+          # is deliberately not the one the product ships.
           #
           # The gate's ability sweep changes kits, and a committed match
           # refuses to, so the sweep needs a roster the lobby will not start
@@ -434,6 +434,11 @@
           # three players start nothing even by the old band order, so this
           # gate does not depend on the `countdown_for` fix that shipped
           # alongside it.
+          #
+          # `smash-selector-e2e` needs the same thing for the same reason: its
+          # hub checks run on three clients, which #1019 also put above the
+          # threshold, and its last check fills the lobby on purpose and so
+          # needs to know what full is.
           smashGateLobby = {
             sweepClients = 3;
             env = {
@@ -441,6 +446,10 @@
               SMASH_FULL_PLAYERS = 8;
             };
           };
+
+          # The roster that fills the gate's lobby, read off the threshold
+          # rather than written twice.
+          smashGateFullClients = toString smashGateLobby.env.SMASH_FULL_PLAYERS;
 
           # `env` as shell, for the gates that are scripts rather than checks.
           exportsFor =
@@ -729,7 +738,8 @@
               deps = [ pkgs.git ];
               text = ''
                 export HYPERION_EVENT=smash
-                export HYPERION_E2E_CLIENT=tools/smash-selector.py
+                export HYPERION_E2E_CLIENT="tools/smash-selector.py --full-clients ${smashGateFullClients}"
+                ${exportsFor smashGateLobby.env}
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-selector-e2e)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-selector-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
@@ -1014,6 +1024,11 @@
               gameServer = gameBinaries.smash;
               proxy = gameBinaries.hyperion-proxy;
               client = "smash-selector.py";
+              clientArgs = [
+                "--full-clients"
+                smashGateFullClients
+              ];
+              serverEnv = smashGateLobby.env;
               timeout = 420;
             };
 

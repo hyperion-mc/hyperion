@@ -1138,8 +1138,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=25565)
-    # Eight, because `LobbyConfig::countdown_for` gives a full lobby a ten
-    # second countdown and a merely sufficient one sixty.
+    # Enough to fill the lobby, so `countdown_for` runs its shortest countdown
+    # rather than its longest. Eight covers every `full_players` this server
+    # has shipped; the comment used to say eight *was* `full_players`, which
+    # was `LobbyConfig::default` restated here and went stale at #1019.
     parser.add_argument("--clients", type=int, default=8)
     parser.add_argument("--timeout", type=float, default=240.0)
     args = parser.parse_args()
