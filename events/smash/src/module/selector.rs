@@ -226,6 +226,15 @@ pub fn build(world: &World, origin: IVec3) {
         world.entity_from_id(podium).destruct();
     }
 
+    // One `ring` parent for the whole selector, found-or-created so a rebuild
+    // reuses it rather than minting a second. The podiums hang off it, so the
+    // explorer draws the ring as a subtree -- `smash.Selector.ring.Skeleton`,
+    // `.Blaze`, ... -- rather than a scatter of bare ids at the root.
+    let selector = world.component::<SelectorModule>();
+    let ring_parent = selector
+        .try_lookup("ring")
+        .unwrap_or_else(|| world.entity().child_of(selector).set_name("ring"));
+
     let kits = kit::registry(world);
     let mut placed: Vec<IVec3> = Vec::with_capacity(kits.len());
 
@@ -237,8 +246,18 @@ pub fn build(world: &World, origin: IVec3) {
         );
         placed.push(base);
 
+        // Named after the mob it offers, so a podium reads as its kit in the
+        // explorer. Its identity is stable -- one per kit, made once at init --
+        // which is what makes naming it safe where naming a short-lived effect
+        // or projectile would collapse two that must coexist.
+        let name = world
+            .entity_from_id(*kit)
+            .try_get::<&KitName>(|n| n.0)
+            .unwrap_or("kit");
         world
             .entity()
+            .child_of(ring_parent)
+            .set_name(name)
             .add(Podium::id())
             .set(Plinth { base })
             .add((Offers, *kit));
@@ -523,7 +542,9 @@ impl Module for SelectorModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Selector");
 
-        world.component::<Podium>();
+        // Final: a podium is a leaf, never an inheritance base. `is_a(Podium)`
+        // is now a CONSTRAINT_VIOLATED abort rather than a quiet mistake.
+        world.component::<Podium>().add_trait::<flecs::Final>();
         world.component::<Plinth>();
         // Relationship: `Offers` is only ever the first half of `(Offers, kit)`,
         // so adding it as a bare tag is a panic rather than a silent no-op that
