@@ -16,7 +16,7 @@
 //!
 //! **Where this sits in the module DAG.** It needs `Player`, `Knockback` and
 //! `Damage`, and nothing else, to import: a tick is a [`Damaged`] event and a
-//! shield is `Damage`'s own [`Immune`] tag. The edge points one way -- `Damage`
+//! shield is `Damage`'s own [`Shielded`] list. The edge points one way -- `Damage`
 //! knows nothing of effects -- which is why the tag lives over there rather
 //! than here. It deliberately does *not* need `Lobby`: durations
 //! are counted in delta time the way [`crate::module::ability::Cooldown`] and
@@ -37,7 +37,7 @@ use crate::{
     flecs_ext::WorldRefExt,
     module::{
         ability::Cast,
-        damage::{DamageKind, Damaged, Immune, hurt},
+        damage::{DamageKind, Damaged, Shielded, hurt},
         knockback::Knockback,
         player::{Health, Position},
         projectile::Impact,
@@ -371,32 +371,42 @@ pub fn afflict(world: WorldRef<'_>, victim: EntityView<'_>, blame: Blame, afflic
     }
     if affliction.shields {
         effect.add(Shields::id());
-        arm_shield(victim);
+        arm_shield(world, victim);
     }
 }
 
-/// Turn the damage pipeline's immunity tag on for `victim`.
+/// Start refusing hits on `victim`, effective immediately.
 ///
-/// A tag and not a deadline. What ends an effect's shield is the effect
-/// expiring, which [`disarm_shield`] is, so a second copy of the duration on the
-/// player would be a number with nothing to keep it honest.
+/// No duration is written here. What ends an effect's shield is the effect
+/// expiring, which [`disarm_shield`] is, so a second copy of the duration on
+/// the player would be a number with nothing to keep it honest.
 ///
-/// The pipeline reading a tag rather than querying for effects is deliberate:
+/// The pipeline reading a list rather than querying for effects is deliberate:
 /// `smash::apply_damage` runs on every hit in the game, and a relationship walk
 /// per hit to answer a question that is false for almost every player almost
-/// always is the wrong shape. [`crate::module::damage::Immune`] is where that
-/// tag lives and why it is not the kill plane's flag.
-fn arm_shield(victim: EntityView<'_>) {
-    victim.add(Immune::id());
+/// always is the wrong shape.
+///
+/// A shield is the one thing in this module that has to be true *within* the
+/// frame that created it, which is why it is a singleton write rather than a
+/// component on the player. [`Shielded`] carries the whole reason.
+///
+/// Nothing else here needs that. A burn's first tick is an interval away and a
+/// mode's first beat is next frame at the earliest, so for those the deferred
+/// queue flushing at the end of the frame is soon enough.
+fn arm_shield(world: WorldRef<'_>, victim: EntityView<'_>) {
+    world.get::<&mut Shielded>(|shielded| shielded.arm(victim.id()));
 }
 
-/// Turn it off again, unless something else is still shielding them.
+/// Stop, unless something else is still shielding them.
+///
+/// Immediate for the mirror of [`arm_shield`]'s reason: a shield that has
+/// lapsed must stop refusing damage on the frame it lapses, not the one after.
 fn disarm_shield(world: WorldRef<'_>, victim: Entity, excluding: Entity) {
     let others = matching(world, victim, |effect| {
         effect.id() != excluding && effect.has(Shields::id())
     });
     if others.is_empty() {
-        world.entity_at(victim).remove(Immune::id());
+        world.get::<&mut Shielded>(|shielded| shielded.disarm(victim));
     }
 }
 
