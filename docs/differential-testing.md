@@ -8,7 +8,8 @@ pinned jar and fails if they have moved, so a version bump cannot leave the
 golden data quietly wrong.
 
 The first thing it found is that hyperion's projectile physics was not vanilla's
-in three separate ways. See "What this has already caught" at the bottom.
+in three separate ways, and later that the heading it sent to the client was a
+fourth. See "What this has already caught" at the bottom.
 
 ## Adding a case is adding a file
 
@@ -41,7 +42,8 @@ the wrong recording.
   ],
   "compare": {
     "position": 5.0e-4,
-    "velocity": 1.0e-5
+    "velocity": 1.0e-5,
+    "rotation": 2.0e-1
   }
 }
 ```
@@ -57,6 +59,7 @@ the wrong recording.
 | `entities[].position` | Where it starts. |
 | `compare.position` | Tolerance in blocks. |
 | `compare.velocity` | Tolerance in blocks per tick. |
+| `compare.rotation` | Tolerance in degrees, for the arrow's client-facing yaw and pitch. |
 
 Exactly one impulse per entity, and it is applied by vanilla, not by the
 scenario:
@@ -223,3 +226,34 @@ Three things are wrong with that, and the arrow scenario fails on all three:
 
 `crates/hyperion/src/simulation/projectile_motion.rs` now carries both shapes as
 data, and this test is what keeps them honest.
+
+### The heading
+
+The fourth finding is the one a player sees. An arrow's arc was right, but the
+orientation the server sent was wrong twice over.
+
+A projectile entity does not store the shooter's look angles. Vanilla derives
+its yaw and pitch from its velocity every tick, in `AbstractArrow.tick` and
+`Projectile.updateRotation`, as `yaw = atan2(dx, dz)` and
+`pitch = atan2(dy, horizontalDistance)`. That is the sign-flip of the look
+convention a shooter's own yaw uses: an arrow loosed due west stores yaw -90
+where the player who fired it reads +90. Hyperion set the arrow's yaw and pitch
+to the shooter's own, so every arrow rendered mirrored across its line of
+flight. `arrow-crosswind-shot` catches this at tick 0, +90 against a recorded
+-90.
+
+And vanilla re-aims the arrow off its velocity every tick, easing 20% of the
+way each time (`lerpRotation`), so the arrow noses over as it falls. Hyperion
+never updated the orientation after launch, so it stayed frozen at its loosed
+angle for the whole flight. `arrow-arced-shot` catches this: vanilla's pitch
+climbs from +20 to -43 over sixty ticks while a frozen arrow sits at +20.
+
+The two integrators disagree about *when* the arrow is aimed, the same way they
+disagree about when it moves. `AbstractArrow.tick` aims from the velocity it
+entered the tick with, before the move and decay; `ThrowableProjectile.tick`
+applies gravity and drag first and aims from the result. `look_angles` and the
+per-order aim in `update_projectile_positions` carry both, and the rotation
+column of every trace keeps them honest. Hyperion aims with `f32::atan2` where
+vanilla uses `Mth.atan2`, a table approximation; the two agree to under a
+thousandth of a degree across every committed scenario, which is why the
+rotation tolerance is a fifth of a degree rather than zero.

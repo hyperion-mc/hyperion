@@ -32,7 +32,17 @@ impl<T> Default for Bvh<T> {
         Self {
             nodes: vec![BvhNode::DUMMY],
             elements: Vec::new(),
-            root: 0,
+            // A negative root is the "leaf over `elements`" sentinel `root()`
+            // reads, so an empty tree is an empty leaf. Zero would instead
+            // point `root()` at `nodes[0]`, the `DUMMY`, whose `left`/`right`
+            // are both 0: a ray query would take it for an internal node,
+            // follow its phantom right child and hit `debug_assert!(right > 0)`
+            // (an infinite loop with the assert compiled out). The spatial
+            // index is exactly this default on the first tick, before its
+            // `OnStore` rebuild has run, so a projectile loosed along any axis
+            // but a coordinate one -- whose ray misses the `NULL` box by luck
+            // -- crashed there. See `empty_bvh_ray_query_is_none`.
+            root: -1,
         }
     }
 }

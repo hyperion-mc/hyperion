@@ -23,10 +23,13 @@ use hyperion::{
         area::players_within,
         motion::{knockback_impulse, quantized},
         shape::sample,
-        spawn::{Lifetime, facing, launch, spawn},
+        spawn::{Lifetime, launch, spawn},
         status::Status,
     },
-    simulation::{Owner, Pitch, Player, Position, Uuid, Velocity, Yaw, entity_kind::EntityKind},
+    simulation::{
+        Owner, Pitch, Player, Position, Uuid, Velocity, Yaw, entity_kind::EntityKind,
+        projectile_motion::look_angles,
+    },
 };
 use hyperion_minecraft_proto::{
     Decode, Encode, Reader, Writer,
@@ -336,19 +339,30 @@ fn a_knockback_reaches_the_wire_as_the_velocity_it_asked_for() {
     }
 }
 
-/// A projectile points where it is going, in Minecraft's own angle convention:
-/// yaw zero faces south, and pitch is negative looking up.
+/// A projectile points where it is going, in vanilla's projectile-entity
+/// convention: `yaw = atan2(dx, dz)`, `pitch = atan2(dy, horizontal)`. This is
+/// the sign-flip of the look convention a shooter's own yaw uses, and getting
+/// it wrong is the "wrong heading" a bystander sees. The discriminating cases
+/// are the ones with a sign: due west is yaw -90 where a player facing west
+/// reads +90, and a climbing projectile is pitch +90 where a player looking up
+/// reads -90.
 #[test]
 fn a_launched_projectile_faces_along_its_velocity() {
-    let (yaw, pitch) = facing(Vec3::new(0.0, 0.0, 1.0));
+    let (yaw, pitch) = look_angles(Vec3::new(0.0, 0.0, 1.0));
     assert!(yaw.abs() < 1e-4, "south is yaw zero, got {yaw}");
     assert!(pitch.abs() < 1e-4, "level is pitch zero, got {pitch}");
 
-    let (yaw, _) = facing(Vec3::new(-1.0, 0.0, 0.0));
-    assert!((yaw - 90.0).abs() < 1e-4, "west is yaw 90, got {yaw}");
+    let (yaw, _) = look_angles(Vec3::new(-1.0, 0.0, 0.0));
+    assert!(
+        (yaw + 90.0).abs() < 1e-4,
+        "west is yaw -90 for a projectile, got {yaw}"
+    );
 
-    let (_, pitch) = facing(Vec3::new(0.0, 1.0, 0.0));
-    assert!((pitch + 90.0).abs() < 1e-4, "up is pitch -90, got {pitch}");
+    let (_, pitch) = look_angles(Vec3::new(0.0, 1.0, 0.0));
+    assert!(
+        (pitch - 90.0).abs() < 1e-4,
+        "climbing is pitch +90 for a projectile, got {pitch}"
+    );
 }
 
 // --- area ------------------------------------------------------------------

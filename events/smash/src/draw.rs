@@ -37,9 +37,8 @@
 //! `Flight` already owns.
 
 use flecs_ecs::prelude::*;
-use hyperion::{
-    effects::spawn::facing,
-    simulation::{Pitch, Position, Spawn, Uuid, Velocity, Yaw},
+use hyperion::simulation::{
+    Pitch, Position, Spawn, Uuid, Velocity, Yaw, projectile_motion::look_angles,
 };
 
 use crate::module::projectile::{Flight, Projectile, Visual};
@@ -74,7 +73,7 @@ impl Module for DrawModule {
             .without(Drawn::id())
             .each_entity(|projectile, (visual, flight)| {
                 let per_tick = flight.velocity / TICKS_PER_SECOND;
-                let (yaw, pitch) = facing(flight.velocity);
+                let (yaw, pitch) = look_angles(flight.velocity);
 
                 projectile
                     .add_enum(visual.0)

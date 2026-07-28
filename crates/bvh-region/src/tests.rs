@@ -189,3 +189,33 @@
 //
 //     assert!(closest.is_none());
 // }
+
+use geometry::{aabb::Aabb, ray::Ray};
+use glam::Vec3;
+
+use crate::Bvh;
+
+/// A ray query on an empty index returns nothing rather than crashing.
+///
+/// The spatial index is `Bvh::default()` on the first tick, before its
+/// `OnStore` rebuild has run, and a projectile loosed along a non-axis-aligned
+/// direction casts a ray with every component non-zero. That ray intersects
+/// the `NULL` root box, and while the empty tree was the `DUMMY` internal node
+/// rather than an empty leaf the traversal followed a phantom right child: a
+/// debug assert here, an infinite loop with it compiled out. An axis-aligned
+/// ray missed the box by luck and hid it.
+#[test]
+fn empty_bvh_ray_query_is_none() {
+    fn no_aabb(_: &u32) -> Aabb {
+        unreachable!("an empty tree has no elements to measure")
+    }
+
+    let diagonal = Ray::new(Vec3::new(0.5, 128.0, 0.5), Vec3::new(-1.6, 1.0, 2.3));
+
+    let default: Bvh<u32> = Bvh::default();
+    assert!(default.first_ray_collision(diagonal, no_aabb).is_none());
+
+    // The built-from-empty tree must be just as safe as the default one.
+    let built: Bvh<u32> = Bvh::build(Vec::new(), no_aabb);
+    assert!(built.first_ray_collision(diagonal, no_aabb).is_none());
+}

@@ -77,6 +77,61 @@ impl ProjectileMotion {
     }
 }
 
+/// The yaw and pitch, in degrees, a projectile stores while travelling along
+/// `velocity`.
+///
+/// Vanilla derives an in-flight projectile's orientation from its velocity
+/// every tick, in `Projectile.updateRotation` and `AbstractArrow.tick` alike,
+/// as `yaw = atan2(dx, dz)` and `pitch = atan2(dy, horizontalDistance)`. That
+/// is the projectile-entity sign convention, and it is not the one a shooter's
+/// own look yaw uses: the look direction inverts to `atan2(-dx, dz)`, so an
+/// arrow loosed due west stores yaw -90 where the player who fired it reads
+/// +90. Handing the client the player's yaw instead of this is the wrong
+/// heading a bystander sees, an arrow that renders mirrored across its own line
+/// of flight.
+///
+/// `f32::atan2` where vanilla calls `Mth.atan2`, a table approximation the two
+/// agree with to well under a degree; `crates/hyperion/tests/differential.rs`
+/// holds the difference under each scenario's rotation tolerance against a
+/// recording of the real server.
+#[must_use]
+pub fn look_angles(velocity: Vec3) -> (f32, f32) {
+    let horizontal = velocity.x.hypot(velocity.z);
+    let yaw = velocity.x.atan2(velocity.z).to_degrees();
+    let pitch = velocity.y.atan2(horizontal).to_degrees();
+    (yaw, pitch)
+}
+
+/// One tick of vanilla's rotation smoothing: `Projectile.lerpRotation`.
+///
+/// Slides `current` by whole turns into the half-open window
+/// `[target - 180, target + 180)` so the short way round is always taken, then
+/// moves it a fifth of the way to `target`. Seeded exactly by [`look_angles`]
+/// at launch, so a heading that is not changing stays put and one that is eases
+/// toward its new value over five ticks rather than snapping.
+#[must_use]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "vanilla's Mth.lerp is `a + t * (b - a)` as separate float operations, not a fused \
+              multiply-add; this file exists to give the same answer, so the two roundings are \
+              the behaviour rather than an oversight"
+)]
+#[expect(
+    clippy::while_float,
+    reason = "vanilla's `lerpRotation` is literally these two `while` loops; each step moves the \
+              angle by exactly 360 toward a fixed bound, so it terminates in at most a turn or \
+              two, and matching its form is the point"
+)]
+pub fn lerp_rotation(mut current: f32, target: f32) -> f32 {
+    while target - current < -180.0 {
+        current -= 360.0;
+    }
+    while target - current >= 180.0 {
+        current += 360.0;
+    }
+    current + 0.2 * (target - current)
+}
+
 /// Everything that reaches `AbstractArrow.tick`.
 const ARROW: ProjectileMotion = ProjectileMotion {
     drag: 0.99,

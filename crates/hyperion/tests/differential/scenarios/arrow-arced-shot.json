@@ -1,0 +1,19 @@
+{
+  "name": "arrow-arced-shot",
+  "description": "A fully drawn bow loosed up and to the side (yaw 35, pitch -20) and followed for its whole arc. The pitch steepens under gravity every tick, so an arrow whose stored orientation never updates diverges here while its position stays right, which is exactly the client-visible heading bug.",
+  "ticks": 60,
+  "seed": 4242,
+  "entities": [
+    {
+      "id": "arrow",
+      "type": "minecraft:arrow",
+      "position": [0.5, 128.0, 0.5],
+      "launch": { "yaw": 35.0, "pitch": -20.0, "power": 3.0 }
+    }
+  ],
+  "compare": {
+    "position": 5.0e-4,
+    "velocity": 1.0e-5,
+    "rotation": 2.0e-1
+  }
+}

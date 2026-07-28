@@ -531,6 +531,17 @@ public final class VanillaTrace extends MinecraftServer {
             JsonObject state = new JsonObject();
             state.add("position", vec(entity.position()));
             state.add("velocity", vec(entity.getDeltaMovement()));
+            // The client-facing orientation, which is the whole of the "wrong
+            // heading" this trace exists to pin down. A projectile's yRot is
+            // `atan2(dx, dz)` and its xRot `atan2(dy, horizontalDistance)`, both
+            // derived from the velocity every tick in `AbstractArrow.tick`, and
+            // both in the projectile-entity sign convention rather than the
+            // look-direction one a shooter's own yaw uses. Recorded [yaw, pitch]
+            // to match the order hyperion stores Yaw before Pitch.
+            JsonArray rotation = new JsonArray();
+            rotation.add(entity.getYRot());
+            rotation.add(entity.getXRot());
+            state.add("rotation", rotation);
             state.addProperty("removed", entity.isRemoved());
             entities.add(entry.getKey(), state);
         }

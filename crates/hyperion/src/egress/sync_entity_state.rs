@@ -35,10 +35,23 @@ use crate::{
         event::{self, HitGroundEvent},
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
+        projectile_motion::{MotionOrder, lerp_rotation, look_angles},
     },
     spatial::get_first_collision,
     storage::Events,
 };
+
+/// Eases a projectile's stored facing toward the heading of `velocity`, in
+/// vanilla's projectile convention (see [`look_angles`]). A no-op for an
+/// entity carrying neither a yaw nor a pitch, which is anything the physics
+/// module does not aim.
+fn aim_along(yaw: Option<&mut Yaw>, pitch: Option<&mut Pitch>, velocity: Vec3) {
+    if let (Some(yaw), Some(pitch)) = (yaw, pitch) {
+        let (target_yaw, target_pitch) = look_angles(velocity);
+        **yaw = lerp_rotation(**yaw, target_yaw);
+        **pitch = lerp_rotation(**pitch, target_pitch);
+    }
+}
 
 #[derive(Component)]
 pub struct EntityStateSyncModule;
@@ -460,70 +473,97 @@ impl Module for EntityStateSyncModule {
             &mut Position,
             &mut Velocity,
             &Owner,
-            ?&ConnectionId
+            ?&ConnectionId,
+            ?&mut Yaw,
+            ?&mut Pitch
         )
         .kind(id::<flecs::pipeline::OnUpdate>())
         .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (position, velocity, owner, connection_id)| {
-            if let Some(_connection_id) = connection_id {
-                return;
-            }
-
-            let world = it.world();
-            let arrow_entity = it.entity(row);
-            let motion = arrow_entity
-                .try_get::<&EntityKind>(|kind| kind.projectile_motion())
-                .flatten();
-
-            if velocity.0 != Vec3::ZERO {
-                let center = **position;
-
-                // getting max distance
-                let distance = velocity.0.length();
-
-                let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
-
-                let Some(collision) = get_first_collision(ray, &world, Some(owner.entity)) else {
-                    // Vanilla's own integration, per kind, rather than one
-                    // rate for everything: an arrow and a snowball disagree
-                    // about their constants *and* about the order of the three
-                    // statements. `crates/hyperion/tests/differential.rs`
-                    // holds this against a recording of the real server.
-                    if let Some(motion) = motion {
-                        motion.step(position, &mut velocity.0);
-                    }
+        .each_iter(
+            |it, row, (position, velocity, owner, connection_id, yaw, pitch)| {
+                if let Some(_connection_id) = connection_id {
                     return;
-                };
+                }
 
-                match collision {
-                    Either::Left(entity) => {
-                        let entity = entity.entity_view(world);
-                        // send event
-                        world.get::<&mut Events>(|events| {
-                            events.push(
-                                event::ProjectileEntityEvent {
-                                    client: *entity,
-                                    projectile: *arrow_entity,
-                                },
-                                &world,
-                            );
-                        });
-                    }
-                    Either::Right(collision) => {
-                        // send event
-                        world.get::<&mut Events>(|events| {
-                            events.push(
-                                event::ProjectileBlockEvent {
-                                    collision,
-                                    projectile: *arrow_entity,
-                                },
-                                &world,
-                            );
-                        });
+                let world = it.world();
+                let arrow_entity = it.entity(row);
+                let motion = arrow_entity
+                    .try_get::<&EntityKind>(|kind| kind.projectile_motion())
+                    .flatten();
+
+                if velocity.0 != Vec3::ZERO {
+                    let center = **position;
+
+                    // getting max distance
+                    let distance = velocity.0.length();
+
+                    let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
+
+                    let Some(collision) = get_first_collision(ray, &world, Some(owner.entity))
+                    else {
+                        // Vanilla's own integration, per kind, rather than one
+                        // rate for everything: an arrow and a snowball disagree
+                        // about their constants *and* about the order of the three
+                        // statements. `crates/hyperion/tests/differential.rs`
+                        // holds this against a recording of the real server.
+                        if let Some(motion) = motion {
+                            // A projectile points where it is going, re-aimed off
+                            // its velocity every tick. Without this an arrow keeps
+                            // its launch orientation for its whole flight: the arc
+                            // is right but it renders frozen at its loosed angle
+                            // rather than nosing over as it falls. Vanilla reads
+                            // the velocity at the moment its own tick calls
+                            // `updateRotation`, and that moment differs by
+                            // integrator: `AbstractArrow.tick` aims from the
+                            // velocity it entered the tick with, before the move
+                            // and decay, while `ThrowableProjectile.tick` applies
+                            // gravity and drag first and aims from the result. So
+                            // the arrow is aimed before the step and the thrown
+                            // kind after it.
+                            match motion.order {
+                                MotionOrder::MoveThenDecay => {
+                                    aim_along(yaw, pitch, velocity.0);
+                                    motion.step(position, &mut velocity.0);
+                                }
+                                MotionOrder::DecayThenMove => {
+                                    motion.step(position, &mut velocity.0);
+                                    aim_along(yaw, pitch, velocity.0);
+                                }
+                            }
+                        }
+                        return;
+                    };
+
+                    match collision {
+                        Either::Left(entity) => {
+                            let entity = entity.entity_view(world);
+                            // send event
+                            world.get::<&mut Events>(|events| {
+                                events.push(
+                                    event::ProjectileEntityEvent {
+                                        client: *entity,
+                                        projectile: *arrow_entity,
+                                    },
+                                    &world,
+                                );
+                            });
+                        }
+                        Either::Right(collision) => {
+                            // send event
+                            world.get::<&mut Events>(|events| {
+                                events.push(
+                                    event::ProjectileBlockEvent {
+                                        collision,
+                                        projectile: *arrow_entity,
+                                    },
+                                    &world,
+                                );
+                            });
+                        }
                     }
                 }
-            }
-        });
+            },
+        );
 
         track_previous::<Position>(world);
         track_previous::<Yaw>(world);

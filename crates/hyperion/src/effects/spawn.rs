@@ -24,7 +24,10 @@ use tracing::error;
 
 use crate::{
     net::{Compose, ConnectionId, protocol::Clientbound},
-    simulation::{Owner, Pitch, Position, Spawn, Uuid, Velocity, Yaw, entity_kind::EntityKind},
+    simulation::{
+        Owner, Pitch, Position, Spawn, Uuid, Velocity, Yaw, entity_kind::EntityKind,
+        projectile_motion::look_angles,
+    },
 };
 
 /// Put an entity of `kind` into the world at `at`.
@@ -86,21 +89,8 @@ pub fn launch(
     if velocity == Vec3::ZERO {
         return entity;
     }
-    let (yaw, pitch) = facing(velocity);
+    let (yaw, pitch) = look_angles(velocity);
     entity.set(Yaw::new(yaw)).set(Pitch::new(pitch))
-}
-
-/// The yaw and pitch, in degrees, of something travelling along `direction`.
-///
-/// Minecraft's yaw is zero facing south (+z) and increases towards west, which
-/// is why this is `atan2(-x, z)` rather than the `atan2(z, x)` the maths would
-/// suggest.
-#[must_use]
-pub fn facing(direction: Vec3) -> (f32, f32) {
-    let horizontal = direction.x.hypot(direction.z);
-    let yaw = (-direction.x).atan2(direction.z).to_degrees();
-    let pitch = (-direction.y).atan2(horizontal).to_degrees();
-    (yaw, pitch)
 }
 
 /// How much longer a temporary entity stays in the world, in seconds.
