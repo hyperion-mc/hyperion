@@ -699,11 +699,13 @@ impl IoBuf {
         channel: ChannelId,
         packets: &[u8],
         exclude: Option<ConnectionId>,
+        receiver: ProxyId,
     ) {
         self.add_proxy_message(&IntermediateServerToProxyMessage::SubscribeChannelPackets(
             intermediate::SubscribeChannelPackets {
                 channel_id: channel.inner(),
                 exclude,
+                receiver,
                 data: packets,
             },
         ));
@@ -721,5 +723,127 @@ impl IoBuf {
         self.add_proxy_message(&IntermediateServerToProxyMessage::Shutdown(
             intermediate::Shutdown { stream },
         ));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::Arc;
+
+    use hyperion_proxy_proto::ArchivedServerToProxyMessage;
+
+    use super::*;
+    use crate::{CompressionThreshold, Global, common::Shared, simulation::EgressComm};
+
+    /// A [`Compose`] with two proxies registered, and the receiving end of each proxy's channel.
+    ///
+    /// This is the smallest thing that can tell the two multi-proxy failure modes apart: with one
+    /// proxy every message goes to the only channel there is, so nothing that routes wrongly can
+    /// be observed at all.
+    pub fn two_proxies() -> (
+        Compose,
+        tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
+        tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
+    ) {
+        let (zero_tx, zero_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (one_tx, one_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut io_buf = IoBuf::default();
+        io_buf.add_proxy(ProxyId::new(0), EgressComm::from(zero_tx));
+        io_buf.add_proxy(ProxyId::new(1), EgressComm::from(one_tx));
+
+        let compression_level = CompressionLvl::new(4).unwrap();
+        let compose = Compose::new(
+            compression_level,
+            Global::new(Arc::new(Shared {
+                compression_threshold: CompressionThreshold(256),
+                compression_level,
+            })),
+            io_buf,
+        );
+
+        (compose, zero_rx, one_rx)
+    }
+
+    /// Reads one framed message off a proxy's channel and tells you which variant it was.
+    pub fn next_variant(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
+    ) -> Option<String> {
+        let bytes = rx.try_recv().ok()?;
+        // `encode_proxy_message` writes an eight-byte big-endian length before the rkyv body.
+        let body = &bytes[size_of::<u64>()..];
+        // rkyv reads the root through self-relative pointers at the end of the buffer, so the
+        // body has to be aligned for the archived type. The eight-byte prefix preserves alignment
+        // mod 8; what it relies on is the allocator handing `Bytes` a block that was aligned to
+        // begin with, which is true of the system allocator but not promised by `Vec<u8>`'s
+        // layout. Assert rather than discover it as a misread field.
+        debug_assert_eq!(
+            body.as_ptr() as usize % align_of::<u64>(),
+            0,
+            "the rkyv body must be aligned for the archived message"
+        );
+        let message = unsafe { rkyv::access_unchecked::<ArchivedServerToProxyMessage<'_>>(body) };
+        Some(
+            match message {
+                ArchivedServerToProxyMessage::UpdatePlayerPositions(_) => "UpdatePlayerPositions",
+                ArchivedServerToProxyMessage::AddChannel(_) => "AddChannel",
+                ArchivedServerToProxyMessage::UpdateChannelPositions(_) => "UpdateChannelPositions",
+                ArchivedServerToProxyMessage::RemoveChannel(_) => "RemoveChannel",
+                ArchivedServerToProxyMessage::SubscribeChannelPackets(_) => {
+                    "SubscribeChannelPackets"
+                }
+                ArchivedServerToProxyMessage::BroadcastGlobal(_) => "BroadcastGlobal",
+                ArchivedServerToProxyMessage::BroadcastLocal(_) => "BroadcastLocal",
+                ArchivedServerToProxyMessage::BroadcastChannel(_) => "BroadcastChannel",
+                ArchivedServerToProxyMessage::Unicast(_) => "Unicast",
+                ArchivedServerToProxyMessage::SetReceiveBroadcasts(_) => "SetReceiveBroadcasts",
+                ArchivedServerToProxyMessage::Shutdown(_) => "Shutdown",
+            }
+            .to_owned(),
+        )
+    }
+
+    /// `IoBuf::shutdown` is what every validation failure calls. What lands on the wire has to be
+    /// a `Shutdown`, on the one proxy holding the connection, and nothing at all on the other.
+    #[test]
+    fn shutdown_reaches_one_proxy_as_a_shutdown() {
+        let (compose, mut zero_rx, mut one_rx) = two_proxies();
+
+        compose
+            .io_buf()
+            .shutdown(ConnectionId::new(1, ProxyId::new(0)));
+
+        assert_eq!(
+            next_variant(&mut zero_rx).as_deref(),
+            Some("Shutdown"),
+            "the proxy holding the connection must be told to close it"
+        );
+        assert!(
+            next_variant(&mut one_rx).is_none(),
+            "a proxy that does not hold the connection must hear nothing"
+        );
+    }
+
+    /// The answer to a subscribe request belongs to the proxy that asked.
+    #[test]
+    fn a_subscribe_is_delivered_only_to_the_asking_proxy() {
+        let (compose, mut zero_rx, mut one_rx) = two_proxies();
+
+        compose.io_buf().send_subscribe_channel_packets(
+            ChannelId::new(7),
+            &[1, 2, 3],
+            None,
+            ProxyId::new(0),
+        );
+
+        assert_eq!(
+            next_variant(&mut zero_rx).as_deref(),
+            Some("SubscribeChannelPackets"),
+            "the proxy that asked must get its answer"
+        );
+        assert!(
+            next_variant(&mut one_rx).is_none(),
+            "a proxy that never asked must not be told to subscribe anyone"
+        );
     }
 }

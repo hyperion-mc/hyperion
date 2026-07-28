@@ -12,7 +12,7 @@ use valence_protocol::{
 use valence_server::ItemKind;
 
 use super::blocks::RayCollision;
-use crate::simulation::skin::PlayerSkin;
+use crate::{net::ProxyId, simulation::skin::PlayerSkin};
 
 #[derive(Component, Default, Debug)]
 pub struct ItemDropEvent {
@@ -214,6 +214,15 @@ pub struct HitGroundEvent {
 }
 
 /// A proxy has asked for the packets needed to make a player subscribed to this channel see the
-/// channel's entity. The inner value is the channel entity.
+/// channel's entity.
+///
+/// The answer belongs to the proxy that asked and to no other: it subscribes that proxy's players,
+/// and a proxy that never asked has no player waiting for it. So the asker is carried here rather
+/// than inferred later, and [`crate::net::intermediate`] filters the reply on it.
 #[derive(Copy, Clone, Debug)]
-pub struct RequestSubscribeChannelPackets(pub Entity);
+pub struct RequestSubscribeChannelPackets {
+    /// The channel entity whose spawn packets were asked for.
+    pub channel: Entity,
+    /// The proxy that asked.
+    pub receiver: ProxyId,
+}

@@ -74,16 +74,15 @@ impl BufferedEgress {
     pub fn handle_packet(&mut self, message: &ArchivedServerToProxyMessage<'_>) {
         match message {
             ArchivedServerToProxyMessage::UpdatePlayerPositions(packet) => {
-                let mut players = Vec::with_capacity(packet.stream.len());
+                let mut players = Vec::with_capacity(packet.players.len());
 
-                for (stream, position) in packet.stream.iter().zip(packet.positions.iter()) {
-                    let Ok(stream) = rkyv::deserialize::<u64, !>(stream);
-                    let Ok(position) = rkyv::deserialize::<_, !>(position);
-                    let position = I16Vec2::from(position);
+                for player in packet.players.iter() {
+                    let Ok(stream) = rkyv::deserialize::<u64, !>(&player.stream);
+                    let Ok(position) = rkyv::deserialize::<_, !>(&player.position);
 
                     players.push(Player {
                         stream,
-                        chunk_position: position,
+                        chunk_position: I16Vec2::from(position),
                     });
                 }
 

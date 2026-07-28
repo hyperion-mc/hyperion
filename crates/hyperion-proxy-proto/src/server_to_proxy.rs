@@ -2,11 +2,24 @@ use rkyv::{Archive, Deserialize, Serialize, with::InlineAsBox};
 
 use crate::ChunkPosition;
 
+/// Where one player is, for the proxy's regional-broadcast BVH.
+#[derive(Archive, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[rkyv(derive(Debug))]
+pub struct UpdatePlayerPosition {
+    pub stream: u64,
+    pub position: ChunkPosition,
+}
+
+/// One entry per player, rather than a `Vec` of streams beside a `Vec` of positions.
+///
+/// The pairing used to live in the index: the game server filtered the streams down to the ones on
+/// the receiving proxy and left the positions whole, so the proxy's zip paired every player with
+/// somebody else's chunk and regional broadcasts reached the wrong people. A struct per player
+/// makes that mistake unrepresentable rather than merely fixed.
 #[derive(Archive, Deserialize, Serialize, Clone, PartialEq)]
 #[rkyv(derive(Debug))]
 pub struct UpdatePlayerPositions {
-    pub stream: Vec<u64>,
-    pub positions: Vec<ChunkPosition>,
+    pub players: Vec<UpdatePlayerPosition>,
 }
 
 #[derive(Archive, Deserialize, Serialize, Clone, Copy, PartialEq)]
