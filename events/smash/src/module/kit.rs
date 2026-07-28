@@ -84,6 +84,50 @@ impl Default for KitStats {
     }
 }
 
+/// The skin the kit's mob wears, as a Mojang-signed profile property.
+///
+/// On the kit prefab and not on the player. Which mob you are is the relation
+/// `(Playing, kit)`, so the look belongs to the thing that edge points at, and
+/// a player wears it for exactly as long as the edge exists. Nothing copies it
+/// into a field on the player except the one adapter system that has to hand
+/// it to a host that speaks profiles.
+///
+/// Signed, and not merely present, because that is what the client enforces.
+/// `SkinManager.createLookup` filters on `!requireSecure || skin.secure()`, and
+/// `PlayerInfo.createSkinLookup` passes `requireSecure = !isLocalPlayer`, so an
+/// unsigned `textures` property dresses you up for yourself alone and leaves
+/// everyone else looking at Steve. See `skins/README.md`.
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+pub struct KitSkin {
+    /// Base64 of the Mojang textures payload: the `value` of the property.
+    pub textures: &'static str,
+    /// Base64 RSA-SHA1 signature over `textures`, by Mojang's profile property
+    /// key.
+    pub signature: &'static str,
+}
+
+/// Declare a kit's skin from the pair of files in `events/smash/skins/`.
+///
+/// A macro rather than two [`include_str!`] calls at each call site, so a kit
+/// file names its mob once and cannot pair one mob's payload with another's
+/// signature. Paths are anchored at `CARGO_MANIFEST_DIR` rather than written
+/// relative to the calling file, so moving a kit module does not silently
+/// break its skin.
+#[macro_export]
+macro_rules! kit_skin {
+    ($mob:literal) => {
+        $crate::module::kit::KitSkin {
+            textures: include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/skins/",
+                $mob,
+                ".value"
+            )),
+            signature: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/skins/", $mob, ".sig")),
+        }
+    };
+}
+
 /// Human-readable kit name, and the key the lobby selects on.
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct KitName(pub &'static str);
@@ -279,6 +323,13 @@ impl<'w> KitBuilder<'w> {
         self
     }
 
+    /// Give the kit its mob's skin. Write it as `kit_skin!("zombie")`.
+    #[must_use]
+    pub fn skin(self, skin: KitSkin) -> Self {
+        self.kit.set(skin);
+        self
+    }
+
     /// Add one of the kit's starting abilities.
     #[must_use]
     pub fn ability(self, spec: AbilitySpec) -> Self {
@@ -433,6 +484,18 @@ pub fn grant_ultimate(world: &World, player: EntityView<'_>, seconds: f32) -> bo
     instance.set(GrantedFor { remaining: seconds });
     player.add((Grants, instance));
     true
+}
+
+/// The skin of the mob `player` is currently playing as.
+///
+/// Read through `(Playing, kit)` on every call rather than cached on the
+/// player, so a kit change cannot leave a stale look behind: there is only one
+/// copy of the answer and it lives on the kit.
+#[must_use]
+pub fn skin_of(player: EntityView<'_>) -> Option<KitSkin> {
+    player
+        .find_target(Playing, |_| true)?
+        .try_get::<&KitSkin>(|skin| *skin)
 }
 
 /// The name of the ultimate `player`'s kit declares, whether or not they hold
@@ -592,6 +655,7 @@ impl Module for KitModule {
         world.component::<KitCost>();
         world.component::<KitBlurb>();
         world.component::<KitMob>();
+        world.component::<KitSkin>();
         world.component::<Ultimate>();
         world.component::<Playing>().add(flecs::Exclusive);
     }

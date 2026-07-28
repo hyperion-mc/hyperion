@@ -11,18 +11,14 @@ use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
 use valence_text::IntoText;
 
-use crate::{
-    module::{
-        attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
-        damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
-        tab_list::TabListModule, vanish::VanishModule,
-    },
-    skin::SkinModule,
+use crate::module::{
+    attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
+    damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
+    tab_list::TabListModule, vanish::VanishModule,
 };
 
 mod command;
 mod module;
-mod skin;
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Team {
@@ -129,7 +125,6 @@ impl Module for BedwarsModule {
         world.import::<BowModule>();
         world.import::<RegenerationModule>();
         world.import::<DamageModule>();
-        world.import::<SkinModule>();
         world.import::<VanishModule>();
         world.import::<hyperion_permission::PermissionModule>();
         world.import::<hyperion_utils::HyperionUtilsModule>();

@@ -43,6 +43,7 @@ impl Module for SkySquid {
             death: "minecraft:entity.squid.death",
         })
         .cost(3000)
+        .skin(crate::kit_skin!("sky_squid"))
         .blurb("Seven pellets up close, and one second of being untouchable.")
         .mob("minecraft:squid")
         .ability(AbilitySpec {

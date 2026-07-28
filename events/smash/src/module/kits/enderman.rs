@@ -49,6 +49,7 @@ impl Module for Enderman {
             death: "minecraft:entity.enderman.death",
         })
         .cost(4000)
+        .skin(crate::kit_skin!("enderman"))
         .blurb("Throw the arena at people, then blink away before they reach you.")
         .mob("minecraft:enderman")
         .ability(AbilitySpec {

@@ -21,28 +21,33 @@ use glam::Vec3;
 use hyperion::{
     hyperion_minecraft_proto::{
         generated::packet_id::play::clientbound::PacketId,
-        packets::{
-            play::{
-                chunk::{LevelParticles, Particle},
-                clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
-                player::{
-                    DisplaySlot, NumberFormat, ObjectiveDisplay, ObjectiveRenderType, SetObjective,
-                    SetScore,
-                },
+        packets::play::{
+            chunk::{LevelParticles, Particle},
+            clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
+            player::{
+                DisplaySlot, NumberFormat, ObjectiveDisplay, ObjectiveRenderType, SetObjective,
+                SetScore,
             },
-            play_login::{GameEvent, GameType},
         },
     },
     net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
-    simulation::{PendingTeleportation, Velocity, metadata::living_entity::Health},
+    simulation::{
+        PendingTeleportation, Velocity,
+        gamemode::{DefaultGamemode, Gamemode},
+        metadata::living_entity::Health,
+        skin::PlayerSkin,
+    },
     valence_protocol::{ItemKind, ItemStack},
 };
 use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
 use valence_nbt::{Compound, List, Value};
 
-use crate::server::{
-    Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text,
+use crate::{
+    module::kit::{self, Playing},
+    server::{
+        Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text,
+    },
 };
 
 /// One deferred write.
@@ -219,6 +224,32 @@ impl Module for SmashAdapterModule {
         world.import::<crate::mirror::MirrorModule>();
         world.import::<crate::input::InputModule>();
 
+        // Every player is in adventure, so an arena cannot be dug up. Set here
+        // rather than per player: hyperion puts a joining player into whatever
+        // this singleton says, and the one thing smash wants to say about
+        // gamemode is the default.
+        world.set(DefaultGamemode(Gamemode::Adventure));
+
+        // The one place a kit's look crosses into the host. `KitSkin` lives on
+        // the kit prefab and is reached through `(Playing, kit)`; hyperion
+        // speaks profiles and wants a `PlayerSkin` on the player, so this is
+        // the translation and not a second copy of the truth. Reacting to the
+        // relation rather than to a call inside `kit::apply` means anything
+        // that changes which mob you are dresses you correctly, including a
+        // path nobody has written yet.
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with((Playing, id::<flecs::Wildcard>()))
+            .each_entity(|player, ()| {
+                let Some(skin) = kit::skin_of(player) else {
+                    return;
+                };
+                player.set(PlayerSkin::new(
+                    skin.textures.trim().to_owned(),
+                    skin.signature.trim().to_owned(),
+                ));
+            });
+
         // PostUpdate rather than OnStore: hyperion's own inventory and entity
         // state sync run in OnStore, so the writes have to already be on the
         // components by then or they wait a further tick.
@@ -326,22 +357,19 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             if !entity.is_alive() {
                 return;
             }
-            let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
-                return;
-            };
-            let mode = if spectating {
-                GameType::Spectator
+            // Set the component and let hyperion's roster module publish it.
+            // Writing the `GameEvent` here was the bug this replaces: it told
+            // the client one thing and left the server believing another, so a
+            // dead player was a spectator to their own client, a survival
+            // player to the tab list, and whatever they started as to every
+            // rule the server enforces. Coming back is a return to the
+            // server's default rather than to a hardcoded survival, which is
+            // what made respawning hand back the ability to break blocks.
+            if spectating {
+                entity.add_enum(Gamemode::Spectator);
             } else {
-                GameType::Survival
-            };
-            let packet = GameEvent {
-                event: GameEvent::CHANGE_GAME_MODE,
-                param: f32::from(mode.to_id()),
-            };
-            let _unused = compose.unicast(
-                Clientbound::new(PacketId::GameEvent.to_raw(), &packet),
-                connection,
-            );
+                world.get::<&DefaultGamemode>(|default| entity.add_enum(default.0));
+            }
         }
         Op::Play { at, cue } => play_cue(compose, at, cue),
         Op::PlaySound { at, sound } => {

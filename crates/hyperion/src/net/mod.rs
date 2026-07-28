@@ -208,6 +208,21 @@ impl<'a> DataBundle<'a> {
         Ok(())
     }
 
+    /// Send to every player, optionally skipping one.
+    ///
+    /// `exclude` is not a nicety: the refresh that re-sends a player to
+    /// everyone tells the others to drop and re-add that player's entity, and
+    /// the one client that must never be told to drop it is the player
+    /// themselves.
+    pub fn broadcast(&self, exclude: Option<ConnectionId>) -> anyhow::Result<()> {
+        if self.data.is_empty() {
+            return Ok(());
+        }
+
+        self.compose.io_buf.broadcast_raw(&self.data, exclude);
+        Ok(())
+    }
+
     // todo: use builder pattern for excluding
     pub fn broadcast_local(&self, center: I16Vec2) -> anyhow::Result<()> {
         if self.data.is_empty() {

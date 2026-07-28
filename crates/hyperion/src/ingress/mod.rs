@@ -5,7 +5,6 @@ use hyperion_minecraft_proto::{
     packets::play::clientbound::{PlayerInfoRemove, RemoveEntities},
 };
 use hyperion_utils::EntityExt;
-use sha2::Digest;
 use tracing::{error, info, info_span};
 
 use crate::{
@@ -39,17 +38,6 @@ impl Default for ServerPingResponse {
             max_players: 12_000,
         }
     }
-}
-
-/// Get a [`uuid::Uuid`] based on the given user's name.
-pub(crate) fn offline_uuid(username: &str) -> uuid::Uuid {
-    let digest = sha2::Sha256::digest(username);
-    let digest: [u8; 32] = digest.into();
-    let (&digest, ..) = digest.split_array_ref::<16>();
-
-    // todo: I have no idea which way we should go (be or le)
-    let digest = u128::from_be_bytes(digest);
-    uuid::Uuid::from_u128(digest)
 }
 
 fn remove_player_from_visibility(world: &World) {

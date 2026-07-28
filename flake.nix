@@ -102,6 +102,7 @@
               root = ./.;
               tools = ./tools;
               protoSource = ./crates/hyperion-minecraft-proto/src;
+              kitSkins = ./events/smash/skins;
               genmap = ./crates/hyperion-genmap/src/lib.rs;
             };
           };
@@ -126,6 +127,22 @@
               runtimeInputs = [ toolchain ] ++ deps;
             };
 
+          # Signature checking, and nothing else, so this stays a small closure
+          # a `nix flake check` can afford.
+          kitSkinPython = pkgs.python3.withPackages (python: [ python.cryptography ]);
+
+          # The files the skin check reads: the payloads, Mojang's keys, and the
+          # kit sources that declare which payload is whose. Narrow on purpose,
+          # so editing an unrelated Rust file does not rebuild the check.
+          kitSkinSource = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./nix/verify-kit-skins.py
+              ./events/smash/skins
+              ./events/smash/src/module/kits
+            ];
+          };
+
           checkScripts = lib.mapAttrs mkScript {
             # `flecs_ecs_sys`'s default features include `regenerate_binding`,
             # whose build script writes bindgen output into its own source
@@ -146,6 +163,21 @@
             '';
 
             fmt.text = ''cargo fmt --all "$@"'';
+
+            # Every kit's skin has to be one the client will show to other
+            # players, and that means Mojang-signed: an unsigned `textures`
+            # property renders for its wearer and for nobody else. See
+            # `events/smash/skins/README.md` for where the client enforces it.
+            check-kit-skins = {
+              deps = [
+                kitSkinPython
+                pkgs.git
+              ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                exec python3 "$root/nix/verify-kit-skins.py"
+              '';
+            };
 
             lint.text = ''cargo clippy ${clippyArgs} -- -D warnings'';
 
@@ -619,6 +651,25 @@
               '';
             };
 
+            # The same gate again, driving a client that asks who a player is
+            # rather than what they can do: two connections under one IGN,
+            # whether a dig is refused, and whether the profile the other
+            # player receives carries the kit's mob. Ports default off
+            # `completions-e2e`'s so all five gates can run side by side.
+            smash-identity-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/identity-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 5000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 5000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # `nix run .#dev` runs bedwars; this runs the same stack on smash.
             smash-dev = {
               deps = [ pkgs.process-compose pkgs.git ];
@@ -795,12 +846,38 @@
               timeout = 420;
             };
 
+            # Identity, permissions and appearance, on a real connection.
+            # Separate from `smash-e2e` because it fails for entirely different
+            # reasons: that one asks whether a match happens, this one asks who
+            # the people in it are.
+            smash-identity-e2e = e2e.mkCheck {
+              name = "hyperion-smash-identity-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "identity-check.py";
+              timeout = 300;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
             smash-e2e-app = scripts.smash-e2e;
             completions-e2e-app = scripts.completions-e2e;
             smash-selector-e2e-app = scripts.smash-selector-e2e;
+            smash-identity-e2e-app = scripts.smash-identity-e2e;
+
+            # Every kit's skin, checked offline against Mojang's committed
+            # public keys. A derivation rather than only an app, because the
+            # failure it catches is silent: an unsigned payload sends cleanly,
+            # renders for its wearer, and leaves everyone else seeing Steve.
+            kit-skins-signed =
+              pkgs.runCommand "hyperion-kit-skins-signed"
+                {
+                  nativeBuildInputs = [ kitSkinPython ];
+                }
+                ''
+                  python3 ${kitSkinSource}/nix/verify-kit-skins.py | tee "$out"
+                '';
 
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;

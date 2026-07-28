@@ -36,6 +36,7 @@ impl Module for Zombie {
             death: "minecraft:entity.zombie.death",
         })
         .cost(6000)
+        .skin(crate::kit_skin!("zombie"))
         .blurb("Something for every range, and nothing outstanding at any of them.")
         .mob("minecraft:zombie")
         .ability(AbilitySpec {
