@@ -9,6 +9,7 @@
 //! modules alongside this one cover the difference.
 
 pub mod data_component;
+pub mod java_enum;
 pub mod packet_id;
 pub mod registry;
 pub mod version;

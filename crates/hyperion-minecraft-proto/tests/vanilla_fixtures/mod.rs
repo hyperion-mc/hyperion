@@ -48,6 +48,25 @@ pub fn bytes(name: &str) -> Vec<u8> {
         .collect()
 }
 
+/// Every fixture name starting with `prefix`.
+///
+/// For a test that has to see the whole of a group rather than the entries it
+/// thought of: a name the harness emits and no test asks about is invisible to
+/// `get`, which is how a dropped enum constant would go unnoticed.
+pub fn keys_with_prefix(prefix: &str) -> Vec<&'static str> {
+    let text = include_str!("../fixtures/vanilla.json");
+    let needle = format!("\"{prefix}");
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(found) = text[at..].find(&needle) {
+        let start = at + found + 1;
+        let end = start + text[start..].find('"').expect("fixture name is terminated");
+        out.push(&text[start..end]);
+        at = end;
+    }
+    out
+}
+
 /// A fixture read as a number.
 ///
 /// # Panics

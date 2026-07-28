@@ -43,6 +43,11 @@ def snake(name: str) -> str:
     return f"r#{bare}" if keyword.iskeyword(bare) else bare
 
 
+def camel_to_snake(name: str) -> str:
+    """`BossBarColor` -> `boss_bar_color`, for a module name."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
 def screaming(name: str) -> str:
     return snake(name).upper()
 
@@ -497,6 +502,230 @@ pub static NAMES_IN_ID_ORDER: [&str; {count}] = [
     return "".join(out)
 
 
+# ---------------------------------------------------------------------------
+# Vanilla Java enums, as closed Rust enums
+#
+# A Java enum's constant order is a wire table: `writeEnum` sends the ordinal
+# and `idMapper` sends a declared field. That makes it a definition with a
+# source of truth in exactly the way a registry is, and transcribing one by
+# hand is the same defect -- with the extra hazard that an ordinal set carries
+# no names on the wire, so a transcription one constant out fails as a wrong
+# value rather than as a lookup miss.
+#
+# Which classes, and which of the two numberings each one uses, is declared in
+# `JAVA_ENUMS` in nix/extract-protocol.py and resolved there against the
+# decompiled source. Nothing here decides anything; this only renders.
+# ---------------------------------------------------------------------------
+
+JAVA_ENUM_WIDTHS = {"u8": 1, "u16": 2, "u32": 4}
+
+
+def java_enum_repr(values):
+    """Narrowest unsigned `#[repr]` that holds every discriminant."""
+    top = max(values)
+    return "u8" if top <= 0xFF else ("u16" if top <= 0xFFFF else "u32")
+
+
+JAVA_ENUM_BODY = '''
+//! `{owner}`, as a closed Rust enum.
+
+use crate::{{Decode, Encode}};
+
+/// `{owner}` ({count} constants).
+///
+/// The number on the wire is {numbered}. The discriminant *is* that number, so
+/// [`{name}::id`] is an `as` cast the optimiser deletes.
+///
+/// Closed on purpose: every constant this version declares is a variant, so a
+/// caller cannot name one that does not exist. The one place a value might not
+/// be in the set is a number arriving off the wire, and [`{name}::from_id`] is
+/// the only door for it; the `Decode` derive refuses the same values with
+/// `Error::InvalidEnum`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Encode, Decode)]
+#[repr({width})]
+pub enum {name} {{
+{variants}}}
+
+/// Constant names in wire-number order, so the index is the number.
+///
+/// Mojang's own spelling, so a name here greps straight back to the
+/// declaration in `{owner}`.
+pub static NAMES_IN_ID_ORDER: [&str; {count}] = [{names}];
+
+/// Discriminants ordered by name, so [`{name}::from_name`] is a binary search
+/// and not a scan. Sorted at generation time rather than assumed of the class.
+static BY_NAME: [{width}; {count}] = [{by_name}];
+
+impl {name} {{
+    /// Every constant, in wire-number order, so the index is the number.
+    pub const ALL: &'static [Self] = &[{all}];
+    /// How many constants this version declares, so every valid number is
+    /// below it.
+    pub const COUNT: usize = {count};
+    /// The Java class these values come from.
+    pub const JAVA_CLASS: &'static str = "{owner}";
+
+    /// The number on the wire.
+    ///
+    /// `#[repr({width})]` on the enum is what makes this an `as` cast rather
+    /// than a lookup: for a variant known at compile time the whole call folds
+    /// to the number.
+    #[must_use]
+    pub const fn id(self) -> i32 {{
+        self as i32
+    }}
+
+    /// Mojang's name for the constant, e.g. `{first}`.
+    ///
+    /// Not `const`: it reads a static table. The direction that is const is
+    /// [`Self::id`], which is the one that reaches the wire.
+    #[must_use]
+    pub fn name(self) -> &'static str {{
+        NAMES_IN_ID_ORDER[self as usize]
+    }}
+
+    /// Resolve a number that arrived off the wire.
+    ///
+    /// The decode boundary, and the only place a `{name}` can fail to exist.
+    #[must_use]
+    pub fn from_id(id: i32) -> Option<Self> {{
+        usize::try_from(id)
+            .ok()
+            .and_then(|index| Self::ALL.get(index).copied())
+    }}
+
+    /// Resolve a name only known at run time.
+    ///
+    /// A name known at compile time should be the variant instead, so that a
+    /// version bump dropping it fails to build at the line that wanted it.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {{
+        let found = BY_NAME
+            .binary_search_by(|&index| NAMES_IN_ID_ORDER[index as usize].cmp(name))
+            .ok()?;
+        Self::ALL.get(BY_NAME[found] as usize).copied()
+    }}
+}}
+
+impl core::fmt::Display for {name} {{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {{
+        f.write_str(self.name())
+    }}
+}}
+
+// The zero-cost claim, checked by the compiler rather than by a test.
+//
+// A `const` context cannot call anything the compiler is unable to evaluate at
+// compile time, so if `id()` were ever a table lookup or a `match` over a
+// runtime value instead of a cast off the discriminant, this line would stop
+// building. It is the proof, not a restatement of it.
+const _: () = assert!({name}::ALL[{last}].id() == {last_value});
+
+// And the size, for the same reason: `#[repr({width})]` is what makes the
+// discriminant the number, and a value of this enum is that many bytes.
+const _: () = assert!(core::mem::size_of::<{name}>() == {size});
+'''
+
+
+def emit_java_enum(doc, entry):
+    v = doc["version"]
+    name = entry["rustName"]
+    owner = entry["type"]
+    constants = entry["constants"]
+    width = java_enum_repr([c["value"] for c in constants])
+    # The extractor refuses a set that is not 0..n-1, so the index into `ALL`
+    # is the number and `from_id` needs no search.
+    ordered = sorted(
+        ((pascal(c["name"].lower()), c["name"], c["value"]) for c in constants),
+        key=lambda item: item[2],
+    )
+    by_name = sorted(range(len(ordered)), key=lambda i: ordered[i][1])
+
+    variants = []
+    for index, (ident, java, value) in enumerate(ordered):
+        variants.append("    /// `{}`.\n".format(java))
+        if index == 0:
+            # Mojang declares no default, but the derive needs one variant
+            # marked and every hand-written copy of these defaulted to the
+            # first constant. First-declared is the only choice that is a fact
+            # about the source rather than a preference.
+            variants.append("    #[default]\n")
+        variants.append("    {} = {},\n".format(ident, value))
+
+    numbered = (
+        "`ordinal()`, which is what `FriendlyByteBuf.writeEnum` sends"
+        if entry["numberedBy"] == "ordinal"
+        else "the `{}` field each constant declares, which is what "
+        "`ByteBufCodecs.idMapper` sends".format(entry["numberedBy"])
+    )
+
+    return HEADER.format(version=v["id"], protocol=v["protocolVersion"]) + JAVA_ENUM_BODY.format(
+        owner=owner,
+        count=len(constants),
+        numbered=numbered,
+        name=name,
+        width=width,
+        variants="".join(variants),
+        names=", ".join('"{}"'.format(java) for _, java, _ in ordered),
+        by_name=", ".join(str(i) for i in by_name),
+        all=", ".join("Self::{}".format(ident) for ident, _, _ in ordered),
+        first=ordered[0][1],
+        last=len(ordered) - 1,
+        last_value=ordered[-1][2],
+        size=JAVA_ENUM_WIDTHS[width],
+    )
+
+
+JAVA_ENUM_PREAMBLE = '''
+//! Vanilla Java enums whose constant order is a wire table.
+//!
+//! A registry entry travels as an index into a named list, and
+//! [`crate::generated::registry`] covers those. A Java enum travels as an
+//! index into its own declaration order -- `FriendlyByteBuf.writeEnum` sends
+//! `ordinal()` -- or as a number each constant declares, which
+//! `ByteBufCodecs.idMapper` reads out of a field. Both are definitions with a
+//! source of truth in the jar, and both were transcribed by hand here until
+//! this module.
+//!
+//! # Why these classes and not others
+//!
+//! Where a packet's layout is recovered in full, `build.rs` already emits the
+//! enums it mentions from `protocol.json`, and those live next to the packet
+//! that uses them. The classes here are the ones no recovered layout reaches:
+//! each is carried by a packet whose encoder the extractor refused
+//! (`set_player_team`, `set_objective`, `set_equipment`, `commands`,
+//! `level_chunk_with_light`) or, for the boss bar pair, by a packet that was
+//! being extracted as carrying no bytes at all. They are generated straight
+//! from the decompiled class rather than waiting for those layouts.
+//!
+//! # Two numberings, and why each class says which it uses
+//!
+//! `EquipmentSlot` sends `ordinal()` from `ClientboundSetEquipmentPacket` and
+//! `s.id` from its own `STREAM_CODEC`, and the two disagree: `OFFHAND` is 1 by
+//! ordinal and 5 by id. Which one a class uses is declared in `JAVA_ENUMS` in
+//! `nix/extract-protocol.py` and named in each module's own documentation,
+//! because a value read with the wrong table is a wrong value rather than a
+//! failed lookup.
+'''
+
+
+def emit_java_enums(doc):
+    """`java_enum/mod.rs`, plus one file per class."""
+    v = doc["version"]
+    entries = doc["javaEnums"]
+    files = {
+        "java_enum/{}.rs".format(camel_to_snake(e["rustName"])): emit_java_enum(doc, e)
+        for e in entries
+    }
+    out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"]), JAVA_ENUM_PREAMBLE]
+    for e in entries:
+        module = camel_to_snake(e["rustName"])
+        out.append("\npub mod {};\n".format(module))
+        out.append("pub use {}::{};\n".format(module, e["rustName"]))
+    files["java_enum/mod.rs"] = "".join(out)
+    return files
+
+
 def emit_registries(doc: dict) -> dict[str, str]:
     """`registry/mod.rs`, plus one file per registry."""
     v = doc["version"]
@@ -679,6 +908,7 @@ def emit_mod(doc: dict) -> str:
 //! modules alongside this one cover the difference.
 
 pub mod data_component;
+pub mod java_enum;
 pub mod packet_id;
 pub mod registry;
 pub mod version;
@@ -713,6 +943,7 @@ def main() -> int:
     # One file per registry rather than one file of 95, so a reader opening
     # `registry/sound_event.rs` gets 1968 lines and not 35000.
     written.update(emit_registries(doc))
+    written.update(emit_java_enums(doc))
     for name, text in sorted(written.items()):
         path = args.out / name
         path.parent.mkdir(parents=True, exist_ok=True)

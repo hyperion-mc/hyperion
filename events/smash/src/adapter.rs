@@ -729,7 +729,7 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &Text, lines: &[SidebarLi
     );
 
     let display = SetDisplayObjective {
-        id: DisplaySlot::Sidebar.to_id(),
+        id: DisplaySlot::Sidebar.id(),
         objective_name: OBJECTIVE,
     };
     let _unused = compose.unicast(

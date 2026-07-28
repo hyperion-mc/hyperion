@@ -449,59 +449,25 @@ impl<'a> Decode<'a> for SetEntityData<'a> {
 
 /// Where a piece of equipment is worn.
 ///
-/// The number is `EquipmentSlot.ordinal()`, which is what
-/// [`SetEquipment`] writes and what its reader indexes `EquipmentSlot.VALUES`
-/// with. It is *not* `EquipmentSlot.STREAM_CODEC`, which sends the enum's own
-/// `id` field: those two orders agree on six of the eight constants and
-/// disagree on `OffHand` and `Head`, so using one where the other belongs
-/// silently moves a helmet onto the wrong entity part.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum EquipmentSlot {
-    MainHand = 0,
-    OffHand = 1,
-    Feet = 2,
-    Legs = 3,
-    Chest = 4,
-    Head = 5,
-    Body = 6,
-    Saddle = 7,
-}
+/// Generated from `net.minecraft.world.entity.EquipmentSlot`, numbered by
+/// `ordinal()` -- which is what [`SetEquipment`] writes and what its reader
+/// indexes `EquipmentSlot.VALUES` with. It is *not* that class's own
+/// `STREAM_CODEC`, which sends the `id` field: the two agree on six of the
+/// eight constants and disagree on `OffHand` and `Head`, so using one where
+/// the other belongs silently moves a helmet onto the wrong entity part. The
+/// generated module says the same thing at its own top.
+///
+/// This used to be written out here *and* in [`crate::packets::play::inventory`],
+/// two copies of one table with two different accessor names.
+pub use crate::generated::java_enum::EquipmentSlot;
 
-impl EquipmentSlot {
-    /// Every slot, in the order this packet numbers them.
-    pub const VALUES: [Self; 8] = [
-        Self::MainHand,
-        Self::OffHand,
-        Self::Feet,
-        Self::Legs,
-        Self::Chest,
-        Self::Head,
-        Self::Body,
-        Self::Saddle,
-    ];
-
-    /// The ordinal this packet writes.
-    #[must_use]
-    pub const fn to_raw(self) -> u8 {
-        self as u8
-    }
-
-    /// Resolve an ordinal, returning `None` for one no slot has.
-    #[must_use]
-    pub const fn from_raw(raw: u8) -> Option<Self> {
-        match raw {
-            0 => Some(Self::MainHand),
-            1 => Some(Self::OffHand),
-            2 => Some(Self::Feet),
-            3 => Some(Self::Legs),
-            4 => Some(Self::Chest),
-            5 => Some(Self::Head),
-            6 => Some(Self::Body),
-            7 => Some(Self::Saddle),
-            _ => None,
-        }
-    }
+/// The slot's ordinal as the one byte `SetEquipment` writes it in.
+///
+/// [`EquipmentSlot::id`] is the `i32` every other site wants; this packet
+/// packs the number into a byte alongside a continuation bit, so the narrowing
+/// happens once, here, against the `#[repr(u8)]` the generator emitted.
+pub(crate) const fn slot_byte(slot: EquipmentSlot) -> u8 {
+    slot as u8
 }
 
 /// One slot of a [`SetEquipment`].
@@ -548,10 +514,11 @@ impl SetEquipment<'_> {
         loop {
             let raw = reader.u8()?;
             let ordinal = raw & !EQUIPMENT_CONTINUE_MASK;
-            let slot = EquipmentSlot::from_raw(ordinal).ok_or_else(|| Error::InvalidEnum {
-                name: "EquipmentSlot",
-                value: i32::from(ordinal),
-            })?;
+            let slot =
+                EquipmentSlot::from_id(i32::from(ordinal)).ok_or_else(|| Error::InvalidEnum {
+                    name: "EquipmentSlot",
+                    value: i32::from(ordinal),
+                })?;
             let item = Slot::decode(reader, nbt)?;
             slots.push(EquipmentEntry { slot, item });
             if raw & EQUIPMENT_CONTINUE_MASK == 0 {
@@ -569,10 +536,10 @@ impl Encode for SetEquipment<'_> {
         };
         writer.var_int(self.entity);
         for entry in leading {
-            writer.u8(entry.slot.to_raw() | EQUIPMENT_CONTINUE_MASK);
+            writer.u8(slot_byte(entry.slot) | EQUIPMENT_CONTINUE_MASK);
             entry.item.encode(writer)?;
         }
-        writer.u8(last.slot.to_raw());
+        writer.u8(slot_byte(last.slot));
         last.item.encode(writer)
     }
 }

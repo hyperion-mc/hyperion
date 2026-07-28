@@ -2721,7 +2721,6 @@ pub mod play {
                     Self::BlockEntityData => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKENTITYDATAPACKET_STREAM_CODEC),
                     Self::BlockEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKEVENTPACKET_STREAM_CODEC),
                     Self::BlockUpdate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKUPDATEPACKET_STREAM_CODEC),
-                    Self::BossEvent => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBOSSEVENTPACKET_STREAM_CODEC),
                     Self::ChangeDifficulty => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHANGEDIFFICULTYPACKET_STREAM_CODEC),
                     Self::ChunkBatchFinished => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHUNKBATCHFINISHEDPACKET_STREAM_CODEC),
                     Self::ChunkBatchStart => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHUNKBATCHSTARTPACKET_STREAM_CODEC),

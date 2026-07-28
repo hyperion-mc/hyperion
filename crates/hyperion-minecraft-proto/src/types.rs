@@ -366,30 +366,16 @@ impl Encode for Identifier<'_> {
     }
 }
 
+/// Which face of a block a ray struck.
+///
+/// Generated: the discriminants are `net.minecraft.core.Direction`'s
+/// declaration order, which is what `FriendlyByteBuf.writeEnum` writes.
+pub use crate::generated::java_enum::Direction;
+
 impl<'a> Decode<'a> for Identifier<'a> {
     fn decode(reader: &mut Reader<'a>) -> Result<Self> {
         Self::new(reader.string()?)
     }
-}
-
-/// Which face of a block a ray struck.
-///
-/// Discriminants are `Direction`'s declaration order, which is what
-/// `FriendlyByteBuf.writeEnum` writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
-pub enum Direction {
-    /// Negative y.
-    Down = 0,
-    /// Positive y.
-    Up = 1,
-    /// Negative z.
-    North = 2,
-    /// Positive z.
-    South = 3,
-    /// Negative x.
-    West = 4,
-    /// Positive x.
-    East = 5,
 }
 
 /// Where a player's ray met a block.

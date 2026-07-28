@@ -1327,10 +1327,6 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKUPDATEPACK
     },
 ]);
 
-/// `net.minecraft.network.protocol.game.ClientboundBossEventPacket#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBOSSEVENTPACKET_STREAM_CODEC:
-    Wire = crate::generated::wire::Wire::Unit;
-
 /// `net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDCHANGEDIFFICULTYPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "difficulty", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_DIFFICULTY_STREAM_CODEC }, crate::generated::wire::Field { name: "locked", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_BOOL }]);
 

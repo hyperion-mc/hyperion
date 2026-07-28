@@ -192,7 +192,7 @@ impl Module for InventoryModule {
                         continue;
                     }
                     if idx == usize::from(hand_slot) {
-                        equipment.push((EquipmentSlot::MainHand, slot_of(&slot.stack)));
+                        equipment.push((EquipmentSlot::Mainhand, slot_of(&slot.stack)));
                     }
                     if let Some(worn) = worn_slot(idx) {
                         equipment.push((worn, slot_of(&slot.stack)));
@@ -1316,7 +1316,7 @@ const fn worn_slot(index: usize) -> Option<EquipmentSlot> {
         6 => Some(EquipmentSlot::Chest),
         7 => Some(EquipmentSlot::Legs),
         8 => Some(EquipmentSlot::Feet),
-        45 => Some(EquipmentSlot::OffHand),
+        45 => Some(EquipmentSlot::Offhand),
         _ => None,
     }
 }

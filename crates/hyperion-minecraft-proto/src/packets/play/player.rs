@@ -362,19 +362,17 @@ impl<'a> Decode<'a> for PlayerInfoUpdate<'a> {
     }
 }
 
-// --- disguised chat -------------------------------------------------------
+// The scoreboard, team, boss bar and chat-decoration enums that used to be
+// written out here are generated: their constant order is a table in the jar
+// and transcribing one is the same defect as transcribing a registry. Each
+// packet below still owns its own body, because it is the *bodies* the
+// extractor refuses, not the enums they carry.
+pub use crate::generated::java_enum::{
+    BossBarColor, BossBarOverlay, ChatTypeParameter, DisplaySlot, ObjectiveRenderType,
+    TeamCollisionRule, TeamColor, TeamVisibility,
+};
 
-/// Which value a chat decoration substitutes into its translation
-/// (`ChatTypeDecoration.Parameter`), as a `VarInt` id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
-pub enum ChatTypeParameter {
-    /// The sender's display name.
-    Sender = 0,
-    /// The recipient's display name, for direct and team messages.
-    Target = 1,
-    /// The message itself.
-    Content = 2,
-}
+// --- disguised chat -------------------------------------------------------
 
 /// How one chat type renders (`ChatTypeDecoration`).
 #[derive(Debug, Clone, PartialEq)]
@@ -1018,43 +1016,6 @@ impl<'a> Decode<'a> for Commands<'a> {
 
 // --- boss bar -------------------------------------------------------------
 
-/// A boss bar's colour (`BossEvent.BossBarColor`), as a `VarInt` ordinal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum BossBarColor {
-    /// Pink.
-    #[default]
-    Pink = 0,
-    /// Blue.
-    Blue = 1,
-    /// Red.
-    Red = 2,
-    /// Green.
-    Green = 3,
-    /// Yellow.
-    Yellow = 4,
-    /// Purple.
-    Purple = 5,
-    /// White.
-    White = 6,
-}
-
-/// How a boss bar is divided (`BossEvent.BossBarOverlay`), as a `VarInt`
-/// ordinal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum BossBarOverlay {
-    /// One continuous bar.
-    #[default]
-    Progress = 0,
-    /// Six notches.
-    Notched6 = 1,
-    /// Ten notches.
-    Notched10 = 2,
-    /// Twelve notches.
-    Notched12 = 3,
-    /// Twenty notches.
-    Notched20 = 4,
-}
-
 /// A boss bar's side effects on the world (`FLAG_DARKEN`, `FLAG_MUSIC`,
 /// `FLAG_FOG`), as a bitmask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -1291,80 +1252,6 @@ impl<'a> Decode<'a> for NumberFormat<'a> {
     }
 }
 
-/// Where an objective is drawn (`DisplaySlot`), as a `VarInt` id.
-///
-/// `ClientboundSetDisplayObjectivePacket.STREAM_CODEC` is
-/// `ByteBufCodecs.idMapper(DisplaySlot::byId, DisplaySlot::id)` and
-/// `DisplaySlot.id` is the constant's declaration index, so the sixteen team
-/// slots have to be spelled out for the three useful ones to land on the right
-/// numbers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum DisplaySlot {
-    /// `list`: beside the player's name in the tab list.
-    #[default]
-    List = 0,
-    /// `sidebar`: the panel on the right of the screen.
-    Sidebar = 1,
-    /// `below_name`: under the player's name tag in the world.
-    BelowName = 2,
-    /// `sidebar.team.black`, shown to players on the black team.
-    TeamBlack = 3,
-    /// `sidebar.team.dark_blue`.
-    TeamDarkBlue = 4,
-    /// `sidebar.team.dark_green`.
-    TeamDarkGreen = 5,
-    /// `sidebar.team.dark_aqua`.
-    TeamDarkAqua = 6,
-    /// `sidebar.team.dark_red`.
-    TeamDarkRed = 7,
-    /// `sidebar.team.dark_purple`.
-    TeamDarkPurple = 8,
-    /// `sidebar.team.gold`.
-    TeamGold = 9,
-    /// `sidebar.team.gray`.
-    TeamGray = 10,
-    /// `sidebar.team.dark_gray`.
-    TeamDarkGray = 11,
-    /// `sidebar.team.blue`.
-    TeamBlue = 12,
-    /// `sidebar.team.green`.
-    TeamGreen = 13,
-    /// `sidebar.team.aqua`.
-    TeamAqua = 14,
-    /// `sidebar.team.red`.
-    TeamRed = 15,
-    /// `sidebar.team.light_purple`.
-    TeamLightPurple = 16,
-    /// `sidebar.team.yellow`.
-    TeamYellow = 17,
-    /// `sidebar.team.white`.
-    TeamWhite = 18,
-}
-
-impl DisplaySlot {
-    /// The wire id, for the `VarInt` slot field of
-    /// [`crate::packets::play::clientbound::SetDisplayObjective`].
-    ///
-    /// That packet is generated, so its field is a plain `i32` rather than
-    /// this enum; going through here is what keeps a caller from writing the
-    /// number out by hand.
-    #[must_use]
-    pub const fn to_id(self) -> i32 {
-        self as i32
-    }
-}
-
-/// How an objective's score is drawn beside a name
-/// (`ObjectiveCriteria.RenderType`), as a `VarInt` ordinal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum ObjectiveRenderType {
-    /// The number itself.
-    #[default]
-    Integer = 0,
-    /// A row of hearts.
-    Hearts = 1,
-}
-
 /// The fields `SetObjective` writes only for `METHOD_ADD` and `METHOD_CHANGE`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectiveDisplay<'a> {
@@ -1494,73 +1381,6 @@ impl<'a> Decode<'a> for SetScore<'a> {
             number_format: Option::decode(reader)?,
         })
     }
-}
-
-/// When a team's name tags are visible (`Team.Visibility`), as a `VarInt` id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum TeamVisibility {
-    /// Always.
-    #[default]
-    Always = 0,
-    /// Never.
-    Never = 1,
-    /// Hidden from players on other teams.
-    HideForOtherTeams = 2,
-    /// Hidden from players on this team.
-    HideForOwnTeam = 3,
-}
-
-/// Who a team's members push (`Team.CollisionRule`), as a `VarInt` id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum TeamCollisionRule {
-    /// Everyone.
-    #[default]
-    Always = 0,
-    /// Nobody.
-    Never = 1,
-    /// Only players on other teams.
-    PushOtherTeams = 2,
-    /// Only players on this team.
-    PushOwnTeam = 3,
-}
-
-/// A team's colour, which is also the sidebar slot it owns (`TeamColor`), as a
-/// `VarInt` id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Encode, Decode)]
-pub enum TeamColor {
-    /// Black.
-    #[default]
-    Black = 0,
-    /// Dark blue.
-    DarkBlue = 1,
-    /// Dark green.
-    DarkGreen = 2,
-    /// Dark aqua.
-    DarkAqua = 3,
-    /// Dark red.
-    DarkRed = 4,
-    /// Dark purple.
-    DarkPurple = 5,
-    /// Gold.
-    Gold = 6,
-    /// Gray.
-    Gray = 7,
-    /// Dark gray.
-    DarkGray = 8,
-    /// Blue.
-    Blue = 9,
-    /// Green.
-    Green = 10,
-    /// Aqua.
-    Aqua = 11,
-    /// Red.
-    Red = 12,
-    /// Light purple.
-    LightPurple = 13,
-    /// Yellow.
-    Yellow = 14,
-    /// White.
-    White = 15,
 }
 
 /// A team's two boolean settings (`PlayerTeam.packOptions`), as a bitmask.

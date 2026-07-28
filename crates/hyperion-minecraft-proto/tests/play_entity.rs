@@ -416,19 +416,19 @@ fn equipment_slot_ordinals_match_the_server() {
     // `SetEquipment` sends the ordinal, not `EquipmentSlot.STREAM_CODEC`'s id,
     // and the two disagree on exactly these two constants.
     assert_eq!(
-        EquipmentSlot::OffHand.to_raw(),
-        u8::try_from(vanilla_fixtures::number("equipment_slot.offhand")).expect("a byte")
+        EquipmentSlot::Offhand.id(),
+        vanilla_fixtures::number("equipment_slot.offhand")
     );
     assert_eq!(
-        EquipmentSlot::Head.to_raw(),
-        u8::try_from(vanilla_fixtures::number("equipment_slot.head")).expect("a byte")
+        EquipmentSlot::Head.id(),
+        vanilla_fixtures::number("equipment_slot.head")
     );
-    for (ordinal, slot) in EquipmentSlot::VALUES.iter().enumerate() {
-        let raw = u8::try_from(ordinal).expect("eight slots");
-        assert_eq!(slot.to_raw(), raw);
-        assert_eq!(EquipmentSlot::from_raw(raw), Some(*slot));
+    for (ordinal, slot) in EquipmentSlot::ALL.iter().enumerate() {
+        let raw = i32::try_from(ordinal).expect("eight slots");
+        assert_eq!(slot.id(), raw);
+        assert_eq!(EquipmentSlot::from_id(raw), Some(*slot));
     }
-    assert_eq!(EquipmentSlot::from_raw(8), None);
+    assert_eq!(EquipmentSlot::from_id(8), None);
 }
 
 fn equipment_round_trip(value: &SetEquipment<'_>, bytes: &[u8]) {
@@ -454,7 +454,7 @@ fn set_equipment_matches_the_server() {
             entity: 0x2A,
             slots: vec![
                 EquipmentEntry {
-                    slot: EquipmentSlot::MainHand,
+                    slot: EquipmentSlot::Mainhand,
                     item: stack(diamond_sword(), 1),
                 },
                 EquipmentEntry {
@@ -477,7 +477,7 @@ fn a_single_equipment_slot_carries_no_continuation_bit() {
         &SetEquipment {
             entity: 1,
             slots: vec![EquipmentEntry {
-                slot: EquipmentSlot::OffHand,
+                slot: EquipmentSlot::Offhand,
                 item: stack(stone(), 2),
             }],
         },
