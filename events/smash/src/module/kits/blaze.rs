@@ -20,8 +20,8 @@ use crate::{
         kit::{self, AbilitySpec, KitSounds, KitStats},
         knockback::Knockback,
         player::{Health, Player, Position},
+        visuals,
     },
-    server::Cue,
 };
 
 /// `[VERIFIED]`: "it can be cancelled by taking 4 or more damage" while
@@ -42,7 +42,7 @@ pub const BURN_INTERVAL: f32 = 1.0;
 /// What a burning player looks and sounds like, once, so Inferno and Phoenix
 /// cannot drift into looking like two different things.
 const BURNING: Shows = Shows {
-    cue: Cue::Burn,
+    effect: visuals::burn,
     sound: "minecraft:entity.player.hurt_on_fire",
 };
 

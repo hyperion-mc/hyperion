@@ -12,15 +12,13 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{self, Cast, Observable, splash_at},
-        damage::MatchClock,
-        effect::{self, Affliction},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        projectile::{Flight, Impact, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{self, Cast, Observable, splash_at},
+    damage::MatchClock,
+    effect::{self, Affliction},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    projectile::{Flight, Impact, Payload, fire},
+    visuals,
 };
 
 /// How long a dropped image stands before it fades.
@@ -115,7 +113,7 @@ fn guided_wither_skull(cast: &Cast<'_>) {
 fn burst(impact: &Impact<'_>) {
     impact
         .world
-        .get::<&crate::server::ServerHandle>(|server| server.cue(impact.at, Cue::Explosion));
+        .get::<&crate::server::ServerHandle>(|server| server.particles(visuals::blast(impact.at)));
 }
 
 /// First use drops the image; a second use while it stands swaps you to it.
@@ -131,7 +129,7 @@ fn wither_image(cast: &Cast<'_>) {
     {
         cast.caster.remove(Image::id());
         cast.server.teleport(cast.player, image.at);
-        cast.server.cue(image.at, Cue::Teleport);
+        cast.server.particles(visuals::teleport(image.at));
         return;
     }
 
@@ -163,5 +161,5 @@ const SWAP_DAMAGE: f32 = 2.5;
 
 fn swap_burst(cast: &Cast<'_>) {
     splash_at(cast, cast.position.0, 6.0, SWAP_DAMAGE, 1.8);
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
 }

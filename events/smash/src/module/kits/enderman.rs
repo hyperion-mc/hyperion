@@ -11,15 +11,13 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{self, Cast, Observable},
-        effect::{self, Affliction},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        player::Position,
-        projectile::{Flight, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{self, Cast, Observable},
+    effect::{self, Affliction},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    player::Position,
+    projectile::{Flight, Payload, fire},
+    visuals,
 };
 
 /// `Distance = 16`.
@@ -178,5 +176,5 @@ fn dragon_pass(cast: &Cast<'_>) {
 fn teleport_to(cast: &Cast<'_>, to: Vec3) {
     cast.caster.set(Position(to));
     cast.server.teleport(cast.player, to);
-    cast.server.cue(to, Cue::Teleport);
+    cast.server.particles(visuals::teleport(to));
 }

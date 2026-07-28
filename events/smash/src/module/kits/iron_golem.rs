@@ -10,15 +10,13 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash, splash_at},
-        effect::{self, Affliction},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        player::Position,
-        projectile::{Flight, Impact, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash, splash_at},
+    effect::{self, Affliction},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    player::Position,
+    projectile::{Flight, Impact, Payload, fire},
+    visuals,
 };
 
 /// `PerkSlow(0)`, reapplied every four seconds. The armour is meant to be paid
@@ -123,7 +121,7 @@ fn fissure(cast: &Cast<'_>) {
         let at = cast.position.0 + step * column as f32;
         splash_at(cast, at, HIT_RADIUS, 4.0 + column as f32, 1.0);
     }
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
 }
 
 /// A slow, heavy projectile that reels its victim in.
@@ -235,5 +233,5 @@ fn quake(cast: &Cast<'_>) {
             kind: DamageKind::Ability,
         });
     }
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
 }

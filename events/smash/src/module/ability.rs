@@ -19,8 +19,9 @@ use crate::{
     module::{
         player::{Energy, Facing, Health, OnGround, Player, Position},
         sound::{self, PlaysOnCast},
+        visuals,
     },
-    server::{Cue, PlayerId, Server, ServerHandle},
+    server::{PlayerId, Server, ServerHandle},
 };
 
 /// Tag on ability prefabs and ability instances.
@@ -711,6 +712,6 @@ pub fn charge_steps(charge: f32, max: u32) -> u32 {
 )]
 pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) -> Vec<Entity> {
     let victims = splash_at(cast, cast.position.0, radius, damage, multiplier);
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
     victims
 }

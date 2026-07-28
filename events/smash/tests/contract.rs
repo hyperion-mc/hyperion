@@ -242,7 +242,7 @@ fn contracts() -> Vec<Contract> {
                         0.1,
                         DamageKind::Environment,
                         effect::Shows {
-                            cue: smash::server::Cue::Burn,
+                            effect: smash::module::visuals::burn,
                             sound: "minecraft:entity.player.hurt_on_fire",
                         },
                     ),

@@ -9,15 +9,13 @@
 
 use flecs_ecs::prelude::*;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash},
-        damage::DamageKind,
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        player::Player,
-        projectile::{Flight, Impact, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash},
+    damage::DamageKind,
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    player::Player,
+    projectile::{Flight, Impact, Payload, fire},
+    visuals,
 };
 
 /// Speed II while charged, per the wiki's Lightning Shield description.
@@ -141,7 +139,7 @@ fn sulphur_bomb(cast: &Cast<'_>) {
 fn detonate(impact: &Impact<'_>) {
     impact
         .world
-        .get::<&crate::server::ServerHandle>(|server| server.cue(impact.at, Cue::Explosion));
+        .get::<&crate::server::ServerHandle>(|server| server.particles(visuals::blast(impact.at)));
 }
 
 /// 18 damage at full charge. `[VERIFIED]` from the wiki; the taper down to a

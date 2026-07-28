@@ -17,8 +17,8 @@ use crate::{
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Impact, Payload, fire},
+        visuals,
     },
-    server::Cue,
 };
 
 /// `[VERIFIED]`: "Chicken is the only mob who can double jump eight times."
@@ -156,7 +156,7 @@ fn refund(impact: &Impact<'_>) {
     }
     impact
         .world
-        .get::<&crate::server::ServerHandle>(|server| server.cue(impact.at, Cue::Explosion));
+        .get::<&crate::server::ServerHandle>(|server| server.particles(visuals::blast(impact.at)));
 }
 
 /// `[WIKI]` "unlimited flight and eggs, for twenty seconds".

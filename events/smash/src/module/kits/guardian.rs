@@ -20,8 +20,9 @@ use crate::{
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::{Player, Position},
         projectile::{Flight, Impact, Payload, fire},
+        visuals,
     },
-    server::{Cue, PlayerId, ServerHandle},
+    server::{PlayerId, ServerHandle},
 };
 
 /// `[VERIFIED]`: "increased damage (5 -> 7)", "8 seconds at maximum",
@@ -178,7 +179,7 @@ fn reel(impact: &Impact<'_>) {
 fn water_splash(cast: &Cast<'_>) {
     cast.server.add_velocity(cast.player, Vec3::Y * 0.9);
     splash_at(cast, cast.position.0, 5.0, 11.0, 1.4);
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
 }
 
 fn target_laser(cast: &Cast<'_>) {

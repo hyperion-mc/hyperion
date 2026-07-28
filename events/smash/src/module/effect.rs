@@ -42,7 +42,7 @@ use crate::{
         player::{Health, Position},
         projectile::Impact,
     },
-    server::{Cue, ServerHandle, Sound, SoundCategory},
+    server::{Particles, ServerHandle, Sound, SoundCategory},
 };
 
 /// Tag on effect entities.
@@ -113,9 +113,16 @@ pub struct Ticks {
 /// a poison are the same mechanic and this is the only thing that separates
 /// them for a player. Carried as one value so an effect cannot be given a noise
 /// and no picture.
-#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Component, Debug, Copy, Clone)]
 pub struct Shows {
-    pub cue: Cue,
+    /// The effect drawn on the victim, given where they are standing.
+    ///
+    /// A function rather than a particle, so an affliction picks its own
+    /// shape and density and not just its colour. A bare `fn` and not a
+    /// closure for the same reason [`crate::module::projectile::Payload`]'s
+    /// `on_hit` is one: this is built in a `const` and has nowhere to put a
+    /// capture.
+    pub effect: fn(Vec3) -> Particles,
     /// A vanilla sound event id, held against the generated registry by
     /// `tests/sound.rs` like every other sound in the game.
     pub sound: &'static str,
@@ -648,7 +655,7 @@ impl Module for EffectModule {
                             continue;
                         };
                         world.get::<&ServerHandle>(|server| {
-                            server.cue(at, shows.cue);
+                            server.particles((shows.effect)(at));
                             server.play_sound(at, Sound::new(shows.sound, SoundCategory::Players));
                         });
                     }

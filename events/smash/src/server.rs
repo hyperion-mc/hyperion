@@ -11,8 +11,10 @@ use std::sync::Arc;
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-pub use hyperion_minecraft_proto::text::{
-    Component, Decoration, NamedColor, Rgb24, Run, Style, TextColor,
+pub use hyperion::effects::{Effect, Shape};
+pub use hyperion_minecraft_proto::{
+    particle::{Argb, Particle, ParticleKind},
+    text::{Component, Decoration, NamedColor, Rgb24, Run, Style, TextColor},
 };
 
 pub mod mock;
@@ -100,31 +102,23 @@ pub struct HotbarItem {
     pub lore: Vec<String>,
 }
 
-/// A one-shot burst of particles. Purely cosmetic, so the game never branches
-/// on whether it succeeded.
+/// A particle effect the host draws. Purely cosmetic, so the game never
+/// branches on whether it succeeded.
 ///
-/// Sound used to travel on this enum too, which is why every ability that
-/// wanted to be heard reached for [`Self::Explosion`] and the game had four
-/// noises for fifty-one abilities. Audio is now [`Sound`], which carries the
-/// vanilla sound event itself rather than a name something else has to map, so
-/// what is left here is only the particle: a short list of shapes, each of
-/// which really is one distinct thing a client can be shown.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Cue {
-    Explosion,
-    Teleport,
-    Death,
-    /// One tick of something burning a player.
-    Burn,
-    /// One tick of something poisoning them.
-    ///
-    /// A separate cue from [`Self::Burn`] and not a shared "damage over time"
-    /// one, because the two are told apart by their picture and by nothing
-    /// else: both take a point of health a second off somebody who is standing
-    /// still, and a player who cannot see which is which cannot tell a Blaze
-    /// from a Spider.
-    Venom,
-}
+/// This replaced a `Cue` enum, which by the end had five variants standing in
+/// for every visual in the game: an explosion, a teleport, a death, a burn and
+/// a poison. Bone Explosion, Water Splash and Fish Flurry all drew
+/// `Cue::Explosion`, so bones, water and fish were the same picture. The enum
+/// was never really the problem: the protocol layer under it could spell five
+/// particles, so five was all an ability could ask for. Now that [`Particle`]
+/// is the whole registry, an ability names the one it wants and composes the
+/// shape itself.
+///
+/// A re-export rather than a type of its own, for the same reason [`Text`] is
+/// one: a second copy of a builder is a second thing to keep in step with the
+/// first. It is pure data -- a particle, a point and a shape -- and lives in
+/// the engine because the emitter that draws it across several ticks does.
+pub type Particles = Effect<'static>;
 
 /// Which of the listener's volume sliders governs a sound.
 ///
@@ -358,7 +352,8 @@ pub trait Server: Send + Sync + 'static {
     /// Toggle spectator mode: invisible, non-colliding, flying, no attacks.
     fn set_spectating(&self, player: PlayerId, spectating: bool);
 
-    fn cue(&self, at: Vec3, cue: Cue);
+    /// Draw a particle effect. Everyone close enough to its origin sees it.
+    fn particles(&self, effect: Particles);
 
     /// Play a sound at a point in the world. Everyone close enough hears it,
     /// attenuated by how far they are standing from `at`.

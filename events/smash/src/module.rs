@@ -13,3 +13,4 @@ pub mod projectile;
 pub mod scoreboard;
 pub mod selector;
 pub mod sound;
+pub mod visuals;
