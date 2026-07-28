@@ -143,7 +143,9 @@ impl Module for PlayerModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Player");
 
-        world.component::<Player>();
+        // Final: a player is a leaf, not a base to inherit from. `is_a(Player)`
+        // is now a CONSTRAINT_VIOLATED abort rather than a quiet mistake.
+        world.component::<Player>().add_trait::<flecs::Final>();
         world.component::<Position>();
         world.component::<Velocity>();
         world.component::<Facing>();
