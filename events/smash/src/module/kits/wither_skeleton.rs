@@ -53,6 +53,7 @@ impl Module for WitherSkeleton {
         })
         .cost(6000)
         .blurb("Leave a copy of yourself somewhere useful, then be there instead.")
+        .mob("minecraft:wither_skeleton")
         .ability(AbilitySpec {
             name: "Guided Wither Skull",
             sound: "minecraft:entity.wither.shoot",

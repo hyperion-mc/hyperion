@@ -48,6 +48,7 @@ impl Module for Chicken {
         })
         .cost(8000)
         .blurb("Cannot take a hit, and does not have to.")
+        .mob("minecraft:chicken")
         .ability(AbilitySpec {
             name: "Egg Blaster",
             sound: "minecraft:entity.egg.throw",

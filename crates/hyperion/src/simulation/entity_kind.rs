@@ -1,141 +1,57 @@
 use flecs_ecs::{core::ComponentOrPairId, macros::Component};
-use hyperion_minecraft_proto::entity_type::EntityType;
+use hyperion_minecraft_proto::entity_type::{EntityType, entity_type};
 
-/// What kind of thing an entity is.
+/// Declare [`EntityKind`] and the list of every one of them together.
 ///
-/// The discriminants are flecs enum tags and carry no protocol meaning. They
-/// used to be sent as `minecraft:entity_type` ids, which worked only because
-/// 1.20.1 happened to number that registry the way this list is ordered;
-/// [`Self::entity_type`] is now the only thing allowed to produce an id.
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[repr(C)]
-#[flecs(meta)]
-pub enum EntityKind {
-    Allay,
-    AreaEffectCloud,
-    ArmorStand,
-    Arrow,
-    Axolotl,
-    Bat,
-    Bee,
-    Blaze,
-    BlockDisplay,
-    Boat,
-    Camel,
-    Cat,
-    CaveSpider,
-    ChestBoat,
-    ChestMinecart,
-    Chicken,
-    Cod,
-    CommandBlockMinecart,
-    Cow,
-    Creeper,
-    Dolphin,
-    Donkey,
-    DragonFireball,
-    Drowned,
-    Egg,
-    ElderGuardian,
-    EndCrystal,
-    EnderDragon,
-    EnderPearl,
-    Enderman,
-    Endermite,
-    Evoker,
-    EvokerFangs,
-    ExperienceBottle,
-    ExperienceOrb,
-    EyeOfEnder,
-    FallingBlock,
-    FireworkRocket,
-    Fox,
-    Frog,
-    FurnaceMinecart,
-    Ghast,
-    Giant,
-    GlowItemFrame,
-    GlowSquid,
-    Goat,
-    Guardian,
-    Hoglin,
-    HopperMinecart,
-    Horse,
-    Husk,
-    Illusioner,
-    Interaction,
-    IronGolem,
-    Item,
-    ItemDisplay,
-    ItemFrame,
-    Fireball,
-    LeashKnot,
-    Lightning,
-    Llama,
-    LlamaSpit,
-    MagmaCube,
-    Marker,
-    Minecart,
-    Mooshroom,
-    Mule,
-    Ocelot,
-    Painting,
-    Panda,
-    Parrot,
-    Phantom,
-    Pig,
-    Piglin,
-    PiglinBrute,
-    Pillager,
-    PolarBear,
-    Potion,
-    Pufferfish,
-    Rabbit,
-    Ravager,
-    Salmon,
-    Sheep,
-    Shulker,
-    ShulkerBullet,
-    Silverfish,
-    Skeleton,
-    SkeletonHorse,
-    Slime,
-    SmallFireball,
-    Sniffer,
-    SnowGolem,
-    Snowball,
-    SpawnerMinecart,
-    SpectralArrow,
-    Spider,
-    Squid,
-    Stray,
-    Strider,
-    Tadpole,
-    TextDisplay,
-    Tnt,
-    TntMinecart,
-    TraderLlama,
-    Trident,
-    TropicalFish,
-    Turtle,
-    Vex,
-    Villager,
-    Vindicator,
-    WanderingTrader,
-    Warden,
-    Witch,
-    Wither,
-    WitherSkeleton,
-    WitherSkull,
-    Wolf,
-    Zoglin,
-    Zombie,
-    ZombieHorse,
-    ZombieVillager,
-    ZombifiedPiglin,
-    Player,
-    FishingBobber,
-    Gui,
+/// A macro so that [`EntityKind::ALL`] cannot fall behind the enum. The list is
+/// what makes the name-to-kind direction possible at all, and a hand-written
+/// copy of 125 variants is a copy that is wrong the first time somebody adds a
+/// mob and does not think to scroll down.
+macro_rules! entity_kinds {
+    ($($name:ident),* $(,)?) => {
+        /// What kind of thing an entity is.
+        ///
+        /// The discriminants are flecs enum tags and carry no protocol meaning.
+        /// They used to be sent as `minecraft:entity_type` ids, which worked
+        /// only because 1.20.1 happened to number that registry the way this
+        /// list is ordered; [`EntityKind::entity_type`] is now the only thing
+        /// allowed to produce an id.
+        #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+        #[repr(C)]
+        #[flecs(meta)]
+        pub enum EntityKind {
+            $($name),*
+        }
+
+        impl EntityKind {
+            /// Every kind, in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$name),*];
+        }
+    };
+}
+
+entity_kinds! {
+    Allay, AreaEffectCloud, ArmorStand, Arrow, Axolotl, Bat,
+    Bee, Blaze, BlockDisplay, Boat, Camel, Cat,
+    CaveSpider, ChestBoat, ChestMinecart, Chicken, Cod, CommandBlockMinecart,
+    Cow, Creeper, Dolphin, Donkey, DragonFireball, Drowned,
+    Egg, ElderGuardian, EndCrystal, EnderDragon, EnderPearl, Enderman,
+    Endermite, Evoker, EvokerFangs, ExperienceBottle, ExperienceOrb, EyeOfEnder,
+    FallingBlock, FireworkRocket, Fox, Frog, FurnaceMinecart, Ghast,
+    Giant, GlowItemFrame, GlowSquid, Goat, Guardian, Hoglin,
+    HopperMinecart, Horse, Husk, Illusioner, Interaction, IronGolem,
+    Item, ItemDisplay, ItemFrame, Fireball, LeashKnot, Lightning,
+    Llama, LlamaSpit, MagmaCube, Marker, Minecart, Mooshroom,
+    Mule, Ocelot, Painting, Panda, Parrot, Phantom,
+    Pig, Piglin, PiglinBrute, Pillager, PolarBear, Potion,
+    Pufferfish, Rabbit, Ravager, Salmon, Sheep, Shulker,
+    ShulkerBullet, Silverfish, Skeleton, SkeletonHorse, Slime, SmallFireball,
+    Sniffer, SnowGolem, Snowball, SpawnerMinecart, SpectralArrow, Spider,
+    Squid, Stray, Strider, Tadpole, TextDisplay, Tnt,
+    TntMinecart, TraderLlama, Trident, TropicalFish, Turtle, Vex,
+    Villager, Vindicator, WanderingTrader, Warden, Witch, Wither,
+    WitherSkeleton, WitherSkull, Wolf, Zoglin, Zombie, ZombieHorse,
+    ZombieVillager, ZombifiedPiglin, Player, FishingBobber, Gui,
 }
 
 impl EntityKind {
@@ -149,6 +65,21 @@ impl EntityKind {
     /// Every arm names a constant from the generated table, so a version bump
     /// that renames or drops a type stops this file compiling rather than
     /// leaving a stale id to be discovered on the wire.
+    /// The kind whose entity type is named `name`, such as `minecraft:creeper`.
+    ///
+    /// The reverse of [`Self::entity_type`], done by searching [`Self::ALL`]
+    /// rather than by a second table. A table would be a second place the
+    /// pairing is written, and the day the two disagree the wrong mob appears
+    /// in the world with nothing to say why.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        let wanted = entity_type(name)?;
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.entity_type() == Some(wanted))
+    }
+
     #[must_use]
     pub const fn entity_type(self) -> Option<EntityType> {
         let entity_type = match self {

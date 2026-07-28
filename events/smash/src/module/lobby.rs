@@ -17,12 +17,12 @@ use crate::{
     module::{
         arena::Arena,
         damage::MatchClock,
-        kit,
+        kit::{self, KitName},
         lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
-        sound,
+        selector, sound,
     },
-    server::{Channel, PlayerId, ServerHandle, Sound, SoundCategory, Text},
+    server::{Channel, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -185,19 +185,47 @@ pub struct PhaseChanged {
     pub to: Phase,
 }
 
-/// Pick a kit in the hub. Refused once the match has committed, which is the
-/// one rule the lobby imposes on kits.
+/// Pick a kit in the hub, by name.
 ///
 /// # Errors
-/// If the phase is past [`Phase::Countdown`], or the name is not a kit.
-pub fn select_kit(world: &World, player: EntityView<'_>, name: &str) -> Result<(), &'static str> {
+/// As [`choose`], plus a name that is not a kit.
+pub fn select_kit(world: &World, player: EntityView<'_>, name: &str) -> Result<(), String> {
+    let Some(chosen) = kit::by_name(world, name) else {
+        return Err("No such kit.".to_owned());
+    };
+    choose(world, player, chosen)
+}
+
+/// Pick a kit in the hub.
+///
+/// Two rules, and both of them live here rather than on either of the two
+/// surfaces a player reaches them through, so a podium click and `/kit` cannot
+/// come to different answers:
+///
+/// * Not once the match has committed. This is the only rule the lobby imposes
+///   on kits, and it is also what makes a claim last the rest of the match
+///   without anything having to say so: past [`Phase::Countdown`] nothing can
+///   change a kit at all.
+/// * Not a mob somebody else is already playing. Derived from their
+///   `(Playing, kit)` edge on every call, so a player who disconnects frees
+///   their mob with no cleanup anywhere. See [`crate::module::selector`] for
+///   why this rule exists and why it is this server's own and not a
+///   reconstruction of anything.
+///
+/// # Errors
+/// If the phase is past [`Phase::Countdown`], or somebody else holds the kit.
+pub fn choose(world: &World, player: EntityView<'_>, chosen: EntityView<'_>) -> Result<(), String> {
     let phase = world.cloned::<&Lobby>().phase;
     if !matches!(phase, Phase::Waiting | Phase::Countdown) {
-        return Err("You cannot change kit once the game has started.");
+        return Err("You cannot change kit once the game has started.".to_owned());
     }
-    let Some(chosen) = kit::by_name(world, name) else {
-        return Err("No such kit.");
-    };
+    if let Some(holder) = kit::claimant(world, chosen.id())
+        && holder != player.id()
+    {
+        return Err(selector::taken_message(world, chosen, holder));
+    }
+
+    let name = chosen.try_get::<&KitName>(|name| name.0).unwrap_or("");
     kit::apply(world, player, chosen);
 
     if let Some(id) = player.try_get::<&PlayerId>(|p| *p) {
@@ -205,6 +233,13 @@ pub fn select_kit(world: &World, player: EntityView<'_>, name: &str) -> Result<(
         world.get::<&ServerHandle>(|server| {
             server.set_hotbar(id, &hotbar);
             server.send_message(id, Channel::Chat, Text::text(format!("Kit set to {name}.")));
+            // The same channel the refusal uses, so a player watching one spot
+            // on the screen sees both answers there.
+            server.send_message(
+                id,
+                Channel::ActionBar,
+                Text::text(format!("You are the {name}.")).color(NamedColor::Green),
+            );
         });
     }
     Ok(())

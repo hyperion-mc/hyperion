@@ -9,4 +9,5 @@ pub mod lobby;
 pub mod player;
 pub mod projectile;
 pub mod scoreboard;
+pub mod selector;
 pub mod sound;

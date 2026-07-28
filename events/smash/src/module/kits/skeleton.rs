@@ -49,6 +49,7 @@ impl Module for Skeleton {
             death: "minecraft:entity.skeleton.death",
         })
         .blurb("Keep everyone at arm's length, then overcharge the bow and let go.")
+        .mob("minecraft:skeleton")
         .ability(AbilitySpec {
             name: "Barrage",
             sound: "minecraft:entity.arrow.shoot",

@@ -47,6 +47,7 @@ impl Module for Blaze {
         })
         .cost(8000)
         .blurb("Set people on fire. Armour will not save them.")
+        .mob("minecraft:blaze")
         .ability(AbilitySpec {
             name: "Inferno",
             sound: "minecraft:entity.blaze.shoot",

@@ -20,6 +20,7 @@ use crate::{
         kit::{self, KitStats, Playing},
         knockback::Knockback,
         player::{Player, Position},
+        selector,
     },
     server::PlayerId,
 };
@@ -71,6 +72,36 @@ impl Module for InputModule {
                     let player = world.entity_from_id(event.entity);
                     if let Some(slot) = held_slot(player) {
                         ability::use_slot(player, slot);
+                    }
+                }
+            });
+
+        // Right-clicking a mob in the lobby, which is how a kit is picked.
+        // Every entity in the world reaches this and `selector::click_mob`
+        // answers for the fifteen that are standing on podiums.
+        world
+            .system_named::<&mut EventQueue<event::EntityInteract>>("smash::on_entity_interact")
+            .each_iter(|it, _, queue| {
+                let world = it.world();
+                for event in queue.drain() {
+                    let player = world.entity_from_id(event.from);
+                    if player.has(Player::id()) {
+                        let _unused = selector::click_mob(&world, player, event.target);
+                    }
+                }
+            });
+
+        // Right-clicking the wool a mob is standing on, which does the same
+        // thing. Every block in the world reaches this, and `selector::click`
+        // answers for the handful that are podiums.
+        world
+            .system_named::<&mut EventQueue<event::BlockInteract>>("smash::on_block_interact")
+            .each_iter(|it, _, queue| {
+                let world = it.world();
+                for event in queue.drain() {
+                    let player = world.entity_from_id(event.from);
+                    if player.has(Player::id()) {
+                        let _unused = selector::click(&world, player, event.position);
                     }
                 }
             });

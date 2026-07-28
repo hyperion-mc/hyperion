@@ -25,7 +25,7 @@ pub use super::clientbound::{
 use crate::{
     Decode, Encode, Error, Reader, RegistryId, Result, Uuid, Writer,
     item::{Slot, nbt::NbtScan},
-    types::Vec3,
+    types::{InteractionHand, Vec3},
 };
 
 // --- rotation -------------------------------------------------------------
@@ -255,6 +255,31 @@ pub struct AddEntity {
     /// Type-specific spawn data; zero for everything that does not define one.
     #[proto(varint)]
     pub data: i32,
+}
+
+/// `minecraft:interact`, sent serverbound as play id 26.
+///
+/// Layout from `net.minecraft.network.protocol.game.ServerboundInteractPacket#STREAM_CODEC`,
+/// which `protocol.json` models field by field but marks `complete: false` with
+/// the reason `unmodelled statement: double z`. That reason is about the
+/// `Vec3#LP_STREAM_CODEC` inside it, which this crate does have and uses below,
+/// so the generator's refusal costs the whole packet rather than the one field
+/// it could not follow. Hand-written here for that reason and nothing else; the
+/// field list is the extractor's, not a reading of a wiki.
+///
+/// 26.2 split attacking out into `minecraft:attack`, so this now only ever
+/// means a right-click on an entity, and there is no leading action
+/// discriminant the way there was through 1.21.
+#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
+pub struct Interact {
+    #[proto(varint)]
+    pub entity_id: i32,
+    pub hand: InteractionHand,
+    /// Where on the entity the ray landed, relative to the entity's position.
+    #[proto(with = lp_vec3)]
+    pub location: Vec3,
+    /// Whether the player was sneaking.
+    pub using_secondary_action: bool,
 }
 
 /// `minecraft:set_entity_motion`, sent clientbound as play id 101.

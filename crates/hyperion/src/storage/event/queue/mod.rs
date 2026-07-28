@@ -51,6 +51,8 @@ define_events! {
     event::ItemInteract,
     event::SetSkin,
     event::AttackEntity,
+    event::BlockInteract,
+    event::EntityInteract,
     event::ChatMessage,
     event::Command,
     event::DestroyBlock,

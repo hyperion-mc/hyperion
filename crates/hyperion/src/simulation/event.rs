@@ -121,7 +121,37 @@ pub struct Command {
     pub by: Entity,
 }
 
-pub struct BlockInteract {}
+/// A player right-clicked an entity.
+///
+/// `minecraft:interact`, which since 26.2 means nothing else: attacking left
+/// with the packet split out into `minecraft:attack`. A game whose furniture is
+/// alive -- a shopkeeper, a kit selector's mobs -- has no other way to hear a
+/// click on it, and until this existed the packet reached the dispatch table
+/// and fell straight through it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct EntityInteract {
+    /// The entity that was clicked.
+    pub target: Entity,
+    pub from: Entity,
+    pub hand: Hand,
+}
+
+/// A player right-clicked a block.
+///
+/// Raised for every `use_item_on`, before the door and block-placement
+/// branches decide whether they also want it. Those two are the only other
+/// things that packet can mean, and both of them are about changing the world;
+/// a block that is a button, a shop or a kit selector is a block whose click
+/// has to be heard even though nothing about the world changes, and until this
+/// carried a position there was no way to hear one.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct BlockInteract {
+    /// The block that was clicked, not the space in front of it.
+    pub position: IVec3,
+    pub from: Entity,
+    pub hand: Hand,
+    pub sequence: i32,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClientStatusCommand {

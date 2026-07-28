@@ -555,6 +555,26 @@
               '';
             };
 
+            # The same gate again, driving a client that clicks the hub's kit
+            # podiums instead of playing the match.
+            #
+            # Separate from `smash-e2e` because it answers the question that
+            # comes before it. `smash-e2e` needs kits to already be picked and
+            # picks them by typing `/kit`; this one asks whether a player who
+            # never types anything can pick a mob by right-clicking it, and
+            # whether the game says so when the mob is somebody else's. Its
+            # ports default off the others again so every gate can run at once.
+            smash-selector-e2e = {
+              deps = [ pkgs.git ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/smash-selector.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 4000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 4000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # The same gate again, driving a client that reads blocks rather
             # than positions.
             #
@@ -763,11 +783,24 @@
               client = "completions-check.py";
             };
 
+            # The kit selector, driven by right-clicks on the podium mobs
+            # rather than by `/kit`. Shorter than the match gate because it
+            # never plays one: the longest thing in it is the countdown a full
+            # lobby runs.
+            smash-selector-e2e = e2e.mkCheck {
+              name = "hyperion-smash-selector-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "smash-selector.py";
+              timeout = 420;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
             smash-e2e-app = scripts.smash-e2e;
             completions-e2e-app = scripts.completions-e2e;
+            smash-selector-e2e-app = scripts.smash-selector-e2e;
 
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;

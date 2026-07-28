@@ -1,7 +1,10 @@
-//! Chat commands, which are the only way to pick a kit until there is a menu.
+//! Chat commands.
 //!
-//! Mineplex used a compass and an inventory GUI in the hub. `/kit <name>` is the
-//! same choice made through the one input surface that already works.
+//! The way to pick a kit is to right-click its podium in the hub; see
+//! [`crate::module::selector`]. `/kit <name>` is the same choice made by typing
+//! rather than by walking, which is what a screen reader needs and what every
+//! gate that is not testing the selector itself uses. Mineplex had both too:
+//! the pedestals in the waiting lobby, and `/kit` opening a GUI.
 
 use std::fmt::Write;
 
@@ -15,7 +18,7 @@ use hyperion_clap::{CommandPermission, MinecraftCommand, hyperion_command::Comma
 use crate::module::{
     ability,
     kit::{self, Kit, KitBlurb, KitName},
-    lobby,
+    lobby, selector,
 };
 
 pub fn register(registry: &mut CommandRegistry, world: &World) {
@@ -26,6 +29,7 @@ pub fn register(registry: &mut CommandRegistry, world: &World) {
     // honest: `tests/modularity.rs` adds one from outside the crate.
     KitCommand::register(registry, world).completes("name", Kit::id());
     KitsCommand::register(registry, world);
+    PodiumsCommand::register(registry, world);
     AbilitiesCommand::register(registry, world);
     CrystalCommand::register(registry, world);
 }
@@ -197,6 +201,67 @@ fn json(entry: &ability::Declared) -> String {
 
 fn escape(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// The line `/podiums` prefixes each podium with. See [`MANIFEST_PREFIX`].
+pub const PODIUM_PREFIX: &str = "smash-podium ";
+
+/// The line that closes the podium manifest, with the count before it.
+pub const PODIUM_END_PREFIX: &str = "smash-podiums-end ";
+
+/// Say where every kit podium stands and who has taken it.
+///
+/// The selector's ring is generated from the roster at boot, so its geometry
+/// exists only in the world. Without this, a gate that wants to right-click a
+/// podium has to recompute the ring, which is a copy of
+/// [`selector::ring`](crate::module::selector::ring) that goes stale the day
+/// the ring moves and keeps passing while it does. This is that copy deleted:
+/// the server says where the blocks are, and the client clicks what it is
+/// told.
+///
+/// It is a player-facing command too, and answers "which mobs are still free"
+/// without walking the ring, which is the thing a screen reader cannot do.
+#[derive(Parser, CommandPermission, Debug)]
+#[command(name = "podiums")]
+#[command_permission(group = "Normal")]
+pub struct PodiumsCommand;
+
+impl MinecraftCommand for PodiumsCommand {
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
+        let world = system.world();
+        let offers = selector::manifest(&world);
+        for offer in &offers {
+            tell(world, caller, &format!("{PODIUM_PREFIX}{}", podium(offer)));
+        }
+        tell(
+            world,
+            caller,
+            &format!("{PODIUM_END_PREFIX}{}", offers.len()),
+        );
+    }
+}
+
+/// One podium as a JSON object, hand-rolled for the reasons [`json`] gives.
+fn podium(offer: &selector::Offer) -> String {
+    let mut out = String::new();
+    let _unused = write!(
+        out,
+        r#"{{"kit":"{}","x":{},"y":{},"z":{},"base_y":{},"wool":"{}","mob":"{}","held_by":"#,
+        escape(offer.name),
+        offer.click.x,
+        offer.click.y,
+        offer.click.z,
+        offer.base.y,
+        escape(offer.wool),
+        escape(offer.mob),
+    );
+    match &offer.held_by {
+        Some(who) => {
+            let _unused = write!(out, r#""{}"}}"#, escape(who));
+        }
+        None => out.push_str("null}"),
+    }
+    out
 }
 
 /// Pick up a Smash Crystal.

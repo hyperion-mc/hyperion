@@ -59,6 +59,7 @@ impl Module for Guardian {
         })
         .cost(8000)
         .blurb("Pick somebody. They are now your problem and you are theirs.")
+        .mob("minecraft:guardian")
         .ability(AbilitySpec {
             name: "Whirlpool Axe",
             sound: "minecraft:entity.player.splash.high_speed",

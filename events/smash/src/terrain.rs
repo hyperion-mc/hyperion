@@ -18,8 +18,12 @@ use flecs_ecs::prelude::*;
 use glam::{I16Vec2, IVec3, Vec3};
 use hyperion::{
     BlockKind, BlockState,
+    net::Channel as EntityChannel,
     runtime::AsyncRuntime,
-    simulation::{Uuid, blocks::Blocks},
+    simulation::{
+        Pitch, Position as MobPosition, Spawn, Uuid, Velocity, Yaw, blocks::Blocks,
+        entity_kind::EntityKind,
+    },
 };
 
 use crate::{
@@ -28,6 +32,7 @@ use crate::{
         arena::Arena,
         lobby::{Lobby, Phase, PhaseChanged},
         player::Player,
+        selector,
     },
     server::{PlayerId, ServerHandle},
 };
@@ -154,6 +159,15 @@ impl Module for MapModule {
                 stamp(&mut blocks, runtime, map);
             }
         });
+
+        // After the hub's own brushes, or the floor would be stamped over the
+        // podiums. The ring is generated rather than written into `hub.map`
+        // because it has to have exactly as many podiums as there are
+        // registered kits, and the map file has no way to ask.
+        selector::build(world, hub_origin);
+        stamp_podiums(&mut blocks, world);
+        stand_mobs(world);
+
         world.set(blocks);
 
         world.set(Hub {
@@ -219,6 +233,35 @@ impl Module for MapModule {
                 }
             });
 
+        // The plinth colours, recomputed from who is playing what and written
+        // only where they disagree with the world.
+        //
+        // A poll rather than an observer on the relation, because the thing
+        // that frees a mob most often is a player disconnecting, and that is an
+        // entity being destroyed rather than an edge being removed by anybody
+        // this file could watch. Reading the world back and writing only the
+        // difference is what keeps this from being a second source of truth:
+        // the blocks are the display, and `selector::plinths` is the only place
+        // that says what they should say.
+        world
+            .system_named::<&mut Blocks>("smash::render_podiums")
+            .each_iter(|it, _, blocks| {
+                let world = it.world();
+                for (at, block) in selector::plinths(&world) {
+                    let Some(kind) = BlockKind::from_str(block.trim_start_matches("minecraft:"))
+                    else {
+                        continue;
+                    };
+                    let wanted = BlockState::from_kind(kind);
+                    if blocks.get_block(at) == Some(wanted) {
+                        continue;
+                    }
+                    if let Err(error) = blocks.set_block(at, wanted) {
+                        tracing::warn!("could not repaint the podium at {at}: {error:?}");
+                    }
+                }
+            });
+
         // Back to the hub when the results screen is over. The game half ends a
         // match by resetting lives and health; where players physically go is a
         // hosting question, so it is answered here.
@@ -245,6 +288,73 @@ impl Module for MapModule {
                     }
                 });
             });
+    }
+}
+
+/// Write the kit selector's wool into the world for the first time.
+///
+/// Stamped at whatever the current state says, which at boot is every podium
+/// free, and then kept in step by `smash::render_podiums` below.
+fn stamp_podiums(blocks: &mut Blocks, world: &World) {
+    for (at, block) in selector::plinths(world) {
+        set_named(blocks, at, block);
+    }
+}
+
+/// Stand a real mob on each podium.
+///
+/// The half of the selector the game cannot build for itself: `selector` says
+/// which mob belongs where and this turns each name into a hyperion entity.
+/// `Channel` is what makes it visible, and visible to players who join later:
+/// the proxy tracks the channel's position and asks the server for the spawn
+/// packets when somebody comes into range, so a mob spawned at boot with
+/// nobody connected is still there when the first player walks up to it.
+///
+/// `(StandsOn, podium)` is the whole point. A click arrives naming an entity,
+/// and this edge is what turns that entity back into the kit it offers.
+///
+/// # Panics
+/// If a kit names a mob that is not a mob. Same reason [`set_named`] panics on
+/// a block that is not a block: a podium with nothing on it is a kit nobody
+/// can pick, and the hole would be the only report.
+fn stand_mobs(world: &World) {
+    for (podium, at, name) in selector::mobs(world) {
+        let kind = EntityKind::named(name).unwrap_or_else(|| panic!("{name:?} is not a mob"));
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "hub-local coordinates, tens of blocks"
+        )]
+        let position = Vec3::new(at.x as f32 + 0.5, at.y as f32, at.z as f32 + 0.5);
+        world
+            .entity()
+            .add_enum(kind)
+            .set(MobPosition::new(position.x, position.y, position.z))
+            // Facing the middle of the ring, so the row of them looks at a
+            // player walking through it rather than all one way.
+            .set(Yaw::new(facing(position)))
+            .set(Pitch::new(0.0))
+            .set(Velocity::new(0.0, 0.0, 0.0))
+            .add(id::<EntityChannel>())
+            .add((selector::StandsOn, podium))
+            .add(id::<Spawn>());
+    }
+}
+
+/// The yaw that points from `at` back at the hub's centre.
+fn facing(at: Vec3) -> f32 {
+    (-at.x).atan2(at.z).to_degrees()
+}
+
+/// Set the block at `at`, naming the block by its vanilla id.
+///
+/// # Panics
+/// If the id names no block. A mistyped wool colour would otherwise be a podium
+/// with a hole in it, and the hole would be the only report.
+fn set_named(blocks: &mut Blocks, at: IVec3, block: &str) {
+    let kind = BlockKind::from_str(block.trim_start_matches("minecraft:"))
+        .unwrap_or_else(|| panic!("{block:?} is not a block"));
+    if let Err(error) = blocks.set_block(at, BlockState::from_kind(kind)) {
+        tracing::warn!("could not put {block} at {at}: {error:?}");
     }
 }
 

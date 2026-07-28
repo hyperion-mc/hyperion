@@ -189,22 +189,95 @@ def take_sound(payload):
     return sound_id, source, (x / 8.0, y / 8.0, z / 8.0), volume, pitch
 
 
-def take_nbt_string(payload, offset):
-    """Read a network-NBT tag that is a bare string.
+# NBT payload sizes for the fixed-width tag types.
+NBT_FIXED = {1: 1, 2: 2, 3: 4, 4: 8, 5: 4, 6: 8}
 
-    `Component::text(..).to_tag()` collapses a component with no style and no
-    children to `Tag::String`, which is every message this server sends, so a
-    full NBT reader would be dead weight. A tag of any other type is reported
-    rather than guessed at.
+
+def _nbt_read(buf, offset, kind):
+    """One NBT payload, as the little of it a chat component needs.
+
+    Strings, lists and compounds come back as themselves; everything else comes
+    back as `None` after being stepped over, because no readable part of a
+    component is stored in a number.
+    """
+    if kind in NBT_FIXED:
+        return None, offset + NBT_FIXED[kind]
+    if kind == 8:
+        (length,) = struct.unpack_from(">H", buf, offset)
+        offset += 2
+        return buf[offset : offset + length].decode("utf-8", "replace"), offset + length
+    if kind == 9:
+        element = buf[offset]
+        (count,) = struct.unpack_from(">i", buf, offset + 1)
+        offset += 5
+        values = []
+        for _ in range(count):
+            value, offset = _nbt_read(buf, offset, element)
+            values.append(value)
+        return values, offset
+    if kind == 10:
+        fields = {}
+        while True:
+            entry = buf[offset]
+            offset += 1
+            if entry == 0:
+                return fields, offset
+            (length,) = struct.unpack_from(">H", buf, offset)
+            offset += 2
+            name = buf[offset : offset + length].decode("utf-8", "replace")
+            offset += length
+            fields[name], offset = _nbt_read(buf, offset, entry)
+    if kind == 7:
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return None, offset + 4 + count
+    if kind == 11:
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return None, offset + 4 + 4 * count
+    if kind == 12:
+        (count,) = struct.unpack_from(">i", buf, offset)
+        return None, offset + 4 + 8 * count
+    raise ValueError("unknown NBT tag type %d at offset %d" % (kind, offset))
+
+
+def _nbt_plain(value):
+    """The words in a decoded component, with the styling discarded.
+
+    `Component::text` renders as `{text: "..."}` and picks up `extra` for
+    children and `color` for a style, and this walks the first two and ignores
+    the third. Matching the server's own `Component::plain`, which is what the
+    Rust tests assert against.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(_nbt_plain(item) for item in value)
+    if isinstance(value, dict):
+        out = _nbt_plain(value.get("text", ""))
+        return out + _nbt_plain(value.get("extra", []))
+    return ""
+
+
+def take_nbt_string(payload, offset):
+    """Read one network-NBT chat component as plain text.
+
+    A component with no style and no children collapses to `Tag::String`, which
+    is what every message here was until the component API landed. Anything
+    coloured is a compound instead, so both shapes have to be read: a reader
+    that handled only the bare string reported an action bar full of
+    `<nbt tag type 0x0A>` and a gate that could no longer see what the server
+    said.
     """
     kind = payload[offset]
     offset += 1
-    if kind != 0x08:
-        return "<nbt tag type 0x%02X, not a string>" % kind, offset
-    (length,) = struct.unpack(">H", payload[offset : offset + 2])
-    offset += 2
-    text = payload[offset : offset + length].decode("utf-8", "replace")
-    return text, offset + length
+    if kind == 0x08:
+        (length,) = struct.unpack(">H", payload[offset : offset + 2])
+        offset += 2
+        return payload[offset : offset + length].decode("utf-8", "replace"), offset + length
+    if kind == 0x0A:
+        # Network NBT: the root compound carries no name of its own.
+        fields, offset = _nbt_read(payload, offset, 0x0A)
+        return _nbt_plain(fields), offset
+    return "<nbt tag type 0x%02X, neither a string nor a compound>" % kind, offset
 
 
 # events/smash/src/terrain.rs: the hub is region 0 and each arena sits a whole
@@ -941,14 +1014,113 @@ class Match:
                 % (len(self.cooldown_results), COOLDOWN_REFUSAL),
             )
 
+    def spares(self, testing):
+        """A mob for each victim that is not the one being tested.
+
+        One player per mob is the selector's rule and `/kit` obeys it too, so
+        the sweep cannot stand three clients on the kit under test the way it
+        used to: the attacker takes it and the other two are refused. The
+        attacker is the one whose abilities are being fired, so the attacker is
+        the one who gets it, and the victims stand on whatever is left.
+
+        Not any two. The kits named by `--kits` are reserved, because the match
+        that runs after the sweep hands those out and a victim still holding
+        one would refuse the client it is meant for. Everything else is taken
+        in registry order, which makes the pairing the same on every run.
+        """
+        reserved = {kit.strip() for kit in self.args.kits.split(",")}
+        reserved.add(testing)
+        seen = []
+        for entry in self.manifest:
+            if entry["kit"] not in reserved and entry["kit"] not in seen:
+                seen.append(entry["kit"])
+        return seen[: len(self.clients) - 1]
+
+    def plan_for(self, kit):
+        """Who plays what while `kit`'s abilities are being fired."""
+        plan = dict(zip((c.name for c in self.clients[1:]), self.spares(kit)))
+        plan[self.clients[0].name] = kit
+        if len(plan) < len(self.clients):
+            self.sweep_failures.append(
+                "the roster has too few mobs to give %d clients one each while "
+                "testing %s" % (len(self.clients), kit)
+            )
+            return None
+        return plan
+
+    def unwanted(self, plan):
+        """A mob nobody wants and nobody is standing on, to step aside onto."""
+        held = {client.kit for client in self.clients}
+        wanted = set(plan.values())
+        for entry in self.manifest:
+            if entry["kit"] not in wanted and entry["kit"] not in held:
+                return entry["kit"]
+        return None
+
+    def equip(self, plan):
+        """Put every client on the mob `plan` names, in a workable order.
+
+        Ordering matters now that one player holds one mob: a client that has
+        not yet moved off X refuses the client that wants X, and asking all of
+        them at once means whoever asked second loses. So each pass asks only
+        the clients whose mob is free or already theirs, waits, and goes round
+        again.
+
+        That is not enough on its own, and the first run of it proved so: when
+        the sweep moves from the Sky Squid to the Creeper, the attacker is
+        standing on the Sky Squid a victim now wants and the victim is standing
+        on the Creeper the attacker now wants. Nobody can go first. One of them
+        steps off onto a mob nobody in the plan wants, and the pass after that
+        is ordinary.
+
+        Everybody is asked even when they already hold the right mob, because
+        re-picking is the game's own way of saying "start of a life" and is how
+        the sweep gets its victims back to full health.
+        """
+        pending = list(self.clients)
+        for _ in range(4 * len(self.clients)):
+            if not pending:
+                break
+            owner = {
+                client.kit: client.name
+                for client in self.clients
+                if client.kit is not None
+            }
+            ready = [
+                client
+                for client in pending
+                if owner.get(plan[client.name], client.name) == client.name
+            ]
+            if ready:
+                for client in ready:
+                    client.kit = None
+                    client.command("kit %s" % plan[client.name])
+                self.wait_until(
+                    lambda: all(client.kit == plan[client.name] for client in ready),
+                    15.0,
+                )
+                pending = [
+                    client for client in pending if client.kit != plan[client.name]
+                ]
+                continue
+
+            stuck = pending[0]
+            aside = self.unwanted(plan)
+            if aside is None:
+                break
+            stuck.kit = None
+            stuck.command("kit %s" % aside)
+            self.wait_until(lambda: stuck.kit == aside, 15.0)
+        return all(client.kit == plan[client.name] for client in self.clients)
+
     def select_kit(self, kit):
-        """Put every client on `kit`, which also restores them to full health."""
-        for client in self.clients:
-            client.kit = None
-            client.command("kit %s" % kit)
-        if not self.wait_until(
-            lambda: all(client.kit == kit for client in self.clients), 15.0
-        ):
+        """Put the attacker on `kit` and the victims on something else.
+
+        Also restores everybody to full health, which is what makes it worth
+        calling again between attempts.
+        """
+        plan = self.plan_for(kit)
+        if plan is None or not self.equip(plan):
             return False
         # The hotbar is rebuilt a tick later, in PostUpdate, and an ability
         # cannot be used before the item backing it exists.
@@ -969,12 +1141,24 @@ class Match:
         every splash skips, and an ability would then read as doing nothing when
         it was the arrangement that was spent. Picking the kit again is the
         game's own way of saying "start of a life", so it is what is used.
+
+        Each victim re-picks the mob it is already standing on rather than the
+        attacker's, which is the only thing one player per mob leaves open. It
+        also makes the victims a constant across the whole sweep instead of
+        changing with every kit, so an ability that reads as weak is weak and
+        not measured against a tougher target than the last one.
         """
+        plan = self.plan_for(entry["kit"])
+        if plan is None:
+            return
         for victim in self.clients[1:]:
             victim.kit = None
-            victim.command("kit %s" % entry["kit"])
+            victim.command("kit %s" % plan[victim.name])
         self.wait_until(
-            lambda: all(victim.kit == entry["kit"] for victim in self.clients[1:]), 5.0
+            lambda: all(
+                victim.kit == plan[victim.name] for victim in self.clients[1:]
+            ),
+            5.0,
         )
 
         base = SWEEP_Z + attempt * ATTEMPT_STRIDE
@@ -1266,8 +1450,10 @@ class Match:
         # A command sent before the server has moved this connection into play
         # would be read against the configuration state's id table.
         at(in_play, lambda: None)
-        for client, kit in zip(self.clients, kits):
-            at(0.2, lambda c=client, k=kit: c.command("kit %s" % k))
+        # One call rather than one command per client, because one player per
+        # mob makes the order matter: a client still holding the mob the next
+        # one was assigned refuses it. `equip` sorts that out.
+        at(0.2, lambda: self.equip(dict(zip((c.name for c in self.clients), kits))))
 
         # Everything below waits for `Go!`, so the countdown's length is the
         # server's business and not a number written down here.
@@ -1662,8 +1848,13 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.clients > len(args.kits.split(",")):
+    chosen = [kit.strip() for kit in args.kits.split(",")]
+    if args.clients > len(chosen):
         raise SystemExit("--kits needs one kit per client")
+    # One player per mob, so two clients cannot be given the same one: the
+    # second would be refused and the match would run a client short of a kit.
+    if len(set(chosen[: args.clients])) < args.clients:
+        raise SystemExit("--kits must name a different mob for each client")
 
     return Match(args).run()
 

@@ -40,6 +40,7 @@ impl Module for Cow {
         })
         .cost(6000)
         .blurb("Hard to move and hard to stop once it is moving.")
+        .mob("minecraft:cow")
         .ability(AbilitySpec {
             name: "Angry Herd",
             sound: "minecraft:entity.cow.ambient",

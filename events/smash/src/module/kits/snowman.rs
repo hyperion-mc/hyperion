@@ -40,6 +40,7 @@ impl Module for Snowman {
         })
         .cost(5000)
         .blurb("Own the ground you are standing on.")
+        .mob("minecraft:snow_golem")
         .ability(AbilitySpec {
             name: "Blizzard",
             sound: "minecraft:entity.snow_golem.shoot",
