@@ -1792,6 +1792,98 @@ mod projectiles {
         );
     }
 
+    /// A projectile that passes through somebody hits them, however fast it
+    /// was going.
+    ///
+    /// One tick of a fast projectile is a long line: Barrage's arrows cover
+    /// three blocks a step against a hit radius well under one, so a contact
+    /// test that only looks at where the projectile ended up leaves most of the
+    /// flight path as a hole a player can stand in. This puts the target
+    /// squarely in the middle of a step, where both endpoints miss it by a
+    /// wide margin and only the swept segment connects.
+    #[test]
+    fn a_fast_projectile_hits_what_it_passes_through() {
+        let mut game = Game::new();
+        let shooter = game.player("shooter", Vec3::new(0.0, 0.0, 40.0));
+        let target = game.player("target", Vec3::ZERO);
+        let shooter = game.world.entity_from_id(shooter);
+
+        // 120 blocks a second is six blocks in one 0.05s tick: from -3 to +3,
+        // straight through a target at the origin. Both endpoints are three
+        // blocks away from a radius of half a block.
+        fire(
+            shooter.world(),
+            shooter,
+            Flight {
+                position: Vec3::new(-3.0, 0.0, 0.0),
+                velocity: Vec3::new(120.0, 0.0, 0.0),
+                gravity: 0.0,
+                seconds_left: 5.0,
+                radius: 0.5,
+            },
+            Payload::new(4.0, 1.0),
+        );
+        game.advance(0.05, 1);
+
+        let health = game.world.entity_from_id(target).cloned::<&Health>();
+        assert!(
+            health.current < health.max,
+            "a projectile passed straight through a player without touching them"
+        );
+
+        // And it connected where it actually crossed, not at either end of the
+        // step. That point is what the knockback is measured away from, so a
+        // wrong one launches the victim in a wrong direction.
+        let contact = game
+            .server
+            .calls()
+            .into_iter()
+            .find_map(|call| match call {
+                Call::Cue(at, _) => Some(at),
+                _ => None,
+            })
+            .expect("a hit is cued where it landed");
+        assert!(
+            contact.distance(Vec3::ZERO) < 0.5,
+            "the hit was reported at {contact}, which is not where the path crossed the target"
+        );
+    }
+
+    /// A path that goes past somebody still misses them.
+    ///
+    /// The other half of the segment test: widening the contact check until
+    /// everything within a step is hit would pass the test above and break the
+    /// game.
+    #[test]
+    fn a_fast_projectile_that_passes_wide_still_misses() {
+        let mut game = Game::new();
+        let shooter = game.player("shooter", Vec3::new(0.0, 0.0, 40.0));
+        let bystander = game.player("bystander", Vec3::new(0.0, 0.0, 4.0));
+        let shooter = game.world.entity_from_id(shooter);
+
+        // The same six block step along x, with the bystander four blocks off
+        // it in z.
+        fire(
+            shooter.world(),
+            shooter,
+            Flight {
+                position: Vec3::new(-3.0, 0.0, 0.0),
+                velocity: Vec3::new(120.0, 0.0, 0.0),
+                gravity: 0.0,
+                seconds_left: 5.0,
+                radius: 0.5,
+            },
+            Payload::new(4.0, 1.0),
+        );
+        game.advance(0.05, 1);
+
+        let health = game.world.entity_from_id(bystander).cloned::<&Health>();
+        assert!(
+            (health.current - health.max).abs() < EPS,
+            "a projectile four blocks off its path hit somebody"
+        );
+    }
+
     /// A projectile never hits the player who fired it.
     #[test]
     fn a_projectile_passes_through_its_own_shooter() {
