@@ -459,6 +459,30 @@ def load_item_names():
     return base.registry_entries("minecraft:item")
 
 
+def hub_lost(during, clients):
+    """Why a gate that needed an unstarted lobby cannot go on, in one line.
+
+    The hub is the only place a gate can change a kit, click a podium or read
+    an untouched ring and be sure nothing is racing it. Several harnesses need
+    to know they still have it, for the same reason and with the same two
+    remedies, so the sentence is written once here rather than worded four
+    ways. `hotbar-check.py`, `hud-check.py`, `identity-check.py` and
+    `smash-selector.py` all load this module already.
+
+    What this deliberately does not do is tell a gate how many clients are
+    safe. That answer is `min_players` and `full_players` together, it belongs
+    to the server, and a helper that returned it would be exactly the copy of
+    `LobbyConfig::default` that this whole change exists to delete.
+    """
+    return (
+        "the lobby left the hub %s. %d clients is enough for this server to "
+        "start a countdown, so the hub is gone and nothing after this would be "
+        "proved. Either the gate's roster is too many for this lobby, or the "
+        "server needs a higher SMASH_MIN_PLAYERS/SMASH_FULL_PLAYERS."
+        % (during, clients)
+    )
+
+
 def stamp(started):
     return "%7.2fs" % (time.time() - started)
 
@@ -791,13 +815,7 @@ class Match:
         # longer reaches -- so the run failed with the reason nowhere in the
         # transcript. A guard that stops the right run for a reason nobody can
         # read is most of a guard.
-        self.log(
-            "SWEEP ABANDONED the lobby left the hub %s. %d clients is enough "
-            "for this server to start a countdown, so kits can no longer be "
-            "changed and nothing further would be proved. Either "
-            "--sweep-clients is too many for this lobby, or the server needs a "
-            "higher SMASH_MIN_PLAYERS/SMASH_FULL_PLAYERS." % (during, len(self.clients))
-        )
+        self.log("SWEEP ABANDONED %s" % hub_lost(during, len(self.clients)))
         return False
 
     # --- reading -------------------------------------------------------

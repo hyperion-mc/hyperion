@@ -149,10 +149,10 @@ PODIUM_END_PREFIX = "smash-podiums-end "
 FREE_BLOCK = "minecraft:lime_wool"
 TAKEN_BLOCK = "minecraft:red_wool"
 
-# events/smash/src/module/lobby.rs: `LobbyConfig::default`. Eight is
-# `full_players`, which is the shortest countdown the lobby will run and so the
-# cheapest way to reach a committed match.
-FULL_PLAYERS = 8
+# The roster that fills the lobby is `--full-clients` and not a constant here.
+# It was `FULL_PLAYERS = 8`, under a comment naming `LobbyConfig::default` as
+# where it came from, which is what made it a copy: #1019 moved that default to
+# 4 and this number stayed at 8, still claiming to be it.
 
 # How many lines a complete run reports. More than the nine claims, because two
 # of the checks answer several: the roster sweep proves the sound, its audience
@@ -563,6 +563,24 @@ class Run:
         self.failures.append(why)
         self.log("FAILED %s" % why)
 
+    def hub_only(self, during):
+        """Whether the lobby is still unstarted, which the hub checks need.
+
+        The wording is `smash-match.py`'s, which hit this first and owns the
+        sentence. Three clients used to sit below `min_players` and now sit
+        above it, so these checks run with a countdown underneath them rather
+        than in a hub that will wait, and a claim made while the match commits
+        is a claim about the wrong game.
+
+        Reading the phase off the server's own broadcasts rather than
+        recomputing a threshold is what keeps this right whatever the numbers
+        become, and is what keeps it from being one more copy of them.
+        """
+        if self.phase == "waiting":
+            return True
+        self.fail(match.hub_lost(during, len(self.live())))
+        return False
+
     def connect(self, count):
         for _ in range(count):
             name = "S%d" % (len(self.clients) + 1)
@@ -809,16 +827,26 @@ class Run:
     # --- the script -----------------------------------------------------
 
     def run(self):
-        # Three, which is one short of `min_players`, so the lobby stays in
-        # `Waiting` for as long as these checks take. A fourth client here
-        # would start a countdown underneath them and every later assertion
-        # would be racing it.
+        # Three because the checks below need three named roles -- a holder, a
+        # watcher, and somebody to take a freed mob -- and not because of any
+        # threshold. It used to say "one short of `min_players`", which was a
+        # second copy of `LobbyConfig::default` and stopped being true when
+        # #1019 moved it: three is now one *over* the minimum, and a countdown
+        # starts under these checks rather than after them.
+        #
+        # The lobby has to stay unstarted for all of them even so, which is the
+        # server's business and is checked with `hub_only` rather than computed
+        # here. `selection_survives_the_countdown` at the end wants the exact
+        # opposite and fills the lobby deliberately.
         one, two, three = self.connect(3)
         if not self.wait_until(
             lambda: all(client.joined for client in self.clients),
             60.0,
             "three clients to reach the world",
         ):
+            return self.report()
+
+        if not self.hub_only("before the hub checks began"):
             return self.report()
 
         self.the_ring_exists(one)
@@ -828,6 +856,11 @@ class Run:
         # the skin half is answered by a client that is not the one selecting.
         self.every_mob_answers_in_its_own_voice(one, two)
         self.a_skin_change_costs_nobody_their_world(one, two)
+        # Again before anything is claimed. The reads above cost real seconds,
+        # and a countdown that started during them makes every claim below a
+        # claim about a lobby that is no longer taking them.
+        if not self.hub_only("after reading the ring, before claiming a mob"):
+            return self.report()
         taken = self.a_click_picks_the_mob(one)
         if taken is None:
             return self.report()
@@ -1311,7 +1344,7 @@ class Run:
         not spend a minute of wall clock proving something a ten-second one
         proves.
         """
-        joining = FULL_PLAYERS - len(self.live())
+        joining = self.args.full_clients - len(self.live())
         if joining > 0:
             self.connect(joining)
         if not self.wait_until(
@@ -1479,6 +1512,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=25565)
+    parser.add_argument(
+        "--full-clients",
+        type=int,
+        default=8,
+        help="how many clients fill the lobby for the last check, which wants "
+        "a committed match and the shortest countdown the server will run. "
+        "Must be at or above the server's `full_players`. Declared by the gate "
+        "rather than read from a default here, because it is the server's "
+        "number: it was `FULL_PLAYERS = 8` copied out of `LobbyConfig::default` "
+        "until #1019 moved that default to 4 and the copy stayed at 8",
+    )
     args = parser.parse_args()
     return Run(args).run()
 

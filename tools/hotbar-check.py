@@ -19,9 +19,12 @@ the server does send, per kit, and holds them against the server's own registry:
   * they run from 0 upwards with no holes
   * switching kit leaves nothing of the last one behind
 
-One client and no match. The lobby needs four players to start a countdown, so
-a single connection stands in the hub indefinitely and can change kit as often
-as it likes, which is the cheapest place to ask this question.
+One client and no match. One player is below any minimum this server is
+configured to run, so a single connection stands in the hub indefinitely and
+can change kit as often as it likes, which is the cheapest place to ask this
+question. Said that way on purpose: this used to claim the lobby needs four,
+which was `LobbyConfig::default` restated here and stopped being true when
+#1019 made it two.
 
 Exits non-zero on the first thing that is not true, after printing what it saw.
 """
