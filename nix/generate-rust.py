@@ -223,14 +223,359 @@ def emit_enum(state: str, direction: str, packets: list[dict], emitter: WireEmit
     return "".join(lines)
 
 
-def emit_registries(doc: dict) -> str:
+# ---------------------------------------------------------------------------
+# Registries, as closed Rust enums
+#
+# A registry entry reaches Rust as a variant and not as a string, so a caller
+# cannot name a value the game does not have. The id it would have sent is the
+# variant's own discriminant -- `#[repr]` is chosen so the discriminant *is*
+# the network id -- which makes `id()` an `as` cast the optimiser folds away
+# rather than a lookup through a table or a match.
+#
+# Nothing here is curated. Every registry the extractor reports gets an enum,
+# because a hand-picked subset is a gap that surfaces the day somebody needs
+# the registry nobody picked.
+# ---------------------------------------------------------------------------
+
+# Rust identifiers are case-sensitive, so a collision is an exact string
+# collision and this is the whole test. It runs inside the generator rather
+# than in a test, because an identifier that collides does not compile and the
+# useful failure is the one naming which two entries did it.
+VARIANT = re.compile(r"^[A-Z][A-Za-z0-9]*$")
+
+
+def variant(entry: str) -> str:
+    """`minecraft:ambient.cave` -> AmbientCave, `brigadier:bool` -> BrigadierBool.
+
+    The namespace is dropped for `minecraft:` and folded in otherwise, so the
+    six `brigadier:` command argument types cannot collide with a vanilla path
+    spelled the same way.
+    """
+    namespace, _, path = entry.partition(":")
+    source = path if namespace == "minecraft" else entry.replace(":", "_")
+    return "".join(word[:1].upper() + word[1:] for word in re.split(r"[._/-]", source) if word)
+
+
+def repr_width(count: int) -> str:
+    """The narrowest unsigned repr that holds every id in the registry.
+
+    The discriminant is the network id, so the repr is also how much a value
+    costs to hold and to move. Nothing wants four bytes for a registry of five.
+    """
+    if count <= 1 << 8:
+        return "u8"
+    if count <= 1 << 16:
+        return "u16"
+    return "u32"
+
+
+WIDTH_BYTES = {"u8": 1, "u16": 2, "u32": 4}
+
+# The one registry with no enum here, and why.
+#
+# Not curation -- every other registry gets one whether or not anything uses
+# it, because a hand-picked subset is a gap waiting to be found. This one is
+# excluded because `protocol.json` is the wrong input for it. The extractor
+# gives up on `ParticleTypes#STREAM_CODEC` ("dispatched codec: the layout
+# depends on a runtime type"), so it reports the 125 names and nothing about
+# their bodies -- and 13 of the 125 carry one: `block` a block state, `dust` a
+# colour and a scale, `vibration` a destination and a flight time, and so on.
+# An enum generated from this file would be id-only and structurally unable to
+# say that, while being the more discoverable of the two names.
+#
+# `nix/generate-particles.py` reads the decompiled codecs instead and emits
+# `crates/hyperion-minecraft-proto/src/particle.rs`, the same way
+# `nix/generate-entity-types.py` owns entity types. It follows the conventions
+# below -- discriminant is the network id, `const fn id`, `name()` off a static
+# table, `from_id`/`from_name` at the decode boundary only, closed, no
+# `Unknown` -- and pins its ids against `PARTICLE_TYPE` here, which is what
+# stops the two from drifting.
+#
+# Do not add this back without deleting that generator first.
+NO_ENUM: dict[str, str] = {
+    "minecraft:particle_type": (
+        "its entries carry payloads that `protocol.json` cannot describe, so "
+        "`nix/generate-particles.py` reads the decompiled codecs instead and "
+        "owns the enum"
+    ),
+}
+
+
+def emit_registry_enum(doc: dict, name: str, entries: list[str]) -> str:
+    """One registry, as an enum plus the two tables its accessors index."""
+    v = doc["version"]
+    ty = pascal(name)
+    width = repr_width(len(entries))
+    idents = [variant(entry) for entry in entries]
+
+    seen: dict[str, str] = {}
+    for entry, ident in zip(entries, idents):
+        if ident in seen:
+            raise SystemExit(
+                "{}: `{}` and `{}` both become the variant `{}`; teach variant() a "
+                "disambiguation rather than dropping one".format(name, seen[ident], entry, ident)
+            )
+        if not VARIANT.match(ident):
+            raise SystemExit(
+                "{}: `{}` becomes `{}`, which is not a Rust identifier".format(name, entry, ident)
+            )
+        seen[ident] = entry
+
+    order = sorted(range(len(entries)), key=lambda index: entries[index])
+
+    out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"])]
+    out.append('''
+//! `{name}`, as a closed Rust enum.
+
+use crate::types::RegistryId;
+
+/// An entry of `{name}` ({count} of them).
+///
+/// Closed on purpose. Every value this version defines is a variant, so a
+/// caller cannot name one that does not exist and a `match` never needs an arm
+/// for a case that cannot occur. The one place a value might not be in the set
+/// is an id arriving off the wire, and [`{ty}::from_id`] is the only door for
+/// it.
+///
+/// The discriminant is the network id, so [`{ty}::id`] is an `as` cast: a
+/// known variant's id folds to a constant at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr({width})]
+pub enum {ty} {{
+'''.format(name=name, ty=ty, count=len(entries), width=width))
+    for index, (entry, ident) in enumerate(zip(entries, idents)):
+        out.append("    /// `{}` (id {}).\n".format(entry, index))
+        out.append("    {} = {},\n".format(ident, index))
+    out.append("}\n")
+
+    out.append('''
+/// Entry names in network-id order, so the index is the id.
+///
+/// A table and not a `match`, so [`{ty}::name`] is one load from a static.
+/// `crate::generated::registry::{const}` points at this same array, which is
+/// what stops the two from disagreeing.
+pub static NAMES_IN_ID_ORDER: [&str; {count}] = [
+'''.format(ty=ty, const=screaming(name), count=len(entries)))
+    for entry in entries:
+        out.append('    "{}",\n'.format(entry))
+    out.append("];\n")
+
+    out.append('''
+/// Discriminants ordered by name, so [`{ty}::from_name`] is a binary search
+/// and not a scan.
+///
+/// Sorted here, at generation time, rather than assumed of the registry:
+/// {unsorted}. A wrong order would fail as a lookup miss and read as "that
+/// entry does not exist", so `tests/registry_enum.rs` puts every one of the
+/// {count} names back through `from_name` rather than spot-checking.
+static BY_NAME: [{width}; {count}] = [
+'''.format(ty=ty,
+           width=width,
+           count=len(entries),
+           unsorted=("this registry's own order is not name order"
+                     if [entries[i] for i in order] != entries
+                     else "this registry happens to be in name order already, "
+                          "which is not something to rely on")))
+    for index in order:
+        out.append("    {},\n".format(index))
+    out.append("];\n")
+
+    out.append('''
+impl {ty} {{
+    /// The registry these values belong to.
+    pub const REGISTRY: &'static str = "{name}";
+
+    /// How many entries this version has, so every valid id is below it.
+    pub const COUNT: usize = {count};
+
+    /// Every entry, in network-id order, so the index is the id.
+    pub const ALL: &'static [Self] = &[
+'''.format(ty=ty, name=name, count=len(entries)))
+    for ident in idents:
+        out.append("        Self::{},\n".format(ident))
+    out.append('''    ];
+
+    /// The network id.
+    ///
+    /// `#[repr({width})]` on the enum is what makes this an `as` cast rather
+    /// than a lookup: for a variant known at compile time the whole call folds
+    /// to the number.
+    #[must_use]
+    pub const fn id(self) -> RegistryId {{
+        RegistryId(self as i32)
+    }}
+
+    /// The namespaced name, e.g. `{first}`.
+    ///
+    /// Not `const`: it reads a static table. The direction that is const is
+    /// [`Self::id`], which is the one that reaches the wire.
+    #[must_use]
+    pub fn name(self) -> &'static str {{
+        NAMES_IN_ID_ORDER[self as usize]
+    }}
+
+    /// Resolve an id that arrived off the wire.
+    ///
+    /// The decode boundary, and the only place a `{ty}` can fail to exist.
+    /// Every other path is holding a value that is already in the set.
+    #[must_use]
+    pub fn from_id(id: RegistryId) -> Option<Self> {{
+        usize::try_from(id.0)
+            .ok()
+            .and_then(|index| Self::ALL.get(index).copied())
+    }}
+
+    /// Resolve a name only known at run time -- one read out of a world file,
+    /// or typed into a command.
+    ///
+    /// A name known at compile time should be the variant instead, so that a
+    /// version bump dropping it fails to build at the line that wanted it
+    /// rather than returning `None` on whichever tick it was next needed.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {{
+        let found = BY_NAME
+            .binary_search_by(|&index| NAMES_IN_ID_ORDER[index as usize].cmp(name))
+            .ok()?;
+        Self::ALL.get(BY_NAME[found] as usize).copied()
+    }}
+}}
+
+impl core::fmt::Display for {ty} {{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {{
+        f.write_str(self.name())
+    }}
+}}
+
+// The zero-cost claim, checked by the compiler rather than by a test.
+//
+// A `const` context cannot call anything the compiler is unable to evaluate at
+// compile time, so if `id()` were ever a table lookup or a `match` over a
+// runtime value instead of a cast off the discriminant, this line would stop
+// building. It is the proof, not a restatement of it.
+const _: () = assert!({ty}::ALL[{last}].id().0 == {last});
+
+// And the size, for the same reason: `#[repr({width})]` is what makes the
+// discriminant the id, and a value of this enum is that many bytes and no
+// more. The old hand-written `EntityType` was a name pointer plus an `i32`,
+// which is 16.
+const _: () = assert!(core::mem::size_of::<{ty}>() == {bytes});
+'''.format(ty=ty, width=width, first=entries[0], last=len(entries) - 1,
+           bytes=WIDTH_BYTES[width]))
+    return "".join(out)
+
+
+def emit_names_only(doc: dict, name: str, entries: list[str]) -> str:
+    """A registry with no enum: the name table alone, and why it has no enum."""
     v = doc["version"]
     out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"])]
+    out.append('''
+//! `{name}` -- names only. This registry deliberately has no enum here.
+//!
+//! Reason: {reason}.
+//!
+//! Every other registry in this module is an enum whether or not anything uses
+//! it, because a hand-picked subset is a gap waiting to be found. This one is
+//! different in kind rather than in importance. The extractor cannot follow
+//! `ParticleTypes#STREAM_CODEC` past its runtime dispatch, so `protocol.json`
+//! carries these {count} names and nothing about their bodies -- and 13 of
+//! them have one. An enum generated from this file could name a particle but
+//! never carry its block state, its colour or its flight time, while being the
+//! more discoverable of the two spellings.
+//!
+//! The table below stays, because it is what the real generator pins its ids
+//! against.
+
+/// Entry names in network-id order, so the index is the id.
+pub static NAMES_IN_ID_ORDER: [&str; {count}] = [
+'''.format(name=name, reason=NO_ENUM[name], count=len(entries)))
+    for entry in entries:
+        out.append('    "{}",\n'.format(entry))
+    out.append("];\n")
+    return "".join(out)
+
+
+def emit_registries(doc: dict) -> dict[str, str]:
+    """`registry/mod.rs`, plus one file per registry."""
+    v = doc["version"]
+    registries = doc["registries"]
+
+    files = {
+        "registry/{}.rs".format(snake(name)): (
+            emit_names_only(doc, name, body["entries"])
+            if name in NO_ENUM
+            else emit_registry_enum(doc, name, body["entries"])
+        )
+        for name, body in registries.items()
+    }
+
+    out = [HEADER.format(version=v["id"], protocol=v["protocolVersion"])]
+    out.append("""
+//! Every vanilla registry, as a closed Rust enum.
+//!
+//! A registry is positional: the number on the wire is an entry's index into
+//! it, and that index moves whenever Mojang inserts an entry. The name is the
+//! part that survives a version bump, so the id belongs to the generator and
+//! the caller names the entry.
+//!
+//! Naming it as a *variant* rather than as a string is the point. A rename
+//! becomes a build failure at the line that wanted the value, instead of a
+//! `None` on whichever tick that value was next needed. Every enum here is
+//! closed -- there is no `Unknown(u32)` -- because a value inside the server
+//! has already been proven to be in the set. The one place that is not true is
+//! an id arriving off the wire, and `from_id` is the only door for it.
+//!
+//! Nothing is curated: every registry the extractor reports has an enum, so
+//! there is no subset to fall outside of. The single exception is
+//! `minecraft:particle_type`, whose entries carry payloads this file's input
+//! cannot describe; `nix/generate-particles.py` owns that one and the reason
+//! is written at the top of the `particle_type` module here.
+//!
+//! # What is free and what is not
+//!
+//! `id()` is an `as` cast off the discriminant and folds to a constant.
+//! `name()` is one load from a static table indexed by the discriminant.
+//! `from_name()` is a binary search, and is for names that are genuinely only
+//! known at run time.
+//!
+//! The first of those is not asserted in prose. Every registry file below ends
+//! in a `const` assertion calling `id()`, and a `const` context cannot call
+//! anything the compiler is unable to fold, so the build fails if `id()` ever
+//! stops being free:
+//!
+//! ```
+//! use hyperion_minecraft_proto::generated::registry::SoundEvent;
+//! const ID: i32 = SoundEvent::EntityArrowHit.id().0;
+//! const _: () = assert!(ID == 85);
+//! ```
+//!
+//! # The set is closed
+//!
+//! There is no way to name a sound this version does not have. Not a `None` at
+//! run time -- a compiler error, at the line that wanted it:
+//!
+//! ```compile_fail
+//! use hyperion_minecraft_proto::generated::registry::SoundEvent;
+//! // Invented, so this does not compile.
+//! let _ = SoundEvent::EntityArrowHitDeluxe;
+//! ```
+
+use crate::types::RegistryId;
+
+""")
+    for name in registries:
+        out.append("pub mod {};\n".format(snake(name)))
+    out.append("\n")
+    for name in registries:
+        if name in NO_ENUM:
+            continue
+        out.append("pub use {}::{};\n".format(snake(name), pascal(name)))
+
     out.append("""
 /// A vanilla registry: entry names indexed by their network id.
 ///
-/// Network ids are positional, so the index into [`Registry::entries`] is the
-/// id that appears on the wire.
+/// The name table each of these points at is the same array the registry's own
+/// enum indexes for `name()`, so the two cannot disagree about what the
+/// registry holds.
 #[derive(Debug, Clone, Copy)]
 pub struct Registry {
     /// Registry name, e.g. `minecraft:block`.
@@ -247,31 +592,77 @@ impl Registry {
     }
 
     /// Look up the network id of an entry name.
+    ///
+    /// Linear, and there is usually something better: the registry's own
+    /// `from_name` is a binary search, and naming the variant is no search at
+    /// all. This stays for callers walking registries generically.
     #[must_use]
     pub fn id_of(&self, name: &str) -> Option<usize> {
         self.entries.iter().position(|entry| *entry == name)
     }
 }
+
+/// One registry's enum behind function pointers, so a test can walk all of
+/// them rather than name 95 types by hand.
+///
+/// Only tests and tools use this. Nothing on a hot path goes through a
+/// function pointer to reach a registry id.
+#[derive(Debug, Clone, Copy)]
+pub struct EnumRegistry {
+    /// Registry name, e.g. `minecraft:block`.
+    pub name: &'static str,
+    /// The Rust type, so a failure message names it.
+    pub rust_type: &'static str,
+    /// How many entries, which is also how many variants.
+    pub count: usize,
+    /// Bytes of the enum's discriminant, which is `size_of` the enum.
+    pub width: usize,
+    /// `from_id`, then `name`.
+    pub name_of: fn(i32) -> Option<&'static str>,
+    /// `from_name`, then `id`.
+    pub id_of: fn(&str) -> Option<i32>,
+}
 """)
 
     consts = []
-    for name, body in doc["registries"].items():
+    for name, body in registries.items():
         const = screaming(name)
         consts.append(const)
         out.append("\n/// `{}` ({} entries).\n".format(name, len(body["entries"])))
         out.append("pub static {}: Registry = Registry {{\n".format(const))
         out.append('    name: "{}",\n'.format(name))
-        out.append("    entries: &[\n")
-        for entry in body["entries"]:
-            out.append('        "{}",\n'.format(entry))
-        out.append("    ],\n};\n")
+        out.append("    entries: &{}::NAMES_IN_ID_ORDER,\n".format(snake(name)))
+        out.append("};\n")
 
     out.append("\n/// Every registry the server reports, in name order.\n")
     out.append("pub static ALL: &[&Registry] = &[\n")
     for const in consts:
         out.append("    &{},\n".format(const))
     out.append("];\n")
-    return "".join(out)
+
+    out.append("""
+/// Every registry's enum, so one test covers all 95 of them.
+pub static ALL_ENUMS: &[EnumRegistry] = &[
+""")
+    for name, body in registries.items():
+        if name in NO_ENUM:
+            continue
+        out.append("""    EnumRegistry {{
+        name: "{name}",
+        rust_type: "{ty}",
+        count: {count},
+        width: {width},
+        name_of: |id| {ty}::from_id(RegistryId(id)).map({ty}::name),
+        id_of: |name| {ty}::from_name(name).map(|value| value.id().0),
+    }},
+""".format(name=name,
+           ty=pascal(name),
+           count=len(body["entries"]),
+           width=WIDTH_BYTES[repr_width(len(body["entries"]))]))
+    out.append("];\n")
+
+    files["registry/mod.rs"] = "".join(out)
+    return files
 
 
 def emit_mod(doc: dict) -> str:
@@ -312,13 +703,17 @@ def main() -> int:
         "mod.rs": emit_mod(doc),
         "version.rs": emit_version(doc),
         "packet_id.rs": emit_packet_ids(doc, emitter),
-        "registry.rs": emit_registries(doc),
         "data_component.rs": emit_data_components(doc, emitter),
         # Last, so every static the other files reference has been collected.
         "wire.rs": emit_wire(doc, emitter),
     }
-    for name, text in written.items():
-        (args.out / name).write_text(text)
+    # One file per registry rather than one file of 95, so a reader opening
+    # `registry/sound_event.rs` gets 1968 lines and not 35000.
+    written.update(emit_registries(doc))
+    for name, text in sorted(written.items()):
+        path = args.out / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
         print("{}: {} bytes".format(name, len(text)))
     return 0
 
