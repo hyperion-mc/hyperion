@@ -319,7 +319,7 @@ impl Module for RosterModule {
         // login is picked up by [`announce`] instead, which is both cheaper and
         // the only order that works: there is nothing to remove yet.
         world
-            .observer::<flecs::OnSet, &PlayerSkin>()
+            .observer_named::<flecs::OnSet, &PlayerSkin>("refresh_skin")
             .with(id::<Channel>())
             .each_entity(|entity, _| {
                 entity.world().get::<&Compose>(|compose| {
@@ -332,7 +332,7 @@ impl Module for RosterModule {
         // A flecs enum is an exclusive pair, so a change arrives as an add of
         // the new constant rather than as a set of a value.
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("broadcast_gamemode")
             .with((id::<Gamemode>(), id::<flecs::Wildcard>()))
             .with(id::<Channel>())
             .each_entity(|entity, ()| {
@@ -361,7 +361,7 @@ impl Module for RosterModule {
             });
 
         world
-            .observer::<flecs::OnRemove, &Uuid>()
+            .observer_named::<flecs::OnRemove, &Uuid>("remove_from_roster")
             .with_enum(crate::simulation::PacketState::Play)
             .each_entity(|entity, uuid| {
                 let uuid = uuid.0;

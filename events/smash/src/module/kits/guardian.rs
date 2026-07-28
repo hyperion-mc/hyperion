@@ -120,7 +120,7 @@ impl Module for Guardian {
         // The mark lapses on its own, and lapsing costs the victim three more
         // damage whether or not the Guardian is still nearby.
         world
-            .system_named::<(&Marked, &PlayerId)>("smash::kits::guardian::laser_expiry")
+            .system_named::<(&Marked, &PlayerId)>("laser_expiry")
             .each_entity(|guardian, (marked, _)| {
                 let world = guardian.world();
                 let now = world.get::<&MatchClock>(|clock| clock.0);

@@ -187,7 +187,7 @@ impl Module for ScoreboardModule {
         world.set(Drawn::default());
 
         world
-            .system_named::<()>("smash::update_scoreboard")
+            .system_named::<()>("update_scoreboard")
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();
@@ -242,7 +242,7 @@ impl Module for ScoreboardModule {
         // last life, not on the next one.
         world
             .observer_named::<crate::module::lives::EliminatedEvent, &PlayerId>(
-                "smash::spectate_on_elimination",
+                "spectate_on_elimination",
             )
             .with(Player::id())
             .each_iter(|it, _index, id| {

@@ -352,7 +352,7 @@ impl Module for LobbyModule {
         world.set(Lobby::default());
         world.set(LobbyConfig::from_env());
 
-        world.system_named::<()>("smash::lobby_tick").run(|mut it| {
+        world.system_named::<()>("lobby_tick").run(|mut it| {
             while it.next() {
                 let world = it.world();
                 let dt = it.delta_time();

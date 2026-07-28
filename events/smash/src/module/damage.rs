@@ -232,7 +232,7 @@ impl Module for DamageModule {
         // the borrow is gone. The query therefore does not name `Health` at
         // all.
         world
-            .observer_named::<Damaged, (&Armor, &Position, &PlayerId)>("smash::apply_damage")
+            .observer_named::<Damaged, (&Armor, &Position, &PlayerId)>("apply_damage")
             .with(Player::id())
             .each_iter(|it, index, (armor, position, player)| {
                 let event = *it.param();

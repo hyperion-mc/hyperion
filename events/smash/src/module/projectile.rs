@@ -108,7 +108,7 @@ impl Module for ProjectileModule {
         world.component::<FiredBy>().add(flecs::Exclusive);
 
         world
-            .system_named::<(&mut Flight, &Payload)>("smash::fly")
+            .system_named::<(&mut Flight, &Payload)>("fly")
             .each_iter(|it, index, (flight, payload)| {
                 let dt = it.delta_time();
                 let projectile = it.entity(index);

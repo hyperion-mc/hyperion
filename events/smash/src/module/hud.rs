@@ -534,7 +534,7 @@ impl Module for HudModule {
             .component::<Player>()
             .add_trait::<(flecs::With, Shown)>();
 
-        world.system_named::<()>("smash::update_hud").run(|mut it| {
+        world.system_named::<()>("update_hud").run(|mut it| {
             while it.next() {
                 let world = it.world();
                 let lobby = world.cloned::<&Lobby>();

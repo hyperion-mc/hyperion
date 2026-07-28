@@ -387,7 +387,7 @@ impl HyperionCore {
 
         #[rustfmt::skip]
         world
-            .observer::<flecs::OnSet, (&GameServerEndpoint, &AsyncRuntime, &Crypto, &CommandChannel)>()
+            .observer_named::<flecs::OnSet, (&GameServerEndpoint, &AsyncRuntime, &Crypto, &CommandChannel)>("bootstrap_network")
             .term_at(1).filter()
             .term_at(2).filter()
             .term_at(3).filter()
@@ -436,7 +436,7 @@ impl HyperionCore {
 
         // add yaw and pitch
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("default_player_yaw")
             .with(id::<Player>())
             .without(id::<Yaw>())
             .each_entity(|entity, ()| {
@@ -444,7 +444,7 @@ impl HyperionCore {
             });
 
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("default_player_pitch")
             .with(id::<Player>())
             .without(id::<Pitch>())
             .each_entity(|entity, ()| {

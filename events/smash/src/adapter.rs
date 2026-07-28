@@ -288,7 +288,7 @@ impl Module for SmashAdapterModule {
         // that changes which mob you are dresses you correctly, including a
         // path nobody has written yet.
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("wear_kit_skin")
             .with((Playing, id::<flecs::Wildcard>()))
             .each_entity(|player, ()| {
                 let Some(skin) = kit::skin_of(player) else {
@@ -311,7 +311,7 @@ impl Module for SmashAdapterModule {
         // state sync run in OnStore, so the writes have to already be on the
         // components by then or they wait a further tick.
         world
-            .system_named::<(&OpQueue, &Compose)>("smash::apply_server_ops")
+            .system_named::<(&OpQueue, &Compose)>("apply_server_ops")
             .kind(id::<flecs::pipeline::PostUpdate>())
             .each_iter(|it, _, (queue, compose)| {
                 let world = it.world();

@@ -35,7 +35,7 @@ impl Module for MirrorModule {
                 &mut OnGround,
                 &mut Velocity,
                 &mut SelectedSlot,
-            )>("smash::mirror_player_state")
+            )>("mirror_player_state")
             .kind(id::<flecs::pipeline::OnLoad>())
             .with(Player::id())
             .each(

@@ -247,7 +247,7 @@ impl Module for KnockbackModule {
 
         world
             .observer_named::<Smashed, (&Health, &KnockbackTaken, &Position, &OnGround, &PlayerId)>(
-                "smash::apply_knockback",
+                "apply_knockback",
             )
             .with(Player::id())
             .each_iter(|it, _index, (health, taken, position, ground, player)| {
