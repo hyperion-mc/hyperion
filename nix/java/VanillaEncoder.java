@@ -72,6 +72,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 
 import net.minecraft.core.HolderLookup;
@@ -108,6 +109,7 @@ import net.minecraft.network.CompressionEncoder;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.Varint21LengthFieldPrepender;
+import net.minecraft.network.chat.ChatTypeDecoration;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -144,6 +146,7 @@ import net.minecraft.server.packs.resources.CloseableResourceManager;
 import net.minecraft.server.packs.resources.MultiPackResourceManager;
 import net.minecraft.tags.TagLoader;
 import net.minecraft.tags.TagNetworkSerialization;
+import net.minecraft.world.BossEvent;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.EntityType;
@@ -171,6 +174,10 @@ import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.Strategy;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Team;
+import net.minecraft.world.scores.TeamColor;
+import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 
 public final class VanillaEncoder {
     /// Fixture ordering is part of the output, so a map that keeps insertion
@@ -279,7 +286,71 @@ public final class VanillaEncoder {
         heightmaps();
         lightData();
         playPackets(registries);
+        javaEnums();
         Files.writeString(out, toJson(), StandardCharsets.UTF_8);
+    }
+
+    /// The number the server sends for every constant of the enums
+    /// `nix/extract-protocol.py` generates a Rust type for.
+    ///
+    /// Those types are read out of decompiled Java by a regex, and no test
+    /// written from that same reading can catch a misreading of it. This is
+    /// the independent half: where the class publishes a `StreamCodec` the
+    /// number comes from running Mojang's own encoder and reading the `VarInt`
+    /// back out, so a Rust discriminant that disagrees is a byte that would
+    /// have gone out wrong.
+    ///
+    /// `tests/java_enum.rs` walks `ALL` for each type and compares every
+    /// constant, so a constant the generator invented, dropped or misnumbered
+    /// fails there rather than in a client.
+    private void javaEnums() {
+        // Encoder-checked: the bytes come from the class's own STREAM_CODEC.
+        enumCodecIds("Direction", Direction.values(), Direction.STREAM_CODEC);
+        enumCodecIds(
+                "ChatTypeParameter",
+                ChatTypeDecoration.Parameter.values(),
+                ChatTypeDecoration.Parameter.STREAM_CODEC);
+        enumCodecIds("HeightmapKind", Heightmap.Types.values(), Heightmap.Types.STREAM_CODEC);
+        enumCodecIds("TeamColor", TeamColor.values(), TeamColor.STREAM_CODEC);
+        enumCodecIds("TeamVisibility", Team.Visibility.values(), Team.Visibility.STREAM_CODEC);
+        enumCodecIds(
+                "TeamCollisionRule", Team.CollisionRule.values(), Team.CollisionRule.STREAM_CODEC);
+
+        // No STREAM_CODEC to run: the number is read from the class itself.
+        // `DisplaySlot.id()` is what `ClientboundSetDisplayObjectivePacket`'s
+        // `idMapper` calls, and the other three are written with `writeEnum`,
+        // which sends `ordinal()`.
+        for (DisplaySlot slot : DisplaySlot.values()) {
+            put("java_enum.DisplaySlot." + slot.name(), Integer.toString(slot.id()));
+        }
+        enumOrdinals("BossBarColor", BossEvent.BossBarColor.values());
+        enumOrdinals("BossBarOverlay", BossEvent.BossBarOverlay.values());
+        enumOrdinals("ObjectiveRenderType", ObjectiveCriteria.RenderType.values());
+        // Deliberately the ordinal and not `EquipmentSlot.STREAM_CODEC`, which
+        // sends `s.id` and numbers OFFHAND 5 where the ordinal is 1.
+        // `ClientboundSetEquipmentPacket` writes the ordinal.
+        enumOrdinals("EquipmentSlot", EquipmentSlot.values());
+    }
+
+    private <T extends Enum<T>> void enumOrdinals(String name, T[] values) {
+        for (T value : values) {
+            put("java_enum." + name + "." + value.name(), Integer.toString(value.ordinal()));
+        }
+    }
+
+    private <T extends Enum<T>> void enumCodecIds(
+            String name, T[] values, StreamCodec<? super ByteBuf, T> codec) {
+        for (T value : values) {
+            ByteBuf buffer = Unpooled.buffer();
+            codec.encode(buffer, value);
+            FriendlyByteBuf reading = new FriendlyByteBuf(buffer);
+            int id = reading.readVarInt();
+            if (reading.isReadable()) {
+                throw new IllegalStateException(
+                        name + "." + value.name() + " encodes to more than one VarInt");
+            }
+            put("java_enum." + name + "." + value.name(), Integer.toString(id));
+        }
     }
 
     /// The `packets` command: the same builders `fixtures` uses, listed for

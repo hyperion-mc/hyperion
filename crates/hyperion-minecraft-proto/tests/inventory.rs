@@ -161,7 +161,7 @@ fn set_equipment_marks_every_entry_but_the_last() {
     let packet = SetEquipment {
         entity: 42,
         slots: vec![
-            (EquipmentSlot::MainHand, sword()),
+            (EquipmentSlot::Mainhand, sword()),
             (EquipmentSlot::Head, Slot::Empty),
         ],
     };
@@ -199,11 +199,11 @@ fn equipment_slot_ordinals_are_declaration_order() {
     // are positions in net.minecraft.world.entity.EquipmentSlot and not the
     // ids any other packet uses.
     for (index, slot) in EquipmentSlot::ALL.iter().enumerate() {
-        let ordinal = u8::try_from(index).expect("eight slots");
-        assert_eq!(slot.ordinal(), ordinal);
-        assert_eq!(EquipmentSlot::from_ordinal(ordinal), Some(*slot));
+        let ordinal = i32::try_from(index).expect("eight slots");
+        assert_eq!(slot.id(), ordinal);
+        assert_eq!(EquipmentSlot::from_id(ordinal), Some(*slot));
     }
-    assert_eq!(EquipmentSlot::from_ordinal(8), None);
+    assert_eq!(EquipmentSlot::from_id(8), None);
 }
 
 #[test]

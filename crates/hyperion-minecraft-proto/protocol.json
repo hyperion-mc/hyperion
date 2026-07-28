@@ -432,6 +432,7 @@
       "play/serverbound/minecraft:player_loaded",
       "status/serverbound/minecraft:status_request"
     ],
+    "javaEnums": 11,
     "idCrossCheckMismatches": [],
     "dataComponentProblems": []
   },
@@ -14082,6 +14083,405 @@
       },
       "complete": true,
       "reasons": []
+    }
+  ],
+  "javaEnums": [
+    {
+      "rustName": "BossBarColor",
+      "type": "net.minecraft.world.BossEvent$BossBarColor",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "PINK",
+          "value": 0
+        },
+        {
+          "name": "BLUE",
+          "value": 1
+        },
+        {
+          "name": "RED",
+          "value": 2
+        },
+        {
+          "name": "GREEN",
+          "value": 3
+        },
+        {
+          "name": "YELLOW",
+          "value": 4
+        },
+        {
+          "name": "PURPLE",
+          "value": 5
+        },
+        {
+          "name": "WHITE",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "rustName": "BossBarOverlay",
+      "type": "net.minecraft.world.BossEvent$BossBarOverlay",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "PROGRESS",
+          "value": 0
+        },
+        {
+          "name": "NOTCHED_6",
+          "value": 1
+        },
+        {
+          "name": "NOTCHED_10",
+          "value": 2
+        },
+        {
+          "name": "NOTCHED_12",
+          "value": 3
+        },
+        {
+          "name": "NOTCHED_20",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "rustName": "ChatTypeParameter",
+      "type": "net.minecraft.network.chat.ChatTypeDecoration$Parameter",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "SENDER",
+          "value": 0
+        },
+        {
+          "name": "TARGET",
+          "value": 1
+        },
+        {
+          "name": "CONTENT",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "rustName": "Direction",
+      "type": "net.minecraft.core.Direction",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "DOWN",
+          "value": 0
+        },
+        {
+          "name": "UP",
+          "value": 1
+        },
+        {
+          "name": "NORTH",
+          "value": 2
+        },
+        {
+          "name": "SOUTH",
+          "value": 3
+        },
+        {
+          "name": "WEST",
+          "value": 4
+        },
+        {
+          "name": "EAST",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "rustName": "DisplaySlot",
+      "type": "net.minecraft.world.scores.DisplaySlot",
+      "numberedBy": "id",
+      "constants": [
+        {
+          "name": "LIST",
+          "value": 0
+        },
+        {
+          "name": "SIDEBAR",
+          "value": 1
+        },
+        {
+          "name": "BELOW_NAME",
+          "value": 2
+        },
+        {
+          "name": "TEAM_BLACK",
+          "value": 3
+        },
+        {
+          "name": "TEAM_DARK_BLUE",
+          "value": 4
+        },
+        {
+          "name": "TEAM_DARK_GREEN",
+          "value": 5
+        },
+        {
+          "name": "TEAM_DARK_AQUA",
+          "value": 6
+        },
+        {
+          "name": "TEAM_DARK_RED",
+          "value": 7
+        },
+        {
+          "name": "TEAM_DARK_PURPLE",
+          "value": 8
+        },
+        {
+          "name": "TEAM_GOLD",
+          "value": 9
+        },
+        {
+          "name": "TEAM_GRAY",
+          "value": 10
+        },
+        {
+          "name": "TEAM_DARK_GRAY",
+          "value": 11
+        },
+        {
+          "name": "TEAM_BLUE",
+          "value": 12
+        },
+        {
+          "name": "TEAM_GREEN",
+          "value": 13
+        },
+        {
+          "name": "TEAM_AQUA",
+          "value": 14
+        },
+        {
+          "name": "TEAM_RED",
+          "value": 15
+        },
+        {
+          "name": "TEAM_LIGHT_PURPLE",
+          "value": 16
+        },
+        {
+          "name": "TEAM_YELLOW",
+          "value": 17
+        },
+        {
+          "name": "TEAM_WHITE",
+          "value": 18
+        }
+      ]
+    },
+    {
+      "rustName": "EquipmentSlot",
+      "type": "net.minecraft.world.entity.EquipmentSlot",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "MAINHAND",
+          "value": 0
+        },
+        {
+          "name": "OFFHAND",
+          "value": 1
+        },
+        {
+          "name": "FEET",
+          "value": 2
+        },
+        {
+          "name": "LEGS",
+          "value": 3
+        },
+        {
+          "name": "CHEST",
+          "value": 4
+        },
+        {
+          "name": "HEAD",
+          "value": 5
+        },
+        {
+          "name": "BODY",
+          "value": 6
+        },
+        {
+          "name": "SADDLE",
+          "value": 7
+        }
+      ]
+    },
+    {
+      "rustName": "HeightmapKind",
+      "type": "net.minecraft.world.level.levelgen.Heightmap$Types",
+      "numberedBy": "id",
+      "constants": [
+        {
+          "name": "WORLD_SURFACE_WG",
+          "value": 0
+        },
+        {
+          "name": "WORLD_SURFACE",
+          "value": 1
+        },
+        {
+          "name": "OCEAN_FLOOR_WG",
+          "value": 2
+        },
+        {
+          "name": "OCEAN_FLOOR",
+          "value": 3
+        },
+        {
+          "name": "MOTION_BLOCKING",
+          "value": 4
+        },
+        {
+          "name": "MOTION_BLOCKING_NO_LEAVES",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "rustName": "ObjectiveRenderType",
+      "type": "net.minecraft.world.scores.criteria.ObjectiveCriteria$RenderType",
+      "numberedBy": "ordinal",
+      "constants": [
+        {
+          "name": "INTEGER",
+          "value": 0
+        },
+        {
+          "name": "HEARTS",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "rustName": "TeamCollisionRule",
+      "type": "net.minecraft.world.scores.Team$CollisionRule",
+      "numberedBy": "id",
+      "constants": [
+        {
+          "name": "ALWAYS",
+          "value": 0
+        },
+        {
+          "name": "NEVER",
+          "value": 1
+        },
+        {
+          "name": "PUSH_OTHER_TEAMS",
+          "value": 2
+        },
+        {
+          "name": "PUSH_OWN_TEAM",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "rustName": "TeamColor",
+      "type": "net.minecraft.world.scores.TeamColor",
+      "numberedBy": "id",
+      "constants": [
+        {
+          "name": "BLACK",
+          "value": 0
+        },
+        {
+          "name": "DARK_BLUE",
+          "value": 1
+        },
+        {
+          "name": "DARK_GREEN",
+          "value": 2
+        },
+        {
+          "name": "DARK_AQUA",
+          "value": 3
+        },
+        {
+          "name": "DARK_RED",
+          "value": 4
+        },
+        {
+          "name": "DARK_PURPLE",
+          "value": 5
+        },
+        {
+          "name": "GOLD",
+          "value": 6
+        },
+        {
+          "name": "GRAY",
+          "value": 7
+        },
+        {
+          "name": "DARK_GRAY",
+          "value": 8
+        },
+        {
+          "name": "BLUE",
+          "value": 9
+        },
+        {
+          "name": "GREEN",
+          "value": 10
+        },
+        {
+          "name": "AQUA",
+          "value": 11
+        },
+        {
+          "name": "RED",
+          "value": 12
+        },
+        {
+          "name": "LIGHT_PURPLE",
+          "value": 13
+        },
+        {
+          "name": "YELLOW",
+          "value": 14
+        },
+        {
+          "name": "WHITE",
+          "value": 15
+        }
+      ]
+    },
+    {
+      "rustName": "TeamVisibility",
+      "type": "net.minecraft.world.scores.Team$Visibility",
+      "numberedBy": "id",
+      "constants": [
+        {
+          "name": "ALWAYS",
+          "value": 0
+        },
+        {
+          "name": "NEVER",
+          "value": 1
+        },
+        {
+          "name": "HIDE_FOR_OTHER_TEAMS",
+          "value": 2
+        },
+        {
+          "name": "HIDE_FOR_OWN_TEAM",
+          "value": 3
+        }
+      ]
     }
   ],
   "registries": {

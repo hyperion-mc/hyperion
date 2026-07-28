@@ -512,8 +512,8 @@ fn set_player_team_methods() {
 fn display_slot_ids() {
     round_trip(&DisplaySlot::Sidebar, &hex("01"));
     round_trip(&DisplaySlot::TeamWhite, &hex("12"));
-    assert_eq!(DisplaySlot::Sidebar.to_id(), 1);
-    assert_eq!(DisplaySlot::TeamWhite.to_id(), 18);
+    assert_eq!(DisplaySlot::Sidebar.id(), 1);
+    assert_eq!(DisplaySlot::TeamWhite.id(), 18);
 }
 
 /// The sidebar slot in the packet that carries it, which is the one call the
@@ -522,7 +522,7 @@ fn display_slot_ids() {
 fn set_display_objective_sidebar() {
     round_trip(
         &SetDisplayObjective {
-            id: DisplaySlot::Sidebar.to_id(),
+            id: DisplaySlot::Sidebar.id(),
             objective_name: "smash",
         },
         &hex("0105736d617368"),

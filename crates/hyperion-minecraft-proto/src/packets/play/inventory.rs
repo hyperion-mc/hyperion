@@ -19,10 +19,17 @@
 //! [`crate::generated::packet_id::play::clientbound::PacketId`]; a body does
 //! not carry its own id because the same body can appear under two of them.
 
+/// Where a piece of equipment is worn.
+///
+/// Re-exported rather than declared: this module used to carry a second copy
+/// of the same eight constants, differing from
+/// [`crate::packets::play::entity`]'s only in what its accessors were called.
+pub use crate::generated::java_enum::EquipmentSlot;
 use crate::{
     Encode, Error, Reader, Result, Writer,
     codec::read_count,
     item::{Slot, nbt::NbtScan},
+    packets::play::entity::slot_byte,
 };
 
 /// `minecraft:container_set_content`, sent clientbound as play id 18.
@@ -161,72 +168,6 @@ impl<'a> SetPlayerInventory<'a> {
     }
 }
 
-/// Where a piece of equipment sits on an entity (`EquipmentSlot`).
-///
-/// `ClientboundSetEquipmentPacket` writes `equipmentSlot.ordinal()` rather than
-/// going through `EquipmentSlot.STREAM_CODEC`, and reads it back as an index
-/// into `EquipmentSlot.VALUES`, which is `List.of(values())`. So these numbers
-/// are the declaration order in `net.minecraft.world.entity.EquipmentSlot` and
-/// nothing else; they are not the ids any other packet uses for a slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-// `u8` and not the `i32` the crate's `VarInt` enums use: this one is written
-// as a single byte with a flag in its top bit, never as a `VarInt`.
-#[repr(u8)]
-pub enum EquipmentSlot {
-    /// The held item.
-    MainHand = 0,
-    /// The off-hand item.
-    OffHand = 1,
-    /// Boots.
-    Feet = 2,
-    /// Leggings.
-    Legs = 3,
-    /// Chestplate.
-    Chest = 4,
-    /// Helmet.
-    Head = 5,
-    /// Animal body armour, such as a horse's or a wolf's.
-    Body = 6,
-    /// A saddle, which became an equipment slot in 1.21.5.
-    Saddle = 7,
-}
-
-impl EquipmentSlot {
-    /// Every slot, in the order that is also their wire encoding.
-    pub const ALL: [Self; 8] = [
-        Self::MainHand,
-        Self::OffHand,
-        Self::Feet,
-        Self::Legs,
-        Self::Chest,
-        Self::Head,
-        Self::Body,
-        Self::Saddle,
-    ];
-
-    /// Resolve an ordinal, as the packet's own `EquipmentSlot.VALUES.get` does.
-    #[must_use]
-    pub const fn from_ordinal(ordinal: u8) -> Option<Self> {
-        match ordinal {
-            0 => Some(Self::MainHand),
-            1 => Some(Self::OffHand),
-            2 => Some(Self::Feet),
-            3 => Some(Self::Legs),
-            4 => Some(Self::Chest),
-            5 => Some(Self::Head),
-            6 => Some(Self::Body),
-            7 => Some(Self::Saddle),
-            _ => None,
-        }
-    }
-
-    /// The ordinal this slot is written as.
-    #[must_use]
-    pub const fn ordinal(self) -> u8 {
-        self as u8
-    }
-}
-
 /// `minecraft:set_equipment`, sent clientbound as play id 102.
 ///
 /// Layout from
@@ -263,10 +204,11 @@ impl<'a> SetEquipment<'a> {
         loop {
             let byte = reader.u8()?;
             let ordinal = byte & !CONTINUE_MASK;
-            let slot = EquipmentSlot::from_ordinal(ordinal).ok_or_else(|| Error::InvalidEnum {
-                name: "equipment slot",
-                value: i32::from(ordinal),
-            })?;
+            let slot =
+                EquipmentSlot::from_id(i32::from(ordinal)).ok_or_else(|| Error::InvalidEnum {
+                    name: "equipment slot",
+                    value: i32::from(ordinal),
+                })?;
             slots.push((slot, Slot::decode(reader, nbt)?));
             if byte & CONTINUE_MASK == 0 {
                 return Ok(Self { entity, slots });
@@ -284,10 +226,10 @@ impl Encode for SetEquipment<'_> {
         };
         writer.var_int(self.entity);
         for (slot, stack) in rest {
-            writer.u8(slot.ordinal() | CONTINUE_MASK);
+            writer.u8(slot_byte(*slot) | CONTINUE_MASK);
             stack.encode(writer)?;
         }
-        writer.u8(last.0.ordinal());
+        writer.u8(slot_byte(last.0));
         last.1.encode(writer)
     }
 }

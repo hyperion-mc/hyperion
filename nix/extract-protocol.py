@@ -1906,6 +1906,101 @@ def partition_opaque(
     return gaps, opaque, stale
 
 
+# Vanilla enums a Rust type needs, that no packet layout reaches.
+#
+# `writeEnum` sends an ordinal and `idMapper` sends a field, so a Java enum's
+# constant order *is* a wire table -- as much a definition with a source of
+# truth as a registry is, and hand-transcribing one is the same defect. These
+# eleven were transcribed by hand because the packet carrying each of them is a
+# refusal (`set_player_team`, `set_objective`, `set_equipment`, `commands`,
+# `level_chunk_with_light`) or, in the boss bar's case, was being extracted as
+# carrying no bytes at all. Extracting them directly does not wait for those
+# layouts to be recovered.
+#
+# The second element names the field carrying the number, or is None when the
+# number is the ordinal. It is declared rather than guessed because the two are
+# not interchangeable and the difference is invisible in the result: an enum
+# read as an ordinal where the server sends a field is a value off by however
+# far the two tables diverge, which for `EquipmentSlot` is four slots.
+JAVA_ENUMS: dict[str, tuple[str, str | None]] = {
+    "net.minecraft.core.Direction": ("Direction", None),
+    "net.minecraft.network.chat.ChatTypeDecoration$Parameter": ("ChatTypeParameter", None),
+    "net.minecraft.world.BossEvent$BossBarColor": ("BossBarColor", None),
+    "net.minecraft.world.BossEvent$BossBarOverlay": ("BossBarOverlay", None),
+    # Its own STREAM_CODEC is `idMapper(BY_ID, s -> s.id)`, which numbers
+    # OFFHAND 5 and FEET 1. That codec is not what any packet here reads:
+    # `ClientboundSetEquipmentPacket` writes `slotType.ordinal()` directly. The
+    # ordinal is therefore the number this type carries, and the other one is
+    # deliberately absent rather than present and wrong at the call site.
+    "net.minecraft.world.entity.EquipmentSlot": ("EquipmentSlot", None),
+    "net.minecraft.world.level.levelgen.Heightmap$Types": ("HeightmapKind", "id"),
+    "net.minecraft.world.scores.DisplaySlot": ("DisplaySlot", "id"),
+    "net.minecraft.world.scores.Team$CollisionRule": ("TeamCollisionRule", "id"),
+    "net.minecraft.world.scores.Team$Visibility": ("TeamVisibility", "id"),
+    "net.minecraft.world.scores.TeamColor": ("TeamColor", "id"),
+    "net.minecraft.world.scores.criteria.ObjectiveCriteria$RenderType": (
+        "ObjectiveRenderType",
+        None,
+    ),
+}
+
+
+def scan_java_enums(
+    index: SourceIndex, resolver: Resolver
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """The JAVA_ENUMS table, resolved against the decompiled source.
+
+    Nothing here is approximated: a class that has moved, an id field that has
+    gone, or a constant the id table does not mention all come back as problems
+    and fail the extraction, because the alternative to a loud failure is a
+    discriminant table that is quietly one version out of date.
+    """
+    out: list[dict[str, Any]] = []
+    problems: list[str] = []
+    for owner, (rust_name, id_field) in sorted(JAVA_ENUMS.items(), key=lambda kv: kv[1][0]):
+        if index.body_span(owner) is None:
+            problems.append(f"{rust_name}: {owner} is not in the decompiled tree")
+            continue
+        names = resolver._enum_constants(owner)  # noqa: SLF001
+        if not names:
+            problems.append(f"{rust_name}: {owner} is not an enum, or its constants moved")
+            continue
+        if id_field is None:
+            values = list(range(len(names)))
+            source = "ordinal"
+        else:
+            ids = resolver._enum_ids_from_field(owner, id_field)  # noqa: SLF001
+            missing = [n for n in names if not ids or n not in ids]
+            if missing:
+                problems.append(
+                    f"{rust_name}: {owner} has no `{id_field}` for {missing}; "
+                    "a constant with no number would decode to the wrong variant"
+                )
+                continue
+            values = [ids[n] for n in names]
+            source = id_field
+        if sorted(values) != list(range(len(values))):
+            # Every one of these is dense today. A sparse set needs a lookup
+            # rather than an index, which is a different generator; refusing
+            # says so instead of emitting something subtly wrong.
+            problems.append(
+                f"{rust_name}: {owner} numbers its constants {values}, which is not 0..n; "
+                "the generator only emits dense enums"
+            )
+            continue
+        out.append(
+            {
+                "rustName": rust_name,
+                "type": owner,
+                "numberedBy": source,
+                "constants": [
+                    {"name": name, "value": value} for name, value in zip(names, values)
+                ],
+            }
+        )
+    return out, problems
+
+
 def empty_packets(
     packets: list[Packet],
     index: SourceIndex,
@@ -2048,6 +2143,7 @@ def main() -> int:
     )
     id_mismatches = cross_check_packet_ids(packets, order, const_to_resource)
     empty, unwarranted_empty = empty_packets(packets, index, resolver.types, registered)
+    java_enums, java_enum_problems = scan_java_enums(index, resolver)
 
     complete = [p for p in packets if p.complete]
     partial = [p for p in packets if not p.complete and p.layout_source != "none"]
@@ -2095,6 +2191,7 @@ def main() -> int:
             # that starts claiming emptiness is the one regression that would
             # otherwise read as the extractor improving.
             "empty": empty,
+            "javaEnums": len(java_enums),
             "idCrossCheckMismatches": id_mismatches,
             "dataComponentProblems": component_problems,
         },
@@ -2116,6 +2213,9 @@ def main() -> int:
             for p in packets
         ],
         "dataComponents": components,
+        # Vanilla enums whose constant order is a wire table, resolved straight
+        # from the decompiled source because no packet layout reaches them.
+        "javaEnums": java_enums,
         "registries": {
             name: {
                 "protocolId": body.get("protocol_id"),
@@ -2139,6 +2239,13 @@ def main() -> int:
     print(f"  registries:           {len(doc['registries'])}", file=sys.stderr)
 
     failed = False
+    if java_enum_problems:
+        print(f"  JAVA ENUM SCAN FAILED: {len(java_enum_problems)}", file=sys.stderr)
+        for line in java_enum_problems:
+            print(f"    {line}", file=sys.stderr)
+        failed = True
+    else:
+        print(f"  java enums:           {len(java_enums)}", file=sys.stderr)
     if stale_opaque:
         print(f"  OPAQUE CARVE-OUT STALE: {len(stale_opaque)}", file=sys.stderr)
         for line in stale_opaque:

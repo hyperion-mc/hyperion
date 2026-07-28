@@ -27,27 +27,11 @@ pub const MAX_SECTION_BLOB: usize = 0x0020_0000;
 
 /// A heightmap kind (`Heightmap.Types`).
 ///
-/// The discriminants are `Heightmap.Types.id`, which
-/// `ByteBufCodecs.idMapper` writes as a `VarInt`. Only the three marked
-/// `Usage.CLIENT` are sent; the others are worldgen or server-side scratch,
-/// and `sendToClient` filters them out before the map is built.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(i32)]
-pub enum HeightmapKind {
-    /// Worldgen-only: highest non-air block.
-    WorldSurfaceWg = 0,
-    /// Highest non-air block. Sent to the client.
-    WorldSurface = 1,
-    /// Worldgen-only: highest motion-blocking block.
-    OceanFloorWg = 2,
-    /// Highest motion-blocking block. Server-side only.
-    OceanFloor = 3,
-    /// Highest motion-blocking or fluid block. Sent to the client.
-    MotionBlocking = 4,
-    /// As [`MotionBlocking`](Self::MotionBlocking) but ignoring leaves. Sent
-    /// to the client.
-    MotionBlockingNoLeaves = 5,
-}
+/// Generated: the discriminants are `Heightmap.Types.id`, which
+/// `ByteBufCodecs.idMapper` sends. Only the two accessors below are local,
+/// because which kinds reach a client is a fact about this packet rather than
+/// about the enum.
+pub use crate::generated::java_enum::HeightmapKind;
 
 impl HeightmapKind {
     /// The three `Usage.CLIENT` kinds, which are the ones this packet carries.
@@ -64,27 +48,6 @@ impl HeightmapKind {
             self,
             Self::WorldSurface | Self::MotionBlocking | Self::MotionBlockingNoLeaves
         )
-    }
-
-    /// The kind with this network id.
-    ///
-    /// # Errors
-    /// Returns [`Error::InvalidEnum`] for an id no kind carries. The server
-    /// itself clamps instead (`ByIdMap.OutOfBoundsStrategy.ZERO`), but
-    /// clamping here would silently turn a corrupt packet into a valid one.
-    pub const fn from_id(id: i32) -> Result<Self> {
-        match id {
-            0 => Ok(Self::WorldSurfaceWg),
-            1 => Ok(Self::WorldSurface),
-            2 => Ok(Self::OceanFloorWg),
-            3 => Ok(Self::OceanFloor),
-            4 => Ok(Self::MotionBlocking),
-            5 => Ok(Self::MotionBlockingNoLeaves),
-            _ => Err(Error::InvalidEnum {
-                name: "Heightmap.Types",
-                value: id,
-            }),
-        }
     }
 }
 
@@ -275,7 +238,13 @@ impl<'a> ChunkData<'a> {
         }
         let mut heightmaps = Vec::with_capacity(count);
         for _ in 0..count {
-            let kind = HeightmapKind::from_id(reader.var_int()?)?;
+            let id = reader.var_int()?;
+            // The server clamps instead (`ByIdMap.OutOfBoundsStrategy.ZERO`);
+            // clamping here would turn a corrupt packet into a valid one.
+            let kind = HeightmapKind::from_id(id).ok_or(Error::InvalidEnum {
+                name: "HeightmapKind",
+                value: id,
+            })?;
             let words = reader.var_int()?;
             let words = usize::try_from(words).map_err(|_| Error::NegativeLength(words))?;
             if words.saturating_mul(8) > reader.remaining_len() {
