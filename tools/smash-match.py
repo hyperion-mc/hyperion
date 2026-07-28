@@ -111,6 +111,7 @@ ACTION_RELEASE_USE_ITEM = 5
 
 # Clientbound play ids this file decodes. Everything else is counted by id and
 # reported in the census.
+S2C_ADD_ENTITY = 0x01
 S2C_CONTAINER_SET_SLOT = 0x14
 S2C_DISCONNECT = 0x20
 S2C_KEEP_ALIVE = 0x2C
@@ -516,6 +517,7 @@ class MatchClient(base.Client):
         self.yaw = 0.0
         self.pitch = 0.0
         self.health = None
+        self.spawns = []
         self.kit = None
         self.hotbar = {}
         self.seen = {}
@@ -696,6 +698,7 @@ class Match:
             self.proof["every declared ability did what it declared"] = None
             self.proof["every declared ability was heard"] = None
             self.proof["every declared ability was seen"] = None
+            self.proof["a projectile was drawn"] = None
             self.proof["cooldowns refused a second use"] = None
         self.proof.update({
             "four in play": None,
@@ -862,6 +865,17 @@ class Match:
             health = struct.unpack(">f", payload[:4])[0]
             client.health = health
             client.log("<- health %.2f/20" % health)
+        elif packet_id == S2C_ADD_ENTITY:
+            # `ClientboundAddEntityPacket`: entity id (varint), uuid (16 bytes),
+            # then the entity type as a varint registry id. That is all this
+            # needs -- it is counting that a projectile was *drawn*, not
+            # decoding where it went. The type id is recorded so the census can
+            # say what appeared.
+            _entity_id, off = take_var_int(payload)
+            off += 16
+            type_id, _ = take_var_int(payload, off)
+            client.spawns.append(type_id)
+            client.log("<- add_entity type=%d" % type_id)
         elif packet_id == S2C_SET_TITLE_TEXT:
             text, _ = take_nbt_string(payload, 0)
             client.log("<- title: %s" % text)
@@ -1421,6 +1435,7 @@ class Match:
             client.action_bar.clear()
             client.teleported_to.clear()
             client.sounds.clear()
+            client.spawns.clear()
         return {
             "melee": melee,
             "health": {client.name: client.health for client in self.clients},
@@ -1635,6 +1650,19 @@ class Match:
             self.particle_failures.append(
                 "%s fired and sent no level_particles a client could draw" % label
             )
+        # A projectile ability now puts an entity in the world. Not declared
+        # per ability -- which abilities fire one is a server-side detail this
+        # file deliberately does not carry a list of -- so it is proved once,
+        # in aggregate: over the whole sweep at least one `add_entity` for a
+        # projectile arrives. During the sweep the only new entities are
+        # projectiles, because every player spawned before it began.
+        spawned = [type_id for client in self.clients for type_id in client.spawns]
+        if spawned:
+            self.prove(
+                "a projectile was drawn",
+                "%s fired and the server sent add_entity type=%d" % (label, spawned[0]),
+            )
+            evidence.append("spawned: entity type %d" % spawned[0])
         self.sweep_results.append(
             "%-42s %s" % (label, "; ".join(evidence) or "nothing reached a client")
         )

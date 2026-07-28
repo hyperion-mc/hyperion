@@ -9,9 +9,16 @@
 //! the far side of the seam. Projectiles expire on a timer and on entity
 //! contact. `docs/smash-design.md` lists this as one of the two places the
 //! simulation is deliberately incomplete pending the hyperion wiring.
+//!
+//! What the flight above is authoritative for is the *hit*. What a client sees
+//! is drawn separately, by `crate::draw` on the host, off the [`Visual`] this
+//! module carries -- so the game half stays testable against the mock with no
+//! host anywhere near it, and the same `Flight` that decides the damage decides
+//! where the picture is. See [`fire`].
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::{
     flecs_ext::WorldRefExt,
@@ -27,6 +34,22 @@ use crate::{
 /// Tag on projectile entities.
 #[derive(Component, Debug)]
 pub struct Projectile;
+
+/// What a projectile is drawn as.
+///
+/// A generated [`EntityKind`] and not a stand-in enum a table maps, the same
+/// choice #1035 made for particles: an ability names the vanilla thing it wants
+/// to look like and the host draws exactly that. The game half carries it as a
+/// plain field -- `crate::draw` on the host is what turns it into a spawned
+/// entity -- so a test world that never imports a host still compiles and runs,
+/// it just draws nothing.
+///
+/// Exact where a vanilla entity is the thing (an arrow is [`EntityKind::Arrow`],
+/// an egg [`EntityKind::Egg`]); the closest always-rendered projectile where the
+/// real thing has no entity of its own (a thrown coal, an ink pellet), marked
+/// `[APPROXIMATED]` at the call site.
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Visual(pub EntityKind);
 
 #[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct Flight {
@@ -81,15 +104,22 @@ impl Payload {
     }
 }
 
-/// Fire one.
+/// Fire one, drawn as `visual`.
 ///
-/// Does not hand the projectile back: every caller so far sets everything it
-/// needs through [`Flight`] and [`Payload`], and returning an entity nobody
-/// uses only invites someone to hold it past the tick it dies on.
-pub fn fire(world: WorldRef<'_>, shooter: EntityView<'_>, flight: Flight, payload: Payload) {
+/// Does not hand the projectile back: every caller sets everything it needs
+/// through [`Flight`], [`Payload`] and [`Visual`], and returning an entity
+/// nobody uses only invites someone to hold it past the tick it dies on.
+pub fn fire(
+    world: WorldRef<'_>,
+    shooter: EntityView<'_>,
+    visual: Visual,
+    flight: Flight,
+    payload: Payload,
+) {
     world
         .new_entity()
         .add(Projectile::id())
+        .set(visual)
         .set(flight)
         .set(payload)
         .add((FiredBy, shooter));
@@ -103,6 +133,7 @@ impl Module for ProjectileModule {
         world.module::<Self>("smash::Projectile");
 
         world.component::<Projectile>();
+        world.component::<Visual>();
         world.component::<Flight>();
         world.component::<Payload>();
         // Relationship, so `(FiredBy, shooter)` can never be a bare tag.

@@ -11,6 +11,7 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::{
     module::{
@@ -19,7 +20,7 @@ use crate::{
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::{Player, Position},
-        projectile::{Flight, Impact, Payload, fire},
+        projectile::{Flight, Impact, Payload, Visual, fire},
         visuals,
     },
     server::{PlayerId, ServerHandle},
@@ -147,6 +148,9 @@ fn whirlpool_axe(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        // `[APPROXIMATED]`: a water shard has no entity; a spectral arrow is
+        // the closest glinting bolt that always renders.
+        Visual(EntityKind::SpectralArrow),
         Flight {
             position: cast.position.0,
             // "It moves rather slow and has less pulling force" than Iron Hook,

@@ -9,13 +9,14 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{Cast, Observable, splash, splash_at},
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     player::Position,
-    projectile::{Flight, Impact, Payload, fire},
+    projectile::{Flight, Impact, Payload, Visual, fire},
     visuals,
 };
 
@@ -129,6 +130,9 @@ fn iron_hook(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        // `[APPROXIMATED]`: the chain is not an entity; the bolt at its end is
+        // an arrow.
+        Visual(EntityKind::Arrow),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 20.0,

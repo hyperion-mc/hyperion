@@ -8,12 +8,13 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{self, Cast, Observable, splash_at},
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
-    projectile::{Flight, Payload, fire},
+    projectile::{Flight, Payload, Visual, fire},
 };
 
 /// `[VERIFIED]`: "You also deal 1 more damage to mobs who are on your snow."
@@ -98,6 +99,7 @@ fn blizzard(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::Snowball),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 22.0,
@@ -170,6 +172,7 @@ fn turret_ring(cast: &Cast<'_>) {
         fire(
             cast.world,
             cast.caster,
+            Visual(EntityKind::Snowball),
             Flight {
                 position: cast.position.0,
                 velocity: direction * 20.0,

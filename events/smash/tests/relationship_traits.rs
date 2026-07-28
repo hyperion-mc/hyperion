@@ -19,6 +19,7 @@ use std::process::Command;
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 use smash::{
     SmashModule,
     module::{
@@ -26,7 +27,7 @@ use smash::{
         effect::{self, Affliction, Blame, Effect, InflictedBy, Source, Upon},
         kit::Playing,
         lives::{LifeTier, ShownAs},
-        projectile::{self, FiredBy, Flight, Payload, Projectile},
+        projectile::{self, FiredBy, Flight, Payload, Projectile, Visual},
         selector::{Offers, StandsOn},
     },
 };
@@ -233,6 +234,7 @@ fn a_projectile_dies_with_its_shooter() {
     projectile::fire(
         (&world).into(),
         shooter,
+        Visual(EntityKind::Arrow),
         Flight {
             position: Vec3::ZERO,
             velocity: Vec3::X,

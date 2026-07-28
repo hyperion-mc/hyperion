@@ -8,13 +8,14 @@
 //! the wiki's numbers; Sulphur Bomb's are approximated.
 
 use flecs_ecs::prelude::*;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{Cast, Observable, splash},
     damage::DamageKind,
     kit::{self, AbilitySpec, KitSounds, KitStats},
     player::Player,
-    projectile::{Flight, Impact, Payload, fire},
+    projectile::{Flight, Impact, Payload, Visual, fire},
     visuals,
 };
 
@@ -125,6 +126,9 @@ fn sulphur_bomb(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        // `[APPROXIMATED]`: a thrown coal has no entity of its own; a small
+        // fireball reads as the explosive it becomes on contact.
+        Visual(EntityKind::SmallFireball),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 22.0,

@@ -10,13 +10,14 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{self, Cast, Observable, splash_at},
     damage::MeleeBonus,
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
-    projectile::{Flight, Payload, fire},
+    projectile::{Flight, Payload, Visual, fire},
 };
 
 /// `[VERIFIED]`: "you will slowly gain speed levels (up to 4)".
@@ -104,6 +105,7 @@ fn angry_herd(cast: &Cast<'_>) {
         fire(
             cast.world,
             cast.caster,
+            Visual(EntityKind::Cow),
             Flight {
                 position: cast.position.0 + side * offset,
                 velocity: forward * 14.0,

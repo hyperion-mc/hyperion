@@ -10,13 +10,14 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{self, Cast, Observable},
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     player::Position,
-    projectile::{Flight, Payload, fire},
+    projectile::{Flight, Payload, Visual, fire},
     visuals,
 };
 
@@ -114,6 +115,7 @@ fn block_toss(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::FallingBlock),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * speed,

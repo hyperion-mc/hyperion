@@ -6,6 +6,7 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::{
     module::{
@@ -13,7 +14,7 @@ use crate::{
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
-        projectile::{Flight, Impact, Payload, fire},
+        projectile::{Flight, Impact, Payload, Visual, fire},
         visuals,
     },
     server::{PlayerId, ServerHandle},
@@ -90,6 +91,9 @@ fn bile_blaster(cast: &Cast<'_>) {
         fire(
             cast.world,
             cast.caster,
+            // `[APPROXIMATED]`: bile has no entity; a snowball is the closest
+            // always-rendered blob.
+            Visual(EntityKind::Snowball),
             Flight {
                 position: cast.position.0,
                 velocity: (forward + side * offset).normalize_or_zero() * 20.0,
@@ -106,6 +110,7 @@ fn deaths_grasp(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::Arrow),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 16.0f32.mul_add(cast.charge, 24.0),

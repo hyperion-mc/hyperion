@@ -11,6 +11,7 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{self, Cast, Observable, splash},
@@ -18,7 +19,7 @@ use crate::module::{
     effect::{self, Affliction, Shows},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     player::Health,
-    projectile::{Flight, Impact, Payload, fire},
+    projectile::{Flight, Impact, Payload, Visual, fire},
     visuals,
 };
 
@@ -133,6 +134,9 @@ fn needler(cast: &Cast<'_>) {
         fire(
             cast.world,
             cast.caster,
+            // `[APPROXIMATED]`: a needle has no entity; a spectral arrow reads as
+            // a thin magic dart.
+            Visual(EntityKind::SpectralArrow),
             Flight {
                 position: cast.position.0,
                 velocity: direction * 34.0,
