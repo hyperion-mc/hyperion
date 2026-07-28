@@ -105,7 +105,19 @@ impl Module for ProjectileModule {
         world.component::<Projectile>();
         world.component::<Flight>();
         world.component::<Payload>();
-        world.component::<FiredBy>().add(flecs::Exclusive);
+        // Relationship, so `(FiredBy, shooter)` can never be a bare tag.
+        // Exclusive, because a projectile has one shooter. `DontFragment`,
+        // because the target is a player and a fragmenting relationship would
+        // mint an archetype per shooter as volleys fly. `(OnDeleteTarget,
+        // Delete)`: a projectile dies with the player who fired it, so a
+        // shooter disconnecting mid-flight takes their arrows with them rather
+        // than leaving them to land crediting nobody.
+        world
+            .component::<FiredBy>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive)
+            .add_trait::<flecs::DontFragment>()
+            .add_trait::<(flecs::OnDeleteTarget, flecs::Delete)>();
 
         world
             .system_named::<(&mut Flight, &Payload)>("fly")
