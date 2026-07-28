@@ -32,7 +32,7 @@
 use crate::{
     Decode, Encode, Error, Holder, Identifier, Reader, RegistryId, Result, Uuid, Writer,
     codec::{read_count, write_count},
-    generated::registry,
+    generated::registry::{self, CommandArgumentType},
     nbt,
     packets::play_login::GameType,
     text::Component,
@@ -596,9 +596,9 @@ pub enum StringArgumentKind {
 /// length-prefixed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArgumentType<'a> {
-    /// A type whose `ArgumentTypeInfo` writes no properties, held by its
-    /// network id in `minecraft:command_argument_type`.
-    Empty(RegistryId),
+    /// A type whose `ArgumentTypeInfo` writes no properties, held as its own
+    /// registry entry rather than as a number.
+    Empty(CommandArgumentType),
     /// `brigadier:double`, with optional bounds.
     Double {
         /// Lower bound; `None` is `Double.MIN_VALUE`.
@@ -638,8 +638,8 @@ pub enum ArgumentType<'a> {
     /// `resource_key`, `resource_or_tag`, `resource_or_tag_key` and
     /// `resource_selector`. Which one is the id; the payload is the registry.
     Registry {
-        /// Network id in `minecraft:command_argument_type`.
-        id: RegistryId,
+        /// Which of the five it is.
+        id: CommandArgumentType,
         /// Registry the argument names an element of, e.g. `minecraft:item`.
         registry: Identifier<'a>,
     },
@@ -662,42 +662,40 @@ const NUMBER_HAS_MIN: u8 = 1;
 /// See [`NUMBER_HAS_MIN`].
 const NUMBER_HAS_MAX: u8 = 2;
 
-/// The `minecraft:command_argument_type` network id of `name`.
-///
-/// # Errors
-/// Returns [`Error::InvalidIdentifier`] when the registry has no such entry,
-/// which means this crate's registry table and its argument-type list have
-/// drifted apart.
-fn argument_type_id(name: &str) -> Result<i32> {
-    let id = registry::COMMAND_ARGUMENT_TYPE
-        .id_of(name)
-        .ok_or_else(|| Error::InvalidIdentifier(name.to_owned()))?;
-    i32::try_from(id).map_err(|_| Error::InvalidIdentifier(name.to_owned()))
-}
-
 impl ArgumentType<'_> {
-    /// The network id this argument type is written under.
+    /// The registry entry this argument type is written as.
     ///
-    /// # Errors
-    /// See [`argument_type_id`].
-    pub fn to_id(&self) -> Result<i32> {
+    /// Infallible, and `const`. It used to look a name up in
+    /// `minecraft:command_argument_type` and return a `Result`, which meant
+    /// every command tree this server sends carried an error path for the
+    /// possibility that `brigadier:double` had stopped existing. It cannot
+    /// have: the name is a variant now, so a version that dropped it would
+    /// fail to build here instead.
+    #[must_use]
+    pub const fn to_type(&self) -> CommandArgumentType {
         match self {
-            Self::Empty(id) | Self::Registry { id, .. } => Ok(id.0),
-            Self::Double { .. } => argument_type_id("brigadier:double"),
-            Self::Entity { .. } => argument_type_id("minecraft:entity"),
-            Self::Float { .. } => argument_type_id("brigadier:float"),
-            Self::Integer { .. } => argument_type_id("brigadier:integer"),
-            Self::Long { .. } => argument_type_id("brigadier:long"),
-            Self::ScoreHolder { .. } => argument_type_id("minecraft:score_holder"),
-            Self::String(_) => argument_type_id("brigadier:string"),
-            Self::Time { .. } => argument_type_id("minecraft:time"),
+            Self::Empty(id) | Self::Registry { id, .. } => *id,
+            Self::Double { .. } => CommandArgumentType::BrigadierDouble,
+            Self::Entity { .. } => CommandArgumentType::Entity,
+            Self::Float { .. } => CommandArgumentType::BrigadierFloat,
+            Self::Integer { .. } => CommandArgumentType::BrigadierInteger,
+            Self::Long { .. } => CommandArgumentType::BrigadierLong,
+            Self::ScoreHolder { .. } => CommandArgumentType::ScoreHolder,
+            Self::String(_) => CommandArgumentType::BrigadierString,
+            Self::Time { .. } => CommandArgumentType::Time,
         }
+    }
+
+    /// The network id this argument type is written under.
+    #[must_use]
+    pub const fn to_id(&self) -> i32 {
+        self.to_type().id().0
     }
 
     /// Write the id and then the properties, as `ArgumentNodeStub.serializeCap`
     /// does.
     fn encode(&self, writer: &mut Writer) -> Result<()> {
-        writer.var_int(self.to_id()?);
+        writer.var_int(self.to_id());
         match self {
             Self::Empty(_) => {}
             Self::Float { min, max } => {
@@ -762,60 +760,60 @@ impl<'a> ArgumentType<'a> {
     /// properties would be read as the next node's fields.
     fn decode(reader: &mut Reader<'a>) -> Result<Self> {
         let raw = reader.var_int()?;
-        let name = usize::try_from(raw)
-            .ok()
-            .and_then(|id| registry::COMMAND_ARGUMENT_TYPE.get(id))
-            .ok_or(Error::InvalidEnum {
-                name: "minecraft:command_argument_type",
-                value: raw,
-            })?;
-        let id = RegistryId(raw);
-        Ok(match name {
-            "brigadier:float" => {
+        // The decode boundary, and the only place an argument type can fail to
+        // be one: the number came off the wire.
+        let id = CommandArgumentType::from_id(RegistryId(raw)).ok_or(Error::InvalidEnum {
+            name: "minecraft:command_argument_type",
+            value: raw,
+        })?;
+        Ok(match id {
+            CommandArgumentType::BrigadierFloat => {
                 let flags = reader.u8()?;
                 Self::Float {
                     min: read_if(flags & NUMBER_HAS_MIN != 0, reader, Reader::f32)?,
                     max: read_if(flags & NUMBER_HAS_MAX != 0, reader, Reader::f32)?,
                 }
             }
-            "brigadier:double" => {
+            CommandArgumentType::BrigadierDouble => {
                 let flags = reader.u8()?;
                 Self::Double {
                     min: read_if(flags & NUMBER_HAS_MIN != 0, reader, Reader::f64)?,
                     max: read_if(flags & NUMBER_HAS_MAX != 0, reader, Reader::f64)?,
                 }
             }
-            "brigadier:integer" => {
+            CommandArgumentType::BrigadierInteger => {
                 let flags = reader.u8()?;
                 Self::Integer {
                     min: read_if(flags & NUMBER_HAS_MIN != 0, reader, Reader::i32)?,
                     max: read_if(flags & NUMBER_HAS_MAX != 0, reader, Reader::i32)?,
                 }
             }
-            "brigadier:long" => {
+            CommandArgumentType::BrigadierLong => {
                 let flags = reader.u8()?;
                 Self::Long {
                     min: read_if(flags & NUMBER_HAS_MIN != 0, reader, Reader::i64)?,
                     max: read_if(flags & NUMBER_HAS_MAX != 0, reader, Reader::i64)?,
                 }
             }
-            "brigadier:string" => Self::String(StringArgumentKind::decode(reader)?),
-            "minecraft:entity" => {
+            CommandArgumentType::BrigadierString => {
+                Self::String(StringArgumentKind::decode(reader)?)
+            }
+            CommandArgumentType::Entity => {
                 let flags = reader.u8()?;
                 Self::Entity {
                     single: flags & 1 != 0,
                     players_only: flags & 2 != 0,
                 }
             }
-            "minecraft:score_holder" => Self::ScoreHolder {
+            CommandArgumentType::ScoreHolder => Self::ScoreHolder {
                 multiple: reader.u8()? & 1 != 0,
             },
-            "minecraft:time" => Self::Time { min: reader.i32()? },
-            "minecraft:resource_or_tag"
-            | "minecraft:resource_or_tag_key"
-            | "minecraft:resource"
-            | "minecraft:resource_key"
-            | "minecraft:resource_selector" => Self::Registry {
+            CommandArgumentType::Time => Self::Time { min: reader.i32()? },
+            CommandArgumentType::ResourceOrTag
+            | CommandArgumentType::ResourceOrTagKey
+            | CommandArgumentType::Resource
+            | CommandArgumentType::ResourceKey
+            | CommandArgumentType::ResourceSelector => Self::Registry {
                 id,
                 registry: Identifier::decode(reader)?,
             },

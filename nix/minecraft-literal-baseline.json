@@ -1,0 +1,433 @@
+{
+  "literals": {
+    "crates/hyperion-crafting/src/lib.rs": [
+      "minecraft:crafting_shapeless"
+    ],
+    "crates/hyperion-item/src/builder.rs": [
+      "minecraft:generic.attack_damage",
+      "minecraft:generic.attack_speed",
+      "minecraft:generic.max_health"
+    ],
+    "crates/hyperion-minecraft-proto/src/packets/configuration.rs": [
+      "minecraft:brand"
+    ],
+    "crates/hyperion-minecraft-proto/src/packets/play/chunk.rs": [
+      "minecraft:cloud",
+      "minecraft:crit",
+      "minecraft:dragon_breath",
+      "minecraft:explosion",
+      "minecraft:portal"
+    ],
+    "crates/hyperion-minecraft-proto/src/packets/play/player.rs": [
+      "minecraft:blank",
+      "minecraft:blank",
+      "minecraft:command_argument_type",
+      "minecraft:fixed",
+      "minecraft:fixed",
+      "minecraft:number_format_type",
+      "minecraft:number_format_type",
+      "minecraft:styled",
+      "minecraft:styled"
+    ],
+    "crates/hyperion-minecraft-proto/src/text/contents.rs": [
+      "minecraft:blocks"
+    ],
+    "crates/hyperion-minecraft-proto/tests/configuration.rs": [
+      "minecraft:banner_pattern",
+      "minecraft:block",
+      "minecraft:brand",
+      "minecraft:brand",
+      "minecraft:dimension_type",
+      "minecraft:overworld",
+      "minecraft:the_nether",
+      "minecraft:the_nether",
+      "minecraft:vanilla",
+      "minecraft:wool"
+    ],
+    "crates/hyperion-minecraft-proto/tests/inventory.rs": [
+      "minecraft:diamond_sword"
+    ],
+    "crates/hyperion-minecraft-proto/tests/play_combat.rs": [
+      "minecraft:hi"
+    ],
+    "crates/hyperion-minecraft-proto/tests/play_login.rs": [
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:the_nether",
+      "minecraft:the_nether"
+    ],
+    "crates/hyperion-minecraft-proto/tests/play_player.rs": [
+      "minecraft:ask_server"
+    ],
+    "crates/hyperion-minecraft-proto/tests/registry_data.rs": [
+      "minecraft:chat",
+      "minecraft:chat",
+      "minecraft:chat_type",
+      "minecraft:dimension_type",
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:plains",
+      "minecraft:the_end",
+      "minecraft:the_nether",
+      "minecraft:worldgen/biome"
+    ],
+    "crates/hyperion-minecraft-proto/tests/tag_data.rs": [
+      "minecraft:block",
+      "minecraft:entity_type",
+      "minecraft:item"
+    ],
+    "crates/hyperion-minecraft-proto/tests/text.rs": [
+      "minecraft:alt",
+      "minecraft:blocks",
+      "minecraft:pig",
+      "minecraft:pig",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:store"
+    ],
+    "crates/hyperion-minecraft-proto/tests/types.rs": [
+      "minecraft:block/stone"
+    ],
+    "crates/hyperion/src/net/protocol/join.rs": [
+      "minecraft:overworld"
+    ],
+    "crates/hyperion/src/net/protocol/pre_play.rs": [
+      "minecraft:brand",
+      "minecraft:vanilla"
+    ],
+    "crates/hyperion/src/simulation/blocks/loader/mod.rs": [
+      "minecraft:stone"
+    ],
+    "crates/hyperion/src/simulation/blocks/translate.rs": [
+      "minecraft:chest",
+      "minecraft:grass_block",
+      "minecraft:iron_chain",
+      "minecraft:plains",
+      "minecraft:plains",
+      "minecraft:plains",
+      "minecraft:short_grass",
+      "minecraft:stone"
+    ],
+    "crates/hyperion/src/simulation/command.rs": [
+      "minecraft:ask_server",
+      "minecraft:commands"
+    ],
+    "crates/hyperion/src/simulation/entity_kind.rs": [
+      "minecraft:entity_type"
+    ],
+    "crates/hyperion/src/simulation/inventory.rs": [
+      "minecraft:anvil",
+      "minecraft:beacon",
+      "minecraft:blast_furnace",
+      "minecraft:brewing_stand",
+      "minecraft:cartography_table",
+      "minecraft:crafting",
+      "minecraft:enchantment",
+      "minecraft:furnace",
+      "minecraft:generic_3x3",
+      "minecraft:generic_9x1",
+      "minecraft:generic_9x2",
+      "minecraft:generic_9x3",
+      "minecraft:generic_9x4",
+      "minecraft:generic_9x5",
+      "minecraft:generic_9x6",
+      "minecraft:grindstone",
+      "minecraft:hopper",
+      "minecraft:iron_chain",
+      "minecraft:lectern",
+      "minecraft:loom",
+      "minecraft:menu",
+      "minecraft:merchant",
+      "minecraft:short_grass",
+      "minecraft:shulker_box",
+      "minecraft:smithing",
+      "minecraft:smoker",
+      "minecraft:stonecutter",
+      "minecraft:turtle_scute"
+    ],
+    "crates/hyperion/src/simulation/metadata/block_display.rs": [
+      "minecraft:emerald_block",
+      "minecraft:emerald_block"
+    ],
+    "crates/hyperion/src/simulation/util.rs": [
+      "minecraft:worldgen/biome"
+    ],
+    "crates/hyperion/tests/protocol.rs": [
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:overworld",
+      "minecraft:overworld"
+    ],
+    "events/bedwars/src/module/attack.rs": [
+      "minecraft:armor",
+      "minecraft:armor",
+      "minecraft:entity.player.attack.crit",
+      "minecraft:entity.player.attack.knockback",
+      "minecraft:player_attack",
+      "minecraft:player_attack"
+    ],
+    "events/bedwars/src/module/damage.rs": [
+      "minecraft:entity.player.big_fall",
+      "minecraft:entity.player.small_fall",
+      "minecraft:fall",
+      "minecraft:fall"
+    ],
+    "events/smash/src/module/kit.rs": [
+      "minecraft:armor_stand",
+      "minecraft:stick"
+    ],
+    "events/smash/src/module/kits/blaze.rs": [
+      "minecraft:blaze",
+      "minecraft:entity.blaze.ambient",
+      "minecraft:entity.blaze.ambient",
+      "minecraft:entity.blaze.death",
+      "minecraft:entity.blaze.hurt",
+      "minecraft:entity.blaze.shoot",
+      "minecraft:entity.player.hurt_on_fire",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:item.firecharge.use",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/chicken.rs": [
+      "minecraft:chicken",
+      "minecraft:entity.chicken.ambient",
+      "minecraft:entity.chicken.ambient",
+      "minecraft:entity.chicken.death",
+      "minecraft:entity.chicken.egg",
+      "minecraft:entity.chicken.hurt",
+      "minecraft:entity.egg.throw",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/cow.rs": [
+      "minecraft:cow",
+      "minecraft:entity.cow.ambient",
+      "minecraft:entity.cow.ambient",
+      "minecraft:entity.cow.death",
+      "minecraft:entity.cow.hurt",
+      "minecraft:entity.cow.milk",
+      "minecraft:entity.mooshroom.convert",
+      "minecraft:iron_axe",
+      "minecraft:iron_shovel",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/creeper.rs": [
+      "minecraft:creeper",
+      "minecraft:entity.creeper.death",
+      "minecraft:entity.creeper.hurt",
+      "minecraft:entity.creeper.primed",
+      "minecraft:entity.creeper.primed",
+      "minecraft:entity.generic.explode",
+      "minecraft:entity.wither.spawn",
+      "minecraft:iron_axe",
+      "minecraft:iron_shovel",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/enderman.rs": [
+      "minecraft:block.stone.place",
+      "minecraft:compass",
+      "minecraft:enderman",
+      "minecraft:entity.ender_dragon.flap",
+      "minecraft:entity.ender_pearl.throw",
+      "minecraft:entity.enderman.ambient",
+      "minecraft:entity.enderman.death",
+      "minecraft:entity.enderman.hurt",
+      "minecraft:entity.enderman.teleport",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/guardian.rs": [
+      "minecraft:entity.elder_guardian.curse",
+      "minecraft:entity.generic.splash",
+      "minecraft:entity.guardian.ambient",
+      "minecraft:entity.guardian.attack",
+      "minecraft:entity.guardian.death",
+      "minecraft:entity.guardian.hurt",
+      "minecraft:entity.player.splash.high_speed",
+      "minecraft:guardian",
+      "minecraft:iron_axe",
+      "minecraft:iron_pickaxe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/iron_golem.rs": [
+      "minecraft:block.chain.place",
+      "minecraft:block.deepslate.break",
+      "minecraft:entity.iron_golem.attack",
+      "minecraft:entity.iron_golem.attack",
+      "minecraft:entity.iron_golem.death",
+      "minecraft:entity.iron_golem.hurt",
+      "minecraft:entity.ravager.roar",
+      "minecraft:iron_axe",
+      "minecraft:iron_golem",
+      "minecraft:iron_pickaxe",
+      "minecraft:iron_shovel",
+      "minecraft:nether_star"
+    ],
+    "events/smash/src/module/kits/skeleton.rs": [
+      "minecraft:arrow",
+      "minecraft:block.bone_block.break",
+      "minecraft:bow",
+      "minecraft:entity.arrow.shoot",
+      "minecraft:entity.fishing_bobber.throw",
+      "minecraft:entity.skeleton.ambient",
+      "minecraft:entity.skeleton.death",
+      "minecraft:entity.skeleton.hurt",
+      "minecraft:iron_axe",
+      "minecraft:item.crossbow.shoot",
+      "minecraft:nether_star",
+      "minecraft:skeleton"
+    ],
+    "events/smash/src/module/kits/sky_squid.rs": [
+      "minecraft:entity.cod.flop",
+      "minecraft:entity.lightning_bolt.thunder",
+      "minecraft:entity.squid.ambient",
+      "minecraft:entity.squid.ambient",
+      "minecraft:entity.squid.death",
+      "minecraft:entity.squid.hurt",
+      "minecraft:entity.squid.squirt",
+      "minecraft:iron_axe",
+      "minecraft:iron_shovel",
+      "minecraft:iron_sword",
+      "minecraft:nether_star",
+      "minecraft:squid"
+    ],
+    "events/smash/src/module/kits/slime.rs": [
+      "minecraft:entity.slime.attack",
+      "minecraft:entity.slime.death",
+      "minecraft:entity.slime.hurt",
+      "minecraft:entity.slime.jump",
+      "minecraft:entity.slime.squish",
+      "minecraft:entity.slime.squish",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star",
+      "minecraft:slime"
+    ],
+    "events/smash/src/module/kits/snowman.rs": [
+      "minecraft:block.snow.place",
+      "minecraft:entity.snow_golem.ambient",
+      "minecraft:entity.snow_golem.ambient",
+      "minecraft:entity.snow_golem.death",
+      "minecraft:entity.snow_golem.hurt",
+      "minecraft:entity.snow_golem.shoot",
+      "minecraft:entity.snowball.throw",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star",
+      "minecraft:snow_block",
+      "minecraft:snow_golem"
+    ],
+    "events/smash/src/module/kits/spider.rs": [
+      "minecraft:block.cobweb.place",
+      "minecraft:entity.bee.sting",
+      "minecraft:entity.player.hurt_sweet_berry_bush",
+      "minecraft:entity.spider.ambient",
+      "minecraft:entity.spider.ambient",
+      "minecraft:entity.spider.death",
+      "minecraft:entity.spider.hurt",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star",
+      "minecraft:spider"
+    ],
+    "events/smash/src/module/kits/wither_skeleton.rs": [
+      "minecraft:entity.illusioner.mirror_move",
+      "minecraft:entity.shulker.teleport",
+      "minecraft:entity.wither.shoot",
+      "minecraft:entity.wither_skeleton.ambient",
+      "minecraft:entity.wither_skeleton.death",
+      "minecraft:entity.wither_skeleton.hurt",
+      "minecraft:iron_axe",
+      "minecraft:iron_sword",
+      "minecraft:nether_star",
+      "minecraft:wither_skeleton"
+    ],
+    "events/smash/src/module/kits/wolf.rs": [
+      "minecraft:entity.baby_wolf.ambient",
+      "minecraft:entity.wolf.ambient",
+      "minecraft:entity.wolf.death",
+      "minecraft:entity.wolf.growl",
+      "minecraft:entity.wolf.hurt",
+      "minecraft:entity.wolf_angry.growl",
+      "minecraft:iron_axe",
+      "minecraft:iron_shovel",
+      "minecraft:nether_star",
+      "minecraft:wolf"
+    ],
+    "events/smash/src/module/kits/zombie.rs": [
+      "minecraft:bow",
+      "minecraft:entity.fishing_bobber.retrieve",
+      "minecraft:entity.witch.throw",
+      "minecraft:entity.zombie.ambient",
+      "minecraft:entity.zombie.ambient",
+      "minecraft:entity.zombie.death",
+      "minecraft:entity.zombie.hurt",
+      "minecraft:iron_axe",
+      "minecraft:nether_star",
+      "minecraft:zombie"
+    ],
+    "events/smash/src/module/selector.rs": [
+      "minecraft:lime_wool",
+      "minecraft:red_wool"
+    ],
+    "events/smash/src/module/sound.rs": [
+      "minecraft:block.beacon.deactivate",
+      "minecraft:block.note_block.hat",
+      "minecraft:entity.arrow.hit",
+      "minecraft:entity.arrow.hit_player",
+      "minecraft:entity.ender_dragon.growl",
+      "minecraft:entity.player.attack.strong",
+      "minecraft:entity.villager.no",
+      "minecraft:ui.toast.challenge_complete"
+    ],
+    "events/smash/tests/abilities.rs": [
+      "minecraft:entity.arrow.shoot"
+    ],
+    "events/smash/tests/contract.rs": [
+      "minecraft:block.note_block.hat",
+      "minecraft:creeper",
+      "minecraft:entity.player.hurt_on_fire"
+    ],
+    "events/smash/tests/maps.rs": [
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone",
+      "minecraft:stone"
+    ],
+    "events/smash/tests/modularity.rs": [
+      "minecraft:iron_axe",
+      "minecraft:iron_axe",
+      "minecraft:iron_shovel",
+      "minecraft:iron_sword",
+      "minecraft:nether_star"
+    ],
+    "events/smash/tests/sound.rs": [
+      "minecraft:block.note_block.bell",
+      "minecraft:block.note_block.bell",
+      "minecraft:block.note_block.bell",
+      "minecraft:block.note_block.bell",
+      "minecraft:block.note_block.bell",
+      "minecraft:block.note_block.hat"
+    ],
+    "events/smash/tests/verification.rs": [
+      "minecraft:bow",
+      "minecraft:stick",
+      "minecraft:stick",
+      "minecraft:stone"
+    ]
+  }
+}

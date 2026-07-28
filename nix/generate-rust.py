@@ -283,20 +283,23 @@ WIDTH_BYTES = {"u8": 1, "u16": 2, "u32": 4}
 # An enum generated from this file would be id-only and structurally unable to
 # say that, while being the more discoverable of the two names.
 #
-# `nix/generate-particles.py` reads the decompiled codecs instead and emits
-# `crates/hyperion-minecraft-proto/src/particle.rs`, the same way
-# `nix/generate-entity-types.py` owns entity types. It follows the conventions
-# below -- discriminant is the network id, `const fn id`, `name()` off a static
-# table, `from_id`/`from_name` at the decode boundary only, closed, no
-# `Unknown` -- and pins its ids against `PARTICLE_TYPE` here, which is what
-# stops the two from drifting.
+# A separate generator reads the decompiled codecs instead, which is where the
+# payload shapes are. It follows the conventions below -- discriminant is the
+# network id, `const fn id`, `name()` off a static table, `from_id`/`from_name`
+# at the decode boundary only, closed, no `Unknown` -- and pins its ids against
+# `PARTICLE_TYPE` here, which is what stops the two from drifting.
 #
-# Do not add this back without deleting that generator first.
+# The name table below therefore stays even though the enum does not, because
+# it is what that generator pins against.
+#
+# Do not add this registry back without first deleting whatever generator owns
+# the particle enum. Two enums over one registry, with the poorer one being the
+# more discoverable name, is worse than either alone.
 NO_ENUM: dict[str, str] = {
     "minecraft:particle_type": (
-        "its entries carry payloads that `protocol.json` cannot describe, so "
-        "`nix/generate-particles.py` reads the decompiled codecs instead and "
-        "owns the enum"
+        "13 of its 125 entries carry payloads that `protocol.json` cannot "
+        "describe, so the enum is generated from the decompiled codecs instead "
+        "and lives outside this file"
     ),
 }
 
@@ -482,8 +485,8 @@ def emit_names_only(doc: dict, name: str, entries: list[str]) -> str:
 //! never carry its block state, its colour or its flight time, while being the
 //! more discoverable of the two spellings.
 //!
-//! The table below stays, because it is what the real generator pins its ids
-//! against.
+//! The table below stays, because it is what the generator that does own the
+//! enum pins its ids against.
 
 /// Entry names in network-id order, so the index is the id.
 pub static NAMES_IN_ID_ORDER: [&str; {count}] = [
@@ -527,8 +530,8 @@ def emit_registries(doc: dict) -> dict[str, str]:
 //! Nothing is curated: every registry the extractor reports has an enum, so
 //! there is no subset to fall outside of. The single exception is
 //! `minecraft:particle_type`, whose entries carry payloads this file's input
-//! cannot describe; `nix/generate-particles.py` owns that one and the reason
-//! is written at the top of the `particle_type` module here.
+//! cannot describe; its enum is generated from the decompiled codecs instead,
+//! and the reason is written at the top of the `particle_type` module here.
 //!
 //! # What is free and what is not
 //!

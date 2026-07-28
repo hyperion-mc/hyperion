@@ -325,6 +325,9 @@ let
   toolPathChecker = pkgs.writers.writePython3Bin "check-tool-paths" pythonWriterOptions
     (builtins.readFile ./check-tool-paths.py);
 
+  literalChecker = pkgs.writers.writePython3Bin "check-minecraft-literals" pythonWriterOptions
+    (builtins.readFile ./check-minecraft-literals.py);
+
   # The NBT blobs live next to the Rust that `include_bytes!`es them, so this
   # output is a whole directory rather than a single file.
   generatedRegistryData = pkgs.runCommand "hyperion-minecraft-registry-data-${pin.id}"
@@ -566,6 +569,20 @@ let
     '';
   };
 
+  # Rewrites the raw-literal baseline. The same command tightens it after a
+  # migration and records a deliberate new one, so the two cannot drift.
+  syncLiteralsScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-literals";
+    runtimeInputs = [ pkgs.git literalChecker ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      check-minecraft-literals \
+        --root "$root" \
+        --baseline "$root/nix/minecraft-literal-baseline.json" \
+        --write
+    '';
+  };
+
   # The fixtures are committed so `cargo test` runs without nix. That only
   # stays honest if something notices when the jar stops producing them.
   fixturesUpToDate = pkgs.runCommand "check-minecraft-encoder-fixtures"
@@ -739,6 +756,46 @@ let
     ];
   };
 
+  # A raw `"minecraft:..."` in Rust is an unproven claim, and this is what
+  # stops the class from growing back.
+  #
+  # Every static registry is a closed enum now, so a name written as a string
+  # is a name nothing checks: a typo or a Mojang rename becomes a `None` at run
+  # time rather than a compile error. The checker walks each file the way Rust
+  # lexes it -- a regex over lines cannot tell `//! minecraft:pig` from
+  # `"minecraft:pig"`, and this repo's doc comments name registry entries
+  # constantly.
+  #
+  # A ratchet in both directions, like the coverage one. A new literal is a
+  # regression; a literal that has gone means the baseline has stopped bounding
+  # anything and should be tightened with `nix run .#sync-minecraft-literals`.
+  #
+  # The source is filtered to what the checker reads. Without that, every Rust
+  # edit anywhere in the tree rebuilds this.
+  literalRatchet = pkgs.runCommand "check-minecraft-literals"
+    {
+      nativeBuildInputs = [ literalChecker pkgs.git ];
+    }
+    ''
+      cp -r ${literalSource} source
+      chmod -R u+w source
+      cd source
+      git init -q .
+      git add -A
+      check-minecraft-literals \
+        --root . \
+        --baseline ${../nix/minecraft-literal-baseline.json}
+      touch $out
+    '';
+
+  # `git ls-files` is how the checker finds its inputs, so the copy it runs
+  # against has to be a git tree. Only Rust sources and the checker's own
+  # baseline matter, so nothing else is copied in.
+  literalSource = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.fileFilter (file: file.hasExt "rs") ../.;
+  };
+
   # protocol.json is the input build.rs reads, so a stale copy is a stale
   # packet struct in every build that does not go through nix. Guarding it is
   # what lets the structs live in OUT_DIR instead of in the tree.
@@ -785,6 +842,9 @@ in
     coverageRatchet
     toolPathChecker
     toolPaths
+    literalChecker
+    literalRatchet
+    syncLiteralsScript
     generatedUpToDate
     registryDataUpToDate
     tagDataUpToDate
