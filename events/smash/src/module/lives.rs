@@ -285,15 +285,28 @@ impl Module for LivesModule {
         world.component::<LifeTier>();
         world.component::<Tint>();
         world.component::<AtMost>();
-        // Exclusive is what makes "in exactly one band" a property of the
-        // world rather than of the code that writes the edge: adding the new
-        // tier removes the old one, with no window in between where a player
-        // is in two.
-        world.component::<ShownAs>().add_trait::<flecs::Exclusive>();
+        // Three traits, each foreclosing a different way the edge could be
+        // wrong. `Relationship`: `ShownAs` is only ever the relationship half
+        // of `(ShownAs, tier)`, so adding it as a bare tag is a panic at the
+        // call site rather than a silent no-op no query matches. `Exclusive`:
+        // adding the new tier removes the old one atomically, so "in exactly
+        // one band" is a property of the world, with no window where a player
+        // is in two. `(OneOf, LifeTier)`: the target must be a child of
+        // `LifeTier`, so `(ShownAs, <a player>)` or `(ShownAs, <a kit>)` is a
+        // panic rather than an edge pointing at something that is not a band.
+        world
+            .component::<ShownAs>()
+            .add_trait::<flecs::Relationship>()
+            .add_trait::<flecs::Exclusive>()
+            .add_trait::<(flecs::OneOf, LifeTier)>();
+        // A child of `LifeTier`, which is what `(OneOf, LifeTier)` above
+        // requires of every `ShownAs` target, and what draws the five bands as
+        // a readable subtree under the tier component in the explorer.
         for (name, at_most, tint) in TIERS {
             world
                 .entity_named(name)
                 .add(LifeTier::id())
+                .child_of(LifeTier::id())
                 .set(AtMost(at_most))
                 .set(Tint(tint));
         }
