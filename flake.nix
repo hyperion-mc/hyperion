@@ -83,6 +83,18 @@
             inherit (minecraft) jdk serverClasspath pin;
           };
 
+          # One harness behind both the `nix run` gates and the sandboxed
+          # checks, so the two cannot drift.
+          e2e = import ./nix/e2e.nix {
+            inherit pkgs lib fileDescriptors;
+            sources = {
+              root = ./.;
+              tools = ./tools;
+              protoSource = ./crates/hyperion-minecraft-proto/src;
+              genmap = ./crates/hyperion-genmap/src/lib.rs;
+            };
+          };
+
           cargoTools = [
             pkgs.cargo-deny
             pkgs.cargo-machete
@@ -375,9 +387,8 @@
             # a run does not fight a `nix run .#dev` open in another terminal.
             e2e = {
               deps = [
-                pkgs.process-compose
                 pkgs.git
-                pkgs.python3
+                e2e.driver
               ];
               text = ''
                 root="$(git rev-parse --show-toplevel)"
@@ -387,86 +398,24 @@
                 # `smash-e2e` sets both and this stays the bedwars gate. Two
                 # apps rather than one with a flag, because the useful thing to
                 # type is one word.
-                export HYPERION_EVENT="''${HYPERION_EVENT:-bedwars}"
-                read -ra client <<< "''${HYPERION_E2E_CLIENT:-tools/client-26.2.py --name e2e}"
+                event="''${HYPERION_EVENT:-bedwars}"
+                profile="''${HYPERION_PROFILE:-dev}"
+
+                # cargo, not the store: what a person debugging wants is the
+                # code in their working tree, rebuilt incrementally. The check
+                # of the same name hands the same driver two store paths, and
+                # that is the only difference between them.
+                export HYPERION_E2E_GAME_SERVER="cargo run --profile $profile -p $event --"
+                export HYPERION_E2E_PROXY="cargo run --profile $profile --bin hyperion-proxy --"
+                export HYPERION_E2E_CLIENT="''${HYPERION_E2E_CLIENT:-tools/client-26.2.py --name e2e}"
+                # Certificates from the store rather than `nix run .#certs`, so
+                # a fresh clone runs this without a setup step first.
+                export HYPERION_E2E_CERTS="${e2e.certs}"
 
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
-                player_port="$HYPERION_PLAYER_PORT"
-                server_port="$HYPERION_SERVER_PORT"
 
-                log="$(mktemp -t hyperion-e2e.XXXXXX)"
-                echo "stack log: $log"
-
-                "${lib.getExe runners.dev}" --tui=false >> "$log" 2>&1 &
-                stack=$!
-                # Killing the process group, not the pid: process-compose forks
-                # cargo, which forks the server, and killing only $stack orphans
-                # both so the next run dies on "address already in use".
-                # shellcheck disable=SC2329  # run by the EXIT trap below
-                cleanup() {
-                  kill -- "-$stack" >> "$log" 2>&1 || kill "$stack" >> "$log" 2>&1 || true
-                  wait "$stack" >> "$log" 2>&1 || true
-                }
-                trap cleanup EXIT
-
-                # A cold run compiles two binaries, so the bound is generous. It
-                # is a bound rather than a sleep because a warm run is ready in
-                # seconds and should not pay for the cold one.
-                # Both ports, not just the player one. The proxy binds its
-                # listener immediately and retries the game server behind it, so
-                # a probe that only checks the player port lets the client
-                # connect while the game server is still compiling. The client
-                # then dies on a read timeout that reads exactly like a protocol
-                # bug, which cost an agent a full cycle to diagnose (ENG-10450).
-                deadline=$(( SECONDS + 900 ))
-                until python3 -c "
-                import socket, sys
-                for port in ($player_port, $server_port):
-                    s = socket.socket()
-                    s.settimeout(1)
-                    if s.connect_ex(('127.0.0.1', port)) != 0:
-                        sys.exit(1)
-                sys.exit(0)
-                "; do
-                  if [ "$SECONDS" -ge "$deadline" ]; then
-                    echo "stack never opened both 127.0.0.1:$player_port and 127.0.0.1:$server_port; tail of $log:" >&2
-                    tail -40 "$log" >&2
-                    exit 1
-                  fi
-                  if ! kill -0 "$stack" >> "$log" 2>&1; then
-                    echo "stack exited before opening a port; tail of $log:" >&2
-                    tail -40 "$log" >&2
-                    exit 1
-                  fi
-                  sleep 2
-                done
-
-                echo "stack up on 127.0.0.1:$player_port ($HYPERION_EVENT)"
-                # Not `exec`: replacing this shell would skip the EXIT trap and
-                # orphan the stack, and the next run would die on "address
-                # already in use".
-                rc=0
-                python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" "$@" || rc=$?
-
-                # A client that finished its checks proves nothing if the server
-                # died while it was reading. It has: the movement handler
-                # aborted the process on the first step a player took
-                # (hyperion#987), and the client saw only its own read timeout,
-                # which it treats as a clean end of session. So ask the game
-                # server directly whether it is still listening.
-                if ! python3 -c "
-                import socket, sys
-                s = socket.socket()
-                s.settimeout(2)
-                sys.exit(0 if s.connect_ex(('127.0.0.1', $server_port)) == 0 else 1)
-                "; then
-                  echo "the game server stopped listening during the session; tail of $log:" >&2
-                  tail -60 "$log" >&2
-                  exit 1
-                fi
-
-                exit "$rc"
+                exec hyperion-e2e-driver "$@"
               '';
             };
 
@@ -478,11 +427,7 @@
             # Ports default off the `e2e` ones rather than sharing them, so the
             # two gates can run side by side.
             smash-e2e = {
-              deps = [
-                pkgs.process-compose
-                pkgs.git
-                pkgs.python3
-              ];
+              deps = [ pkgs.git ];
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/smash-match.py
@@ -576,6 +521,15 @@
               };
             });
 
+          # Named once and used by both `packages` and the sandboxed checks, so
+          # a gate runs the same binary the flake publishes rather than a second
+          # build of it.
+          gameBinaries = {
+            bedwars = named "bedwars" workspace.binaries.bedwars;
+            smash = named "smash" workspace.binaries.smash;
+            hyperion-proxy = named "hyperion-proxy" workspace.binaries.hyperion-proxy;
+          };
+
         in
         {
           devShells.default = pkgs.mkShell {
@@ -607,9 +561,8 @@
             });
 
           packages = {
-            default = named "bedwars" workspace.binaries.bedwars;
-            bedwars = named "bedwars" workspace.binaries.bedwars;
-            hyperion-proxy = named "hyperion-proxy" workspace.binaries.hyperion-proxy;
+            default = gameBinaries.bedwars;
+            inherit (gameBinaries) bedwars smash hyperion-proxy;
             rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
 
             minecraft-server-jar = minecraft.serverJar;
@@ -631,6 +584,44 @@
           # `nix flake check` builds every app, which is what proves each one
           # passes shellcheck and that its tools resolve.
           checks = scripts // {
+            # The two gates that read the wire the way a player does, as
+            # derivations: nix builds the binaries, the sandbox boots them on
+            # loopback, and the scripted client's verdict is the build result.
+            # Every other check reads the source. `nix run .#test` proves a
+            # packet encodes to the bytes a test says it should, and stays
+            # green while the server sends that packet under a number from a
+            # different protocol version. A client is what notices, and until
+            # these existed nothing in `nix flake check` ran one.
+            e2e = e2e.mkCheck {
+              name = "hyperion-e2e";
+              gameServer = gameBinaries.bedwars;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "client-26.2.py";
+              clientArgs = [ "--name" "e2e" ];
+              # bedwars still downloads its world at boot, so the sandbox has
+              # to hand it one. smash below needs nothing: its arenas are
+              # `include_str!` of files this repository owns.
+              needsGenMap = true;
+            };
+
+            smash-e2e = e2e.mkCheck {
+              name = "hyperion-smash-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "smash-match.py";
+              # A match is four clients playing for up to five minutes, so the
+              # cap is the client's own budget plus room to boot and report.
+              timeout = 480;
+            };
+
+            # `checks.e2e` above took the names the two app wrappers used to
+            # hold, and those wrappers still have to pass shellcheck.
+            e2e-app = scripts.e2e;
+            smash-e2e-app = scripts.smash-e2e;
+
+            # The pinned world URL still has to be the one the server asks for.
+            genmap-url-pinned = e2e.genMapUrlPinned;
+
             # The committed generated sources must match what the pipeline
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
