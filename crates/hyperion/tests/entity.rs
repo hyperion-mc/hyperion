@@ -48,21 +48,19 @@ fn arrow() {
         .set(Position::new(0.0, 20.0, 0.0))
         .set(Owner::new(*owner));
 
-    println!("arrow = {arrow:?}");
-
     world.progress();
 
+    // What the numbers should be is not decided here. This file used to assert
+    // two positions that were, in its own words, "what was returned from the
+    // test but I am unsure if it actually what we should be getting", with a
+    // note asking for a comparison against vanilla. `tests/differential.rs` is
+    // that comparison: it replays a recording of the real server tick by tick.
+    // All that is left here is the part vanilla has no opinion about, which is
+    // that an arrow moves at all rather than sitting where it was put.
     arrow.get::<&Position>(|position| {
-        // since velocity.y is 1.0, the arrow should be at y = 20.0 + (1.0 * drag - gravity) = 20.947525
-        assert_eq!(*position, Position::new(0.0, 20.947_525, 0.0));
-    });
-
-    world.progress();
-
-    arrow.get::<&Position>(|position| {
-        // gravity! drag! this is what was returned from the test but I am unsure if it actually
-        // what we should be getting
-        // todo: make a bunch more tests and compare to the vanilla velocity and positions
-        assert_eq!(*position, Position::new(0.0, 21.842_705, 0.0));
+        assert!(
+            position.y > 20.0,
+            "an arrow launched upwards should have moved: {position:?}"
+        );
     });
 }

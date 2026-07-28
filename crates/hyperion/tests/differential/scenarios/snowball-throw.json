@@ -1,0 +1,18 @@
+{
+  "name": "snowball-throw",
+  "description": "A snowball thrown level along +Z at the speed a right click gives it. Second projectile kind on purpose: it uses ThrowableProjectile.tick rather than AbstractArrow.tick, so it disagrees with the arrow about both the gravity constant and the order of the three statements in a tick.",
+  "ticks": 40,
+  "seed": 4242,
+  "entities": [
+    {
+      "id": "snowball",
+      "type": "minecraft:snowball",
+      "position": [0.5, 128.0, 0.5],
+      "launch": { "yaw": 0.0, "pitch": 0.0, "power": 1.5 }
+    }
+  ],
+  "compare": {
+    "position": 4.0e-4,
+    "velocity": 3.0e-6
+  }
+}

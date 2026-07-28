@@ -49,6 +49,7 @@ pub mod handlers;
 pub mod inventory;
 pub mod metadata;
 pub mod packet;
+pub mod projectile_motion;
 pub mod skin;
 pub mod util;
 
