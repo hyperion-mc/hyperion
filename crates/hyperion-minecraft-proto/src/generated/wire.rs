@@ -144,6 +144,18 @@ pub enum Wire {
     },
     /// Fields written back to back with nothing between them.
     Struct(&'static [Field]),
+    /// Bytes a hand-written codec in this crate owns.
+    ///
+    /// The extractor recognised the codec but its bytes are not a field list:
+    /// `Vec3#LP_STREAM_CODEC` is one byte for a near-zero vector and six plus an
+    /// optional `VarInt` otherwise. The layout is deliberately not described
+    /// here, because describing it would be transcribing it, and a transcription
+    /// that drifts from the codec is worse than an honest gap.
+    Custom {
+        /// Name shared with `CUSTOM_CODECS` in `nix/extract-protocol.py` and in
+        /// `build.rs`, which is where the Rust implementation is named.
+        codec: &'static str,
+    },
 }
 
 impl Wire {
@@ -447,7 +459,51 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_CLIENTBOUNDCUSTOMREPORTD
 
 /// `net.minecraft.server.ServerLinks$KnownLinkType#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_SERVER_SERVERLINKS_KNOWNLINKTYPE_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.server.ServerLinks$KnownLinkType",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "BUG_REPORT",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "COMMUNITY_GUIDELINES",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "SUPPORT",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "STATUS",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "FEEDBACK",
+                value: 4,
+            },
+            crate::generated::wire::Constant {
+                name: "COMMUNITY",
+                value: 5,
+            },
+            crate::generated::wire::Constant {
+                name: "WEBSITE",
+                value: 6,
+            },
+            crate::generated::wire::Constant {
+                name: "FORUMS",
+                value: 7,
+            },
+            crate::generated::wire::Constant {
+                name: "NEWS",
+                value: 8,
+            },
+            crate::generated::wire::Constant {
+                name: "ANNOUNCEMENTS",
+                value: 9,
+            },
+        ],
+    };
 
 /// `net.minecraft.server.ServerLinks#TYPE_STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_SERVER_SERVERLINKS_TYPE_STREAM_CODEC: Wire = crate::generated::wire::Wire::Either { left: &crate::generated::wire::NET_MINECRAFT_SERVER_SERVERLINKS_KNOWNLINKTYPE_STREAM_CODEC, right: &crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_CONTEXT_FREE_STREAM_CODEC };
@@ -518,14 +574,54 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSELECTBUNDLEITE
 
 /// `net.minecraft.world.Difficulty#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_DIFFICULTY_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.Difficulty",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "PEACEFUL",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "EASY",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "NORMAL",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "HARD",
+                value: 3,
+            },
+        ],
+    };
 
 /// `net.minecraft.network.protocol.game.ServerboundChangeDifficultyPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHANGEDIFFICULTYPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "difficulty", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_DIFFICULTY_STREAM_CODEC }]);
 
 /// `net.minecraft.world.level.GameType#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_LEVEL_GAMETYPE_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.level.GameType",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "SURVIVAL",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "CREATIVE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "ADVENTURE",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "SPECTATOR",
+                value: 3,
+            },
+        ],
+    };
 
 /// `net.minecraft.network.protocol.game.ServerboundChangeGameModePacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDCHANGEGAMEMODEPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "mode", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_GAMETYPE_STREAM_CODEC }]);
@@ -570,7 +666,39 @@ pub(crate) static NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_BYTE: Wire =
 
 /// `net.minecraft.world.inventory.ContainerInput#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_INVENTORY_CONTAINERINPUT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.inventory.ContainerInput",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "PICKUP",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "QUICK_MOVE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "SWAP",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "CLONE",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "THROW",
+                value: 4,
+            },
+            crate::generated::wire::Constant {
+                name: "QUICK_CRAFT",
+                value: 5,
+            },
+            crate::generated::wire::Constant {
+                name: "PICKUP_ALL",
+                value: 6,
+            },
+        ],
+    };
 
 /// `net.minecraft.network.codec.ByteBufCodecs#INT`
 pub(crate) static NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_INT: Wire =
@@ -663,6 +791,47 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDEDITBOOKPACKET_
 
 /// `net.minecraft.network.protocol.game.ServerboundEntityTagQueryPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDENTITYTAGQUERYPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "transactionId", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "entityId", wire: &crate::generated::wire::Wire::VarInt }]);
+
+/// `net.minecraft.world.InteractionHand#STREAM_CODEC`
+pub(crate) static NET_MINECRAFT_WORLD_INTERACTIONHAND_STREAM_CODEC: Wire =
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.InteractionHand",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "MAIN_HAND",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "OFF_HAND",
+                value: 1,
+            },
+        ],
+    };
+
+/// `net.minecraft.world.phys.Vec3#LP_STREAM_CODEC`
+pub(crate) static NET_MINECRAFT_WORLD_PHYS_VEC3_LP_STREAM_CODEC: Wire =
+    crate::generated::wire::Wire::Custom { codec: "lp_vec3" };
+
+/// `net.minecraft.network.protocol.game.ServerboundInteractPacket#STREAM_CODEC`
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDINTERACTPACKET_STREAM_CODEC: Wire =
+    crate::generated::wire::Wire::Struct(&[
+        crate::generated::wire::Field {
+            name: "entityId",
+            wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT,
+        },
+        crate::generated::wire::Field {
+            name: "hand",
+            wire: &crate::generated::wire::NET_MINECRAFT_WORLD_INTERACTIONHAND_STREAM_CODEC,
+        },
+        crate::generated::wire::Field {
+            name: "location",
+            wire: &crate::generated::wire::NET_MINECRAFT_WORLD_PHYS_VEC3_LP_STREAM_CODEC,
+        },
+        crate::generated::wire::Field {
+            name: "usingSecondaryAction",
+            wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_BOOL,
+        },
+    ]);
 
 /// `net.minecraft.network.protocol.game.ServerboundJigsawGeneratePacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDJIGSAWGENERATEPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "pos", wire: &crate::generated::wire::Wire::BlockPos }, crate::generated::wire::Field { name: "levels", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "keepJigsaws", wire: &crate::generated::wire::Wire::Bool }]);
@@ -875,7 +1044,27 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETJIGSAWBLOCKP
 
 /// `net.minecraft.world.level.block.state.properties.TestBlockMode#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_LEVEL_BLOCK_STATE_PROPERTIES_TESTBLOCKMODE_STREAM_CODEC:
-    Wire = crate::generated::wire::Wire::VarInt;
+    Wire = crate::generated::wire::Wire::Enum {
+    java_class: "net.minecraft.world.level.block.state.properties.TestBlockMode",
+    constants: &[
+        crate::generated::wire::Constant {
+            name: "START",
+            value: 0,
+        },
+        crate::generated::wire::Constant {
+            name: "LOG",
+            value: 1,
+        },
+        crate::generated::wire::Constant {
+            name: "FAIL",
+            value: 2,
+        },
+        crate::generated::wire::Constant {
+            name: "ACCEPT",
+            value: 3,
+        },
+    ],
+};
 
 /// `net.minecraft.network.protocol.game.ServerboundSetTestBlockPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSETTESTBLOCKPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "position", wire: &crate::generated::wire::NET_MINECRAFT_CORE_BLOCKPOS_STREAM_CODEC }, crate::generated::wire::Field { name: "mode", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_LEVEL_BLOCK_STATE_PROPERTIES_TESTBLOCKMODE_STREAM_CODEC }, crate::generated::wire::Field { name: "message", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_STRING_UTF8 }]);
@@ -903,7 +1092,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDSWINGPACKET_STR
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTELEPORTTOENTITYPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Uuid;
 
 /// `net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket$Action#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTESTINSTANCEBLOCKACTIONPACKET_ACTION_STREAM_CODEC: Wire = crate::generated::wire::Wire::VarInt;
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDTESTINSTANCEBLOCKACTIONPACKET_ACTION_STREAM_CODEC: Wire = crate::generated::wire::Wire::Enum { java_class: "net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket$Action", constants: &[crate::generated::wire::Constant { name: "INIT", value: 0 }, crate::generated::wire::Constant { name: "QUERY", value: 1 }, crate::generated::wire::Constant { name: "SET", value: 2 }, crate::generated::wire::Constant { name: "RESET", value: 3 }, crate::generated::wire::Constant { name: "SAVE", value: 4 }, crate::generated::wire::Constant { name: "EXPORT", value: 5 }, crate::generated::wire::Constant { name: "RUN", value: 6 }] };
 
 /// `net.minecraft.core.Vec3i#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_CORE_VEC3I_STREAM_CODEC: Wire =
@@ -924,10 +1113,30 @@ pub(crate) static NET_MINECRAFT_CORE_VEC3I_STREAM_CODEC: Wire =
 
 /// `net.minecraft.world.level.block.Rotation#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_LEVEL_BLOCK_ROTATION_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.level.block.Rotation",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "NONE",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "CLOCKWISE_90",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "CLOCKWISE_180",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "COUNTERCLOCKWISE_90",
+                value: 3,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.level.block.entity.TestInstanceBlockEntity$Status#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_WORLD_LEVEL_BLOCK_ENTITY_TESTINSTANCEBLOCKENTITY_STATUS_STREAM_CODEC: Wire = crate::generated::wire::Wire::VarInt;
+pub(crate) static NET_MINECRAFT_WORLD_LEVEL_BLOCK_ENTITY_TESTINSTANCEBLOCKENTITY_STATUS_STREAM_CODEC: Wire = crate::generated::wire::Wire::Enum { java_class: "net.minecraft.world.level.block.entity.TestInstanceBlockEntity$Status", constants: &[crate::generated::wire::Constant { name: "CLEARED", value: 0 }, crate::generated::wire::Constant { name: "RUNNING", value: 1 }, crate::generated::wire::Constant { name: "FINISHED", value: 2 }] };
 
 /// `net.minecraft.network.chat.ComponentSerialization#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_STREAM_CODEC: Wire =
@@ -1004,6 +1213,57 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDUSEITEMPACKET_S
 /// Layout of `play_clientbound_minecraft:bundle_delimiter`.
 pub(crate) static LAYOUT_PLAY_CLIENTBOUND_MINECRAFT_BUNDLE_DELIMITER: Wire =
     crate::generated::wire::Wire::Unit;
+
+/// `net.minecraft.network.protocol.game.ClientboundAddEntityPacket#STREAM_CODEC`
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDADDENTITYPACKET_STREAM_CODEC:
+    Wire = crate::generated::wire::Wire::Struct(&[
+    crate::generated::wire::Field {
+        name: "id",
+        wire: &crate::generated::wire::Wire::VarInt,
+    },
+    crate::generated::wire::Field {
+        name: "uuid",
+        wire: &crate::generated::wire::Wire::Uuid,
+    },
+    crate::generated::wire::Field {
+        name: "type",
+        wire: &crate::generated::wire::Wire::RegistryId {
+            registry: "minecraft:entity_type",
+        },
+    },
+    crate::generated::wire::Field {
+        name: "x",
+        wire: &crate::generated::wire::Wire::F64,
+    },
+    crate::generated::wire::Field {
+        name: "y",
+        wire: &crate::generated::wire::Wire::F64,
+    },
+    crate::generated::wire::Field {
+        name: "z",
+        wire: &crate::generated::wire::Wire::F64,
+    },
+    crate::generated::wire::Field {
+        name: "movement",
+        wire: &crate::generated::wire::NET_MINECRAFT_WORLD_PHYS_VEC3_LP_STREAM_CODEC,
+    },
+    crate::generated::wire::Field {
+        name: "xRot",
+        wire: &crate::generated::wire::Wire::I8,
+    },
+    crate::generated::wire::Field {
+        name: "yRot",
+        wire: &crate::generated::wire::Wire::I8,
+    },
+    crate::generated::wire::Field {
+        name: "yHeadRot",
+        wire: &crate::generated::wire::Wire::I8,
+    },
+    crate::generated::wire::Field {
+        name: "data",
+        wire: &crate::generated::wire::Wire::VarInt,
+    },
+]);
 
 /// `net.minecraft.network.protocol.game.ClientboundAnimatePacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDANIMATEPACKET_STREAM_CODEC: Wire =
@@ -1503,6 +1763,9 @@ pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETDISPLAYOBJEC
 /// `net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETENTITYLINKPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "sourceId", wire: &crate::generated::wire::Wire::I32 }, crate::generated::wire::Field { name: "destId", wire: &crate::generated::wire::Wire::I32 }]);
 
+/// `net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket#STREAM_CODEC`
+pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETENTITYMOTIONPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "id", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT }, crate::generated::wire::Field { name: "movement", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_PHYS_VEC3_LP_STREAM_CODEC }]);
+
 /// `net.minecraft.network.protocol.game.ClientboundSetExperiencePacket#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETEXPERIENCEPACKET_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "experienceProgress", wire: &crate::generated::wire::Wire::F32 }, crate::generated::wire::Field { name: "experienceLevel", wire: &crate::generated::wire::Wire::VarInt }, crate::generated::wire::Field { name: "totalExperience", wire: &crate::generated::wire::Wire::VarInt }]);
 
@@ -1822,7 +2085,7 @@ pub(crate) static NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_DOUBLE: Wire =
     crate::generated::wire::Wire::F64;
 
 /// `net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation#STREAM_CODEC`
-pub(crate) static NET_MINECRAFT_WORLD_ENTITY_AI_ATTRIBUTES_ATTRIBUTEMODIFIER_OPERATION_STREAM_CODEC: Wire = crate::generated::wire::Wire::VarInt;
+pub(crate) static NET_MINECRAFT_WORLD_ENTITY_AI_ATTRIBUTES_ATTRIBUTEMODIFIER_OPERATION_STREAM_CODEC: Wire = crate::generated::wire::Wire::Enum { java_class: "net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation", constants: &[crate::generated::wire::Constant { name: "ADD_VALUE", value: 0 }, crate::generated::wire::Constant { name: "ADD_MULTIPLIED_BASE", value: 1 }, crate::generated::wire::Constant { name: "ADD_MULTIPLIED_TOTAL", value: 2 }] };
 
 /// `net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket$AttributeSnapshot#MODIFIER_STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDUPDATEATTRIBUTESPACKET_ATTRIBUTESNAPSHOT_MODIFIER_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "id", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_STRING_UTF8 }, crate::generated::wire::Field { name: "amount", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_DOUBLE }, crate::generated::wire::Field { name: "operation", wire: &crate::generated::wire::NET_MINECRAFT_WORLD_ENTITY_AI_ATTRIBUTES_ATTRIBUTEMODIFIER_OPERATION_STREAM_CODEC }]);
@@ -1872,7 +2135,27 @@ pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_ITEMLORE_STREAM_CODEC: Wire
 
 /// `net.minecraft.world.item.Rarity#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_RARITY_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.item.Rarity",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "COMMON",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "UNCOMMON",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "RARE",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "EPIC",
+                value: 3,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.item.enchantment.Enchantment#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_ENCHANTMENT_ENCHANTMENT_STREAM_CODEC: Wire =
@@ -2191,7 +2474,23 @@ pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_KINETICWEAPON_STREAM_CODEC:
 
 /// `net.minecraft.world.item.SwingAnimationType#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_SWINGANIMATIONTYPE_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.item.SwingAnimationType",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "NONE",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "WHACK",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "STAB",
+                value: 2,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.item.component.SwingAnimation#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_SWINGANIMATION_STREAM_CODEC: Wire =
@@ -2208,7 +2507,75 @@ pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_SWINGANIMATION_STREAM_CODEC
 
 /// `net.minecraft.world.item.DyeColor#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_DYECOLOR_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.item.DyeColor",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "WHITE",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "ORANGE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "MAGENTA",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "LIGHT_BLUE",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "YELLOW",
+                value: 4,
+            },
+            crate::generated::wire::Constant {
+                name: "LIME",
+                value: 5,
+            },
+            crate::generated::wire::Constant {
+                name: "PINK",
+                value: 6,
+            },
+            crate::generated::wire::Constant {
+                name: "GRAY",
+                value: 7,
+            },
+            crate::generated::wire::Constant {
+                name: "LIGHT_GRAY",
+                value: 8,
+            },
+            crate::generated::wire::Constant {
+                name: "CYAN",
+                value: 9,
+            },
+            crate::generated::wire::Constant {
+                name: "PURPLE",
+                value: 10,
+            },
+            crate::generated::wire::Constant {
+                name: "BLUE",
+                value: 11,
+            },
+            crate::generated::wire::Constant {
+                name: "BROWN",
+                value: 12,
+            },
+            crate::generated::wire::Constant {
+                name: "GREEN",
+                value: 13,
+            },
+            crate::generated::wire::Constant {
+                name: "RED",
+                value: 14,
+            },
+            crate::generated::wire::Constant {
+                name: "BLACK",
+                value: 15,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.item.component.DyedItemColor#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_DYEDITEMCOLOR_STREAM_CODEC: Wire =
@@ -2222,7 +2589,19 @@ pub(crate) static LAYOUT_MINECRAFT_MAP_DECORATIONS: Wire = crate::generated::wir
 
 /// `net.minecraft.world.item.component.MapPostProcessing#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_MAPPOSTPROCESSING_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.item.component.MapPostProcessing",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "LOCK",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "SCALE",
+                value: 1,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.item.component.SuspiciousStewEffects$Entry#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_SUSPICIOUSSTEWEFFECTS_ENTRY_STREAM_CODEC:
@@ -2393,7 +2772,31 @@ pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_LODESTONETRACKER_STREAM_COD
 
 /// `net.minecraft.world.item.component.FireworkExplosion$Shape#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_FIREWORKEXPLOSION_SHAPE_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.item.component.FireworkExplosion$Shape",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "SMALL_BALL",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "LARGE_BALL",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "STAR",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "CREEPER",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "BURST",
+                value: 4,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.item.component.FireworkExplosion#COLOR_LIST_STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ITEM_COMPONENT_FIREWORKEXPLOSION_COLOR_LIST_STREAM_CODEC:
@@ -2509,15 +2912,67 @@ pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_WOLF_WOLFSOUNDVARIANT_STREAM
 
 /// `net.minecraft.world.entity.animal.fox.Fox$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FOX_FOX_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.fox.Fox$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "RED",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "SNOW",
+                value: 1,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.fish.Salmon$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FISH_SALMON_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.fish.Salmon$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "SMALL",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "MEDIUM",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "LARGE",
+                value: 2,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.parrot.Parrot$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_PARROT_PARROT_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.parrot.Parrot$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "RED_BLUE",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "BLUE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "GREEN",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "YELLOW_BLUE",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "GRAY",
+                value: 4,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.fish.TropicalFish$Pattern#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FISH_TROPICALFISH_PATTERN_STREAM_CODEC: Wire =
@@ -2525,11 +2980,55 @@ pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FISH_TROPICALFISH_PATTERN_ST
 
 /// `net.minecraft.world.entity.animal.cow.MushroomCow$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_COW_MUSHROOMCOW_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.cow.MushroomCow$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "RED",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "BROWN",
+                value: 1,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.rabbit.Rabbit$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_RABBIT_RABBIT_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.rabbit.Rabbit$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "BROWN",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "WHITE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "BLACK",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "WHITE_SPLOTCHED",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "GOLD",
+                value: 4,
+            },
+            crate::generated::wire::Constant {
+                name: "SALT",
+                value: 5,
+            },
+            crate::generated::wire::Constant {
+                name: "EVIL",
+                value: 99,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.pig.PigVariant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_PIG_PIGVARIANT_STREAM_CODEC: Wire =
@@ -2581,7 +3080,39 @@ pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FROG_FROGVARIANT_STREAM_CODE
 
 /// `net.minecraft.world.entity.animal.equine.Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_EQUINE_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.equine.Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "WHITE",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "CREAMY",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "CHESTNUT",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "BROWN",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "BLACK",
+                value: 4,
+            },
+            crate::generated::wire::Constant {
+                name: "GRAY",
+                value: 5,
+            },
+            crate::generated::wire::Constant {
+                name: "DARK_BROWN",
+                value: 6,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.decoration.painting.PaintingVariant#DIRECT_STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_DECORATION_PAINTING_PAINTINGVARIANT_DIRECT_STREAM_CODEC: Wire = crate::generated::wire::Wire::Struct(&[crate::generated::wire::Field { name: "width", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT }, crate::generated::wire::Field { name: "height", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_VAR_INT }, crate::generated::wire::Field { name: "assetId", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CODEC_BYTEBUFCODECS_STRING_UTF8 }, crate::generated::wire::Field { name: "title", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_OPTIONAL_STREAM_CODEC }, crate::generated::wire::Field { name: "author", wire: &crate::generated::wire::NET_MINECRAFT_NETWORK_CHAT_COMPONENTSERIALIZATION_TRUSTED_OPTIONAL_STREAM_CODEC }]);
@@ -2591,11 +3122,55 @@ pub(crate) static NET_MINECRAFT_WORLD_ENTITY_DECORATION_PAINTING_PAINTINGVARIANT
 
 /// `net.minecraft.world.entity.animal.equine.Llama$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_EQUINE_LLAMA_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.equine.Llama$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "CREAMY",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "WHITE",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "BROWN",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "GRAY",
+                value: 3,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.axolotl.Axolotl$Variant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_AXOLOTL_AXOLOTL_VARIANT_STREAM_CODEC: Wire =
-    crate::generated::wire::Wire::VarInt;
+    crate::generated::wire::Wire::Enum {
+        java_class: "net.minecraft.world.entity.animal.axolotl.Axolotl$Variant",
+        constants: &[
+            crate::generated::wire::Constant {
+                name: "LUCY",
+                value: 0,
+            },
+            crate::generated::wire::Constant {
+                name: "WILD",
+                value: 1,
+            },
+            crate::generated::wire::Constant {
+                name: "GOLD",
+                value: 2,
+            },
+            crate::generated::wire::Constant {
+                name: "CYAN",
+                value: 3,
+            },
+            crate::generated::wire::Constant {
+                name: "BLUE",
+                value: 4,
+            },
+        ],
+    };
 
 /// `net.minecraft.world.entity.animal.feline.CatVariant#STREAM_CODEC`
 pub(crate) static NET_MINECRAFT_WORLD_ENTITY_ANIMAL_FELINE_CATVARIANT_STREAM_CODEC: Wire =

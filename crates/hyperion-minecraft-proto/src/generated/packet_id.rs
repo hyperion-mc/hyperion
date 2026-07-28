@@ -1482,6 +1482,7 @@ pub mod play {
                     Self::DebugSubscriptionRequest => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDDEBUGSUBSCRIPTIONREQUESTPACKET_SET_STREAM_CODEC),
                     Self::EditBook => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDEDITBOOKPACKET_STREAM_CODEC),
                     Self::EntityTagQuery => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDENTITYTAGQUERYPACKET_STREAM_CODEC),
+                    Self::Interact => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDINTERACTPACKET_STREAM_CODEC),
                     Self::JigsawGenerate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDJIGSAWGENERATEPACKET_STREAM_CODEC),
                     Self::KeepAlive => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_COMMON_SERVERBOUNDKEEPALIVEPACKET_STREAM_CODEC),
                     Self::LockDifficulty => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_SERVERBOUNDLOCKDIFFICULTYPACKET_STREAM_CODEC),
@@ -2713,6 +2714,7 @@ pub mod play {
             pub const fn layout(self) -> Option<&'static crate::generated::wire::Wire> {
                 match self {
                     Self::BundleDelimiter => Some(&crate::generated::wire::LAYOUT_PLAY_CLIENTBOUND_MINECRAFT_BUNDLE_DELIMITER),
+                    Self::AddEntity => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDADDENTITYPACKET_STREAM_CODEC),
                     Self::Animate => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDANIMATEPACKET_STREAM_CODEC),
                     Self::BlockChangedAck => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKCHANGEDACKPACKET_STREAM_CODEC),
                     Self::BlockDestruction => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDBLOCKDESTRUCTIONPACKET_STREAM_CODEC),
@@ -2787,6 +2789,7 @@ pub mod play {
                     Self::SetDefaultSpawnPosition => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETDEFAULTSPAWNPOSITIONPACKET_STREAM_CODEC),
                     Self::SetDisplayObjective => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETDISPLAYOBJECTIVEPACKET_STREAM_CODEC),
                     Self::SetEntityLink => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETENTITYLINKPACKET_STREAM_CODEC),
+                    Self::SetEntityMotion => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETENTITYMOTIONPACKET_STREAM_CODEC),
                     Self::SetExperience => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETEXPERIENCEPACKET_STREAM_CODEC),
                     Self::SetHealth => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETHEALTHPACKET_STREAM_CODEC),
                     Self::SetHeldSlot => Some(&crate::generated::wire::NET_MINECRAFT_NETWORK_PROTOCOL_GAME_CLIENTBOUNDSETHELDSLOTPACKET_STREAM_CODEC),

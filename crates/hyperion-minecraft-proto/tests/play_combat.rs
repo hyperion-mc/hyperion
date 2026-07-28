@@ -30,6 +30,7 @@ use hyperion_minecraft_proto::{
         entity::{EntityEvent, HurtAnimation, RemoveEntities},
     },
     text::Component,
+    types::attribute_modifier::Operation,
 };
 
 fn render(bytes: &[u8]) -> String {
@@ -185,7 +186,7 @@ fn update_attributes_nests_a_counted_list_of_modifiers() {
                 modifiers: vec![AttributeSnapshotModifier {
                     id: "minecraft:hi",
                     amount: 0.5,
-                    operation: 1,
+                    operation: Operation::AddMultipliedBase,
                 }],
             }],
         },

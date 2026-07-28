@@ -7,14 +7,400 @@
   },
   "coverage": {
     "packets": 256,
-    "fullyMechanical": 202,
-    "partial": 54,
+    "fullyMechanical": 205,
+    "partial": 51,
     "unrecovered": 0,
     "dataComponents": 111,
     "dataComponentsMechanical": 100,
     "namedTypes": 474,
     "assertedTypes": [
       "net.minecraft.network.codec.ByteBufCodecs#GAME_PROFILE_PROPERTIES"
+    ],
+    "customCodecs": [
+      "net.minecraft.world.phys.Vec3#LP_STREAM_CODEC"
+    ],
+    "incomplete": [
+      {
+        "id": "configuration/clientbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ]
+      },
+      {
+        "id": "configuration/clientbound/minecraft:update_tags",
+        "reasons": [
+          "|value: unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
+        ]
+      },
+      {
+        "id": "configuration/serverbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:attribute_modifiers",
+        "reasons": [
+          "modifiers[].display: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:bundle_contents",
+        "reasons": [
+          "[].components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:can_break",
+        "reasons": [
+          "predicates[].components.exact[]: unmodelled statement: 1.encodeCap(output, value)",
+          "predicates[].components.partial[]: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:can_place_on",
+        "reasons": [
+          "predicates[].components.exact[]: unmodelled statement: 1.encodeCap(output, value)",
+          "predicates[].components.partial[]: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:charged_projectiles",
+        "reasons": [
+          "[].components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:consumable",
+        "reasons": [
+          "onConsumeEffects[]: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:container",
+        "reasons": [
+          "[]?.components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:death_protection",
+        "reasons": [
+          "deathEffects[]: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:potion_contents",
+        "reasons": [
+          "customEffects[].asDetails.hiddenEffect: not a codec reference: subCodec.apply(ByteBufCodecs::optional)"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:sulfur_cube_content",
+        "reasons": [
+          "components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        ]
+      },
+      {
+        "id": "dataComponent/minecraft:use_remainder",
+        "reasons": [
+          "convertInto.components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        ]
+      },
+      {
+        "id": "login/clientbound/minecraft:custom_query",
+        "reasons": [
+          "unmodelled statement: this.payload.write(output)"
+        ]
+      },
+      {
+        "id": "login/serverbound/minecraft:custom_query_answer",
+        "reasons": [
+          "payload?: unmodelled statement: data.write((FriendlyByteBuf)((Object)buf))"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:award_stats",
+        "reasons": [
+          "|key: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:chunks_biomes",
+        "reasons": [
+          "[]: unmodelled statement: c.write((FriendlyByteBuf)((Object)o))"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:commands",
+        "reasons": [
+          "entries[]: unmodelled statement: entry.write((FriendlyByteBuf)((Object)buffer))"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:container_set_content",
+        "reasons": [
+          "carriedItem: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV",
+          "items[]: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:container_set_slot",
+        "reasons": [
+          "itemStack: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:debug/block_value",
+        "reasons": [
+          "update: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:debug/chunk_value",
+        "reasons": [
+          "update: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:debug/entity_value",
+        "reasons": [
+          "update: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:debug/event",
+        "reasons": [
+          "event: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:delete_chat",
+        "reasons": [
+          "branching encode body: if (packed.fullSignature() != null) {\n                Messag"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:explode",
+        "reasons": [
+          "blockParticles[].value.particle: dispatched codec: the layout depends on a runtime type",
+          "explosionParticle: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:level_chunk_with_light",
+        "reasons": [
+          "unmodelled statement: this.chunkData.write(output)"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:level_particles",
+        "reasons": [
+          "particle: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:map_item_data",
+        "reasons": [
+          "colorPatch: branching encode body: if (optional.isPresent()) {\n                MapPatch patch ="
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:merchant_offers",
+        "reasons": [
+          "offers[].itemCostA.components[]: unmodelled statement: 1.encodeCap(output, value)",
+          "offers[].itemCostB?.components[]: unmodelled statement: 1.encodeCap(output, value)",
+          "offers[].result: branching encode body: if (itemStack.isEmpty()) {\n                throw new Encoder"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:place_ghost_recipe",
+        "reasons": [
+          "recipeDisplay: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:player_abilities",
+        "reasons": [
+          "branching encode body: if (this.invulnerable) {\n            bitfield = (byte)(bitfi"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:player_chat",
+        "reasons": [
+          "body: unmodelled statement: this.lastSeen.write(output)",
+          "output: branching encode body: if (mask.type == Type.PARTIALLY_FILTERED) {\n            outp",
+          "signature?: unmodelled statement: output.writeBytes(signature.bytes)"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:player_info_update",
+        "reasons": [
+          "entries[]: branching encode body: for (Action action : this.actions) {\n                action."
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:player_look_at",
+        "reasons": [
+          "branching encode body: if (this.atEntity) {\n            output.writeVarInt(this.ent"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:recipe_book_add",
+        "reasons": [
+          "entries[].contents.display: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:section_blocks_update",
+        "reasons": [
+          "branching encode body: for (int i = 0; i < this.positions.length; ++i) {\n          "
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_cursor_item",
+        "reasons": [
+          "contents: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_entity_data",
+        "reasons": [
+          "unmodelled statement: ClientboundSetEntityDataPacket.pack(this.packedItems, output)"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_equipment",
+        "reasons": [
+          "branching encode body: for (int i = 0; i < size; ++i) {\n            Pair<EquipmentS"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_objective",
+        "reasons": [
+          "branching encode body: if (this.method == 0 || this.method == 2) {\n            Comp"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_player_inventory",
+        "reasons": [
+          "contents: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_player_team",
+        "reasons": [
+          "branching encode body: if (ClientboundSetPlayerTeamPacket.shouldHaveParameters(this"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:set_score",
+        "reasons": [
+          "numberFormat?: dispatched codec: the layout depends on a runtime type"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:stop_sound",
+        "reasons": [
+          "branching encode body: if (this.source != null) {\n            if (this.name != null"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:update_advancements",
+        "reasons": [
+          "added[].value: unmodelled statement: this.requirements.write(output)",
+          "progress|value: unmodelled statement: value.serializeToNetwork((FriendlyByteBuf)((Object)buffer))"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:update_recipes",
+        "reasons": [
+          "stonecutterRecipes.entries[].recipe: unmodelled factory SelectableRecipe.noRecipeCodec(..)"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:update_tags",
+        "reasons": [
+          "|value: unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
+        ]
+      },
+      {
+        "id": "play/clientbound/minecraft:waypoint",
+        "reasons": [
+          "waypoint: unmodelled statement: FriendlyByteBuf byteBuf = new FriendlyByteBuf(buf)"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:chat",
+        "reasons": [
+          "signature?: unmodelled statement: output.writeBytes(signature.bytes)"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:chat_command_signed",
+        "reasons": [
+          "unmodelled statement: this.argumentSignatures.write(output)"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:chat_session_update",
+        "reasons": [
+          "unmodelled statement: data.profilePublicKey.write(output)"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:player_abilities",
+        "reasons": [
+          "branching encode body: if (this.isFlying) {\n            bitfield = (byte)(bitfield "
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:player_input",
+        "reasons": [
+          "input: unmodelled statement: flags = (byte)(flags | (value.forward() ? 1 : 0))"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:seen_advancements",
+        "reasons": [
+          "branching encode body: if (this.action == Action.OPENED_TAB) {\n            output.w"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:set_command_block",
+        "reasons": [
+          "branching encode body: if (this.trackOutput) {\n            flags |= 1;\n        }"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:set_creative_mode_slot",
+        "reasons": [
+          "itemStack: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:set_structure_block",
+        "reasons": [
+          "branching encode body: if (this.ignoreEntities) {\n            flags |= 1;\n        }"
+        ]
+      },
+      {
+        "id": "play/serverbound/minecraft:sign_update",
+        "reasons": [
+          "branching encode body: for (int i = 0; i < 4; ++i) {\n            output.writeUtf(th"
+        ]
+      }
     ],
     "idCrossCheckMismatches": [],
     "dataComponentProblems": []
@@ -1666,7 +2052,7 @@
     },
     "net.minecraft.network.protocol.game.ClientboundDeleteChatPacket#STREAM_CODEC": {
       "kind": "unresolved",
-      "why": "unmodelled statement: MessageSignature.Packed.write(output, this.messageSignature)"
+      "why": "branching encode body: if (packed.fullSignature() != null) {\n                Messag"
     },
     "net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -2623,8 +3009,69 @@
       "why": "branching encode body: if (this.invulnerable) {\n            bitfield = (byte)(bitfi"
     },
     "net.minecraft.network.protocol.game.ClientboundPlayerChatPacket#STREAM_CODEC": {
-      "kind": "unresolved",
-      "why": "unmodelled statement: this.body.write(output)"
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "globalIndex",
+          "wire": {
+            "kind": "varint"
+          }
+        },
+        {
+          "name": "sender",
+          "wire": {
+            "kind": "uuid",
+            "note": "two big-endian longs, most significant first"
+          }
+        },
+        {
+          "name": "index",
+          "wire": {
+            "kind": "varint"
+          }
+        },
+        {
+          "name": "signature",
+          "wire": {
+            "kind": "option",
+            "of": {
+              "kind": "unresolved",
+              "why": "unmodelled statement: output.writeBytes(signature.bytes)"
+            }
+          }
+        },
+        {
+          "name": "body",
+          "wire": {
+            "kind": "unresolved",
+            "why": "unmodelled statement: this.lastSeen.write(output)"
+          }
+        },
+        {
+          "name": "unsignedContent",
+          "wire": {
+            "kind": "option",
+            "of": {
+              "kind": "named",
+              "ref": "net.minecraft.network.chat.ComponentSerialization#TRUSTED_STREAM_CODEC"
+            }
+          }
+        },
+        {
+          "name": "output",
+          "wire": {
+            "kind": "unresolved",
+            "why": "branching encode body: if (mask.type == Type.PARTIALLY_FILTERED) {\n            outp"
+          }
+        },
+        {
+          "name": "chatType",
+          "wire": {
+            "kind": "named",
+            "ref": "net.minecraft.network.chat.ChatType$Bound#STREAM_CODEC"
+          }
+        }
+      ]
     },
     "net.minecraft.network.protocol.game.ClientboundPlayerCombatEndPacket#STREAM_CODEC": {
       "kind": "varint"
@@ -3788,8 +4235,23 @@
       ]
     },
     "net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket$Operation#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket$Operation",
+      "constants": [
+        {
+          "name": "TRACK",
+          "value": 0
+        },
+        {
+          "name": "UNTRACK",
+          "value": 1
+        },
+        {
+          "name": "UPDATE",
+          "value": 2
+        }
+      ],
+      "note": "varint ordinal"
     },
     "net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -4137,7 +4599,7 @@
     },
     "net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket#STREAM_CODEC": {
       "kind": "unresolved",
-      "why": "unmodelled statement: RemoteChatSession.Data.write(output, this.chatSession)"
+      "why": "unmodelled statement: data.profilePublicKey.write(output)"
     },
     "net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket#STREAM_CODEC": {
       "kind": "f32"
@@ -5114,8 +5576,39 @@
       ]
     },
     "net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket$Action#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.network.protocol.game.ServerboundTestInstanceBlockActionPacket$Action",
+      "constants": [
+        {
+          "name": "INIT",
+          "value": 0
+        },
+        {
+          "name": "QUERY",
+          "value": 1
+        },
+        {
+          "name": "SET",
+          "value": 2
+        },
+        {
+          "name": "RESET",
+          "value": 3
+        },
+        {
+          "name": "SAVE",
+          "value": 4
+        },
+        {
+          "name": "EXPORT",
+          "value": 5
+        },
+        {
+          "name": "RUN",
+          "value": 6
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.network.protocol.game.ServerboundUseItemOnPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -5420,8 +5913,51 @@
       }
     },
     "net.minecraft.server.ServerLinks$KnownLinkType#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.server.ServerLinks$KnownLinkType",
+      "constants": [
+        {
+          "name": "BUG_REPORT",
+          "value": 0
+        },
+        {
+          "name": "COMMUNITY_GUIDELINES",
+          "value": 1
+        },
+        {
+          "name": "SUPPORT",
+          "value": 2
+        },
+        {
+          "name": "STATUS",
+          "value": 3
+        },
+        {
+          "name": "FEEDBACK",
+          "value": 4
+        },
+        {
+          "name": "COMMUNITY",
+          "value": 5
+        },
+        {
+          "name": "WEBSITE",
+          "value": 6
+        },
+        {
+          "name": "FORUMS",
+          "value": 7
+        },
+        {
+          "name": "NEWS",
+          "value": 8
+        },
+        {
+          "name": "ANNOUNCEMENTS",
+          "value": 9
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.server.ServerLinks$UntrustedEntry#STREAM_CODEC": {
       "kind": "struct",
@@ -5577,12 +6113,42 @@
       "why": "dispatched codec: the layout depends on a runtime type"
     },
     "net.minecraft.world.Difficulty#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.Difficulty",
+      "constants": [
+        {
+          "name": "PEACEFUL",
+          "value": 0
+        },
+        {
+          "name": "EASY",
+          "value": 1
+        },
+        {
+          "name": "NORMAL",
+          "value": 2
+        },
+        {
+          "name": "HARD",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.InteractionHand#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.InteractionHand",
+      "constants": [
+        {
+          "name": "MAIN_HAND",
+          "value": 0
+        },
+        {
+          "name": "OFF_HAND",
+          "value": 1
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.clock.ClockNetworkState#STREAM_CODEC": {
       "kind": "struct",
@@ -5697,8 +6263,55 @@
       "note": "index into an id map"
     },
     "net.minecraft.world.entity.EquipmentSlotGroup#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.EquipmentSlotGroup",
+      "constants": [
+        {
+          "name": "ANY",
+          "value": 0
+        },
+        {
+          "name": "MAINHAND",
+          "value": 1
+        },
+        {
+          "name": "OFFHAND",
+          "value": 2
+        },
+        {
+          "name": "HAND",
+          "value": 3
+        },
+        {
+          "name": "FEET",
+          "value": 4
+        },
+        {
+          "name": "LEGS",
+          "value": 5
+        },
+        {
+          "name": "CHEST",
+          "value": 6
+        },
+        {
+          "name": "HEAD",
+          "value": 7
+        },
+        {
+          "name": "ARMOR",
+          "value": 8
+        },
+        {
+          "name": "BODY",
+          "value": 9
+        },
+        {
+          "name": "SADDLE",
+          "value": 10
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.PositionMoveRotation#STREAM_CODEC": {
       "kind": "struct",
@@ -5768,12 +6381,50 @@
       ]
     },
     "net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation",
+      "constants": [
+        {
+          "name": "ADD_VALUE",
+          "value": 0
+        },
+        {
+          "name": "ADD_MULTIPLIED_BASE",
+          "value": 1
+        },
+        {
+          "name": "ADD_MULTIPLIED_TOTAL",
+          "value": 2
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.axolotl.Axolotl$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.axolotl.Axolotl$Variant",
+      "constants": [
+        {
+          "name": "LUCY",
+          "value": 0
+        },
+        {
+          "name": "WILD",
+          "value": 1
+        },
+        {
+          "name": "GOLD",
+          "value": 2
+        },
+        {
+          "name": "CYAN",
+          "value": 3
+        },
+        {
+          "name": "BLUE",
+          "value": 4
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.chicken.ChickenSoundVariant#STREAM_CODEC": {
       "kind": "registry_id",
@@ -5792,16 +6443,77 @@
       "registry": "minecraft:cow_variant"
     },
     "net.minecraft.world.entity.animal.cow.MushroomCow$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.cow.MushroomCow$Variant",
+      "constants": [
+        {
+          "name": "RED",
+          "value": 0
+        },
+        {
+          "name": "BROWN",
+          "value": 1
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.equine.Llama$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.equine.Llama$Variant",
+      "constants": [
+        {
+          "name": "CREAMY",
+          "value": 0
+        },
+        {
+          "name": "WHITE",
+          "value": 1
+        },
+        {
+          "name": "BROWN",
+          "value": 2
+        },
+        {
+          "name": "GRAY",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.equine.Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.equine.Variant",
+      "constants": [
+        {
+          "name": "WHITE",
+          "value": 0
+        },
+        {
+          "name": "CREAMY",
+          "value": 1
+        },
+        {
+          "name": "CHESTNUT",
+          "value": 2
+        },
+        {
+          "name": "BROWN",
+          "value": 3
+        },
+        {
+          "name": "BLACK",
+          "value": 4
+        },
+        {
+          "name": "GRAY",
+          "value": 5
+        },
+        {
+          "name": "DARK_BROWN",
+          "value": 6
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.feline.CatSoundVariant#STREAM_CODEC": {
       "kind": "registry_id",
@@ -5812,16 +6524,42 @@
       "registry": "minecraft:cat_variant"
     },
     "net.minecraft.world.entity.animal.fish.Salmon$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.fish.Salmon$Variant",
+      "constants": [
+        {
+          "name": "SMALL",
+          "value": 0
+        },
+        {
+          "name": "MEDIUM",
+          "value": 1
+        },
+        {
+          "name": "LARGE",
+          "value": 2
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.fish.TropicalFish$Pattern#STREAM_CODEC": {
       "kind": "varint",
       "note": "index into an id map"
     },
     "net.minecraft.world.entity.animal.fox.Fox$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.fox.Fox$Variant",
+      "constants": [
+        {
+          "name": "RED",
+          "value": 0
+        },
+        {
+          "name": "SNOW",
+          "value": 1
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.frog.FrogVariant#STREAM_CODEC": {
       "kind": "registry_id",
@@ -5832,8 +6570,31 @@
       "registry": "minecraft:zombie_nautilus_variant"
     },
     "net.minecraft.world.entity.animal.parrot.Parrot$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.parrot.Parrot$Variant",
+      "constants": [
+        {
+          "name": "RED_BLUE",
+          "value": 0
+        },
+        {
+          "name": "BLUE",
+          "value": 1
+        },
+        {
+          "name": "GREEN",
+          "value": 2
+        },
+        {
+          "name": "YELLOW_BLUE",
+          "value": 3
+        },
+        {
+          "name": "GRAY",
+          "value": 4
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.pig.PigSoundVariant#STREAM_CODEC": {
       "kind": "registry_id",
@@ -5844,8 +6605,39 @@
       "registry": "minecraft:pig_variant"
     },
     "net.minecraft.world.entity.animal.rabbit.Rabbit$Variant#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.entity.animal.rabbit.Rabbit$Variant",
+      "constants": [
+        {
+          "name": "BROWN",
+          "value": 0
+        },
+        {
+          "name": "WHITE",
+          "value": 1
+        },
+        {
+          "name": "BLACK",
+          "value": 2
+        },
+        {
+          "name": "WHITE_SPLOTCHED",
+          "value": 3
+        },
+        {
+          "name": "GOLD",
+          "value": 4
+        },
+        {
+          "name": "SALT",
+          "value": 5
+        },
+        {
+          "name": "EVIL",
+          "value": 99
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.entity.animal.wolf.WolfSoundVariant#STREAM_CODEC": {
       "kind": "registry_id",
@@ -6028,8 +6820,39 @@
       ]
     },
     "net.minecraft.world.inventory.ContainerInput#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.inventory.ContainerInput",
+      "constants": [
+        {
+          "name": "PICKUP",
+          "value": 0
+        },
+        {
+          "name": "QUICK_MOVE",
+          "value": 1
+        },
+        {
+          "name": "SWAP",
+          "value": 2
+        },
+        {
+          "name": "CLONE",
+          "value": 3
+        },
+        {
+          "name": "THROW",
+          "value": 4
+        },
+        {
+          "name": "QUICK_CRAFT",
+          "value": 5
+        },
+        {
+          "name": "PICKUP_ALL",
+          "value": 6
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.AdventureModePredicate#STREAM_CODEC": {
       "kind": "struct",
@@ -6047,8 +6870,75 @@
       ]
     },
     "net.minecraft.world.item.DyeColor#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.DyeColor",
+      "constants": [
+        {
+          "name": "WHITE",
+          "value": 0
+        },
+        {
+          "name": "ORANGE",
+          "value": 1
+        },
+        {
+          "name": "MAGENTA",
+          "value": 2
+        },
+        {
+          "name": "LIGHT_BLUE",
+          "value": 3
+        },
+        {
+          "name": "YELLOW",
+          "value": 4
+        },
+        {
+          "name": "LIME",
+          "value": 5
+        },
+        {
+          "name": "PINK",
+          "value": 6
+        },
+        {
+          "name": "GRAY",
+          "value": 7
+        },
+        {
+          "name": "LIGHT_GRAY",
+          "value": 8
+        },
+        {
+          "name": "CYAN",
+          "value": 9
+        },
+        {
+          "name": "PURPLE",
+          "value": 10
+        },
+        {
+          "name": "BLUE",
+          "value": 11
+        },
+        {
+          "name": "BROWN",
+          "value": 12
+        },
+        {
+          "name": "GREEN",
+          "value": 13
+        },
+        {
+          "name": "RED",
+          "value": 14
+        },
+        {
+          "name": "BLACK",
+          "value": 15
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.Instrument#DIRECT_STREAM_CODEC": {
       "kind": "struct",
@@ -6142,8 +7032,59 @@
       ]
     },
     "net.minecraft.world.item.ItemUseAnimation#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.ItemUseAnimation",
+      "constants": [
+        {
+          "name": "NONE",
+          "value": 0
+        },
+        {
+          "name": "EAT",
+          "value": 1
+        },
+        {
+          "name": "DRINK",
+          "value": 2
+        },
+        {
+          "name": "BLOCK",
+          "value": 3
+        },
+        {
+          "name": "BOW",
+          "value": 4
+        },
+        {
+          "name": "TRIDENT",
+          "value": 5
+        },
+        {
+          "name": "CROSSBOW",
+          "value": 6
+        },
+        {
+          "name": "SPYGLASS",
+          "value": 7
+        },
+        {
+          "name": "TOOT_HORN",
+          "value": 8
+        },
+        {
+          "name": "BRUSH",
+          "value": 9
+        },
+        {
+          "name": "BUNDLE",
+          "value": 10
+        },
+        {
+          "name": "SPEAR",
+          "value": 11
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.JukeboxPlayable#STREAM_CODEC": {
       "kind": "struct",
@@ -6200,12 +7141,46 @@
       "note": "varint 0 selects the inline value, otherwise id + 1"
     },
     "net.minecraft.world.item.Rarity#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.Rarity",
+      "constants": [
+        {
+          "name": "COMMON",
+          "value": 0
+        },
+        {
+          "name": "UNCOMMON",
+          "value": 1
+        },
+        {
+          "name": "RARE",
+          "value": 2
+        },
+        {
+          "name": "EPIC",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.SwingAnimationType#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.SwingAnimationType",
+      "constants": [
+        {
+          "name": "NONE",
+          "value": 0
+        },
+        {
+          "name": "WHACK",
+          "value": 1
+        },
+        {
+          "name": "STAB",
+          "value": 2
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.alchemy.Potion#STREAM_CODEC": {
       "kind": "registry_id",
@@ -6650,8 +7625,31 @@
       ]
     },
     "net.minecraft.world.item.component.FireworkExplosion$Shape#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.component.FireworkExplosion$Shape",
+      "constants": [
+        {
+          "name": "SMALL_BALL",
+          "value": 0
+        },
+        {
+          "name": "LARGE_BALL",
+          "value": 1
+        },
+        {
+          "name": "STAR",
+          "value": 2
+        },
+        {
+          "name": "CREEPER",
+          "value": 3
+        },
+        {
+          "name": "BURST",
+          "value": 4
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.component.Fireworks#STREAM_CODEC": {
       "kind": "struct",
@@ -6733,8 +7731,23 @@
       ]
     },
     "net.minecraft.world.item.component.ItemAttributeModifiers$Type#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.component.ItemAttributeModifiers$Type",
+      "constants": [
+        {
+          "name": "DEFAULT",
+          "value": 0
+        },
+        {
+          "name": "HIDDEN",
+          "value": 1
+        },
+        {
+          "name": "OVERRIDE",
+          "value": 2
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.component.ItemContainerContents#STREAM_CODEC": {
       "kind": "list",
@@ -6891,8 +7904,19 @@
       "ref": "net.minecraft.network.codec.ByteBufCodecs#INT"
     },
     "net.minecraft.world.item.component.MapPostProcessing#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.item.component.MapPostProcessing",
+      "constants": [
+        {
+          "name": "LOCK",
+          "value": 0
+        },
+        {
+          "name": "SCALE",
+          "value": 1
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.item.component.OminousBottleAmplifier#STREAM_CODEC": {
       "kind": "struct",
@@ -7771,12 +8795,50 @@
       "note": "one i64, x and z as two i32"
     },
     "net.minecraft.world.level.GameType#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.level.GameType",
+      "constants": [
+        {
+          "name": "SURVIVAL",
+          "value": 0
+        },
+        {
+          "name": "CREATIVE",
+          "value": 1
+        },
+        {
+          "name": "ADVENTURE",
+          "value": 2
+        },
+        {
+          "name": "SPECTATOR",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.level.block.Rotation#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.level.block.Rotation",
+      "constants": [
+        {
+          "name": "NONE",
+          "value": 0
+        },
+        {
+          "name": "CLOCKWISE_90",
+          "value": 1
+        },
+        {
+          "name": "CLOCKWISE_180",
+          "value": 2
+        },
+        {
+          "name": "COUNTERCLOCKWISE_90",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.level.block.entity.BannerPattern#DIRECT_STREAM_CODEC": {
       "kind": "struct",
@@ -7935,12 +8997,46 @@
       ]
     },
     "net.minecraft.world.level.block.entity.TestInstanceBlockEntity$Status#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.level.block.entity.TestInstanceBlockEntity$Status",
+      "constants": [
+        {
+          "name": "CLEARED",
+          "value": 0
+        },
+        {
+          "name": "RUNNING",
+          "value": 1
+        },
+        {
+          "name": "FINISHED",
+          "value": 2
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.level.block.state.properties.TestBlockMode#STREAM_CODEC": {
-      "kind": "varint",
-      "note": "index into an id map"
+      "kind": "enum",
+      "type": "net.minecraft.world.level.block.state.properties.TestBlockMode",
+      "constants": [
+        {
+          "name": "START",
+          "value": 0
+        },
+        {
+          "name": "LOG",
+          "value": 1
+        },
+        {
+          "name": "FAIL",
+          "value": 2
+        },
+        {
+          "name": "ACCEPT",
+          "value": 3
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.level.dimension.DimensionType#STREAM_CODEC": {
       "kind": "registry_id",
@@ -8025,8 +9121,9 @@
       ]
     },
     "net.minecraft.world.phys.Vec3#LP_STREAM_CODEC": {
-      "kind": "unresolved",
-      "why": "unmodelled statement: double z"
+      "kind": "custom",
+      "codec": "lp_vec3",
+      "note": "one byte near zero, else six plus a varint scale when it overflows two bits"
     },
     "net.minecraft.world.phys.Vec3#STREAM_CODEC": {
       "kind": "struct",
@@ -8320,7 +9417,7 @@
         "ref": "net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
+        "|value: unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
       ]
     },
     {
@@ -8576,7 +9673,7 @@
         "ref": "net.minecraft.network.protocol.login.ServerboundCustomQueryAnswerPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: data.write((FriendlyByteBuf)((Object)buf))"
+        "payload?: unmodelled statement: data.write((FriendlyByteBuf)((Object)buf))"
       ]
     },
     {
@@ -8625,14 +9722,11 @@
       "protocolId": 1,
       "javaClass": "net.minecraft.network.protocol.game.ClientboundAddEntityPacket",
       "layoutSource": "net.minecraft.network.protocol.game.ClientboundAddEntityPacket#STREAM_CODEC",
-      "complete": false,
+      "complete": true,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.game.ClientboundAddEntityPacket#STREAM_CODEC"
-      },
-      "reasons": [
-        "unmodelled statement: double z"
-      ]
+      }
     },
     {
       "resource": "minecraft:animate",
@@ -8660,7 +9754,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundAwardStatsPacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "|key: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -8806,7 +9900,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: c.write((FriendlyByteBuf)((Object)o))"
+        "[]: unmodelled statement: c.write((FriendlyByteBuf)((Object)o))"
       ]
     },
     {
@@ -8861,7 +9955,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundCommandsPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: entry.write((FriendlyByteBuf)((Object)buffer))"
+        "entries[]: unmodelled statement: entry.write((FriendlyByteBuf)((Object)buffer))"
       ]
     },
     {
@@ -8890,7 +9984,8 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        "carriedItem: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV",
+        "items[]: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
       ]
     },
     {
@@ -8919,7 +10014,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        "itemStack: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
       ]
     },
     {
@@ -9016,7 +10111,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundDebugBlockValuePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "update: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9032,7 +10127,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundDebugChunkValuePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "update: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9048,7 +10143,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundDebugEntityValuePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "update: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9064,7 +10159,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundDebugEventPacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "event: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9093,7 +10188,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundDeleteChatPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: MessageSignature.Packed.write(output, this.messageSignature)"
+        "branching encode body: if (packed.fullSignature() != null) {\n                Messag"
       ]
     },
     {
@@ -9161,7 +10256,8 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundExplodePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "blockParticles[].value.particle: dispatched codec: the layout depends on a runtime type",
+        "explosionParticle: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9297,7 +10393,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "particle: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9352,7 +10448,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundMapItemDataPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (optional.isPresent()) {\n                MapPatch patch ="
+        "colorPatch: branching encode body: if (optional.isPresent()) {\n                MapPatch patch ="
       ]
     },
     {
@@ -9368,8 +10464,9 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                throw new Encoder",
-        "unmodelled statement: 1.encodeCap(output, value)"
+        "offers[].itemCostA.components[]: unmodelled statement: 1.encodeCap(output, value)",
+        "offers[].itemCostB?.components[]: unmodelled statement: 1.encodeCap(output, value)",
+        "offers[].result: branching encode body: if (itemStack.isEmpty()) {\n                throw new Encoder"
       ]
     },
     {
@@ -9515,7 +10612,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundPlaceGhostRecipePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "recipeDisplay: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -9547,7 +10644,9 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundPlayerChatPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: this.body.write(output)"
+        "body: unmodelled statement: this.lastSeen.write(output)",
+        "output: branching encode body: if (mask.type == Type.PARTIALLY_FILTERED) {\n            outp",
+        "signature?: unmodelled statement: output.writeBytes(signature.bytes)"
       ]
     },
     {
@@ -9615,7 +10714,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: for (Action action : this.actions) {\n                action."
+        "entries[]: branching encode body: for (Action action : this.actions) {\n                action."
       ]
     },
     {
@@ -9699,7 +10798,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "entries[].contents.display: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -10004,7 +11103,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        "contents: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
       ]
     },
     {
@@ -10069,14 +11168,11 @@
       "protocolId": 101,
       "javaClass": "net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket",
       "layoutSource": "net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket#STREAM_CODEC",
-      "complete": false,
+      "complete": true,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket#STREAM_CODEC"
-      },
-      "reasons": [
-        "unmodelled statement: double z"
-      ]
+      }
     },
     {
       "resource": "minecraft:set_equipment",
@@ -10175,7 +11271,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        "contents: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
       ]
     },
     {
@@ -10207,7 +11303,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundSetScorePacket#STREAM_CODEC"
       },
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "numberFormat?: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -10486,8 +11582,8 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: this.requirements.write(output)",
-        "unmodelled statement: value.serializeToNetwork((FriendlyByteBuf)((Object)buffer))"
+        "added[].value: unmodelled statement: this.requirements.write(output)",
+        "progress|value: unmodelled statement: value.serializeToNetwork((FriendlyByteBuf)((Object)buffer))"
       ]
     },
     {
@@ -10529,7 +11625,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled factory SelectableRecipe.noRecipeCodec(..)"
+        "stonecutterRecipes.entries[].recipe: unmodelled factory SelectableRecipe.noRecipeCodec(..)"
       ]
     },
     {
@@ -10545,7 +11641,7 @@
         "ref": "net.minecraft.network.protocol.common.ClientboundUpdateTagsPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
+        "|value: unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
       ]
     },
     {
@@ -10561,7 +11657,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: FriendlyByteBuf byteBuf = new FriendlyByteBuf(buf)"
+        "waypoint: unmodelled statement: FriendlyByteBuf byteBuf = new FriendlyByteBuf(buf)"
       ]
     },
     {
@@ -10655,7 +11751,7 @@
         "ref": "net.minecraft.network.protocol.game.ServerboundChatPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: output.writeBytes(signature.bytes)"
+        "signature?: unmodelled statement: output.writeBytes(signature.bytes)"
       ]
     },
     {
@@ -10713,7 +11809,7 @@
         "ref": "net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: RemoteChatSession.Data.write(output, this.chatSession)"
+        "unmodelled statement: data.profilePublicKey.write(output)"
       ]
     },
     {
@@ -10934,14 +12030,11 @@
       "protocolId": 26,
       "javaClass": "net.minecraft.network.protocol.game.ServerboundInteractPacket",
       "layoutSource": "net.minecraft.network.protocol.game.ServerboundInteractPacket#STREAM_CODEC",
-      "complete": false,
+      "complete": true,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.game.ServerboundInteractPacket#STREAM_CODEC"
-      },
-      "reasons": [
-        "unmodelled statement: double z"
-      ]
+      }
     },
     {
       "resource": "minecraft:jigsaw_generate",
@@ -11167,7 +12260,7 @@
         "ref": "net.minecraft.network.protocol.game.ServerboundPlayerInputPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: flags = (byte)(flags | (value.forward() ? 1 : 0))"
+        "input: unmodelled statement: flags = (byte)(flags | (value.forward() ? 1 : 0))"
       ]
     },
     {
@@ -11345,7 +12438,7 @@
         "ref": "net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket#STREAM_CODEC"
       },
       "reasons": [
-        "branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
+        "itemStack: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
       ]
     },
     {
@@ -11715,8 +12808,8 @@
       },
       "complete": false,
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type",
-        "unmodelled statement: 1.encodeCap(output, value)"
+        "predicates[].components.exact[]: unmodelled statement: 1.encodeCap(output, value)",
+        "predicates[].components.partial[]: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -11729,8 +12822,8 @@
       },
       "complete": false,
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type",
-        "unmodelled statement: 1.encodeCap(output, value)"
+        "predicates[].components.exact[]: unmodelled statement: 1.encodeCap(output, value)",
+        "predicates[].components.partial[]: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -11743,7 +12836,7 @@
       },
       "complete": false,
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "modifiers[].display: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -11833,7 +12926,7 @@
       },
       "complete": false,
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "onConsumeEffects[]: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -11846,7 +12939,7 @@
       },
       "complete": false,
       "reasons": [
-        "branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        "convertInto.components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
       ]
     },
     {
@@ -11969,7 +13062,7 @@
       },
       "complete": false,
       "reasons": [
-        "dispatched codec: the layout depends on a runtime type"
+        "deathEffects[]: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {
@@ -12114,7 +13207,7 @@
       },
       "complete": false,
       "reasons": [
-        "branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        "[].components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
       ]
     },
     {
@@ -12127,7 +13220,7 @@
       },
       "complete": false,
       "reasons": [
-        "branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        "[].components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
       ]
     },
     {
@@ -12140,7 +13233,7 @@
       },
       "complete": false,
       "reasons": [
-        "not a codec reference: subCodec.apply(ByteBufCodecs::optional)"
+        "customEffects[].asDetails.hiddenEffect: not a codec reference: subCodec.apply(ByteBufCodecs::optional)"
       ]
     },
     {
@@ -12437,7 +13530,7 @@
       },
       "complete": false,
       "reasons": [
-        "branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        "[]?.components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
       ]
     },
     {
@@ -12472,7 +13565,7 @@
       },
       "complete": false,
       "reasons": [
-        "branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
+        "components: branching encode body: if (patch.isEmpty()) {\n                    output.writeVarIn"
       ]
     },
     {

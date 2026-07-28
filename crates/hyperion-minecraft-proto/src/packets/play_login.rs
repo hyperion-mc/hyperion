@@ -179,19 +179,26 @@ impl Decode<'_> for Vec3 {
 
 // --- game mode ------------------------------------------------------------
 
-/// A game mode (`GameType`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-#[repr(i8)]
-pub enum GameType {
-    /// Survival.
-    #[default]
-    Survival = 0,
-    /// Creative.
-    Creative = 1,
-    /// Adventure.
-    Adventure = 2,
-    /// Spectator.
-    Spectator = 3,
+/// A game mode.
+///
+/// Generated, not hand-written: `net.minecraft.world.level.GameType.STREAM_CODEC`
+/// is `ByteBufCodecs.idMapper(BY_ID, GameType::getId)`, and the extractor now
+/// follows that back to the constant list and the id each constant carries
+/// rather than emitting a bare varint. Retyping the four variants here was a
+/// second copy of a table the jar already states.
+///
+/// The re-export keeps this module the place to look for it, since the packets
+/// that carry a game mode are here.
+pub use crate::types::GameType;
+
+/// `GameType.DEFAULT_MODE`, which is also what an out-of-range id resolves to.
+///
+/// Hand-written rather than generated: which variant is the default is a fact
+/// about the game, not about the wire, and the generator only reads layouts.
+impl Default for GameType {
+    fn default() -> Self {
+        Self::Survival
+    }
 }
 
 impl GameType {

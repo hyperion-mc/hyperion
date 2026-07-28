@@ -2,15 +2,20 @@
 //!
 //! Most of this group is mechanical and lives in [`clientbound`]; the names are
 //! re-exported here so a reader looking for entity movement finds all of it in
-//! one place. Four bodies are hand-written, each because its encoder branches
-//! on something the generator refuses to guess at:
+//! one place. Two bodies are hand-written, each because its encoder branches on
+//! something the generator refuses to guess at:
 //!
-//! * [`AddEntity`] and [`SetEntityMotion`] carry a velocity through
-//!   [`lp_vec3`], whose byte count depends on the magnitude of the vector.
 //! * [`SetEntityData`] is a run of entries terminated by a sentinel rather than
 //!   a counted list, and each entry's length is decided by its serializer.
 //! * [`SetEquipment`] packs a continuation bit into the slot byte, so the entry
 //!   count is carried by the entries themselves.
+//!
+//! [`AddEntity`], [`SetEntityMotion`] and [`Interact`] used to be here too, for
+//! a reason that was not really theirs: each carries a velocity through
+//! [`lp_vec3`], whose byte count depends on the magnitude of the vector, and a
+//! single field the extractor could not read as a layout cost the whole packet.
+//! `protocol.json` now marks that one field `{"kind": "custom"}` and names this
+//! module's codec for it, so all three are generated and only re-exported here.
 //!
 //! [`DamageEvent`] is hand-written for a different reason: the extractor read
 //! its layout in full, but two of its fields are the same anonymous `output`
@@ -18,14 +23,18 @@
 //!
 //! [`clientbound`]: super::clientbound
 
-pub use super::clientbound::{
-    Animate, EntityEvent, EntityPositionSync, HurtAnimation, MoveEntityPos, MoveEntityPosRot,
-    MoveEntityRot, RemoveEntities, RotateHead, TeleportEntity, UpdateAttributes, update_attributes,
+pub use super::{
+    clientbound::{
+        AddEntity, Animate, EntityEvent, EntityPositionSync, HurtAnimation, MoveEntityPos,
+        MoveEntityPosRot, MoveEntityRot, RemoveEntities, RotateHead, SetEntityMotion,
+        TeleportEntity, UpdateAttributes, update_attributes,
+    },
+    serverbound::Interact,
 };
 use crate::{
-    Decode, Encode, Error, Reader, RegistryId, Result, Uuid, Writer,
+    Decode, Encode, Error, Reader, RegistryId, Result, Writer,
     item::{Slot, nbt::NbtScan},
-    types::{InteractionHand, Vec3},
+    types::Vec3,
 };
 
 // --- rotation -------------------------------------------------------------
@@ -226,72 +235,6 @@ pub mod lp_vec3 {
             z: unpack(buffer >> Z_OFFSET) * scale,
         })
     }
-}
-
-// --- spawning -------------------------------------------------------------
-
-/// `minecraft:add_entity`, sent clientbound as play id 1.
-///
-/// Layout from `net.minecraft.network.protocol.game.ClientboundAddEntityPacket#STREAM_CODEC`.
-#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
-pub struct AddEntity {
-    #[proto(varint)]
-    pub id: i32,
-    pub uuid: Uuid,
-    /// Index into `minecraft:entity_type`.
-    pub r#type: RegistryId,
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-    /// Velocity in blocks per tick. Three shorts on 1.20.1; packed since 26.2.
-    #[proto(with = lp_vec3)]
-    pub movement: Vec3,
-    /// Pitch, from [`pack_degrees`].
-    pub x_rot: i8,
-    /// Yaw, from [`pack_degrees`].
-    pub y_rot: i8,
-    /// Head yaw, from [`pack_degrees`].
-    pub y_head_rot: i8,
-    /// Type-specific spawn data; zero for everything that does not define one.
-    #[proto(varint)]
-    pub data: i32,
-}
-
-/// `minecraft:interact`, sent serverbound as play id 26.
-///
-/// Layout from `net.minecraft.network.protocol.game.ServerboundInteractPacket#STREAM_CODEC`,
-/// which `protocol.json` models field by field but marks `complete: false` with
-/// the reason `unmodelled statement: double z`. That reason is about the
-/// `Vec3#LP_STREAM_CODEC` inside it, which this crate does have and uses below,
-/// so the generator's refusal costs the whole packet rather than the one field
-/// it could not follow. Hand-written here for that reason and nothing else; the
-/// field list is the extractor's, not a reading of a wiki.
-///
-/// 26.2 split attacking out into `minecraft:attack`, so this now only ever
-/// means a right-click on an entity, and there is no leading action
-/// discriminant the way there was through 1.21.
-#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
-pub struct Interact {
-    #[proto(varint)]
-    pub entity_id: i32,
-    pub hand: InteractionHand,
-    /// Where on the entity the ray landed, relative to the entity's position.
-    #[proto(with = lp_vec3)]
-    pub location: Vec3,
-    /// Whether the player was sneaking.
-    pub using_secondary_action: bool,
-}
-
-/// `minecraft:set_entity_motion`, sent clientbound as play id 101.
-///
-/// Layout from `net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket#STREAM_CODEC`.
-#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
-pub struct SetEntityMotion {
-    #[proto(varint)]
-    pub id: i32,
-    /// Velocity in blocks per tick.
-    #[proto(with = lp_vec3)]
-    pub movement: Vec3,
 }
 
 // --- tracked data ---------------------------------------------------------

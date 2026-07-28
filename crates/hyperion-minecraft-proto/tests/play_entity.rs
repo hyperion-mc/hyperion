@@ -22,10 +22,11 @@ use hyperion_minecraft_proto::{
     item::{DataComponentPatch, ItemStack, Slot, nbt::NbtScan},
     packets::play::entity::{
         AddEntity, DamageEvent, DataValues, EntityDataSerializer, EquipmentEntry, EquipmentSlot,
-        SetEntityData, SetEntityMotion, SetEquipment, lp_vec3, pack_degrees, unpack_degrees,
+        Interact, SetEntityData, SetEntityMotion, SetEquipment, lp_vec3, pack_degrees,
+        unpack_degrees,
     },
     text::Component,
-    types::Vec3,
+    types::{InteractionHand, Vec3},
 };
 
 /// The `minecraft:entity_type` id of `minecraft:pig` in 26.2.
@@ -220,6 +221,37 @@ fn a_still_entity_costs_one_velocity_byte() {
         }),
         vanilla_fixtures::bytes("packet.set_entity_motion.zero")
     );
+}
+
+#[test]
+fn interact_is_generated_and_round_trips() {
+    // The packet this whole mechanism exists for. Its `location` is a
+    // `Vec3#LP_STREAM_CODEC`, which cost the packet its entire Rust type until
+    // `protocol.json` gained a way to say "one field, hand-written codec"
+    // (hyperion-mc/hyperion#1006). If a future change loses that, the type
+    // disappears again and this stops compiling rather than going quiet.
+    //
+    // Serverbound, so there is no vanilla fixture to hold it against; the
+    // bytes of the codec itself are covered by `lp_vec3_matches_the_server`
+    // above, which does compare against the server.
+    let packet = Interact {
+        entity_id: 0x2A,
+        hand: InteractionHand::OffHand,
+        location: vec3([0.25, -0.5, 0.125]),
+        using_secondary_action: true,
+    };
+    let bytes = encode(&packet);
+    // entity id, hand, six velocity bytes, flag: nothing has a length prefix,
+    // so a `location` that silently became three f64s would show up here.
+    assert_eq!(bytes.len(), 1 + 1 + 6 + 1, "{bytes:02x?}");
+
+    let mut reader = Reader::new(&bytes);
+    let back = Interact::decode(&mut reader).expect("decode");
+    assert_eq!(back.entity_id, packet.entity_id);
+    assert_eq!(back.hand, packet.hand);
+    assert_eq!(back.using_secondary_action, packet.using_secondary_action);
+    // Quantised, so the vector comes back close rather than equal.
+    assert!((back.location.x - packet.location.x).abs() < 1e-3);
 }
 
 // --- spawning -------------------------------------------------------------
