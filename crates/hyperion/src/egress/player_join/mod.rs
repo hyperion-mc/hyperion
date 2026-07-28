@@ -12,7 +12,7 @@ use flecs_ecs::prelude::*;
 mod list;
 pub use list::*;
 pub mod roster;
-pub use roster::{RosterModule, announce, entry_of};
+pub use roster::{RosterModule, announce, entry_of, wear};
 
 use crate::{
     simulation::command::{Command, ROOT_COMMAND},
