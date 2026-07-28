@@ -63,6 +63,13 @@ pub struct MapSpec {
     pub author: &'static str,
     /// Below this Y a player is dead.
     pub kill_y: f32,
+    /// The box a player must stay inside, as `(min, max)` world corners.
+    ///
+    /// `Some` only for a map that keeps players in rather than letting them
+    /// fall out -- the hub. An arena has no walls (falling off is the game), so
+    /// it leaves this `None` and its `kill_y` floor is the whole of its bounds.
+    /// See [`crate::module::arena::Bounds`].
+    pub bounds: Option<(Vec3, Vec3)>,
     pub spawns: Vec<Vec3>,
     /// Where the Smash Crystal can land. Mineplex's map spec asks for exactly
     /// three of these ("3 red data points for areas where the Smash Crystal
@@ -192,6 +199,7 @@ pub fn parse(source: &'static str) -> Result<MapSpec, ParseError> {
     let mut name = "";
     let mut author = "";
     let mut kill_y = None;
+    let mut bounds = None;
     let mut spawns = Vec::new();
     let mut crystals = Vec::new();
     let mut brushes = Vec::new();
@@ -226,6 +234,22 @@ pub fn parse(source: &'static str) -> Result<MapSpec, ParseError> {
                 continue;
             }
             "kill_y" => kill_y = Some(cursor.float("kill_y")?),
+            // `bounds minx miny minz maxx maxy maxz`: the box a player is kept
+            // inside. The hub declares one; an arena does not, because its only
+            // edge is the floor its `kill_y` already names.
+            "bounds" => {
+                let min = Vec3::new(
+                    cursor.float("a min x")?,
+                    cursor.float("a min y")?,
+                    cursor.float("a min z")?,
+                );
+                let max = Vec3::new(
+                    cursor.float("a max x")?,
+                    cursor.float("a max y")?,
+                    cursor.float("a max z")?,
+                );
+                bounds = Some((min, max));
+            }
             "spawn" | "crystal" => {
                 let x = cursor.float("an x")?;
                 let y = cursor.float("a y")?;
@@ -320,6 +344,7 @@ pub fn parse(source: &'static str) -> Result<MapSpec, ParseError> {
         name,
         author,
         kill_y,
+        bounds,
         spawns,
         crystals,
         brushes,

@@ -386,6 +386,10 @@ SWEEP_Y = 65.0
 SWEEP_Z = -11.0
 SWEEP_YAW = 0.0
 
+# How far past the hub's east wall (x=21) the boundary probe walks a client.
+# Far enough to be unambiguously outside; the server should shove it back.
+BEYOND_WALL_X = 25.0
+
 # How far in front of the attacker the two victims stand.
 #
 # Neither is a whole number, and neither is a distance an ability centres its
@@ -699,6 +703,7 @@ class Match:
             self.proof["every declared ability was heard"] = None
             self.proof["every declared ability was seen"] = None
             self.proof["a projectile was drawn"] = None
+            self.proof["the hub shoves you back inside"] = None
             self.proof["cooldowns refused a second use"] = None
         self.proof.update({
             "four in play": None,
@@ -1161,6 +1166,76 @@ class Match:
                 "cooldown with %r on the action bar"
                 % (len(self.cooldown_results), COOLDOWN_REFUSAL),
             )
+
+        self.prove_boundary()
+
+    def prove_boundary(self):
+        """Walk a client past the hub wall and prove it is shoved back.
+
+        The load-bearing assertion, and the reason it is on the packet and not
+        on where the player ends up: a bounds check that teleported a stray
+        player back would also leave them in bounds, and read to a test that
+        only checked position exactly like this one. What the operator ruled out
+        is the teleport -- it rubber-bands and reads as lag -- so what is proved
+        is the shove itself: a `ClientboundSetEntityMotion` pointing back
+        inside. A control client standing in the middle proves the wall does not
+        grab someone who never left.
+        """
+        if len(self.clients) < 2:
+            return
+        escapee, control = self.clients[0], self.clients[1]
+        if escapee.entity_id is None or control.entity_id is None:
+            return
+
+        self.window_motions.clear()
+        # Up over the glass wall, out past x=21, and hold there. The steps stay
+        # inside hyperion's speed check; a client claiming a position is not
+        # collision-checked against the wall, which is the whole point -- a real
+        # double jump clears it too.
+        escapee.walk(
+            [
+                (escapee.position[0], HUB_CLEAR_Y, escapee.position[2]),
+                (BEYOND_WALL_X, HUB_CLEAR_Y, 0.0),
+                (BEYOND_WALL_X, SWEEP_Y + 1.0, 0.0),
+            ],
+            note="past the hub's east wall",
+        )
+        self.wait_until(lambda: escapee.arrived(), 15.0)
+        # Long enough for the bounds system to see the mirror out of bounds and
+        # for the motion packet to come back.
+        self.wait(1.0)
+
+        push = self.window_motions.get(escapee.entity_id)
+        control_push = self.window_motions.get(control.entity_id)
+
+        if push is not None and push[0] < -1e-4:
+            self.prove(
+                "the hub shoves you back inside",
+                "%s walked to x=%.0f past the hub wall and the server sent "
+                "SetEntityMotion (%.3f, %.3f, %.3f), pointing back inside"
+                % (escapee.name, BEYOND_WALL_X, push[0], push[1], push[2]),
+            )
+        else:
+            self.sweep_failures.append(
+                "a client walked past the hub wall and the server did not shove "
+                "it back: motion=%r" % (push,)
+            )
+        if control_push is not None and abs(control_push[0]) > 1e-4:
+            self.sweep_failures.append(
+                "%s never left the hub and was shoved anyway: motion=%r"
+                % (control.name, control_push)
+            )
+
+        # Back to a sweep spot, so nothing after this reads a client stranded
+        # outside.
+        escapee.walk(
+            [
+                (BEYOND_WALL_X, HUB_CLEAR_Y, 0.0),
+                (SWEEP_X, HUB_CLEAR_Y, SWEEP_Z),
+                (SWEEP_X, SWEEP_Y, SWEEP_Z),
+            ]
+        )
+        self.wait_until(lambda: escapee.arrived(), 15.0)
 
     def spares(self, testing):
         """A mob for each victim that is not the one being tested.

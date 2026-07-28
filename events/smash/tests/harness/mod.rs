@@ -51,6 +51,20 @@ impl Game {
         // anything uses it.
         world.import::<SmashModule>();
         world.set(ServerHandle(server.clone()));
+        // The hub's push-back wall is off in the harness: every test here that
+        // is not about bounds puts players at arbitrary positions in the
+        // default `Waiting` phase and launches them past any real hub box, and
+        // a wall shoving them back would be velocity none of those tests asked
+        // for. An infinite box is never crossed, so `Waiting` and `Countdown`
+        // stay inert exactly as they were before bounds existed. `tests/arena`
+        // sets a real finite box to prove the push.
+        world.set(smash::module::arena::HubBounds(
+            smash::module::arena::Bounds {
+                min: Vec3::splat(f32::NEG_INFINITY),
+                max: Vec3::splat(f32::INFINITY),
+                policy: smash::module::arena::Policy::PushBack,
+            },
+        ));
         Self {
             world,
             server,
