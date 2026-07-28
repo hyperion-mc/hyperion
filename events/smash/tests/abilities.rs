@@ -867,6 +867,63 @@ mod charge {
     }
 }
 
+/// Every projectile any ability fires carries a [`Visual`], so the host has
+/// something to draw.
+///
+/// The flight and the hit lived in the game half and were provable against the
+/// mock from the start; what was missing was that a client could see the thing
+/// at all, because nothing said what it looked like. `crate::draw` turns a
+/// `Visual` into an `add_entity`, so a projectile without one is a projectile
+/// that reaches `draw`, finds no kind, and stays invisible -- the exact "twenty
+/// abilities fire something no one can see" this set out to fix.
+///
+/// It sweeps the whole roster rather than the projectile abilities by name,
+/// because "which abilities fire a projectile" is not a list anybody should be
+/// maintaining: it fires every ability and checks that whatever projectiles
+/// appeared are drawable, so a kit added tomorrow that forgets the visual fails
+/// here.
+#[test]
+fn every_projectile_that_flies_can_be_seen() {
+    use smash::module::projectile::{Flight, Projectile, Visual};
+
+    let manifest = ability::manifest(&Game::new().world);
+    let mut failures = Vec::new();
+
+    for entry in manifest {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(&entry);
+        bench.press(&entry);
+        // One tick, so a projectile fired on a beat (an ultimate's) has a frame
+        // to appear. `settle` would fly them into the victims and destruct them
+        // before this can look.
+        bench.game.advance(TICK, 1);
+
+        let mut undrawn = 0;
+        bench
+            .game
+            .world
+            .query::<&Flight>()
+            .with(Projectile::id())
+            .build()
+            .each_entity(|projectile, _| {
+                if !projectile.has(Visual::id()) {
+                    undrawn += 1;
+                }
+            });
+
+        if undrawn > 0 {
+            failures.push(format!(
+                "{} / {} put {undrawn} projectile(s) in the world with no Visual, so the host \
+                 would draw nothing",
+                entry.kit, entry.name
+            ));
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Two of the same effect on one victim are two entities, not one.
 ///
 /// Naming an entity in flecs is find-or-create: `ecs_entity_init` with a name

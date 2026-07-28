@@ -10,6 +10,7 @@
 
 pub mod adapter;
 pub mod command;
+pub mod draw;
 pub mod flecs_ext;
 pub mod input;
 pub mod map;
@@ -92,6 +93,10 @@ impl Module for SmashHost {
         // After the adapter, because building the maps writes the `Arena`
         // singleton the game half registered.
         world.import::<crate::terrain::MapModule>();
+        // After the adapter too: it draws the game half's projectiles, whose
+        // `Projectile`, `Visual` and `Flight` the adapter's `SmashModule`
+        // import is what registers.
+        world.import::<crate::draw::DrawModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
             command::register(registry, world);

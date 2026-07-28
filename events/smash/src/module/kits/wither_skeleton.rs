@@ -11,13 +11,14 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::module::{
     ability::{self, Cast, Observable, splash_at},
     damage::MatchClock,
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
-    projectile::{Flight, Impact, Payload, fire},
+    projectile::{Flight, Impact, Payload, Visual, fire},
     visuals,
 };
 
@@ -98,6 +99,7 @@ fn guided_wither_skull(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::WitherSkull),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 8.0f32.mul_add(cast.charge, 18.0),

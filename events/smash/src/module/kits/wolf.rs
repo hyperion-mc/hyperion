@@ -10,6 +10,7 @@
 //! disagreement is recorded in docs/smash-design.md.
 
 use flecs_ecs::prelude::*;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::{
     flecs_ext::EntityViewExt,
@@ -19,7 +20,7 @@ use crate::{
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitName, KitSounds, KitStats, Playing},
         player::Player,
-        projectile::{Flight, Impact, Payload, fire},
+        projectile::{Flight, Impact, Payload, Visual, fire},
     },
 };
 
@@ -153,6 +154,7 @@ fn cub_tackle(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::Wolf),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 18.0,

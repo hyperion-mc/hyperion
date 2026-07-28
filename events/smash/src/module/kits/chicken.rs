@@ -9,6 +9,7 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
+use hyperion::simulation::entity_kind::EntityKind;
 
 use crate::{
     flecs_ext::EntityViewExt,
@@ -16,7 +17,7 @@ use crate::{
         ability::{self, Cast, Cooldown, Grants, Named, Observable},
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
-        projectile::{Flight, Impact, Payload, fire},
+        projectile::{Flight, Impact, Payload, Visual, fire},
         visuals,
     },
 };
@@ -105,6 +106,7 @@ fn egg_blaster(cast: &Cast<'_>) {
         fire(
             cast.world,
             cast.caster,
+            Visual(EntityKind::Egg),
             Flight {
                 position: cast.position.0,
                 velocity: (forward + side * offset).normalize_or_zero() * 30.0,
@@ -123,6 +125,7 @@ fn chicken_missile(cast: &Cast<'_>) {
     fire(
         cast.world,
         cast.caster,
+        Visual(EntityKind::Egg),
         Flight {
             position: cast.position.0,
             velocity: cast.facing.0.normalize_or_zero() * 24.0,

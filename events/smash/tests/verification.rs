@@ -1847,10 +1847,11 @@ fn the_match_clock_advances_only_during_play() {
 mod projectiles {
     use flecs_ecs::prelude::*;
     use glam::Vec3;
+    use hyperion::simulation::entity_kind::EntityKind;
     use smash::{
         module::{
             player::{Health, Player, Position},
-            projectile::{Flight, Payload, Projectile, fire},
+            projectile::{Flight, Payload, Projectile, Visual, fire},
         },
         server::{PlayerId, mock::Call},
     };
@@ -1879,6 +1880,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::new(0.0, 50.0, 0.0),
                 velocity: Vec3::new(10.0, 0.0, 0.0),
@@ -1941,6 +1943,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::new(0.0, 0.0, 0.0),
                 velocity: Vec3::ZERO,
@@ -1989,6 +1992,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
@@ -2027,6 +2031,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
@@ -2071,6 +2076,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::new(-3.0, 0.0, 0.0),
                 velocity: Vec3::new(120.0, 0.0, 0.0),
@@ -2125,6 +2131,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::new(-3.0, 0.0, 0.0),
                 velocity: Vec3::new(120.0, 0.0, 0.0),
@@ -2154,6 +2161,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
@@ -2186,6 +2194,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
@@ -2215,6 +2224,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::new(100.0, 0.0, 0.0),
                 velocity: Vec3::new(1.0, 0.0, 0.0),
@@ -2253,6 +2263,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
@@ -2285,6 +2296,7 @@ mod projectiles {
         fire(
             shooter.world(),
             shooter,
+            Visual(EntityKind::Arrow),
             Flight {
                 position: Vec3::ZERO,
                 velocity: Vec3::ZERO,
