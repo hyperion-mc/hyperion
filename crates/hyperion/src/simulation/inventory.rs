@@ -186,7 +186,7 @@ impl Module for InventoryModule {
                 // and armour. The wearer is excluded because their own copy is
                 // already right; the slot packets below are what correct it.
                 let mut equipment: Vec<(EquipmentSlot, Slot<'_>)> = Vec::new();
-                let hand_slot = inventory.get_cursor_index();
+                let hand_slot = inventory.held_slot();
                 for (idx, slot) in inventory.slots_mut().iter_mut().enumerate() {
                     if !slot.changed {
                         continue;

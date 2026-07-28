@@ -493,7 +493,7 @@ const fn calculate_toughness(item: &ItemStack) -> f32 {
 
 // TODO: split this up into separate functions
 fn calculate_stats(inventory: &PlayerInventory, critical_hit: bool) -> CombatStats {
-    let hand = inventory.get_cursor();
+    let hand = inventory.held();
     let multiplier = if critical_hit { 1.5 } else { 1.0 };
     let damage = calculate_damage(&hand.stack) * multiplier;
     let armor = calculate_armor(&inventory.get_helmet().stack)

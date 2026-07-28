@@ -381,6 +381,7 @@
             completions-e2e = 6000;
             smash-hotbar-e2e = 7000;
             smash-hud-e2e = 8000;
+            bedwars-bow-e2e = 9000;
           };
 
           # The lobby `smash-e2e` runs against, which is deliberately not the
@@ -821,6 +822,34 @@
                 export HYPERION_E2E_CLIENT=tools/hud-check.py
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-hud-e2e)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-hud-e2e)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
+            # The bow, on bedwars, read off the wire by the client that fired it.
+            #
+            # The only gate here that is not a smash gate, because the bow is
+            # not a smash feature: Super Smash Mobs hands a Skeleton a bow as
+            # the *icon* for a charged ability, and `smash-e2e` already proves
+            # that path. This is the vanilla weapon -- nock, spend an arrow,
+            # launch it at a speed the draw decides -- which only bedwars has,
+            # and bedwars is what `nix run .#dev` and `packages.default` build.
+            #
+            # It asserts the launch velocity out of `ClientboundAddEntity`
+            # rather than watching where the arrow lands, because since 26.2
+            # that packet carries the velocity and a number is a far sharper
+            # claim than a trajectory. The bug it was written for shipped a
+            # fully drawn bow at 3.6 blocks a tick instead of 3.0 and no gate
+            # noticed, because no gate looked.
+            bedwars-bow-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_E2E_CLIENT=tools/bow-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.bedwars-bow-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.bedwars-bow-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };

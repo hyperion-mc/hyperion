@@ -274,14 +274,22 @@ impl Inventory {
         Ok(())
     }
 
+    /// The stack in the player's hand.
+    ///
+    /// Named `get_cursor` until it caught someone out: in Minecraft the cursor
+    /// is the stack you are dragging on the mouse inside an open container,
+    /// which is a different thing that this type does not model at all. This
+    /// has only ever returned `self.get(self.hand_slot)`, the held hotbar item.
     #[must_use]
-    pub fn get_cursor(&self) -> &ItemSlot {
+    pub fn held(&self) -> &ItemSlot {
         self.get(self.hand_slot)
             .expect("hand_slot is a valid index")
     }
 
+    /// Which slot the player's hand rests on, numbered over the whole
+    /// inventory rather than over the nine visible keys.
     #[must_use]
-    pub const fn get_cursor_index(&self) -> u16 {
+    pub const fn held_slot(&self) -> u16 {
         self.hand_slot
     }
 

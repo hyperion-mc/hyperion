@@ -31,7 +31,7 @@ impl Module for ItemModule {
                     let world = query.world;
                     let inventory = &mut *query.inventory;
 
-                    let stack = &inventory.get_cursor().stack;
+                    let stack = &inventory.held().stack;
 
                     if stack.is_empty() {
                         return Ok(());

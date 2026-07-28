@@ -230,7 +230,7 @@ impl Module for InputModule {
 
 /// Which of the nine hotbar slots the player is holding.
 fn held_slot(player: EntityView<'_>) -> Option<u8> {
-    hotbar_slot(player.try_get::<&PlayerInventory>(PlayerInventory::get_cursor_index)?)
+    hotbar_slot(player.try_get::<&PlayerInventory>(PlayerInventory::held_slot)?)
 }
 
 /// The hotbar slot an inventory cursor index names, if it names one at all.

@@ -499,7 +499,7 @@ fn player_action(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Resu
         player_action::Action::ReleaseUseItem => {
             let event = event::ReleaseUseItem {
                 from: query.id,
-                item: query.inventory.get_cursor().stack.item,
+                item: query.inventory.held().stack.item,
             };
 
             query.id.entity_view(query.world).set(HandStates::new(0));
@@ -599,10 +599,10 @@ fn use_item(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()
     let packet: c2s::UseItem = decode_body(body)?;
     let hand = hand(packet.hand);
 
-    let cursor = &query.inventory.get_cursor().stack;
+    let held = &query.inventory.held().stack;
 
-    if !cursor.is_empty() {
-        if cursor.item == ItemKind::WrittenBook {
+    if !held.is_empty() {
+        if held.item == ItemKind::WrittenBook {
             send(
                 query.compose,
                 query.io_ref,
@@ -685,7 +685,7 @@ fn use_item_on(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result
     }
 
     // Attempt to place a block
-    let held = &query.inventory.get_cursor().stack;
+    let held = &query.inventory.held().stack;
 
     if held.is_empty() {
         return Ok(());

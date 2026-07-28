@@ -64,7 +64,7 @@ impl Module for MirrorModule {
                     // rather than resetting to zero: the alternative reads as
                     // "you are holding slot 0" and would put slot 0's cooldown
                     // on the experience bar of somebody holding nothing.
-                    if let Some(slot) = hotbar_slot(inventory.get_cursor_index()) {
+                    if let Some(slot) = hotbar_slot(inventory.held_slot()) {
                         selected.0 = slot;
                     }
                 },
