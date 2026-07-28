@@ -235,6 +235,30 @@ pub mod lp_vec3 {
             z: unpack(buffer >> Z_OFFSET) * scale,
         })
     }
+
+    /// The value a client reads back after this one has been through the wire.
+    ///
+    /// The three components share one exponent and keep fifteen bits each, so
+    /// how much a small component is rounded depends on how large the largest
+    /// one is. A caller that has to know what the client will actually do --
+    /// a test asserting a knockback arrived, or a simulation that must stay in
+    /// step with the client's -- asks here rather than assuming the value it
+    /// sent survived.
+    ///
+    /// Written as an encode followed by a decode rather than as the rounding
+    /// arithmetic a second time. A second copy of a rounding rule is the copy
+    /// that drifts; this one is the same code the packet uses, so it cannot
+    /// disagree with it.
+    ///
+    /// # Panics
+    /// Never: [`encode`] has no failing path, and its output always decodes.
+    #[must_use]
+    pub fn quantize(value: &Vec3) -> Vec3 {
+        let mut writer = Writer::new();
+        encode(value, &mut writer).expect("lp_vec3 encoding has no failing path");
+        let bytes = writer.into_vec();
+        decode(&mut Reader::new(&bytes)).expect("lp_vec3 decodes its own output")
+    }
 }
 
 // --- tracked data ---------------------------------------------------------

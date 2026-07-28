@@ -54,6 +54,16 @@ pub enum Error {
     DepthLimitExceeded(u32),
     /// An item stack was empty where the field requires a real stack.
     EmptyItemStack,
+    /// A block state id was outside the range this version has states for.
+    ///
+    /// Distinct from [`Error::InvalidEnum`] because the state registry is
+    /// dense and version-specific rather than a named set: an id past the end
+    /// usually means the sender is on a different game version, not that it
+    /// sent something meaningless.
+    InvalidBlockState {
+        /// The id that named no state.
+        value: i32,
+    },
     /// A tag type byte named no NBT tag, or named `TAG_End` where a value was due.
     InvalidTagType(u8),
     /// An NBT value was a bare `TAG_End`, which `ByteBufCodecs.tagCodec` rejects.
@@ -109,6 +119,7 @@ impl fmt::Display for Error {
             Self::TrailingBytes(n) => write!(f, "{n} trailing bytes after packet body"),
             Self::DepthLimitExceeded(max) => write!(f, "value nested deeper than {max} levels"),
             Self::EmptyItemStack => f.write_str("empty item stack where one was required"),
+            Self::InvalidBlockState { value } => write!(f, "no block state has id {value}"),
             Self::InvalidTagType(id) => write!(f, "invalid NBT tag type: {id}"),
             Self::UnexpectedEndTag => f.write_str("NBT value was a bare TAG_End"),
             Self::NbtTooDeep => f.write_str("NBT nested deeper than 512 levels"),

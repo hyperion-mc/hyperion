@@ -71,9 +71,27 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import net.minecraft.SharedConstants;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.IdMap;
+import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.ColorParticleOption;
+import net.minecraft.core.particles.DustColorTransitionOptions;
+import net.minecraft.core.particles.DustParticleOptions;
+import net.minecraft.core.particles.GeyserBaseParticleOptions;
+import net.minecraft.core.particles.GeyserParticleOptions;
+import net.minecraft.core.particles.ItemParticleOption;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.particles.PowerParticleOption;
+import net.minecraft.core.particles.SculkChargeParticleOptions;
+import net.minecraft.core.particles.ShriekParticleOption;
+import net.minecraft.core.particles.SpellParticleOption;
+import net.minecraft.core.particles.TrailParticleOption;
+import net.minecraft.core.particles.VibrationParticleOption;
+
 import net.minecraft.core.LayeredRegistryAccess;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -98,6 +116,7 @@ import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
@@ -133,12 +152,14 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.gameevent.BlockPositionSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
@@ -452,6 +473,7 @@ public final class VanillaEncoder {
         playerInfoUpdate(registries);
         playerAbilities(registries);
         sectionBlocksUpdate(registries);
+        levelParticles(registries);
         containerPackets(registries);
         combatPackets(registries);
     }
@@ -559,6 +581,69 @@ public final class VanillaEncoder {
                     registries,
                     ClientboundSetEntityMotionPacket.STREAM_CODEC,
                     new ClientboundSetEntityMotionPacket(0x2A, entry.getValue())));
+        }
+    }
+
+    /// Every option shape a particle can carry, driven through the game's own
+    /// dispatch rather than through a transcription of it.
+    ///
+    /// `nix/generate-particles.py` reads these shapes out of the decompiled
+    /// Java, which means the Rust it emits is only as right as that reading.
+    /// These fixtures are what checks the reading: Mojang's encoder and the
+    /// generated one have to produce the same bytes, so a codec parsed wrong
+    /// fails here rather than on a client.
+    ///
+    /// The type id is also pinned separately for two of them, because a
+    /// registry insertion moves every id after it and one wrong id inside a
+    /// forty-byte blob is hard to read off a diff.
+    private void levelParticles(RegistryAccess.Frozen registries) {
+        put("particle_id.flame", Integer.toString(BuiltInRegistries.PARTICLE_TYPE.getId(ParticleTypes.FLAME)));
+        put("particle_id.dust", Integer.toString(BuiltInRegistries.PARTICLE_TYPE.getId(ParticleTypes.DUST)));
+        // `block_state_id.stone` is already pinned by `sectionBlocksUpdate`.
+
+        Map<String, ParticleOptions> options = new LinkedHashMap<>();
+        // A `SimpleParticleType`: the id and not one byte more, which is what
+        // makes the count before it the last field a reader can find unaided.
+        options.put("flame", ParticleTypes.FLAME);
+        // The six the effects layer names, one per body shape.
+        options.put("block", new BlockParticleOption(ParticleTypes.BLOCK, Blocks.STONE.defaultBlockState()));
+        options.put("item", new ItemParticleOption(ParticleTypes.ITEM, new ItemStackTemplate(Items.DIAMOND_SWORD, 3)));
+        options.put("dust", new DustParticleOptions(0xFFFF0000, 2.0f));
+        options.put("dust_color_transition", new DustColorTransitionOptions(0xFFFF0000, 0xFF0000FF, 1.5f));
+        options.put("entity_effect", ColorParticleOption.create(ParticleTypes.ENTITY_EFFECT, 0x80336699));
+        options.put(
+                "vibration",
+                new VibrationParticleOption(new BlockPositionSource(new BlockPos(1, -2, 3)), 40));
+        // The remaining shapes, so a codec misread anywhere fails here too.
+        options.put("dragon_breath", PowerParticleOption.create(ParticleTypes.DRAGON_BREATH, 1.0f));
+        options.put("effect", SpellParticleOption.create(ParticleTypes.EFFECT, 0xFF112233, 0.75f));
+        options.put("sculk_charge", new SculkChargeParticleOptions(0.5f));
+        options.put("shriek", new ShriekParticleOption(17));
+        options.put("trail", new TrailParticleOption(new Vec3(1.5, -2.25, 3.75), 0xFF00FF00, 30));
+        options.put("geyser", new GeyserParticleOptions(ParticleTypes.GEYSER, 5));
+        options.put("geyser_base", new GeyserBaseParticleOptions(ParticleTypes.GEYSER_BASE, 5, 0.25f));
+
+        for (Map.Entry<String, ParticleOptions> entry : options.entrySet()) {
+            ByteBuf buffer = Unpooled.buffer();
+            ParticleTypes.STREAM_CODEC.encode(
+                    new RegistryFriendlyByteBuf(buffer, registries), entry.getValue());
+            put("particle." + entry.getKey(), hex(drain(buffer)));
+
+            put("packet.level_particles." + entry.getKey(), encode(
+                    registries,
+                    ClientboundLevelParticlesPacket.STREAM_CODEC,
+                    new ClientboundLevelParticlesPacket(
+                            entry.getValue(),
+                            true,
+                            false,
+                            1.5,
+                            64.0625,
+                            -2.25,
+                            0.5f,
+                            0.25f,
+                            0.125f,
+                            0.75f,
+                            100)));
         }
     }
 

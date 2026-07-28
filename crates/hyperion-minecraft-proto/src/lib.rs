@@ -31,6 +31,7 @@ pub mod generated;
 pub mod item;
 pub mod nbt;
 pub mod packets;
+pub mod particle;
 pub mod registry_data;
 pub mod tag_data;
 pub mod text;

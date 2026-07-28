@@ -319,6 +319,9 @@ let
   blockStateCodegen = pkgs.writers.writePython3Bin "generate-minecraft-block-states" pythonWriterOptions
     (builtins.readFile ./generate-block-states.py);
 
+  particleCodegen = pkgs.writers.writePython3Bin "generate-minecraft-particles" pythonWriterOptions
+    (builtins.readFile ./generate-particles.py);
+
   coverageChecker = pkgs.writers.writePython3Bin "check-minecraft-proto-coverage" pythonWriterOptions
     (builtins.readFile ./check-proto-coverage.py);
 
@@ -383,6 +386,26 @@ let
         --protocol ${toString pin.protocolVersion} \
         --out $out/block_state.rs
       rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/block_state.rs
+    '';
+
+  # The one registry that cannot be generated from protocol.json alone.
+  # `ParticleTypes.STREAM_CODEC` is a dispatch, so the extractor marks it
+  # unresolved and the JSON carries only the names; which of the 125 types
+  # write a body, and what shape, is in the game's own source. So this reads
+  # the decompiled Java as well, and the ids still come off protocol.json so
+  # the table cannot disagree with generated/registry.rs about them.
+  generatedParticles = pkgs.runCommand "hyperion-minecraft-particles-${pin.id}"
+    {
+      nativeBuildInputs = [ particleCodegen rustfmt ];
+      meta.description = "Generated Rust particle table for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      generate-minecraft-particles \
+        --protocol ${protocolJson}/protocol.json \
+        --sources ${decompiledSources} \
+        --out $out/particle.rs
+      rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/particle.rs
     '';
 
   protocolJson = pkgs.runCommand "minecraft-protocol-${pin.id}.json"
@@ -583,6 +606,17 @@ let
     '';
   };
 
+  syncParticlesScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-particles";
+    runtimeInputs = [ pkgs.coreutils pkgs.git ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      dest="$root/crates/hyperion-minecraft-proto/src/particle.rs"
+      install -m 644 ${generatedParticles}/particle.rs "$dest"
+      echo "synced $dest" >&2
+    '';
+  };
+
   # The fixtures are committed so `cargo test` runs without nix. That only
   # stays honest if something notices when the jar stops producing them.
   fixturesUpToDate = pkgs.runCommand "check-minecraft-encoder-fixtures"
@@ -686,6 +720,19 @@ let
         touch $out
       else
         echo "committed block state table is stale; run: nix run .#sync-minecraft-block-states" >&2
+        head -n 200 diff.txt >&2
+        exit 1
+      fi
+    '';
+
+  particlesUpToDate = pkgs.runCommand "check-minecraft-particles"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/src/particle.rs}
+      if diff -u "$committed" ${generatedParticles}/particle.rs > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed particle table is stale; run: nix run .#sync-minecraft-particles" >&2
         head -n 200 diff.txt >&2
         exit 1
       fi
@@ -828,16 +875,19 @@ in
     generatedRegistryData
     generatedTagData
     generatedBlockStates
+    generatedParticles
     extractor
     codegen
     registryCodegen
     tagDataCodegen
     blockStateCodegen
+    particleCodegen
     updateScript
     syncScript
     syncRegistryDataScript
     syncTagDataScript
     syncBlockStatesScript
+    syncParticlesScript
     coverageChecker
     coverageRatchet
     toolPathChecker
@@ -850,6 +900,7 @@ in
     tagDataUpToDate
     tagsLoadForClient
     blockStatesUpToDate
+    particlesUpToDate
     fixturesUpToDate
     protocolJsonUpToDate
     ;

@@ -11,13 +11,6 @@
     "crates/hyperion-minecraft-proto/src/packets/configuration.rs": [
       "minecraft:brand"
     ],
-    "crates/hyperion-minecraft-proto/src/packets/play/chunk.rs": [
-      "minecraft:cloud",
-      "minecraft:crit",
-      "minecraft:dragon_breath",
-      "minecraft:explosion",
-      "minecraft:portal"
-    ],
     "crates/hyperion-minecraft-proto/src/packets/play/player.rs": [
       "minecraft:blank",
       "minecraft:blank",

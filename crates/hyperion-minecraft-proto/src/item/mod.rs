@@ -40,8 +40,10 @@ pub mod shape;
 mod component_type;
 mod patch;
 mod stack;
+mod template;
 
 pub use component_type::ComponentType;
 pub use patch::DataComponentPatch;
 pub use shape::Shape;
 pub use stack::{ItemStack, Slot};
+pub use template::ItemStackTemplate;
