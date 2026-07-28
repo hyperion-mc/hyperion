@@ -132,7 +132,8 @@ impl Module for ProjectileModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Projectile");
 
-        world.component::<Projectile>();
+        // Final: a projectile is a leaf, never an inheritance base.
+        world.component::<Projectile>().add_trait::<flecs::Final>();
         world.component::<Visual>();
         world.component::<Flight>();
         world.component::<Payload>();
