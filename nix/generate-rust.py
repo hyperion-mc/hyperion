@@ -454,6 +454,8 @@ class WireEmitter:
                 for c in wire["constants"])
             return 'crate::generated::wire::Wire::Enum {{ java_class: "{}", constants: &[{}] }}'.format(
                 wire["type"], constants)
+        if kind == "custom":
+            return 'crate::generated::wire::Wire::Custom {{ codec: "{}" }}'.format(wire["codec"])
         if kind == "struct":
             members = ", ".join(
                 'crate::generated::wire::Field {{ name: "{}", wire: {} }}'.format(f["name"], self.expr(f["wire"]))
@@ -630,6 +632,18 @@ pub enum Wire {
     },
     /// Fields written back to back with nothing between them.
     Struct(&'static [Field]),
+    /// Bytes a hand-written codec in this crate owns.
+    ///
+    /// The extractor recognised the codec but its bytes are not a field list:
+    /// `Vec3#LP_STREAM_CODEC` is one byte for a near-zero vector and six plus an
+    /// optional `VarInt` otherwise. The layout is deliberately not described
+    /// here, because describing it would be transcribing it, and a transcription
+    /// that drifts from the codec is worse than an honest gap.
+    Custom {
+        /// Name shared with `CUSTOM_CODECS` in `nix/extract-protocol.py` and in
+        /// `build.rs`, which is where the Rust implementation is named.
+        codec: &'static str,
+    },
 }
 
 impl Wire {

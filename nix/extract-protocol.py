@@ -84,27 +84,49 @@ def is_resolved(wire: Wire, types: dict[str, Wire], seen: frozenset[str] = froze
     return True
 
 
-def unresolved_reasons(wire: Wire, types: dict[str, Wire], seen: frozenset[str] = frozenset()) -> list[str]:
+# How a nested position is spelled inside a reason, so that a refusal names the
+# field it happened in and not only the packet. `minecraft:interact` reported
+# `unmodelled statement: double z` and nothing else, which named neither the
+# field (`location`) nor the codec the statement came from; the same refusal now
+# reads `location: unmodelled statement: double z`.
+_COMBINATOR_STEP = {"list": "[]", "option": "?"}
+
+
+def _step(path: str, part: str) -> str:
+    if not path:
+        return part
+    return path + part if part.startswith(("[", "?", "|")) else f"{path}.{part}"
+
+
+def unresolved_reasons(
+    wire: Wire,
+    types: dict[str, Wire],
+    seen: frozenset[str] = frozenset(),
+    path: str = "",
+) -> list[str]:
     """Every distinct reason the type is not fully known, for the report."""
     kind = wire["kind"]
     if kind == "unresolved":
-        return [wire["why"]]
+        return [f"{path}: {wire['why']}" if path else wire["why"]]
     if kind == "named":
         ref = wire["ref"]
         if ref in seen:
             return []
         target = types.get(ref)
         if target is None:
-            return [f"missing type {ref}"]
-        return unresolved_reasons(target, types, seen | {ref})
+            missing = f"missing type {ref}"
+            return [f"{path}: {missing}" if path else missing]
+        return unresolved_reasons(target, types, seen | {ref}, path)
     out: list[str] = []
     for key in ("of", "key", "value", "left", "right"):
-        if key in wire:
-            out.extend(unresolved_reasons(wire[key], types, seen))
+        if key not in wire:
+            continue
+        part = _COMBINATOR_STEP.get(kind, f".{key}") if key == "of" else f"|{key}"
+        out.extend(unresolved_reasons(wire[key], types, seen, _step(path, part)))
     for member in wire.get("fields", []):
-        out.extend(unresolved_reasons(member["wire"], types, seen))
+        out.extend(unresolved_reasons(member["wire"], types, seen, _step(path, member["name"])))
     for variant in wire.get("variants", []):
-        out.extend(unresolved_reasons(variant["wire"], types, seen))
+        out.extend(unresolved_reasons(variant["wire"], types, seen, _step(path, f"|{variant['name']}")))
     return out
 
 
@@ -447,19 +469,46 @@ BUF_COLLECTION_WRITERS: dict[str, str] = {
     "writeOptional": "option",
 }
 
-# Where each modelled name has to still be found, as an (owner, member) pair.
+# Codecs whose bytes are not a field list at all, delegated to a hand-written
+# Rust implementation rather than refused.
+#
+# `net.minecraft.network.LpVec3.write` is the shape this exists for. A velocity
+# below the representable minimum is a single zero byte; otherwise it is six
+# bytes holding three 15-bit quantised components and a two-bit shared scale,
+# followed by a `VarInt` only when the scale needs more than two bits. No
+# ordering of modelled statements describes that, so the expression reader is
+# right to give up on it. Giving up also cost every packet carrying a velocity,
+# which is how `minecraft:interact` came to have no generated type at all
+# (hyperion-mc/hyperion#1006): one field the reader could not follow took the
+# whole packet with it.
+#
+# Naming a codec here says something narrower and more useful than
+# "unresolved": these particular bytes belong to a codec written by hand, and
+# the rest of the packet is ordinary. Unlike CODEC_FIELDS no byte layout is
+# asserted, so the table cannot quietly disagree with the source about an order
+# or a width; it claims only that the codec exists and that Rust owns it.
+#
+# The Rust half of each name is the CUSTOM_CODECS table in
+# `crates/hyperion-minecraft-proto/build.rs`. A name with no counterpart there
+# fails that build, so the two halves cannot drift apart.
+CUSTOM_CODECS: dict[str, Wire] = {
+    "net.minecraft.world.phys.Vec3#LP_STREAM_CODEC": {
+        "kind": "custom",
+        "codec": "lp_vec3",
+        "note": "one byte near zero, else six plus a varint scale when it overflows two bits",
+    },
+}
+
+# Where each modelled name has to still be found, as a (class, member) pair.
 # Checked before extraction so that a Mojang rename is a build failure rather
 # than a field that silently stops being modelled.
 HAND_MODELLED: dict[str, Wire] = {
-    f"net.minecraft.network.codec.ByteBufCodecs#{name}": wire for name, wire in CODEC_FIELDS.items()
+    **{
+        f"net.minecraft.network.codec.ByteBufCodecs#{name}": wire
+        for name, wire in CODEC_FIELDS.items()
+    },
+    **CUSTOM_CODECS,
 }
-
-VOCABULARY_ANCHORS: list[tuple[str, str]] = (
-    [("ByteBufCodecs", name) for name in CODEC_FIELDS]
-    + [("FriendlyByteBuf", name) for name in BUF_WRITERS]
-    + [("FriendlyByteBuf", name) for name in BUF_COLLECTION_WRITERS]
-    + [tuple(name.split(".", 1)) for name in STATIC_WRITERS]  # type: ignore[misc]
-)
 
 BYTE_BUF_CODECS_FQN = "net.minecraft.network.codec.ByteBufCodecs"
 
@@ -470,6 +519,17 @@ _ANCHOR_FILES = {
     "ByteBufCodecs": "net.minecraft.network.codec.ByteBufCodecs",
 }
 
+VOCABULARY_ANCHORS: list[tuple[str, str]] = (
+    [(_ANCHOR_FILES["ByteBufCodecs"], name) for name in CODEC_FIELDS]
+    + [(_ANCHOR_FILES["FriendlyByteBuf"], name) for name in BUF_WRITERS]
+    + [(_ANCHOR_FILES["FriendlyByteBuf"], name) for name in BUF_COLLECTION_WRITERS]
+    + [
+        (_ANCHOR_FILES[owner], member)
+        for owner, member in (name.split(".", 1) for name in STATIC_WRITERS)
+    ]
+    + [(key.split("#", 1)[0], key.split("#", 1)[1]) for key in CUSTOM_CODECS]
+)
+
 
 def check_vocabulary(index: SourceIndex) -> list[str]:
     """Confirm every hand-modelled Java name still exists in the source.
@@ -479,8 +539,7 @@ def check_vocabulary(index: SourceIndex) -> list[str]:
     silently stop covering it, so the pipeline refuses to run instead.
     """
     missing: list[str] = []
-    for owner, member in VOCABULARY_ANCHORS:
-        fqn = _ANCHOR_FILES[owner]
+    for fqn, member in VOCABULARY_ANCHORS:
         jf = index.files.get(fqn)
         if jf is None:
             missing.append(f"{fqn} (source not decompiled)")
@@ -489,6 +548,14 @@ def check_vocabulary(index: SourceIndex) -> list[str]:
             missing.append(f"{fqn}.{member}")
     return missing
 
+
+# What an id-mapped codec falls back to when the id table cannot be read: a
+# varint whose legal values are not known here.
+ID_MAP_NOTE = "index into an id map"
+
+# Stands in for a field name when the ids are the declaration order itself.
+# Not a legal Java identifier, so it cannot collide with a real field.
+ORDINAL_KEY = "<ordinal>"
 
 JAVA_CONSTANTS: dict[str, int] = {
     "Short.MAX_VALUE": 32767,
@@ -632,6 +699,11 @@ class Resolver:
         # Keys where the asserted layout had to stand in for a derived one.
         # Reported so the asserted surface stays visible and prunable.
         self.asserted: set[str] = set()
+        # Keys handed to a hand-written Rust codec rather than read as a
+        # layout. Kept apart from `asserted` because the two claim different
+        # things: an asserted key claims a byte order this file transcribed, a
+        # custom one claims only that some Rust somewhere owns those bytes.
+        self.custom: set[str] = set()
         self._active: set[str] = set()
         self.registry_keys = self._scan_registry_keys()
 
@@ -733,7 +805,7 @@ class Resolver:
         # so the source stays the source of truth wherever it can be read.
         if not is_resolved(wire, self.types) and key in HAND_MODELLED:
             wire = dict(HAND_MODELLED[key])
-            self.asserted.add(key)
+            (self.custom if key in CUSTOM_CODECS else self.asserted).add(key)
         self.types[key] = wire
         return {"kind": "named", "ref": key}
 
@@ -992,7 +1064,15 @@ class Resolver:
                 "note": "bool discriminant, true selects left",
             }
         if name == "idMapper":
-            return prim("varint", note="index into an id map")
+            # An id-mapped enum is a varint on the wire, but the class knows
+            # every number that varint may legally hold. Recovering that turns
+            # a field a caller can set to 47 into one that cannot be wrong, at
+            # no runtime cost: the Rust discriminant is the wire value. 29
+            # enums reached this line and came out as bare varints, GameType
+            # and Difficulty and EquipmentSlot among them, which is why each
+            # one had to be retyped by hand downstream.
+            recovered = self._enum_from_id_mapper(argv, scope) if len(argv) > 1 else None
+            return recovered if recovered is not None else prim("varint", note=ID_MAP_NOTE)
         if name in ("registry", "holderRegistry"):
             registry = self._registry_name(argv[0])
             if registry is None:
@@ -1184,8 +1264,13 @@ class Resolver:
             wire = self.read_encode_body(body, Scope(owner), buf=params[index])
         finally:
             self._active.discard(key)
-        if not is_resolved(wire, self.types):
-            return None
+        # The helper's body is returned even when it did not resolve, so the
+        # field carries the reason from inside the helper. Returning None here
+        # would push the refusal back up to the call site and report
+        # `unmodelled statement: this.chunkData.write(output)`, which names the
+        # statement the reader could not get past rather than the thing inside
+        # it that defeated the reader. Thirteen of the fifty-four partial
+        # packets reported that way and so said nothing about their own cause.
         return [{"name": self._label(receiver if receiver.startswith("this.") else argv[0]), "wire": wire}]
 
     def _field_owner(self, owner: str, name: str) -> str | None:
@@ -1345,6 +1430,86 @@ class Resolver:
             "constants": constants,
             "note": "varint id" if ids else "varint ordinal",
         }
+
+    def _enum_from_id_mapper(self, argv: list[str], scope: Scope) -> Wire | None:
+        # `ByteBufCodecs.idMapper(BY_ID, GameType::getId)`. The second argument
+        # is the only statement in the jar of which number each constant sends,
+        # so it is followed rather than assumed: `ClientIntent` proves ids need
+        # not be ordinals, and a wrong table here is a silently mis-decoded
+        # field rather than a build failure.
+        owner, field = self._id_key(argv[1], scope)
+        if owner is None or field is None:
+            return None
+        names = self._enum_constants(owner)
+        if names is None:
+            return None
+        if field == ORDINAL_KEY:
+            return self._enum_wire(owner, by_id=False)
+        ids = self._enum_ids_from_field(owner, field)
+        if ids is None or any(name not in ids for name in names):
+            return None
+        return {
+            "kind": "enum",
+            "type": owner,
+            "constants": [{"name": name, "value": ids[name]} for name in names],
+            "note": "varint id",
+        }
+
+    def _id_key(self, expr: str, scope: Scope) -> tuple[str | None, str | None]:
+        # The class the ids belong to and the field holding them, from either
+        # spelling of the key extractor: `hand -> hand.id` and `Foo::getId`.
+        expr = strip_wrappers(expr)
+        m = re.match(r"^(\w+)\s*->\s*\1\.(\w+)$", expr)
+        if m is not None:
+            return scope.owner, m.group(2)
+        m = re.match(r"^([\w.$]+)::(\w+)$", expr)
+        if m is None:
+            return None, None
+        # `Enum::ordinal` names java.lang.Enum, which is not in the jar; the
+        # enum it is applied to is the class the codec is declared in.
+        if m.group(1) == "Enum" and m.group(2) == "ordinal":
+            return scope.owner, ORDINAL_KEY
+        owner = self.index.resolve(m.group(1), scope.owner)
+        if owner is None:
+            return None, None
+        if m.group(2) == "ordinal":
+            return owner, ORDINAL_KEY
+        body = self.method_body(owner, m.group(2), arity=0)
+        if body is None:
+            return None, None
+        got = re.search(r"return\s+this\.(\w+)\s*;", body)
+        return owner, (got.group(1) if got else None)
+
+    def _enum_ids_from_field(self, owner: str, field: str) -> dict[str, int] | None:
+        # Which constructor argument feeds `this.<field>`, then that argument
+        # of every constant's declaration. `SURVIVAL(0, "survival")` with
+        # `GameType(int id, String name)` puts the id at position zero.
+        body = self.index.body_of(owner)
+        if body is None:
+            return None
+        fqn, nested = split_owner(owner)
+        simple = nested or fqn.rsplit(".", 1)[-1]
+        position: int | None = None
+        for params, ctor in self.methods(owner, simple):
+            assigned = re.search(rf"this\.{re.escape(field)}\s*=\s*(\w+)\s*;", ctor)
+            if assigned is not None and assigned.group(1) in params:
+                position = params.index(assigned.group(1))
+                break
+        if position is None:
+            return None
+        out: dict[str, int] = {}
+        for entry in split_top_level(body.split(";", 1)[0]):
+            m = re.match(r"^([A-Z][A-Z0-9_]*)\s*\((.*)\)$", entry.strip(), flags=re.S)
+            if m is None:
+                return None
+            args = split_top_level(m.group(2))
+            if position >= len(args):
+                return None
+            value = parse_int_literal(args[position])
+            if value is None:
+                return None
+            out[m.group(1)] = value
+        return out or None
 
     def _enum_of_field(self, expr: str, scope: Scope, by_id: bool) -> Wire | None:
         """The enum behind ``this.hand`` or ``this.intention.id()``."""
@@ -1758,6 +1923,25 @@ def main() -> int:
             "dataComponentsMechanical": len(done_components),
             "namedTypes": len(resolver.types),
             "assertedTypes": sorted(resolver.asserted),
+            "customCodecs": sorted(resolver.custom),
+            # Every layout still not recovered in full, by name and by the
+            # field that stopped it. A count alone says a gap exists; this says
+            # which gap, so a ratchet can name what grew and a reader can see
+            # at a glance that (say) six of them are one ItemStack codec.
+            #
+            # `nix flake check .#minecraft-proto-coverage` holds this list
+            # against the committed baseline in nix/proto-coverage-baseline.json.
+            "incomplete": [
+                {"id": entry_id, "reasons": reasons}
+                for entry_id, reasons in sorted(
+                    [(f"{p.state}/{p.direction}/{p.resource}", p.reasons) for p in partial]
+                    + [
+                        (f"dataComponent/{c['name']}", c["reasons"])
+                        for c in components
+                        if not c["complete"]
+                    ]
+                )
+            ],
             "idCrossCheckMismatches": id_mismatches,
             "dataComponentProblems": component_problems,
         },

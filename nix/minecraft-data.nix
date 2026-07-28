@@ -322,6 +322,9 @@ let
   entityTypeCodegen = pkgs.writers.writePython3Bin "generate-minecraft-entity-types" pythonWriterOptions
     (builtins.readFile ./generate-entity-types.py);
 
+  coverageChecker = pkgs.writers.writePython3Bin "check-minecraft-proto-coverage" pythonWriterOptions
+    (builtins.readFile ./check-proto-coverage.py);
+
   # The NBT blobs live next to the Rust that `include_bytes!`es them, so this
   # output is a whole directory rather than a single file.
   generatedRegistryData = pkgs.runCommand "hyperion-minecraft-registry-data-${pin.id}"
@@ -517,12 +520,19 @@ let
   # are what make the committed copies trustworthy rather than merely present.
   syncScript = pkgs.writeShellApplication {
     name = "sync-minecraft-proto";
-    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
+    runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git coverageChecker ];
     text = ''
       root=$(git rev-parse --show-toplevel)
       crate="$root/crates/hyperion-minecraft-proto"
 
       install -m 644 ${protocolJson}/protocol.json "$crate/protocol.json"
+
+      # The coverage baseline rides along, so tightening it is the same command
+      # as regenerating what it describes and the two cannot fall out of step.
+      check-minecraft-proto-coverage \
+        --protocol "$crate/protocol.json" \
+        --baseline "$root/nix/proto-coverage-baseline.json" \
+        --write
 
       dest="$crate/src/generated"
       rm -rf "$dest"
@@ -705,6 +715,29 @@ let
       fi
     '';
 
+  # The coverage gap, held against a committed baseline.
+  #
+  # `complete: false` in protocol.json means a packet has to be hand-written or
+  # simply does not exist, and until this check nothing anywhere said how many
+  # there were. Sixty-five had accumulated unnoticed, one of which
+  # (`minecraft:interact`) meant no entity interaction of any kind worked until
+  # somebody found it by hand.
+  #
+  # A ratchet rather than a target of zero: several of the remaining causes are
+  # real modelling work. It fails in both directions, because a baseline nobody
+  # tightens stops bounding anything, and both directions are fixed by
+  # `nix run .#sync-minecraft-proto`.
+  coverageRatchet = pkgs.runCommand "check-minecraft-proto-coverage"
+    {
+      nativeBuildInputs = [ coverageChecker ];
+    }
+    ''
+      check-minecraft-proto-coverage \
+        --protocol ${protocolJson}/protocol.json \
+        --baseline ${../nix/proto-coverage-baseline.json}
+      touch $out
+    '';
+
   # protocol.json is the input build.rs reads, so a stale copy is a stale
   # packet struct in every build that does not go through nix. Guarding it is
   # what lets the structs live in OUT_DIR instead of in the tree.
@@ -750,6 +783,8 @@ in
     syncTagDataScript
     syncBlockStatesScript
     syncEntityTypesScript
+    coverageChecker
+    coverageRatchet
     generatedUpToDate
     registryDataUpToDate
     tagDataUpToDate

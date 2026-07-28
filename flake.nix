@@ -877,6 +877,7 @@
             # The committed generated sources must match what the pipeline
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
+            minecraft-proto-coverage = minecraft.coverageRatchet;
             minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-tag-data = minecraft.tagDataUpToDate;
             minecraft-tags-load = minecraft.tagsLoadForClient;
@@ -967,6 +968,7 @@
               # compares against. See docs/differential-testing.md.
               record-differential-traces = differential.syncScript;
               extract-minecraft-protocol = minecraft.extractor;
+              check-minecraft-proto-coverage = minecraft.coverageChecker;
               # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
               # from the server's own codecs, so a new codec can be checked
               # against Mojang rather than against a reading of Mojang.

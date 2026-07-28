@@ -779,6 +779,25 @@ const SCALARS: [(&str, &str, Option<Encoding>, Traits); 21] = [
     ("varint_array", "Vec<i32>", Some(Encoding::VarInt), LIST),
 ];
 
+/// Codecs whose bytes this crate writes by hand, by the name `protocol.json`
+/// gives them.
+///
+/// A `{"kind": "custom", "codec": <name>}` node is the extractor saying it
+/// recognised the codec but that the bytes are not a field list, so Rust owns
+/// them. `CUSTOM_CODECS` in `nix/extract-protocol.py` is the other half of each
+/// name and carries the reasoning; this half is the Rust type, the module
+/// supplying `#[proto(with = ...)]`, and the derives the type permits.
+///
+/// The point of the mechanism is that one such field costs a field rather than
+/// a packet. `minecraft:interact` was refused outright over `location`, which
+/// is a `Vec3#LP_STREAM_CODEC` this crate has always been able to encode.
+const CUSTOM_CODECS: [(&str, &str, &str, Traits); 1] = [(
+    "lp_vec3",
+    "crate::types::Vec3",
+    "crate::packets::play::entity::lp_vec3",
+    FLOATING,
+)];
+
 /// Types the generated code may name, all re-exported at the crate root so
 /// that one import works however deeply a module nests.
 const ROOT_TYPES: [&str; 12] = [
@@ -936,6 +955,27 @@ impl Generator<'_> {
                     eq: left.traits.eq && right.traits.eq,
                 };
                 Ok(Lowered::scalar(&ty, traits))
+            }
+            "custom" => {
+                let name = wire["codec"].as_str().unwrap_or_default();
+                // A name with no row here means the two CUSTOM_CODECS tables
+                // disagree, which is a mismatch rather than a layout this
+                // generator declined, so it stops the build instead of quietly
+                // dropping the packet the way a refusal would.
+                let &(_, ty, with, traits) = CUSTOM_CODECS
+                    .iter()
+                    .find(|entry| entry.0 == name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "protocol.json names the custom codec `{name}`, which build.rs has no \
+                             Rust type for; add it to CUSTOM_CODECS"
+                        )
+                    });
+                Ok(Lowered {
+                    with: Some(with),
+                    doc: wire["note"].as_str().map(str::to_owned),
+                    ..Lowered::scalar(ty, traits)
+                })
             }
             "enum" => self.lower_enum(wire, at, scope),
             "map" => self.lower_map(wire, at, scope, label),
