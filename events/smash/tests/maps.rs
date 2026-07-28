@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use smash::map::{ARENAS, Brush, HUB, MapSpec, parse};
+use smash::map::{ARENAS, Brush, HUB, MapSpec, arenas, parse};
 
 /// Every shipped map, hub included, with a label for the failure message.
 fn shipped() -> Vec<(String, MapSpec)> {
@@ -54,6 +54,20 @@ fn there_are_several_arenas_to_choose_between() {
     assert!(
         ARENAS.len() >= 3,
         "a rotation of fewer than three arenas is not a rotation"
+    );
+}
+
+/// The whole list in one call, which is what a caller outside this crate wants
+/// and what `Arena::default` and `terrain.rs` are both a longhand for.
+#[test]
+fn arenas_parses_the_whole_rotation_in_order() {
+    let parsed = arenas().expect("every committed arena parses");
+    assert_eq!(parsed.len(), ARENAS.len());
+    let names: Vec<&str> = parsed.iter().map(|spec| spec.name).collect();
+    assert_eq!(
+        names.first().copied(),
+        Some("Skylands"),
+        "the rotation should start where `map::ARENAS` does, got {names:?}"
     );
 }
 
