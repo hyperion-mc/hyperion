@@ -9,7 +9,7 @@ Refusing is the point. The alternative is not a crash; it is a server that keeps
 while every `Health` in the world quietly becomes `2.9e-44`.
 
 - Crate: `crates/hyperion-hot-reload`
-- Demo: `nix run .#hot-reload-demo`, source in `crates/hyperion-hot-reload-demo{,-module}`
+- Demo: `nix run .#hot-reload-demo`, source in `crates/hyperion-hot-reload/demo/{host,module}`
 
 ## Prior art: everyone else either forbids layout changes or throws the state away
 

@@ -27,13 +27,12 @@ members = [
     'crates/hyperion-genmap',
     'crates/hyperion-gui',
     'crates/hyperion-hot-reload',
-    'crates/hyperion-hot-reload-demo',
-    'crates/hyperion-hot-reload-demo-module',
+    'crates/hyperion-hot-reload/demo/host',
+    'crates/hyperion-hot-reload/demo/module',
     'crates/hyperion-inventory',
     'crates/hyperion-item',
     'crates/hyperion-minecraft-proto',
     'crates/hyperion-minecraft-proto-derive',
-    'crates/hyperion-nerd-font',
     'crates/hyperion-packet-macros',
     'crates/hyperion-palette',
     'crates/hyperion-permission',
@@ -230,9 +229,6 @@ path = 'crates/hyperion-minecraft-proto'
 
 [workspace.dependencies.hyperion-minecraft-proto-derive]
 path = 'crates/hyperion-minecraft-proto-derive'
-
-[workspace.dependencies.hyperion-nerd-font]
-path = 'crates/hyperion-nerd-font'
 
 [workspace.dependencies.hyperion-packet-macros]
 path = 'crates/hyperion-packet-macros'
