@@ -18,10 +18,15 @@
 use std::process::Command;
 
 use flecs_ecs::prelude::*;
+use glam::Vec3;
 use smash::{
     SmashModule,
     module::{
+        ability::Grants,
+        effect::{self, Affliction, Blame, Effect, InflictedBy, Source, Upon},
+        kit::Playing,
         lives::{LifeTier, ShownAs},
+        projectile::{self, FiredBy, Flight, Payload, Projectile},
         selector::{Offers, StandsOn},
     },
 };
@@ -42,8 +47,43 @@ fn relations_are_declared_relationships() {
         ("ShownAs", world.component::<ShownAs>().has(id::<flecs::Relationship>())),
         ("Offers", world.component::<Offers>().has(id::<flecs::Relationship>())),
         ("StandsOn", world.component::<StandsOn>().has(id::<flecs::Relationship>())),
+        ("Playing", world.component::<Playing>().has(id::<flecs::Relationship>())),
+        ("Grants", world.component::<Grants>().has(id::<flecs::Relationship>())),
+        ("Upon", world.component::<Upon>().has(id::<flecs::Relationship>())),
+        ("InflictedBy", world.component::<InflictedBy>().has(id::<flecs::Relationship>())),
+        ("Source", world.component::<Source>().has(id::<flecs::Relationship>())),
+        ("FiredBy", world.component::<FiredBy>().has(id::<flecs::Relationship>())),
     ] {
         assert!(present, "{name} lost its `flecs::Relationship` trait");
+    }
+}
+
+/// The two player-targeted relations are stored sparsely and delete their
+/// source with their target. `DontFragment` keeps a volley of arrows or a
+/// stream of burns from minting one archetype per victim; `(OnDeleteTarget,
+/// Delete)` is what lets `tick_effects` and the fly system carry no
+/// victimless/ownerless cleanup branch of their own.
+#[test]
+fn player_targeted_relations_are_sparse_and_cascade() {
+    let world = game();
+    for (name, dont_fragment, cascades) in [
+        (
+            "Upon",
+            world.component::<Upon>().has(id::<flecs::DontFragment>()),
+            world
+                .component::<Upon>()
+                .has((id::<flecs::OnDeleteTarget>(), id::<flecs::Delete>())),
+        ),
+        (
+            "FiredBy",
+            world.component::<FiredBy>().has(id::<flecs::DontFragment>()),
+            world
+                .component::<FiredBy>()
+                .has((id::<flecs::OnDeleteTarget>(), id::<flecs::Delete>())),
+        ),
+    ] {
+        assert!(dont_fragment, "{name} lost its `flecs::DontFragment` trait");
+        assert!(cascades, "{name} lost its `(OnDeleteTarget, Delete)` trait");
     }
 }
 
@@ -81,6 +121,24 @@ fn violation_child() {
         }
         "standson_bare" => {
             world.entity().add(id::<StandsOn>());
+        }
+        "playing_bare" => {
+            world.entity().add(id::<Playing>());
+        }
+        "grants_bare" => {
+            world.entity().add(id::<Grants>());
+        }
+        "upon_bare" => {
+            world.entity().add(id::<Upon>());
+        }
+        "inflictedby_bare" => {
+            world.entity().add(id::<InflictedBy>());
+        }
+        "source_bare" => {
+            world.entity().add(id::<Source>());
+        }
+        "firedby_bare" => {
+            world.entity().add(id::<FiredBy>());
         }
         // A `(ShownAs, x)` whose target is not a life tier.
         "shownas_wrong_target" => {
@@ -124,9 +182,85 @@ fn assert_aborts_on_constraint(case: &str) {
 
 #[test]
 fn a_relationship_added_as_a_bare_tag_aborts() {
-    assert_aborts_on_constraint("shownas_bare");
-    assert_aborts_on_constraint("offers_bare");
-    assert_aborts_on_constraint("standson_bare");
+    for case in [
+        "shownas_bare",
+        "offers_bare",
+        "standson_bare",
+        "playing_bare",
+        "grants_bare",
+        "upon_bare",
+        "inflictedby_bare",
+        "source_bare",
+        "firedby_bare",
+    ] {
+        assert_aborts_on_constraint(case);
+    }
+}
+
+/// `(Upon, OnDeleteTarget, Delete)`: deleting the victim deletes the effect,
+/// so there is nothing left for `tick_effects` to find victimless. Destructing
+/// outside a system applies at once, so no tick is needed to observe it.
+#[test]
+fn an_effect_dies_with_its_victim() {
+    let world = game();
+    let attacker = world.entity_named("attacker");
+    let victim = world.entity_named("victim");
+    effect::afflict(
+        (&world).into(),
+        victim,
+        Blame {
+            source: attacker.id(),
+            attacker: attacker.id(),
+        },
+        Affliction::shield(5.0),
+    );
+    assert_eq!(count::<Effect>(&world), 1, "the affliction was not created");
+
+    victim.destruct();
+    assert_eq!(
+        count::<Effect>(&world),
+        0,
+        "the effect outlived the victim it was on"
+    );
+}
+
+/// `(FiredBy, OnDeleteTarget, Delete)`: deleting the shooter deletes their
+/// projectiles in flight, so the fly system never meets an ownerless one.
+#[test]
+fn a_projectile_dies_with_its_shooter() {
+    let world = game();
+    let shooter = world.entity_named("shooter");
+    projectile::fire(
+        (&world).into(),
+        shooter,
+        Flight {
+            position: Vec3::ZERO,
+            velocity: Vec3::X,
+            gravity: 0.0,
+            seconds_left: 10.0,
+            radius: 0.4,
+        },
+        Payload::new(1.0, 0.0),
+    );
+    assert_eq!(count::<Projectile>(&world), 1, "the projectile was not fired");
+
+    shooter.destruct();
+    assert_eq!(
+        count::<Projectile>(&world),
+        0,
+        "the projectile outlived the shooter who fired it"
+    );
+}
+
+/// Count entities carrying `T`.
+fn count<T: ComponentId>(world: &World) -> i32 {
+    let mut n = 0;
+    world
+        .query::<()>()
+        .with(T::id())
+        .build()
+        .each_entity(|_, ()| n += 1);
+    n
 }
 
 #[test]
