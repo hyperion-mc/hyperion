@@ -84,8 +84,8 @@ const fn particles(
     spread: Vec3,
     max_speed: f32,
     count: i32,
-    particle: Particle,
-) -> LevelParticles {
+    particle: Particle<'_>,
+) -> LevelParticles<'_> {
     LevelParticles {
         override_limiter: true,
         // The client's particle setting is the player's own choice, so a

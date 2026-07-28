@@ -120,6 +120,61 @@ impl Decode<'_> for Uuid {
     }
 }
 
+/// A block state's network id: an index into the global state registry.
+///
+/// A newtype rather than a bare `u32` because that is what the wire carries
+/// for a particle's block, for a block update and for a palette entry, and
+/// none of those is interchangeable with the count or the id sitting next to
+/// it. [`crate::block_state`] is what turns a block name and its properties
+/// into one of these.
+///
+/// The numbering is dense but arbitrary and moves with almost every game
+/// version, so an id is only meaningful against the version that produced it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct BlockStateId(u32);
+
+impl BlockStateId {
+    /// The state of that id, if this version has one.
+    ///
+    /// # Errors
+    /// [`Error::InvalidBlockState`] for a negative id or one at or past
+    /// [`crate::block_state::STATE_COUNT`]. Both are only reachable from the
+    /// wire; a state named in source goes through [`crate::block_state`].
+    pub const fn from_raw(raw: i32) -> Result<Self> {
+        // `u32::try_from` is not const, and a bad id here is a decode error
+        // rather than a panic, so the bounds are written out.
+        if raw < 0 || raw.unsigned_abs() >= crate::block_state::STATE_COUNT {
+            return Err(Error::InvalidBlockState { value: raw });
+        }
+        Ok(Self(raw.unsigned_abs()))
+    }
+
+    /// A state id this crate computed, such as one from [`crate::block_state`].
+    #[must_use]
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    /// The id as the wire carries it.
+    ///
+    /// # Panics
+    /// Never in practice: every state id is below
+    /// [`crate::block_state::STATE_COUNT`], which is five orders of magnitude
+    /// under `i32::MAX`. Written as a checked conversion rather than a cast so
+    /// that a value which somehow got past [`Self::new`] fails here instead of
+    /// wrapping negative and encoding as a five-byte `VarInt`.
+    #[must_use]
+    pub fn to_raw(self) -> i32 {
+        i32::try_from(self.0).expect("a block state id is far below i32::MAX")
+    }
+
+    /// The id as an index.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// A block position, packed into one 64-bit word.
 ///
 /// `BlockPos.asLong` gives x the top 26 bits, z the next 26 and y the low 12,

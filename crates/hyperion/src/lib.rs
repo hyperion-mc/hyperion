@@ -38,6 +38,7 @@ use libc::{RLIMIT_NOFILE, getrlimit, setrlimit};
 use libdeflater::CompressionLvl;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use simulation::{Comms, SimModule, StreamLookup, blocks::Blocks};
+use spatial::SpatialModule;
 use storage::{Events, LocalDb, SkinHandler};
 use tracing::{info, info_span, warn};
 use util::mojang::MojangClient;
@@ -72,6 +73,7 @@ use crate::{
     util::mojang::ApiProvider,
 };
 
+pub mod effects;
 pub mod egress;
 pub mod ingress;
 pub mod net;
@@ -415,6 +417,18 @@ impl HyperionCore {
         world.import::<SimModule>();
         world.import::<EgressModule>();
         world.import::<IngressModule>();
+        // Not optional, despite having been left to each event crate until
+        // now. `update_projectile_positions`, which `EgressModule` above
+        // brings in, calls `spatial::get_first_collision`, which reads the
+        // `SpatialIndex` singleton. A world without this module panics with
+        // "Component hyperion::spatial::SpatialIndex is not registered" on the
+        // first tick after anything with an `EntityKind` and a `Velocity`
+        // exists -- which is to say the first time anyone fires a projectile.
+        // bedwars imported it and smash did not, so the panic was one arrow
+        // away the whole time.
+        world.import::<SpatialModule>();
+        // After the simulation, whose components the effects layer writes.
+        world.import::<crate::effects::EffectsModule>();
 
         world
             .component::<Player>()
