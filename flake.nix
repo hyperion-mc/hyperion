@@ -75,6 +75,14 @@
             rustfmt = rustToolchain;
           };
 
+          # Split out because it is the only pipeline that runs the server
+          # rather than reading data out of it, and it is the only one whose
+          # output is checked by a Rust test rather than compiled into one.
+          differential = import ./nix/differential.nix {
+            pkgs = minecraftPkgs;
+            inherit (minecraft) jdk serverClasspath pin;
+          };
+
           cargoTools = [
             pkgs.cargo-deny
             pkgs.cargo-machete
@@ -563,6 +571,9 @@
               sync-minecraft-tag-data = minecraft.syncTagDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;
               sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
+              # Re-records the golden traces `crates/hyperion/tests/differential.rs`
+              # compares against. See docs/differential-testing.md.
+              record-differential-traces = differential.syncScript;
               extract-minecraft-protocol = minecraft.extractor;
               # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
               # from the server's own codecs, so a new codec can be checked
@@ -586,6 +597,8 @@
             minecraft-tag-contents = minecraft.tagContents;
             minecraft-registry-data-rust = minecraft.generatedRegistryData;
             minecraft-tag-data-rust = minecraft.generatedTagData;
+            differential-recorder = differential.recorder;
+            differential-traces = differential.recordedTraces;
             minecraft-block-states-rust = minecraft.generatedBlockStates;
             minecraft-entity-types-rust = minecraft.generatedEntityTypes;
           };
@@ -604,6 +617,10 @@
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;
+            # A jar bump that changes vanilla's physics must not leave the
+            # committed traces behind, or the Rust test passes against a
+            # recording of a server nobody runs any more.
+            differential-traces = differential.tracesUpToDate;
           };
 
         };

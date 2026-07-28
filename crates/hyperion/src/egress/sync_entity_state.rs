@@ -471,6 +471,9 @@ impl Module for EntityStateSyncModule {
 
             let world = it.world();
             let arrow_entity = it.entity(row);
+            let motion = arrow_entity
+                .try_get::<&EntityKind>(|kind| kind.projectile_motion())
+                .flatten();
 
             if velocity.0 != Vec3::ZERO {
                 let center = **position;
@@ -481,19 +484,14 @@ impl Module for EntityStateSyncModule {
                 let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
 
                 let Some(collision) = get_first_collision(ray, &world, Some(owner.entity)) else {
-                    // Drag (0.99 / 20.0)
-                    // 1.0 - (0.99 / 20.0) * 0.05
-                    velocity.0 *= 0.997_525;
-
-                    // Gravity (20 MPSS)
-                    velocity.0.y -= 0.05;
-
-                    // Terminal Velocity max (100.0)
-                    velocity.0 = velocity.0.clamp_length_max(100.0);
-
-                    position.x += velocity.0.x;
-                    position.y += velocity.0.y;
-                    position.z += velocity.0.z;
+                    // Vanilla's own integration, per kind, rather than one
+                    // rate for everything: an arrow and a snowball disagree
+                    // about their constants *and* about the order of the three
+                    // statements. `crates/hyperion/tests/differential.rs`
+                    // holds this against a recording of the real server.
+                    if let Some(motion) = motion {
+                        motion.step(position, &mut velocity.0);
+                    }
                     return;
                 };
 

@@ -723,6 +723,7 @@ let
 in
 {
   inherit
+    jdk
     serverJar
     serverClasspath
     generatedData

@@ -1,0 +1,18 @@
+{
+  "name": "arrow-level-shot",
+  "description": "A fully drawn bow fired dead level along +Z. Sixty ticks of unobstructed flight, which is the whole of an arrow's useful range in Super Smash Mobs.",
+  "ticks": 60,
+  "seed": 4242,
+  "entities": [
+    {
+      "id": "arrow",
+      "type": "minecraft:arrow",
+      "position": [0.5, 128.0, 0.5],
+      "launch": { "yaw": 0.0, "pitch": 0.0, "power": 3.0 }
+    }
+  ],
+  "compare": {
+    "position": 5.0e-4,
+    "velocity": 1.0e-5
+  }
+}
