@@ -563,8 +563,9 @@ pub fn ultimate_name(player: EntityView<'_>) -> Option<&'static str> {
 pub fn revoke(player: EntityView<'_>) {
     let mut granted = Vec::new();
     player.each_target_view(Grants, |ability| granted.push(ability.id()));
+    // Destroying the ability is enough: `(Grants, OnDeleteTarget, Remove)`
+    // takes the edge with it, so there is no `remove((Grants, ability))` first.
     for ability in granted {
-        player.remove((Grants, ability));
         player.world().entity_from_id(ability).destruct();
     }
 }
@@ -698,9 +699,15 @@ impl Module for KitModule {
         // that module declares, so a component reached for and never registered
         // aborts there rather than on a server.
         world.component::<SuggestionLabel>();
-        world.component::<Kit>().set(SuggestionLabel(|kit| {
-            kit.try_get::<&KitName>(|name| name.0.to_owned())
-        }));
+        // Final: a kit prefab is instantiated onto a player by copying, never
+        // inherited via IsA -- see `kit::apply` and the refutation in the Grants
+        // commit. is_a(Kit) is now a CONSTRAINT_VIOLATED abort.
+        world
+            .component::<Kit>()
+            .add_trait::<flecs::Final>()
+            .set(SuggestionLabel(|kit| {
+                kit.try_get::<&KitName>(|name| name.0.to_owned())
+            }));
         world.component::<KitStats>();
         world.component::<KitName>();
         world.component::<KitCost>();
