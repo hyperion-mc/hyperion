@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-pub use hyperion::effects::{Effect, Shape};
+pub use hyperion::effects::{Effect, Shape, Status};
 pub use hyperion_minecraft_proto::{
     particle::{Argb, Particle, ParticleKind},
     text::{Component, Decoration, NamedColor, Rgb24, Run, Style, TextColor},
@@ -338,6 +338,14 @@ pub trait Server: Send + Sync + 'static {
 
     /// Push the game's authoritative health onto the client's health bar.
     fn set_health(&self, player: PlayerId, health: f32, max: f32);
+
+    /// Apply a potion effect to `player`, broadcast to everyone near them --
+    /// including the player's own client. That inclusion is the whole point of
+    /// a status over a faked impulse: the client owns its movement prediction,
+    /// so a slow is *felt* rather than merely seen only once it reaches the
+    /// player's own screen. Ended by its own duration, or early with a matching
+    /// clear.
+    fn status(&self, player: PlayerId, status: Status);
 
     /// Replace the hotbar wholesale. Called on kit selection and on respawn.
     fn set_hotbar(&self, player: PlayerId, items: &[HotbarItem]);

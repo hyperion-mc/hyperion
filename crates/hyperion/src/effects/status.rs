@@ -242,3 +242,79 @@ pub fn clear(entity: EntityView<'_>, effect: MobEffect) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use flecs_ecs::prelude::*;
+    use hyperion_proxy_proto::ArchivedServerToProxyMessage;
+
+    use super::*;
+    use crate::{
+        HyperionCore,
+        simulation::{Player, Velocity, entity_kind::EntityKind},
+    };
+
+    /// A slow reaches the victim's own client.
+    ///
+    /// The whole reason a status beats a faked impulse is that the client owns
+    /// its movement prediction, so the effect has to arrive at the *victim's*
+    /// screen to be felt rather than only seen by bystanders. A broadcast that
+    /// excluded the victim -- the way a game often excludes the actor of an
+    /// event to avoid echoing it back -- would slow everyone's view of them and
+    /// leave the one player who needs it moving at full speed.
+    ///
+    /// So this drives [`Status::apply`] against a captured proxy channel and
+    /// asserts the effect leaves as a *local* broadcast around the victim that
+    /// excludes nobody (`exclude == 0`, the sentinel for [`None`]), which is
+    /// exactly the client that owns the prediction being included.
+    #[test]
+    fn a_slow_broadcasts_to_the_victims_own_client() {
+        let world = World::new();
+        world.import::<HyperionCore>();
+
+        let victim = world
+            .entity()
+            .add_enum(EntityKind::Player)
+            .add(Player::id())
+            .set(Position::new(1.5, 64.0, -2.5))
+            .set(Velocity::default())
+            .id();
+
+        // Swap in a Compose whose proxy channels we hold, so what a broadcast
+        // would send is readable here rather than lost to a socket. Done after
+        // the entity exists, so only the slow -- not the spawn -- lands on it.
+        let (compose, mut near, _far) = crate::net::tests::two_proxies();
+        world.set(compose);
+
+        Status::new(MobEffect::Slowness, 5)
+            .seconds(5.0)
+            .apply(world.entity_from_id(victim));
+
+        let bytes = near
+            .try_recv()
+            .expect("apply broadcast nothing to the victim's proxy");
+        // `encode_proxy_message` writes an eight-byte big-endian length before
+        // the rkyv body; the body is what the archived message reads through.
+        let body = &bytes[size_of::<u64>()..];
+        let message = unsafe { rkyv::access_unchecked::<ArchivedServerToProxyMessage<'_>>(body) };
+        match message {
+            ArchivedServerToProxyMessage::BroadcastLocal(local) => {
+                assert_eq!(
+                    local.exclude.to_native(),
+                    0,
+                    "a slow that excludes the victim never reaches the client that has to feel it"
+                );
+            }
+            _ => panic!("a slow must leave as a local broadcast around the victim"),
+        }
+        assert!(
+            near.try_recv().is_err(),
+            "one apply must be one packet, not several"
+        );
+
+        // Drop the world while the proxy receivers are still alive: tearing it
+        // down fires an `OnRemove` broadcast for the victim, and a receiver
+        // already gone would turn that teardown into a `SendError` panic.
+        drop(world);
+    }
+}
