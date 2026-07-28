@@ -1302,6 +1302,7 @@
             minecraft-server-jar = minecraft.serverJar;
             minecraft-data = minecraft.generatedData;
             minecraft-decompiled = minecraft.decompiledSources;
+            minecraft-physics-sources = minecraft.physicsSources;
             minecraft-protocol = minecraft.protocolJson;
             minecraft-proto-rust = minecraft.generatedRust;
             minecraft-encoder-fixtures = minecraft.encoderFixtures;

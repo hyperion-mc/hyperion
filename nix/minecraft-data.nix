@@ -151,6 +151,89 @@ let
       cfr --outputdir $out --silent true --comments false $(cat selected.txt)
     '';
 
+  # The arrow physics reference: the actual server source for everything a
+  # bow-fired arrow touches, decompiled so the launch heading, the per-tick
+  # orientation and the gravity/drag constants can be read and cited rather
+  # than trusted. Separate from `decompiledSources`, which is scoped to the
+  # wire protocol and deliberately skips the entity classes; this is scoped to
+  # the projectile package plus the few types its tick reaches. Keyed on the
+  # jar, so the store builds it once and caches it until the version pin moves,
+  # rather than a script that re-decompiles on every call.
+  physicsSources = pkgs.runCommand "minecraft-physics-sources-${pin.id}"
+    {
+      # No jdk: nixpkgs wraps cfr with its own runtime, so pulling a second
+      # one into the closure buys nothing. Mirrors decompiledSources.
+      nativeBuildInputs = [ pkgs.cfr pkgs.unzip ];
+      meta = {
+        description = "Decompiled arrow and projectile physics sources for Minecraft ${pin.id}";
+        license = lib.licenses.unfree; # Mojang EULA; derived from the server jar.
+      };
+    }
+    ''
+      mkdir -p work && cd work
+
+      # The published jar is a bundler; the real server is nested inside it.
+      unzip -q ${serverJar} 'META-INF/versions/*/server-*.jar' -d bundle
+      inner=$(find "$PWD/bundle" -name 'server-*.jar' | head -n1)
+      if [ -z "$inner" ]; then
+        echo "no inner server jar found in the bundle" >&2
+        exit 1
+      fi
+      mkdir -p classes && (cd classes && unzip -q "$inner")
+      cd classes
+
+      # The projectile package is the whole of an arrow's, snowball's and
+      # trident's flight. The four named classes are the types that package's
+      # tick reaches for the numbers the parity work checks:
+      #
+      #   util/Mth              the sine table and atan2 the launch heading and
+      #                         the per-tick orientation are built from
+      #   world/phys/Vec3       normalize/scale/horizontalDistance, the vector
+      #                         ops shoot and updateRotation call
+      #   world/entity/Entity   applyGravity/getDefaultGravity and the base tick
+      #   world/item/BowItem    getPowerForTime and the f * 3.0 launch speed
+      required="net/minecraft/util/Mth.class \
+                net/minecraft/world/phys/Vec3.class \
+                net/minecraft/world/entity/Entity.class \
+                net/minecraft/world/item/BowItem.class"
+      for class in $required; do
+        if [ ! -e "$class" ]; then
+          echo "expected physics class missing from the jar: $class" >&2
+          exit 1
+        fi
+      done
+
+      # Inner classes are collapsed onto their outermost class, since cfr
+      # decompiles a nested class into its outer's file. Same '$'-anchored
+      # rewrite decompiledSources uses.
+      { find net/minecraft/world/entity/projectile -name '*.class'
+        for class in $required; do printf '%s\n' "$class"; done
+      } | sed 's/\$[^/]*\.class$/.class/' | sort -u > selected.txt
+
+      count=$(wc -l < selected.txt)
+      if [ "$count" -eq 0 ]; then
+        echo "no physics classes selected; the projectile package is empty" >&2
+        exit 1
+      fi
+      echo "decompiling $count physics classes" >&2
+
+      mkdir -p $out
+      cfr --outputdir $out --silent true --comments false $(cat selected.txt)
+
+      # A citable landmark, checked so a jar bump that moves the launch code
+      # cannot leave this reference and the Rust that cites it pointing at an
+      # empty file.
+      projectile="$out/net/minecraft/world/entity/projectile/Projectile.java"
+      if [ ! -e "$projectile" ]; then
+        echo "Projectile.java was not decompiled; the physics reference is empty" >&2
+        exit 1
+      fi
+      if ! grep -q "shootFromRotation" "$projectile"; then
+        echo "shootFromRotation missing from decompiled Projectile.java" >&2
+        exit 1
+      fi
+    '';
+
   # The bundler jar is a launcher wrapped around the real server jar and its
   # dependencies. Both the harness below and anything else wanting to run
   # server code needs them unpacked with a classpath, so it happens once.
@@ -866,6 +949,7 @@ in
     serverClasspath
     generatedData
     decompiledSources
+    physicsSources
     protocolJson
     generatedRust
     vanillaEncoder

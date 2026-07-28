@@ -3,7 +3,10 @@ use flecs_ecs::core::{Entity, EntityView, EntityViewGet, WorldProvider};
 use hyperion::{
     glam::Vec3,
     net::Channel,
-    simulation::{Pitch, Position, Spawn, Uuid, Velocity, Yaw, entity_kind::EntityKind},
+    simulation::{
+        Pitch, Position, Spawn, Uuid, Velocity, Yaw, entity_kind::EntityKind,
+        projectile_motion::look_angles,
+    },
 };
 use hyperion_clap::{CommandPermission, MinecraftCommand};
 use tracing::debug;
@@ -35,6 +38,11 @@ impl MinecraftCommand for ShootCommand {
                 // Calculate velocity with base multiplier
                 let velocity = direction * (self.velocity * BASE_VELOCITY);
 
+                // Facing is read off the velocity in vanilla's projectile
+                // convention, not copied from the player's look; see
+                // `look_angles`.
+                let (arrow_yaw, arrow_pitch) = look_angles(velocity);
+
                 debug!(
                     "Arrow velocity: ({}, {}, {})",
                     velocity.x, velocity.y, velocity.z
@@ -54,8 +62,8 @@ impl MinecraftCommand for ShootCommand {
                     .set(entity_id)
                     .set(Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z))
                     .set(Velocity::new(velocity.x, velocity.y, velocity.z))
-                    .set(Yaw::new(**yaw))
-                    .set(Pitch::new(**pitch))
+                    .set(Yaw::new(arrow_yaw))
+                    .set(Pitch::new(arrow_pitch))
                     .add(Channel)
                     .enqueue(Spawn);
             });

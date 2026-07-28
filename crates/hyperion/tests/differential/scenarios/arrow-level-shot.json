@@ -13,6 +13,7 @@
   ],
   "compare": {
     "position": 5.0e-4,
-    "velocity": 1.0e-5
+    "velocity": 1.0e-5,
+    "rotation": 2.0e-1
   }
 }

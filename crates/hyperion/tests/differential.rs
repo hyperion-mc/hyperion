@@ -22,8 +22,11 @@ use flecs_ecs::{
     prelude::Module,
 };
 use hyperion::{
+    glam::Vec3,
     simulation::{
-        Owner, Position, Velocity, entity_kind::EntityKind, projectile_motion::SIMULATED,
+        Owner, Pitch, Position, Velocity, Yaw,
+        entity_kind::EntityKind,
+        projectile_motion::{SIMULATED, look_angles},
     },
     spatial::SpatialModule,
 };
@@ -84,6 +87,13 @@ struct EntitySpec {
 struct Tolerance {
     position: f64,
     velocity: f64,
+    /// In degrees. Loose next to position and velocity because hyperion aims
+    /// with `f32::atan2` where vanilla uses `Mth.atan2`, a table approximation;
+    /// the gap is under a thousandth of a degree across every committed
+    /// scenario, and the tolerance is orders of magnitude tighter than the
+    /// wrong-sign (up to 180) or frozen-rotation (tens of degrees) failures it
+    /// exists to catch.
+    rotation: f64,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +124,12 @@ struct Sample {
 struct State {
     position: [f64; 3],
     velocity: [f64; 3],
+    /// The client-facing orientation, `[yaw, pitch]` in degrees, in vanilla's
+    /// projectile-entity convention. This is the "wrong heading" the parity
+    /// work is about: an arrow whose arc is right but which renders pointing
+    /// the wrong way sends a yaw of the wrong sign, or one frozen at its launch
+    /// value rather than tracking its velocity.
+    rotation: [f64; 2],
     #[expect(
         dead_code,
         reason = "recorded so a scenario can one day assert a despawn"
@@ -133,6 +149,15 @@ struct State {
 )]
 const fn narrow(value: [f64; 3]) -> [f32; 3] {
     [value[0] as f32, value[1] as f32, value[2] as f32]
+}
+
+/// The shorter arc between two angles in degrees, so a reading of 179 against
+/// -179 is two degrees apart rather than 358. A rotation is periodic where a
+/// position is not, so a plain subtraction would report a full turn of
+/// disagreement at the -180/180 seam and fail a scenario that had not moved.
+fn angle_delta(a: f64, b: f64) -> f64 {
+    let d = (a - b).rem_euclid(360.0);
+    d.min(360.0 - d)
 }
 
 fn root() -> &'static Path {
@@ -168,6 +193,7 @@ fn kind_for(entity_type: &str) -> EntityKind {
 struct Headroom {
     position: f64,
     velocity: f64,
+    rotation: f64,
 }
 
 fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom, String> {
@@ -207,11 +233,22 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
             // the flight, from whatever state vanilla started it in.
             let [px, py, pz] = narrow(state.position);
             let [vx, vy, vz] = narrow(state.velocity);
+
+            // The launch rotation is seeded from the velocity the same way
+            // `Projectile.shoot` seeds vanilla's, through `look_angles` -- the
+            // very function the server aims with in flight. Unlike the velocity
+            // this is not read out of the trace: rotation is `f(velocity)` on
+            // both sides, so computing hyperion's and holding it against
+            // vanilla's recorded answer is the parity check the "wrong heading"
+            // needs, not an invention compared against a recording.
+            let (yaw, pitch) = look_angles(Vec3::new(vx, vy, vz));
             let entity = world.entity();
             entity
                 .add_enum(kind_for(&spec.entity_type))
                 .set(Position::new(px, py, pz))
                 .set(Velocity::new(vx, vy, vz))
+                .set(Yaw::new(yaw))
+                .set(Pitch::new(pitch))
                 .set(Owner::new(*owner));
             (spec.id.clone(), spec.position, entity)
         })
@@ -235,19 +272,27 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
     let mut outcome = Ok(Headroom {
         position: 0.0,
         velocity: 0.0,
+        rotation: 0.0,
     });
-    for sample in &trace.samples[1..] {
-        world.progress();
+    // Every sample, tick 0 included: the seed at tick 0 is where a wrong-sign
+    // heading shows up, and each later tick is where a frozen one does. Tick 0
+    // is compared without progressing, since it is the state the entity was
+    // just built in.
+    for (index, sample) in trace.samples.iter().enumerate() {
+        if index > 0 {
+            world.progress();
+        }
 
         for (id, _, entity) in &entities {
             let expected = &sample.entities[id];
-            let (position, velocity) = entity.get::<(&Position, &Velocity)>(|(p, v)| {
-                ([f64::from(p.x), f64::from(p.y), f64::from(p.z)], [
-                    f64::from(v.0.x),
-                    f64::from(v.0.y),
-                    f64::from(v.0.z),
-                ])
-            });
+            let (position, velocity, rotation) = entity
+                .get::<(&Position, &Velocity, &Yaw, &Pitch)>(|(p, v, yaw, pitch)| {
+                    (
+                        [f64::from(p.x), f64::from(p.y), f64::from(p.z)],
+                        [f64::from(v.0.x), f64::from(v.0.y), f64::from(v.0.z)],
+                        [f64::from(**yaw), f64::from(**pitch)],
+                    )
+                });
 
             for (axis, name) in ["x", "y", "z"].iter().enumerate() {
                 let delta = (position[axis] - expected.position[axis]).abs();
@@ -279,6 +324,27 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
                         expected.velocity[axis],
                         velocity[axis],
                         scenario.compare.velocity
+                    ));
+                }
+            }
+
+            // The heading, in the same shape. Yaw and pitch rather than three
+            // axes, and the shorter arc between the two angles so a reading of
+            // 179 against -179 is two degrees apart, not 358.
+            for (axis, name) in ["yaw", "pitch"].iter().enumerate() {
+                let delta = angle_delta(rotation[axis], expected.rotation[axis]);
+                if let Ok(worst) = &mut outcome {
+                    worst.rotation = worst.rotation.max(delta);
+                }
+                if delta > scenario.compare.rotation {
+                    outcome = Err(format!(
+                        "{}: {id} {name} diverges at tick {}\n  vanilla:  {}\n  hyperion: {}\n  \
+                         delta:    {delta:e} (tolerance {:e})",
+                        scenario.name,
+                        sample.tick,
+                        expected.rotation[axis],
+                        rotation[axis],
+                        scenario.compare.rotation
                     ));
                 }
             }
@@ -348,13 +414,16 @@ fn scenarios_match_vanilla() {
 
         match replay(&world, &scenario, &trace) {
             Ok(worst) => println!(
-                "ok: {} ({} ticks); worst position delta {:e} of {:e}, velocity {:e} of {:e}",
+                "ok: {} ({} ticks); worst position delta {:e} of {:e}, velocity {:e} of {:e}, \
+                 rotation {:e} of {:e}",
                 scenario.name,
                 scenario.ticks,
                 worst.position,
                 scenario.compare.position,
                 worst.velocity,
-                scenario.compare.velocity
+                scenario.compare.velocity,
+                worst.rotation,
+                scenario.compare.rotation
             ),
             Err(failure) => failures.push(failure),
         }

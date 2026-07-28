@@ -16,6 +16,7 @@ use hyperion::{
         handlers::PacketSwitchQuery,
         metadata::living_entity::{ArrowsInEntity, HandStates},
         packet::HandlerRegistry,
+        projectile_motion::look_angles,
     },
     storage::{EventQueue, Events},
 };
@@ -239,6 +240,14 @@ impl Module for BowModule {
                         let direction = get_direction_from_rotation(**yaw, **pitch);
                         let velocity = direction * (charge * MAX_ARROW_SPEED);
 
+                        // The arrow's own facing is read off its velocity in
+                        // vanilla's projectile convention, not copied from the
+                        // shooter's look yaw: the two share a magnitude but not a
+                        // sign, and sending the player's yaw is what renders the
+                        // arrow pointing the wrong way. `update_projectile_positions`
+                        // keeps it aimed from here; this is only the launch seed.
+                        let (arrow_yaw, arrow_pitch) = look_angles(velocity);
+
                         let spawn_pos =
                             Vec3::new(position.x, position.y + 1.62, position.z) + direction * 0.5;
 
@@ -250,8 +259,8 @@ impl Module for BowModule {
                             .set(Uuid::new_v4())
                             .set(Position::new(spawn_pos.x, spawn_pos.y, spawn_pos.z))
                             .set(Velocity::new(velocity.x, velocity.y, velocity.z))
-                            .set(Pitch::new(**pitch))
-                            .set(Yaw::new(**yaw))
+                            .set(Pitch::new(arrow_pitch))
+                            .set(Yaw::new(arrow_yaw))
                             .set(Owner::new(*player))
                             .add(Channel)
                             .enqueue(Spawn);
