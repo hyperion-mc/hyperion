@@ -198,11 +198,147 @@ impl IntermediateServerToProxyMessage<'_> {
                     },
                 ))
             }
-            Self::Shutdown(message) => Some(ServerToProxyMessage::SetReceiveBroadcasts(
-                hyperion_proxy_proto::SetReceiveBroadcasts {
+            Self::Shutdown(message) => Some(ServerToProxyMessage::Shutdown(
+                hyperion_proxy_proto::Shutdown {
                     stream: filter_map_connection_id(message.stream)?,
                 },
             )),
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use hyperion_proxy_proto::UpdateChannelPosition;
+
+    use super::*;
+
+    /// Every arm of [`IntermediateServerToProxyMessage::transform_for_proxy`] is a hand-written
+    /// copy of the arm above it, so the wire variant it names is exactly the kind of thing that
+    /// survives a copy-paste unchanged. That is not a hypothetical: the `Shutdown` arm shipped
+    /// building a `SetReceiveBroadcasts`, which turned every failed-validation kick in the
+    /// codebase into a broadcast enable for the client that failed. Comparing the two variant
+    /// names catches the whole class rather than that one instance.
+    const fn intermediate_variant(message: &IntermediateServerToProxyMessage<'_>) -> &'static str {
+        match message {
+            IntermediateServerToProxyMessage::UpdatePlayerPositions(_) => "UpdatePlayerPositions",
+            IntermediateServerToProxyMessage::AddChannel(_) => "AddChannel",
+            IntermediateServerToProxyMessage::UpdateChannelPositions(_) => "UpdateChannelPositions",
+            IntermediateServerToProxyMessage::RemoveChannel(_) => "RemoveChannel",
+            IntermediateServerToProxyMessage::SubscribeChannelPackets(_) => {
+                "SubscribeChannelPackets"
+            }
+            IntermediateServerToProxyMessage::BroadcastGlobal(_) => "BroadcastGlobal",
+            IntermediateServerToProxyMessage::BroadcastLocal(_) => "BroadcastLocal",
+            IntermediateServerToProxyMessage::BroadcastChannel(_) => "BroadcastChannel",
+            IntermediateServerToProxyMessage::Unicast(_) => "Unicast",
+            IntermediateServerToProxyMessage::SetReceiveBroadcasts(_) => "SetReceiveBroadcasts",
+            IntermediateServerToProxyMessage::Shutdown(_) => "Shutdown",
+        }
+    }
+
+    const fn proxy_variant(message: &ServerToProxyMessage<'_>) -> &'static str {
+        match message {
+            ServerToProxyMessage::UpdatePlayerPositions(_) => "UpdatePlayerPositions",
+            ServerToProxyMessage::AddChannel(_) => "AddChannel",
+            ServerToProxyMessage::UpdateChannelPositions(_) => "UpdateChannelPositions",
+            ServerToProxyMessage::RemoveChannel(_) => "RemoveChannel",
+            ServerToProxyMessage::SubscribeChannelPackets(_) => "SubscribeChannelPackets",
+            ServerToProxyMessage::BroadcastGlobal(_) => "BroadcastGlobal",
+            ServerToProxyMessage::BroadcastLocal(_) => "BroadcastLocal",
+            ServerToProxyMessage::BroadcastChannel(_) => "BroadcastChannel",
+            ServerToProxyMessage::Unicast(_) => "Unicast",
+            ServerToProxyMessage::SetReceiveBroadcasts(_) => "SetReceiveBroadcasts",
+            ServerToProxyMessage::Shutdown(_) => "Shutdown",
+        }
+    }
+
+    #[test]
+    fn every_variant_transforms_into_its_own_wire_variant() {
+        let proxy = ProxyId::new(7);
+        let connection = ConnectionId::new(3, proxy);
+        let data = &[1u8, 2, 3];
+        let updates = &[UpdateChannelPosition {
+            channel_id: 1,
+            position: ChunkPosition::new(0, 0),
+        }];
+
+        // Listing every variant by hand rather than iterating means adding one to the enum
+        // without adding it here is a non-exhaustive-match compile error, not a silent gap.
+        let messages = [
+            IntermediateServerToProxyMessage::UpdatePlayerPositions(UpdatePlayerPositions {
+                stream: vec![connection],
+                positions: vec![ChunkPosition::new(1, 2)],
+            }),
+            IntermediateServerToProxyMessage::AddChannel(AddChannel {
+                channel_id: 1,
+                unsubscribe_packets: data,
+            }),
+            IntermediateServerToProxyMessage::UpdateChannelPositions(UpdateChannelPositions {
+                updates,
+            }),
+            IntermediateServerToProxyMessage::RemoveChannel(RemoveChannel { channel_id: 1 }),
+            IntermediateServerToProxyMessage::SubscribeChannelPackets(SubscribeChannelPackets {
+                channel_id: 1,
+                exclude: Some(connection),
+                data,
+            }),
+            IntermediateServerToProxyMessage::BroadcastGlobal(BroadcastGlobal {
+                exclude: Some(connection),
+                data,
+            }),
+            IntermediateServerToProxyMessage::BroadcastLocal(BroadcastLocal {
+                center: ChunkPosition::new(1, 2),
+                exclude: Some(connection),
+                data,
+            }),
+            IntermediateServerToProxyMessage::BroadcastChannel(BroadcastChannel {
+                channel_id: 1,
+                exclude: Some(connection),
+                data,
+            }),
+            IntermediateServerToProxyMessage::Unicast(Unicast {
+                stream: connection,
+                data,
+            }),
+            IntermediateServerToProxyMessage::SetReceiveBroadcasts(SetReceiveBroadcasts {
+                stream: connection,
+            }),
+            IntermediateServerToProxyMessage::Shutdown(Shutdown { stream: connection }),
+        ];
+
+        for message in &messages {
+            let expected = intermediate_variant(message);
+            let transformed = message
+                .transform_for_proxy(proxy)
+                .unwrap_or_else(|| panic!("{expected} must be sent to the proxy that owns it"));
+            assert_eq!(
+                expected,
+                proxy_variant(&transformed),
+                "{expected} transformed into a {} on the wire",
+                proxy_variant(&transformed)
+            );
+        }
+    }
+
+    /// A shutdown is addressed to one connection, so it must not reach a proxy that connection is
+    /// not on. Without this the fix above could have been a `Shutdown` that still fanned out.
+    #[test]
+    fn shutdown_only_reaches_the_owning_proxy() {
+        let message = IntermediateServerToProxyMessage::Shutdown(Shutdown {
+            stream: ConnectionId::new(3, ProxyId::new(0)),
+        });
+
+        let mine = message
+            .transform_for_proxy(ProxyId::new(0))
+            .expect("the owning proxy must be told to shut the connection down");
+        assert!(matches!(
+            mine,
+            ServerToProxyMessage::Shutdown(hyperion_proxy_proto::Shutdown { stream: 3 })
+        ));
+
+        assert!(
+            message.transform_for_proxy(ProxyId::new(1)).is_none(),
+            "a shutdown must not reach a proxy the connection is not on"
+        );
     }
 }
