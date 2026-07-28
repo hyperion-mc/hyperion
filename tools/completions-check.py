@@ -42,7 +42,6 @@ import time
 
 TOOLS = pathlib.Path(__file__).resolve().parent
 ROOT = TOOLS.parent
-REGISTRY_SOURCE = ROOT / "crates/hyperion-minecraft-proto/src/generated/registry.rs"
 
 
 def _load_client():
@@ -109,25 +108,16 @@ POSSIBLE_VALUES = re.compile(r"\[possible values: ([^\]]*)\]")
 def argument_type_names():
     """`minecraft:command_argument_type`, in network id order.
 
-    Read out of the generated registry table rather than listed here, because
-    the ids are positions in that table and a protocol bump moves them. A
-    parser named wrongly would let a wrong-parser bug pass.
+    Read out of `protocol.json` rather than listed here, because the ids are
+    positions in that registry and a protocol bump moves them. A parser named
+    wrongly would let a wrong-parser bug pass.
     """
-    text = REGISTRY_SOURCE.read_text()
-    start = text.find("pub static COMMAND_ARGUMENT_TYPE: Registry = Registry {")
-    if start < 0:
-        raise SystemExit("no COMMAND_ARGUMENT_TYPE in %s" % REGISTRY_SOURCE)
-    # From `entries`, not from the declaration: the registry's own name sits
-    # above it and looks exactly like an entry, which shifts every id by one
-    # and turns `brigadier:string` into `brigadier:long`. That reads a
-    # properties byte that is not there and desynchronises the whole tree.
-    start = text.index("entries: &[", start)
-    end = text.index("};", start)
-    names = re.findall(r'"([a-z0-9_.]+:[a-z0-9_./]+)"', text[start:end])
+    names = base.registry_entries("minecraft:command_argument_type")
     if "brigadier:string" not in names:
         raise SystemExit(
-            "COMMAND_ARGUMENT_TYPE in %s has %d entries and no brigadier:string, "
-            "so this read the table wrong" % (REGISTRY_SOURCE, len(names))
+            "minecraft:command_argument_type in %s has %d entries and no "
+            "brigadier:string, so this read the table wrong"
+            % (base.PROTOCOL_JSON, len(names))
         )
     return names
 

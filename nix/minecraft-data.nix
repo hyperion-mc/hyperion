@@ -322,6 +322,9 @@ let
   coverageChecker = pkgs.writers.writePython3Bin "check-minecraft-proto-coverage" pythonWriterOptions
     (builtins.readFile ./check-proto-coverage.py);
 
+  toolPathChecker = pkgs.writers.writePython3Bin "check-tool-paths" pythonWriterOptions
+    (builtins.readFile ./check-tool-paths.py);
+
   # The NBT blobs live next to the Rust that `include_bytes!`es them, so this
   # output is a whole directory rather than a single file.
   generatedRegistryData = pkgs.runCommand "hyperion-minecraft-registry-data-${pin.id}"
@@ -694,6 +697,48 @@ let
       touch $out
     '';
 
+  # A script naming a repository path that does not exist.
+  #
+  # Two scripted clients read `src/generated/registry.rs` with a regex. When
+  # that file became a directory, both kept building -- a path in a Python
+  # string is invisible to cargo and to every Rust grep -- and failed twenty
+  # minutes into CI inside four end-to-end gates, on a `FileNotFoundError`.
+  # A third named `src/entity_type.rs` and would have failed the same way one
+  # merge later.
+  #
+  # The real fix was to stop reaching into another component's source: all
+  # three read `protocol.json` now, which is data with a shape rather than a
+  # file with a location. This is the cheap half, and it is what makes the
+  # class fail in seconds instead of in a gate.
+  toolPaths = pkgs.runCommand "check-tool-paths"
+    {
+      nativeBuildInputs = [ toolPathChecker pkgs.git ];
+    }
+    ''
+      cp -r ${toolPathSource} source
+      chmod -R u+w source
+      cd source
+      git init -q .
+      git add -A
+      check-tool-paths --root .
+      touch $out
+    '';
+
+  # The checker reads scripts and stats paths, so it needs the tree's shape as
+  # well as the scripts themselves. `fileFilter` on the whole root would drag
+  # in every Rust file's contents; this takes names cheaply by taking the
+  # directories the anchors name.
+  toolPathSource = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../tools
+      ../nix
+      ../crates
+      ../events
+      ../docs
+    ];
+  };
+
   # protocol.json is the input build.rs reads, so a stale copy is a stale
   # packet struct in every build that does not go through nix. Guarding it is
   # what lets the structs live in OUT_DIR instead of in the tree.
@@ -738,6 +783,8 @@ in
     syncBlockStatesScript
     coverageChecker
     coverageRatchet
+    toolPathChecker
+    toolPaths
     generatedUpToDate
     registryDataUpToDate
     tagDataUpToDate

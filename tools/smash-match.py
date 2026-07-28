@@ -53,7 +53,6 @@ import importlib.util
 import json
 import math
 import pathlib
-import re
 import struct
 import sys
 import time
@@ -421,21 +420,16 @@ LINGER_WINDOW = 1.5
 # window it is trying to measure and turn a working shield into a failure.
 SHIELD_PROBE_WINDOW = 0.4
 
-ITEM_REGISTRY = ROOT / "crates/hyperion-minecraft-proto/src/generated/registry.rs"
-
 
 def load_item_names():
-    """`minecraft:item` registry ids to names, read from the generated table.
+    """`minecraft:item` registry ids to names, in network-id order.
 
     An item on the wire is a bare registry id, so a transcript without this
     says "the hotbar holds item 903" where the interesting claim is that it
-    holds an iron axe. The table is generated from the same jar the server's
-    ids come from, which is why it is read rather than restated here.
+    holds an iron axe. Read from `protocol.json`, which is the same file the
+    server's own ids are generated from.
     """
-    source = ITEM_REGISTRY.read_text()
-    start = source.index('pub static ITEM: Registry = Registry {')
-    end = source.index('};', start)
-    return re.findall(r'"(minecraft:[a-z0-9_/]+)"', source[start:end])[1:]
+    return base.registry_entries("minecraft:item")
 
 
 def stamp(started):

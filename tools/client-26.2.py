@@ -15,6 +15,7 @@ declares.
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import re
 import socket
@@ -25,6 +26,35 @@ import zlib
 
 PROTOCOL = 776
 VERSION = "26.2"
+
+# The extracted protocol description, which is the same file `build.rs` reads
+# and the same one every generated table comes out of.
+PROTOCOL_JSON = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "crates/hyperion-minecraft-proto/protocol.json"
+)
+
+
+def registry_entries(registry: str) -> list[str]:
+    """A vanilla registry's entry names, in network-id order.
+
+    Read from `protocol.json` rather than scraped out of the generated Rust.
+    Two tools used to do the latter, each with its own regex and its own
+    defensive slice to skip the registry's own name -- which sits in the same
+    table and looks exactly like an entry, so getting it wrong shifted every id
+    by one and turned `brigadier:string` into `brigadier:long`. Both broke the
+    day the generated table became a directory, because a path is not an
+    interface. This is: the ids here are the indices, with nothing to skip.
+    """
+    doc = json.loads(PROTOCOL_JSON.read_text())
+    found = doc["registries"].get(registry)
+    if found is None:
+        raise SystemExit(
+            "%s has no %s; it has %d registries, starting %s"
+            % (PROTOCOL_JSON, registry, len(doc["registries"]), sorted(doc["registries"])[:3])
+        )
+    return found["entries"]
+
 
 # Serverbound ids, from crates/hyperion-minecraft-proto/src/generated/packet_id.rs.
 C2S_INTENTION = 0x00
