@@ -102,6 +102,9 @@
               root = ./.;
               tools = ./tools;
               protoSource = ./crates/hyperion-minecraft-proto/src;
+              # The scripted clients resolve registry ids to names through
+              # this, the same file build.rs reads.
+              protocolJson = ./crates/hyperion-minecraft-proto/protocol.json;
               kitSkins = ./events/smash/skins;
               genmap = ./crates/hyperion-genmap/src/lib.rs;
             };
@@ -985,6 +988,7 @@
             # produces, or the copy cargo reads is a fiction.
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-proto-coverage = minecraft.coverageRatchet;
+            tool-paths = minecraft.toolPaths;
             minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-tag-data = minecraft.tagDataUpToDate;
             minecraft-tags-load = minecraft.tagsLoadForClient;

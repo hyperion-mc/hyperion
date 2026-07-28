@@ -59,7 +59,6 @@ import importlib.util
 import json
 import math
 import pathlib
-import re
 import struct
 import sys
 import time
@@ -86,7 +85,6 @@ mc_string = base.mc_string
 take_nbt_string = match.take_nbt_string
 BlockNames = world.BlockNames
 ROOT = TOOLS.parent
-ENTITY_TYPES = ROOT / "crates/hyperion-minecraft-proto/src/entity_type.rs"
 decode_chunk = world.decode_chunk
 decode_section_blocks_update = world.decode_section_blocks_update
 
@@ -177,18 +175,19 @@ FACE_UP = 1
 
 
 def entity_names():
-    """Registry id to entity name, from the generated table.
+    """Registry id to entity name, in network-id order.
 
     The same trick `smash-map-check.py` uses for blocks, and for the same
     reason: the numbering is Mojang's and restating it here would be a copy
-    that is wrong the next time the jar moves. Reading the table the server
-    encodes from is what makes "that is a creeper" a check rather than a hope.
+    that is wrong the next time the jar moves. Reading what the server encodes
+    from is what makes "that is a creeper" a check rather than a hope.
+
+    From `protocol.json` rather than by regex over the generated Rust. The
+    regex version matched `Self::new("...", n)`, which stopped existing the day
+    entity types became a plain enum, and would have failed here rather than
+    where the change was.
     """
-    pattern = re.compile(r'Self::new\("([^"]+)", (\d+)\)')
-    found = {int(number): name for name, number in pattern.findall(ENTITY_TYPES.read_text())}
-    if not found:
-        raise SystemExit("no entity types found in %s" % ENTITY_TYPES)
-    return found
+    return dict(enumerate(base.registry_entries("minecraft:entity_type")))
 
 
 def stamp(started):
