@@ -185,17 +185,19 @@ impl IntermediateServerToProxyMessage<'_> {
                     data: message.data,
                 },
             )),
-            Self::Unicast(message) => {
-                Some(ServerToProxyMessage::Unicast(hyperion_proxy_proto::Unicast {
+            Self::Unicast(message) => Some(ServerToProxyMessage::Unicast(
+                hyperion_proxy_proto::Unicast {
                     stream: filter_map_connection_id(message.stream)?,
                     data: message.data,
-                }))
+                },
+            )),
+            Self::SetReceiveBroadcasts(message) => {
+                Some(ServerToProxyMessage::SetReceiveBroadcasts(
+                    hyperion_proxy_proto::SetReceiveBroadcasts {
+                        stream: filter_map_connection_id(message.stream)?,
+                    },
+                ))
             }
-            Self::SetReceiveBroadcasts(message) => Some(
-                ServerToProxyMessage::SetReceiveBroadcasts(hyperion_proxy_proto::SetReceiveBroadcasts {
-                    stream: filter_map_connection_id(message.stream)?,
-                }),
-            ),
             Self::Shutdown(message) => Some(ServerToProxyMessage::SetReceiveBroadcasts(
                 hyperion_proxy_proto::SetReceiveBroadcasts {
                     stream: filter_map_connection_id(message.stream)?,
