@@ -338,7 +338,9 @@ let
         ${lib.optionalString needsGenMap seedGenMap}
 
         ${lib.concatStringsSep "\n" (
-          lib.mapAttrsToList (name: value: "export ${name}=${toString value}") serverEnv
+          lib.mapAttrsToList (
+            name: value: "export ${name}=${lib.escapeShellArg (toString value)}"
+          ) serverEnv
         )}
         export HYPERION_E2E_GAME_SERVER="${lib.getExe gameServer}"
         export HYPERION_E2E_PROXY="${lib.getExe proxy}"

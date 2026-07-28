@@ -63,10 +63,26 @@ pub enum NodeData {
 }
 
 /// One node of the command tree, held on the entity that owns it.
+///
+/// The gate is per node rather than per command because a command's
+/// subcommands are not all for the same people: `/perms get` is for everybody
+/// and `/perms set` is for administrators, and a tree that offered both to
+/// everybody is how ENG-10871 read from a client. It is a closure rather than a
+/// function pointer for the same reason -- the gate `hyperion-clap` builds
+/// captures which subcommand the node is.
 #[derive(Component)]
 pub struct Command {
     data: NodeData,
-    has_permission: fn(world: &World, caller: Entity) -> bool,
+    has_permission: HasPermission,
+}
+
+/// Whether one player may see and use one node of the tree.
+pub type HasPermission = std::sync::Arc<dyn Fn(&World, Entity) -> bool + Send + Sync>;
+
+/// A gate that lets everybody through, for a node that is not a command.
+#[must_use]
+pub fn open() -> HasPermission {
+    std::sync::Arc::new(|_: &World, _: Entity| true)
 }
 
 pub(crate) static ROOT_COMMAND: once_cell::sync::OnceCell<Entity> =
@@ -153,22 +169,25 @@ pub fn suggestions(world: &World, node: Entity) -> Vec<String> {
 }
 
 impl Command {
-    pub const ROOT: Self = Self {
-        data: NodeData::Root,
-        has_permission: |_: _, _: _| true,
-    };
+    /// The tree's root, which matches nothing and is never gated.
+    #[must_use]
+    pub fn root() -> Self {
+        Self {
+            data: NodeData::Root,
+            has_permission: open(),
+        }
+    }
 
     #[must_use]
-    pub fn literal(
-        name: impl Into<String>,
-        has_permission: fn(world: &World, caller: Entity) -> bool,
-    ) -> Self {
+    pub fn literal(name: impl Into<String>, has_permission: HasPermission) -> Self {
         Self {
             data: NodeData::Literal { name: name.into() },
             has_permission,
         }
     }
 
+    /// An argument node, which carries no gate of its own: what may be typed
+    /// after a literal is decided by the literal.
     #[must_use]
     pub fn argument(name: impl Into<String>, parser: Parser) -> Self {
         Self {
@@ -176,7 +195,7 @@ impl Command {
                 name: name.into(),
                 parser,
             },
-            has_permission: |_: _, _: _| true,
+            has_permission: open(),
         }
     }
 }
@@ -583,7 +602,7 @@ mod tests {
                 data: NodeData::Literal {
                     name: "test".to_owned(),
                 },
-                has_permission: |_: _, _: _| true,
+                has_permission: open(),
             })
             .child_of(root);
 
@@ -610,7 +629,7 @@ mod tests {
                 data: NodeData::Literal {
                     name: "parent".to_owned(),
                 },
-                has_permission: |_: _, _: _| true,
+                has_permission: open(),
             })
             .child_of(root);
 
@@ -620,7 +639,7 @@ mod tests {
                 data: NodeData::Literal {
                     name: "child".to_owned(),
                 },
-                has_permission: |_: _, _: _| true,
+                has_permission: open(),
             })
             .child_of(parent);
 
@@ -652,7 +671,7 @@ mod tests {
                     data: NodeData::Literal {
                         name: format!("command_{i}"),
                     },
-                    has_permission: |_: _, _: _| true,
+                    has_permission: open(),
                 })
                 .child_of(parent);
             parent = child;

@@ -410,7 +410,7 @@ def printable(payload, limit=180):
 
 
 class Client:
-    def __init__(self, host, port, name, log):
+    def __init__(self, host, port, name, log, uuid=None):
         self.sock = socket.create_connection((host, port))
         self.sock.settimeout(20)
         self.name = name
@@ -418,6 +418,11 @@ class Client:
         self.log = log
         self.entity_id = None
         self.joined = False
+        # The profile id to log in under, or None to let the server mint one.
+        # A launcher presents the id it holds for the account and this server
+        # takes it, so a client that needs a *stable* identity across runs --
+        # one named in `HYPERION_PERMISSIONS`, say -- names its own.
+        self.claimed_uuid = uuid
         # The profile id the server minted, as hex. Offline mode makes this the
         # only thing distinguishing two players who typed the same name, so a
         # test about duplicate names has to be able to read it.
@@ -488,8 +493,15 @@ class Client:
         return text
 
     def login(self):
-        self.log("-> Hello name=%s" % self.name)
-        self.send(C2S_HELLO, mc_string(self.name) + b"\x00" * 16)
+        # A zero id asks the server to mint one; anything else is the id this
+        # client claims, which an offline-mode server accepts as written.
+        claimed = (
+            bytes.fromhex(self.claimed_uuid.replace("-", ""))
+            if self.claimed_uuid
+            else b"\x00" * 16
+        )
+        self.log("-> Hello name=%s uuid=%s" % (self.name, self.claimed_uuid or "server's"))
+        self.send(C2S_HELLO, mc_string(self.name) + claimed)
 
         while True:
             packet_id, payload = self.recv()

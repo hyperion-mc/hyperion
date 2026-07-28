@@ -384,6 +384,35 @@
             bedwars-bow-e2e = 9000;
           };
 
+          # The accounts `smash-hud-e2e` runs its `Admin` commands as.
+          #
+          # `/serverload` is `Admin` and nothing lets a client give itself a
+          # group, so the three clients that need it are named to the server as
+          # configuration before it starts, exactly as an operator would name
+          # their own administrators (`hyperion_permission::seed`). The gate
+          # used to promote itself with `/perms set`, which worked only while
+          # that command was gated at `Normal`: ENG-10871.
+          #
+          # The ids and the configuration naming them come off one list,
+          # because a client logging in under an id nobody configured is not an
+          # administrator and nothing says so: the failure surfaces much later
+          # as `/serverload` doing nothing.
+          hudAdmins =
+            let
+              uuids = [
+                "0be9a1d4-5c00-4e6a-9d21-6a5a1e0000a1"
+                "0be9a1d4-5c00-4e6a-9d21-6a5a1e0000a2"
+                "0be9a1d4-5c00-4e6a-9d21-6a5a1e0000a3"
+              ];
+            in
+            {
+              env.HYPERION_PERMISSIONS = lib.concatMapStringsSep "," (uuid: "${uuid}=Admin") uuids;
+              clientArgs = lib.concatMap (uuid: [
+                "--admin-uuid"
+                uuid
+              ]) uuids;
+            };
+
           # The lobby `smash-e2e` runs against, which is deliberately not the
           # one the product ships.
           #
@@ -417,7 +446,9 @@
           exportsFor =
             env:
             lib.concatStringsSep "\n" (
-              lib.mapAttrsToList (name: value: "export ${name}=${toString value}") env
+              lib.mapAttrsToList (
+                name: value: "export ${name}=${lib.escapeShellArg (toString value)}"
+              ) env
             );
 
           # Two gates on one offset, as a build failure rather than as a race.
@@ -819,7 +850,8 @@
               ];
               text = ''
                 export HYPERION_EVENT=smash
-                export HYPERION_E2E_CLIENT=tools/hud-check.py
+                export HYPERION_E2E_CLIENT="tools/hud-check.py ${lib.escapeShellArgs hudAdmins.clientArgs}"
+                ${exportsFor hudAdmins.env}
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-hud-e2e)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-hud-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
@@ -1020,6 +1052,8 @@
               gameServer = gameBinaries.smash;
               proxy = gameBinaries.hyperion-proxy;
               client = "hud-check.py";
+              clientArgs = hudAdmins.clientArgs;
+              serverEnv = hudAdmins.env;
               timeout = 420;
             };
 
