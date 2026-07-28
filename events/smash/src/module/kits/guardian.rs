@@ -14,7 +14,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         damage::MatchClock,
         kit::{self, AbilitySpec, KitStats},
         player::{Player, Position},
@@ -62,6 +62,7 @@ impl Module for Guardian {
             description: "A shard that pulls, like a weaker hook on a shorter cooldown.",
             // `[VERIFIED]` "its low recharge time of 5 seconds".
             cooldown: 5.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: whirlpool_axe,
             ..AbilitySpec::DEFAULT
         })
@@ -72,6 +73,11 @@ impl Module for Guardian {
             description: "Bounce up, dragging everyone within five blocks with you.",
             // `[VERIFIED]` "Due to its cooldown of 12 seconds".
             cooldown: 12.0,
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: water_splash,
             ..AbilitySpec::DEFAULT
         })
@@ -83,6 +89,7 @@ impl Module for Guardian {
                           seconds.",
             cooldown: 15.0,
             requires_ground: true,
+            proves: &[Observable::BuffsMelee],
             activate: target_laser,
             ..AbilitySpec::DEFAULT
         })
@@ -92,6 +99,7 @@ impl Module for Guardian {
             slot: 8,
             description: "Everything in the water goes where the water goes.",
             cooldown: 20.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: tidal_wave,
             ..AbilitySpec::DEFAULT
         })

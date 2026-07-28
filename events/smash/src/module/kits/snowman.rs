@@ -11,7 +11,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Payload, fire},
     },
@@ -46,6 +46,7 @@ impl Module for Snowman {
             description: "Snowballs, endlessly. Low damage, good knockback, best at an edge.",
             cooldown: 0.4,
             energy_cost: Some(8.0),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: blizzard,
             ..AbilitySpec::DEFAULT
         })
@@ -55,6 +56,7 @@ impl Module for Snowman {
             slot: 2,
             description: "A path of ice wherever you point, and a hop so you do not fall through.",
             cooldown: 8.0,
+            proves: &[Observable::LaunchesCaster],
             activate: ice_path,
             ..AbilitySpec::DEFAULT
         })
@@ -65,6 +67,7 @@ impl Module for Snowman {
             description: "Snow around you. Slows them, and you hit a point harder on it.",
             cooldown: 2.0,
             energy_cost: Some(20.0),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: arctic_aura,
             ..AbilitySpec::DEFAULT
         })
@@ -74,6 +77,7 @@ impl Module for Snowman {
             slot: 8,
             description: "A snowman that shoots for you. Twenty seconds, three of them.",
             cooldown: 1.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: snow_turret,
             ..AbilitySpec::DEFAULT
         })
@@ -113,10 +117,26 @@ fn arctic_aura(cast: &Cast<'_>) {
     splash_at(cast, cast.position.0, 5.0, AURA_BONUS_DAMAGE, 0.2);
 }
 
+/// Six snowballs in a ring, the first one down the barrel.
+///
+/// The ring is turned to face the caster: it used to be laid out in absolute
+/// world directions, so the ultimate hit whatever happened to be east of the
+/// snowman and a target dead ahead was in the gap between two of the six unless
+/// the fight happened to be lined up with +X. Nobody would have noticed from the
+/// inside, because the ability does fire and does hit *something*.
 fn snow_turret(cast: &Cast<'_>) {
+    let flat = Vec3::new(cast.facing.0.x, 0.0, cast.facing.0.z).normalize_or_zero();
+    // Looking straight down leaves no bearing to build a ring on.
+    let forward = if flat == Vec3::ZERO { Vec3::Z } else { flat };
+
     for step in 0..6 {
         let angle = std::f32::consts::TAU * (step as f32) / 6.0;
-        let direction = Vec3::new(angle.cos(), 0.0, angle.sin());
+        let (sin, cos) = angle.sin_cos();
+        let direction = Vec3::new(
+            forward.x.mul_add(cos, -(forward.z * sin)),
+            0.0,
+            forward.x.mul_add(sin, forward.z * cos),
+        );
         fire(
             cast.world,
             cast.caster,

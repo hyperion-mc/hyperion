@@ -9,7 +9,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         kit::{self, AbilitySpec, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -39,6 +39,7 @@ impl Module for Zombie {
             slot: 1,
             description: "Spray bile. It lands where you point and hurts what it lands on.",
             cooldown: 7.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: bile_blaster,
             ..AbilitySpec::DEFAULT
         })
@@ -49,6 +50,7 @@ impl Module for Zombie {
             description: "An arrow that drags whoever it hits back to you.",
             cooldown: 9.0,
             charge_time: Some(1.0),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: deaths_grasp,
             ..AbilitySpec::DEFAULT
         })
@@ -58,6 +60,7 @@ impl Module for Zombie {
             slot: 8,
             description: "The dead get up around you.",
             cooldown: 20.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: night_of_the_living_dead,
             ..AbilitySpec::DEFAULT
         })

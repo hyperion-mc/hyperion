@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         damage::{DamageKind, Damaged, hurt},
         kit::{self, AbilitySpec, KitStats},
         knockback::Knockback,
@@ -53,6 +53,7 @@ impl Module for Blaze {
             description: "Spew flame. No knockback, and armour does not reduce it.",
             cooldown: 0.5,
             energy_cost: Some(12.0),
+            proves: &[Observable::HurtsTarget],
             activate: inferno,
             ..AbilitySpec::DEFAULT
         })
@@ -64,6 +65,11 @@ impl Module for Blaze {
                           cancels it.",
             cooldown: 9.0,
             charge_time: Some(1.5),
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: firefly,
             ..AbilitySpec::DEFAULT
         })
@@ -73,6 +79,11 @@ impl Module for Blaze {
             slot: 8,
             description: "Twenty seconds of Firefly with no charge and free flight.",
             cooldown: 1.0,
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: phoenix,
             ..AbilitySpec::DEFAULT
         })

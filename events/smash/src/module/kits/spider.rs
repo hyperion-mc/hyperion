@@ -14,7 +14,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash},
+        ability::{Cast, Observable, splash},
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Payload, fire},
     },
@@ -48,6 +48,7 @@ impl Module for Spider {
             description: "Spray six needles. They poison, which armour does not stop.",
             cooldown: 6.0,
             charge_time: Some(1.0),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: needler,
             ..AbilitySpec::DEFAULT
         })
@@ -57,6 +58,7 @@ impl Module for Spider {
             slot: 2,
             description: "Launch forward, trailing web. Mostly a way back onto the map.",
             cooldown: 8.0,
+            proves: &[Observable::LaunchesCaster],
             activate: spin_web,
             ..AbilitySpec::DEFAULT
         })
@@ -66,6 +68,7 @@ impl Module for Spider {
             slot: 8,
             description: "A dome of web. Everything you hit heals you.",
             cooldown: 1.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: spiders_nest,
             ..AbilitySpec::DEFAULT
         })

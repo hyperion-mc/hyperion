@@ -14,7 +14,7 @@ use flecs_ecs::prelude::*;
 use crate::{
     flecs_ext::EntityViewExt,
     module::{
-        ability::Cast,
+        ability::{Cast, Observable},
         damage::{DamageKind, Damaged, MeleeBonus},
         kit::{self, AbilitySpec, KitName, KitStats, Playing},
         player::Player,
@@ -62,6 +62,7 @@ impl Module for Wolf {
             slot: 1,
             description: "Throw a cub. Whoever it lands on can barely move for five seconds.",
             cooldown: 8.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: cub_tackle,
             ..AbilitySpec::DEFAULT
         })
@@ -71,6 +72,11 @@ impl Module for Wolf {
             slot: 2,
             description: "Launch at what you are looking at. Triple knockback on a tackled target.",
             cooldown: 7.0,
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: wolf_strike,
             ..AbilitySpec::DEFAULT
         })
@@ -80,6 +86,7 @@ impl Module for Wolf {
             slot: 8,
             description: "Twenty seconds of everything at once.",
             cooldown: 20.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: frenzy,
             ..AbilitySpec::DEFAULT
         })

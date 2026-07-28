@@ -59,6 +59,7 @@ impl Module for Wolf {
             item: "minecraft:iron_shovel",
             slot: 1,
             cooldown: 6.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: wolf_strike,
             ..AbilitySpec::DEFAULT
         })
@@ -70,6 +71,66 @@ impl Module for Wolf {
 then `world.import::<Wolf>()`. `tests/modularity.rs` proves the claim by
 defining a kit from outside the crate and asserting no file under `src/`
 mentions it.
+
+### An ability says what a player will see
+
+`proves` is the one field on [`AbilitySpec`](src/module/kit.rs) with no useful
+default. Everything else describes the ability; that field is the ability's own
+claim about what a client would observe, and it is what turns "adding a kit
+means adding data" into "adding a kit means saying what the data does".
+
+The vocabulary is deliberately short, and every variant names a packet, because
+an effect nothing on the far side of the seam can see is not a proof:
+
+| `Observable` | what has to reach a client |
+| --- | --- |
+| `HurtsTarget` | somebody in front of the caster loses health (`ClientboundSetHealth`) |
+| `LaunchesTarget` | somebody in front of the caster gains velocity (`ClientboundSetEntityMotion`) |
+| `LaunchesCaster` | the caster gains velocity |
+| `TeleportsCaster` | the caster is moved (`ClientboundPlayerPosition`) |
+| `HealsCaster` | the caster's own health bar goes up |
+| `BuffsMelee` | the caster's next melee swing takes off more than the last one did |
+
+Two further flags exist for abilities that legitimately break a shared rule.
+`requires_ground` gates activation on standing still, and `refunds_on_hit` says
+a landed hit clears the cooldown, which is Chicken Missile's whole selling point
+and would otherwise read as a broken cooldown.
+
+The declaration is exhaustive for movement, not a lower bound: an ability that
+launches somebody without saying so fails the gate as surely as one that says it
+launches and does not. That is where the quiet bugs turned out to live.
+
+### What reads the declaration
+
+Nothing hard-codes a kit. [`ability::manifest`](src/module/ability.rs) is a query
+over the ability entities themselves and is the single source of truth:
+
+```rust
+for entry in ability::manifest(&world) {
+    println!("{} / {} in slot {}: {:?}", entry.kit, entry.name, entry.slot, entry.proves);
+}
+```
+
+Three things consume it, and a kit added tomorrow is covered by all three
+without any of them being edited:
+
+- `tests/abilities.rs` fires every ability through the mock seam and holds it to
+  its declaration, refuses a declaration that is empty, refuses a movement it
+  did not declare, and checks every cooldown by asking for a second use.
+- `/abilities` publishes it as one JSON object per chat line, which is how it
+  crosses to a client at all.
+- `nix run .#smash-e2e` reads that and drives every entry with a real 776
+  client, in the hub, one client short of the lobby's minimum so nothing starts
+  a match underneath it.
+
+### The Smash Crystal
+
+An ultimate is declared with `.ultimate(..)` and is not granted at spawn.
+[`kit::grant_ultimate`](src/module/kit.rs) hands it out for a window, and
+`ability::GrantedFor` counts that window down and takes it back. What is missing
+is the pickup: nothing spawns a crystal in the arena for somebody to walk into,
+which is arena work. Until it exists, `/crystal` is the entry point to the same
+mechanic and is what the gate uses.
 
 ## Adding a map
 

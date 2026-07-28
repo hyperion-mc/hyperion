@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, charge_steps, splash},
+        ability::{Cast, Observable, charge_steps, splash},
         kit::{self, AbilitySpec, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -57,6 +57,7 @@ impl Module for Skeleton {
             // 1000 ms to the first arrow, 300 ms per arrow after: five arrows
             // is 2.2 seconds of standing still.
             charge_time: Some(2.2),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: barrage,
             ..AbilitySpec::DEFAULT
         })
@@ -66,6 +67,7 @@ impl Module for Skeleton {
             slot: 1,
             description: "Scatter your bones. Little damage, enormous knockback.",
             cooldown: 10.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: bone_explosion,
             ..AbilitySpec::DEFAULT
         })
@@ -75,6 +77,11 @@ impl Module for Skeleton {
             slot: 2,
             description: "Fire an arrow and be dragged after it. Your way back onto the map.",
             cooldown: 5.0,
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: roped_arrow,
             ..AbilitySpec::DEFAULT
         })
@@ -84,6 +91,7 @@ impl Module for Skeleton {
             slot: 8,
             description: "Fire without ever reloading.",
             cooldown: 8.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: arrow_storm,
             ..AbilitySpec::DEFAULT
         })

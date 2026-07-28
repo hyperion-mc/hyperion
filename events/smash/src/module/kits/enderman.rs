@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::Cast,
+        ability::{Cast, Observable},
         kit::{self, AbilitySpec, KitStats},
         player::Position,
         projectile::{Flight, Payload, fire},
@@ -53,6 +53,7 @@ impl Module for Enderman {
             description: "Pick up a block and hurl it. Charge it for the extra point.",
             cooldown: 2.0,
             charge_time: Some(1.2),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: block_toss,
             ..AbilitySpec::DEFAULT
         })
@@ -62,6 +63,7 @@ impl Module for Enderman {
             slot: 1,
             description: "Instantly cross sixteen blocks in the direction you are looking.",
             cooldown: 7.0,
+            proves: &[Observable::TeleportsCaster],
             activate: blink,
             ..AbilitySpec::DEFAULT
         })
@@ -72,6 +74,7 @@ impl Module for Enderman {
             description: "Charge, then go wherever you are looking. Getting hit cancels it.",
             cooldown: 5.0,
             charge_time: Some(1.0),
+            proves: &[Observable::TeleportsCaster],
             activate: long_teleport,
             ..AbilitySpec::DEFAULT
         })
@@ -81,6 +84,7 @@ impl Module for Enderman {
             slot: 8,
             description: "Ride a dragon through everyone.",
             cooldown: 30.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: dragon_rider,
             ..AbilitySpec::DEFAULT
         })

@@ -111,6 +111,7 @@ impl Module for ProjectileModule {
             .each_iter(|it, index, (flight, payload)| {
                 let dt = it.delta_time();
                 let projectile = it.entity(index);
+                let from = flight.position;
                 flight.velocity.y = flight.gravity.mul_add(-dt, flight.velocity.y);
                 flight.position += flight.velocity * dt;
                 flight.seconds_left -= dt;
@@ -121,9 +122,13 @@ impl Module for ProjectileModule {
                 }
 
                 let shooter = projectile.target(FiredBy, 0).map(|e| e.id());
-                let Some(victim) =
-                    nearest_target(projectile.world(), flight.position, flight.radius, shooter)
-                else {
+                let Some((victim, at)) = nearest_target(
+                    projectile.world(),
+                    from,
+                    flight.position,
+                    flight.radius,
+                    shooter,
+                ) else {
                     return;
                 };
 
@@ -132,7 +137,7 @@ impl Module for ProjectileModule {
                 hurt(victim, Damaged {
                     attacker: shooter,
                     amount: payload.damage,
-                    knockback: Knockback::from(flight.position).times(payload.knockback),
+                    knockback: Knockback::from(at).times(payload.knockback),
                     kind: DamageKind::Projectile,
                 });
 
@@ -141,23 +146,42 @@ impl Module for ProjectileModule {
                     projectile,
                     shooter: shooter.map(|s| world.entity_at(s)),
                     victim,
-                    at: flight.position,
+                    at,
                 });
 
-                world.get::<&ServerHandle>(|server| server.cue(flight.position, Cue::Hurt));
+                world.get::<&ServerHandle>(|server| server.cue(at, Cue::Hurt));
                 projectile.destruct();
             });
     }
 }
 
-/// Closest living player within `radius`, excluding the shooter.
+/// The point on the segment `from`..`to` nearest `point`.
+fn closest_on_segment(from: Vec3, to: Vec3, point: Vec3) -> Vec3 {
+    let along = to - from;
+    let length_squared = along.length_squared();
+    if length_squared <= f32::EPSILON {
+        return from;
+    }
+    from + along * ((point - from).dot(along) / length_squared).clamp(0.0, 1.0)
+}
+
+/// Closest living player within `radius` of the segment this tick swept,
+/// excluding the shooter, and the point on that segment where it connected.
+///
+/// A segment and not a point. Integration moves a projectile a whole tick's
+/// travel at once, and Barrage's arrows travel at 60 blocks per second, which
+/// at 20 ticks is three blocks a step against a hit radius of 0.4: sampling
+/// only the endpoint means seven eighths of the flight path is a hole a player
+/// can stand in. Every arrow ability in the game was decided by whether a
+/// victim happened to be standing on a sample point.
 fn nearest_target(
     world: WorldRef<'_>,
-    at: Vec3,
+    from: Vec3,
+    to: Vec3,
     radius: f32,
     exclude: Option<Entity>,
-) -> Option<Entity> {
-    let mut best: Option<(f32, Entity)> = None;
+) -> Option<(Entity, Vec3)> {
+    let mut best: Option<(f32, Entity, Vec3)> = None;
     world
         .query::<(&Position, &Health)>()
         .with(Player::id())
@@ -166,13 +190,14 @@ fn nearest_target(
             if health.is_dead() || Some(entity.id()) == exclude {
                 return;
             }
+            let at = closest_on_segment(from, to, position.0);
             let distance = position.0.distance(at);
             if distance > radius {
                 return;
             }
-            if best.is_none_or(|(closest, _)| distance < closest) {
-                best = Some((distance, entity.id()));
+            if best.is_none_or(|(closest, ..)| distance < closest) {
+                best = Some((distance, entity.id(), at));
             }
         });
-    best.map(|(_, entity)| entity)
+    best.map(|(_, entity, at)| (entity, at))
 }

@@ -12,7 +12,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash, splash_at},
+        ability::{Cast, Observable, splash, splash_at},
         kit::{self, AbilitySpec, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -48,6 +48,7 @@ impl Module for IronGolem {
             description: "Split the ground in a line, launching whoever it reaches.",
             cooldown: 8.0,
             requires_ground: true,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: fissure,
             ..AbilitySpec::DEFAULT
         })
@@ -57,6 +58,7 @@ impl Module for IronGolem {
             slot: 2,
             description: "Throw a hook. On a hit it drags them to you.",
             cooldown: 8.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: iron_hook,
             ..AbilitySpec::DEFAULT
         })
@@ -67,6 +69,7 @@ impl Module for IronGolem {
             description: "Leap, then land hard. Everything nearby goes flying.",
             cooldown: 7.0,
             requires_ground: true,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: seismic_slam,
             ..AbilitySpec::DEFAULT
         })
@@ -76,6 +79,7 @@ impl Module for IronGolem {
             slot: 8,
             description: "Shake the whole map. Anyone touching the ground pays.",
             cooldown: 16.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: earthquake,
             ..AbilitySpec::DEFAULT
         })
@@ -145,22 +149,42 @@ fn seismic_slam(cast: &Cast<'_>) {
 }
 
 /// Hits every grounded player on the map, wherever they are.
+///
+/// Each victim is hurt once, by id. Splashing at each of their positions in
+/// turn double-hit anyone standing near somebody else, which made the ultimate
+/// swing between three damage and twelve depending on how bunched up the arena
+/// happened to be.
 fn earthquake(cast: &Cast<'_>) {
-    use crate::module::player::OnGround;
+    use crate::module::{
+        damage::{DamageKind, Damaged, hurt},
+        knockback::Knockback,
+        player::{Health, OnGround, Player},
+    };
+
+    const DAMAGE: f32 = 3.0;
 
     let caster = cast.caster.id();
     let mut victims = Vec::new();
     cast.world
-        .query::<(&Position, &OnGround)>()
+        .query::<(&OnGround, &Health)>()
+        .with(Player::id())
         .build()
-        .each_entity(|entity, (position, ground)| {
-            if entity.id() != caster && ground.0 {
-                victims.push((entity.id(), position.0));
+        .each_entity(|entity, (ground, health)| {
+            if entity.id() != caster && ground.0 && !health.is_dead() {
+                victims.push(entity.id());
             }
         });
 
-    for (victim, at) in victims {
-        splash_at(cast, at, 2.0, 3.0, 1.0);
-        let _ = victim;
+    for victim in victims {
+        hurt(cast.world.entity_from_id(victim), Damaged {
+            attacker: Some(caster),
+            amount: DAMAGE,
+            // Away from the golem. A shockwave centred on each victim in turn
+            // is what the previous version computed, and knockback away from
+            // the point you are standing on normalises to nothing.
+            knockback: Knockback::from(cast.position.0),
+            kind: DamageKind::Ability,
+        });
     }
+    cast.server.cue(cast.position.0, Cue::Explosion);
 }

@@ -152,6 +152,14 @@ pub fn resolve(
     if away == Vec3::ZERO {
         return Vec3::ZERO;
     }
+    // `speed_base` and `ground_boost` are floors under a launch, not a launch of
+    // their own. Without this a hit that asked for no knockback at all still
+    // moved the victim 0.2 blocks a tick sideways and 0.2 up, which is most of
+    // a jump: Blaze's Inferno is documented as having none and was quietly
+    // repositioning everyone it touched.
+    if strength <= 0.0 {
+        return Vec3::ZERO;
+    }
 
     let trajectory_length = model.trajectory_scale * strength;
     let speed = model
