@@ -592,7 +592,6 @@ fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
 mod charge {
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use flecs_ecs::prelude::*;
     use glam::Vec3;
     use smash::module::{
         ability::{self, Cast, Observable},
