@@ -77,6 +77,7 @@ def _load(filename, name):
 
 world = _load("smash-map-check.py", "smash_map_check")
 match = _load("smash-match.py", "smash_match")
+monitor = _load("packet_monitor.py", "packet_monitor")
 base = world.base
 
 var_int = base.var_int
@@ -116,16 +117,7 @@ S2C_GAME_EVENT = 0x26
 # `ReceivingLevelScreen` down. See the module docstring.
 LEVEL_CHUNKS_LOAD_START = 13
 
-# `PlayerInfoActions`, the same bit order as
-# `ClientboundPlayerInfoUpdatePacket.Action`.
-ADD_PLAYER = 1 << 0
-INITIALIZE_CHAT = 1 << 1
-UPDATE_GAME_MODE = 1 << 2
-UPDATE_LISTED = 1 << 3
-UPDATE_LATENCY = 1 << 4
-UPDATE_DISPLAY_NAME = 1 << 5
-UPDATE_LIST_ORDER = 1 << 6
-UPDATE_HAT = 1 << 7
+# `PlayerInfoActions` bit names live in packet_monitor.
 
 # `net.minecraft.world.entity.Entity`'s field indices, from
 # crates/hyperion/src/simulation/metadata/entity.rs, and the serializer ids
@@ -217,61 +209,10 @@ def skin_payload(kit):
     return value.read_text().strip(), signature.read_text().strip()
 
 
-def take_optional_string(payload, offset):
-    present = payload[offset]
-    offset += 1
-    if not present:
-        return None, offset
-    return base.take_string(payload, offset)
-
-
-def parse_player_info_update(payload):
-    """Every entry in one `PlayerInfoUpdate`, as far as the actions describe.
-
-    Nothing in the body says how long an entry is, so a reader that stops
-    understanding a field loses the rest of the packet. Raising rather than
-    returning what was read so far is deliberate: a half-read packet is a
-    disagreement about the wire format, not a shorter list of players.
-    """
-    actions = payload[0]
-    count, offset = take_var_int(payload, 1)
-    entries = []
-    for _ in range(count):
-        entry = {"uuid": payload[offset : offset + 16].hex(), "properties": {}}
-        offset += 16
-        if actions & ADD_PLAYER:
-            entry["name"], offset = base.take_string(payload, offset)
-            properties, offset = take_var_int(payload, offset)
-            for _ in range(properties):
-                name, offset = base.take_string(payload, offset)
-                value, offset = base.take_string(payload, offset)
-                signature, offset = take_optional_string(payload, offset)
-                entry["properties"][name] = (value, signature)
-        if actions & INITIALIZE_CHAT:
-            raise ValueError("this server does not sign chat, so it cannot send a session")
-        if actions & UPDATE_GAME_MODE:
-            entry["game_mode"], offset = take_var_int(payload, offset)
-        if actions & UPDATE_LISTED:
-            entry["listed"] = bool(payload[offset])
-            offset += 1
-        if actions & UPDATE_LATENCY:
-            _, offset = take_var_int(payload, offset)
-        if actions & UPDATE_DISPLAY_NAME:
-            present = payload[offset]
-            offset += 1
-            if present:
-                raise ValueError("PlayerInfoUpdate carried a display name")
-        if actions & UPDATE_LIST_ORDER:
-            _, offset = take_var_int(payload, offset)
-        if actions & UPDATE_HAT:
-            offset += 1
-        entries.append(entry)
-    if offset != len(payload):
-        raise ValueError(
-            "PlayerInfoUpdate has %d trailing byte(s); the action set and this "
-            "reader disagree" % (len(payload) - offset)
-        )
-    return actions, entries
+# One `PlayerInfoUpdate` decoder for the whole tools directory; the copy
+# that used to live here drifted from identity-check's. Both import the
+# one in `packet_monitor.py` now.
+parse_player_info_update = monitor.parse_player_info_update
 
 
 def decode_entity_metadata(payload):
