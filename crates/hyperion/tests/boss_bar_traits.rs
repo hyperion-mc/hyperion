@@ -25,7 +25,9 @@ fn core() -> World {
 fn boss_bar_edges_are_declared_relationships() {
     let world = core();
     assert!(
-        world.component::<ShownTo>().has(id::<flecs::Relationship>()),
+        world
+            .component::<ShownTo>()
+            .has(id::<flecs::Relationship>()),
         "ShownTo lost its `flecs::Relationship` trait"
     );
     assert!(
