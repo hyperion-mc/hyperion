@@ -235,6 +235,59 @@ into a five-second one.
 
 ---
 
+## Papercut: pair *data* keyed on a runtime entity has no typed getter
+
+`egress::boss_bar` keeps what each viewer was last told as the data on
+`(Sent, viewer)`, where `viewer` is only known at runtime. Writing it is fine —
+`EntityView::set_first(value, second)` takes the second half as an
+`impl IntoEntity`. Reading one back is where the API stops:
+
+* `EntityViewGet::try_get::<T>` goes through `GetTuple`, which needs *both*
+  halves of a pair at compile time. `try_get::<&(Sent, Wildcard)>` returns the
+  first match and cannot say which target it came from.
+* `get_first_untyped::<First>(second)` returns `*const c_void` and leaves the
+  cast, and the question of when the pointer dies, to the caller.
+
+The way out is a query rather than an entity lookup: a `&mut (Sent, Wildcard)`
+term produces **one result per matching target**, and `TableIter::pair(index)`
+names which one.
+
+```rust
+let shown = world
+    .query::<(&Title, &mut (Sent, flecs::Wildcard))>()
+    .with(id::<BossBar>())
+    .build();
+
+shown.each_iter(|it, row, (title, sent)| {
+    let bar = it.entity(row);
+    let viewer = it.pair(1).second_id().id();
+    // ...
+});
+```
+
+Two things about that are worth writing down because neither is obvious and
+both are silent when wrong.
+
+**One result per target, not one per entity.** Nothing else in this repo
+iterates a wildcard pair for its *data*, and the failure mode if it went the
+other way is that the second viewer of a shared bar silently never updates. It
+is pinned as
+`egress::boss_bar::tests::a_wildcard_pair_term_visits_every_target_not_just_the_first`
+rather than assumed.
+
+**`it.pair(i)` returns a temporary.** `IdView::second_id` borrows from it, so
+`let viewer = it.pair(1).second_id();` is a borrow of something dropped at the
+end of the statement. Take the id and re-view it —
+`world.entity_from_id(it.pair(1).second_id().id())` — which is what the
+compiler's own suggestion amounts to.
+
+**Proposed upstream.** A `try_get_first::<First, R>(second, f)` on `EntityView`,
+mirroring `set_first`, would close this: the closure bound is already how every
+other typed read in the crate manages the borrow, and the pair id is already
+built by `get_first_untyped`.
+
+---
+
 ## Documentation hazard: `flecs_ecs/tests/docs/**` is never compiled
 
 `tests/docs/main.rs` declares only `pub mod common_test;`. Every other file in
@@ -331,5 +384,6 @@ and the diff to upstream stays legible.
 Ready to send upstream, in priority order: the `OUT_DIR` fix (bug 1, correctness
 and affects everyone), the `emit` assertion or default (bug 2, silent
 misbehaviour), the `self`-by-value constructors (bug 3, mechanical and
-source-compatible), the `each_target` lifetime (bug 4), the const-assert
-messages (papercut), and the dead `tests/docs` directory.
+source-compatible), the `each_target` lifetime (bug 4), `try_get_first` for
+runtime-keyed pair data (papercut), the const-assert messages (papercut), and
+the dead `tests/docs` directory.

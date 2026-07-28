@@ -14,14 +14,16 @@
 //! noise an ability makes is part of what the ability *is* and belongs with the
 //! kit that declares it; all that is left here is the encoding.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::{Arc, Mutex},
+};
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion::{
-    egress::player_join::roster,
+    egress::{boss_bar, player_join::roster},
     hyperion_minecraft_proto::{
-        Uuid,
         generated::packet_id::play::clientbound::PacketId,
         packets::play::{
             chunk::{LevelParticles, Particle},
@@ -30,9 +32,8 @@ use hyperion::{
                 SetTitleText, SetTitlesAnimation,
             },
             player::{
-                BossBarColor, BossBarOverlay, BossBarProperties, BossEvent, BossEventOperation,
-                DisplaySlot, NumberFormat, ObjectiveDisplay, ObjectiveRenderType, SetObjective,
-                SetScore,
+                BossBarColor, BossBarOverlay, DisplaySlot, NumberFormat, ObjectiveDisplay,
+                ObjectiveRenderType, SetObjective, SetScore,
             },
         },
     },
@@ -263,6 +264,7 @@ impl Module for SmashAdapterModule {
         world.import::<crate::SmashModule>();
 
         world.component::<OpQueue>().add_trait::<flecs::Singleton>();
+        world.component::<HudBar>();
 
         let ops = Arc::new(Mutex::new(Vec::new()));
         world.set(OpQueue(Arc::clone(&ops)));
@@ -314,14 +316,31 @@ impl Module for SmashAdapterModule {
                 let world = it.world();
                 let drained =
                     std::mem::take(&mut *queue.0.lock().expect("server op queue poisoned"));
+                // Every player's bar, resolved before any op is applied.
+                //
+                // `world.entity()` hands back its id at once but the
+                // `set(HudBar)` that records it is deferred to the merge, so
+                // two `SetBossBar` ops for one player in one drain would each
+                // see no bar and mint one. Resolving them up front, in one
+                // map, is what makes a second bar impossible rather than
+                // merely unlikely.
+                let mut bars = HashMap::new();
+                for op in &drained {
+                    if let Op::SetBossBar { player, .. } = op
+                        && let Entry::Vacant(slot) = bars.entry(*player)
+                        && let Some(bar) = hud_bar(world, *player)
+                    {
+                        slot.insert(bar);
+                    }
+                }
                 for op in drained {
-                    apply(world, compose, op);
+                    apply(world, compose, op, &bars);
                 }
             });
     }
 }
 
-fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
+fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, Entity>) {
     match op {
         Op::AddVelocity { player, delta } => {
             let entity = world.entity_from_id(player);
@@ -475,10 +494,19 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             );
         }
         Op::SetBossBar { player, bar } => {
-            let Some(connection) = connection_of(world, player) else {
+            let Some(entity) = bars.get(&player) else {
                 return;
             };
-            boss_bar(compose, connection, bar_id(player), &bar);
+            world
+                .entity_from_id(*entity)
+                .set(boss_bar::Title(bar.title))
+                .set(boss_bar::Progress(bar.progress))
+                .set(boss_bar::Style {
+                    colour: colour(bar.colour),
+                    // No notches: the quantity under this bar is health and a
+                    // percentage, and neither of them comes in six pieces.
+                    overlay: BossBarOverlay::Progress,
+                });
         }
         Op::ShowTitle { player, title } => {
             let Some(connection) = connection_of(world, player) else {
@@ -499,45 +527,45 @@ fn connection_of(world: WorldRef<'_>, player: Entity) -> Option<ConnectionId> {
     entity.try_get::<&ConnectionId>(|id| *id)
 }
 
-/// The high half of every boss bar id this game invents.
+/// Which boss bar entity is this player's, making it if they have none.
 ///
-/// A bar is addressed by a UUID the *server* chooses and reuses across every
-/// update to it, so the id has to be stable for a player and distinct between
-/// them. The player's own entity id is both, so it is the low half and this is
-/// a namespace that keeps those ids away from any other bar a host might run.
-const BAR_NAMESPACE: u128 = 0x736d_6173_685f_6261_7200_0000_0000_0000;
-
-fn bar_id(player: Entity) -> Uuid {
-    Uuid(BAR_NAMESPACE | u128::from(player.0))
+/// The bar this game draws is per player -- it carries a percentage that is
+/// only true of the person reading it -- so its audience is one edge,
+/// `(ShownTo, player)`. Everything after that is `egress::boss_bar`'s: the
+/// `Add` on the first push, one operation per field that moves after it, and
+/// the `Remove` when the player leaves.
+///
+/// A child of the player, so it dies with them under flecs's own
+/// `(ChildOf, OnDeleteTarget, Delete)`. Without that the bar entity would
+/// outlive its only viewer with an empty audience forever, which on a server
+/// nobody restarts is a leak measured in players seen.
+///
+/// No fog, no darkened sky and no boss music, which is the default `Effects`:
+/// each of them changes how the arena looks or sounds, and this bar is a
+/// readout rather than an event.
+fn hud_bar(world: WorldRef<'_>, player: Entity) -> Option<Entity> {
+    let player = world.entity_from_id(player);
+    if !player.is_alive() {
+        return None;
+    }
+    if let Some(bar) = player.try_get::<&HudBar>(|bar| bar.0)
+        && world.entity_from_id(bar).is_alive()
+    {
+        return Some(bar);
+    }
+    let bar = world
+        .entity()
+        .child_of(player)
+        .add(id::<boss_bar::BossBar>())
+        .add((id::<boss_bar::ShownTo>(), player))
+        .id();
+    player.set(HudBar(bar));
+    Some(bar)
 }
 
-/// Push one player's boss bar.
-///
-/// `Add` every time rather than `Add` once and `UpdateProgress` after, which
-/// would need this file to remember which players already have a bar. It does
-/// not need to: the client's `BossHealthOverlay.add` is a `put` into a
-/// `LinkedHashMap` keyed on the id, so a second `Add` under the same id
-/// replaces the bar in place and keeps its slot on screen. What is lost is the
-/// client-side lerp between two progress values, and that is not wanted here:
-/// the number on this bar is a percentage that steps when somebody is hit, and
-/// sliding it smoothly would be an animation of something that did not happen
-/// smoothly.
-fn boss_bar(compose: &Compose, to: ConnectionId, id: Uuid, bar: &BossBar) {
-    let packet = BossEvent {
-        id,
-        operation: BossEventOperation::Add {
-            name: bar.title.clone(),
-            progress: bar.progress.clamp(0.0, 1.0),
-            color: colour(bar.colour),
-            overlay: BossBarOverlay::Progress,
-            // No fog, no darkened sky and no boss music. Every one of them is
-            // a change to how the arena looks or sounds, and this bar is a
-            // readout rather than an event.
-            properties: BossBarProperties::NONE,
-        },
-    };
-    let _unused = compose.unicast(Clientbound::new(PacketId::BossEvent.to_raw(), &packet), to);
-}
+/// The boss bar entity a player's HUD writes to.
+#[derive(Component, Debug, Copy, Clone)]
+struct HudBar(Entity);
 
 const fn colour(colour: BarColour) -> BossBarColor {
     match colour {

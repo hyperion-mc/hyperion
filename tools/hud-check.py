@@ -56,10 +56,26 @@ S2C_SET_EXPERIENCE = 0x67
 S2C_SET_SUBTITLE_TEXT = 0x70
 S2C_SET_TITLES_ANIMATION = 0x73
 
-# `BossEventOperation::type_id`.
+# `BossEventOperation::type_id`, in ordinal order.
 BOSS_ADD = 0
+BOSS_OPERATIONS = [
+    "add",
+    "remove",
+    "update_progress",
+    "update_name",
+    "update_style",
+    "update_properties",
+]
 # `BossBarColor`, as ordinals.
 BOSS_COLOURS = ["pink", "blue", "red", "green", "yellow", "purple", "white"]
+
+# `egress::server_load`. Both labels carry the reading and the ceiling it is
+# drawn against, which is what makes "the fill is the quotient of the two
+# numbers in the label" a thing this file can check rather than a claim.
+CPU_LABEL = re.compile(r"CPU (\d+)% of (\d+)%")
+MEMORY_LABEL = re.compile(r"MEM (\d+\.\d+) GiB of (\d+\.\d+) GiB")
+# `egress::server_load::STEPS`, which is also `hud.rs`'s `METER_STEPS`.
+LOAD_STEPS = 64.0
 
 # A kit's abilities take the hotbar slots in the order it declares them, so for
 # the Iron Golem slot 2 is Seismic Slam at seven seconds, slot 1 is Iron Hook at
@@ -91,7 +107,19 @@ class Screen(match.MatchClient):
         # Every experience bar, boss bar and title in the order they arrived, so
         # a check can ask about the last one or about the whole sequence.
         self.experience = []
+        # What each bar looks like right now, keyed on its id. The client's own
+        # `BossHealthOverlay` is exactly this map, so this is the client, and
+        # every check about what a player can *see* reads it rather than
+        # reading packets.
+        self.bar_state = {}
+        # One entry per resulting state, in order, so a check written against
+        # the old `Add`-every-time server still asks the same question.
         self.bars = []
+        # One entry per packet: `(id, operation, fields that actually moved)`.
+        # This is the other half, and the only place "an update sends only the
+        # update" is visible at all: the states above come out identical
+        # whether the server resent the whole bar or moved one field.
+        self.bar_ops = []
         self.titles = []
         self.subtitles = []
         self.animations = []
@@ -130,13 +158,7 @@ class Screen(match.MatchClient):
             self.experience.append({"progress": progress, "level": level, "total": total})
             self.log("<- experience bar %.4f full, level %d" % (progress, level))
         elif packet_id == S2C_BOSS_EVENT:
-            bar = decode_boss_event(payload)
-            if bar is not None:
-                self.bars.append(bar)
-                self.log(
-                    "<- boss bar %r %.3f full, %s"
-                    % (bar["title"], bar["progress"], bar["colour"])
-                )
+            self.absorb_boss_event(payload)
         elif packet_id == match.S2C_SET_TITLE_TEXT:
             text, _ = match.take_nbt_string(payload, 0)
             self.titles.append(text)
@@ -155,6 +177,45 @@ class Screen(match.MatchClient):
             fade_in, stay, fade_out = struct.unpack(">iii", payload[:12])
             self.animations.append((fade_in, stay, fade_out))
             self.screen.append(("times", (fade_in, stay, fade_out)))
+
+    def absorb_boss_event(self, payload):
+        """Apply one boss bar operation to this client's own picture of it."""
+        uuid, operation, fields = decode_boss_event(payload)
+        before = self.bar_state.get(uuid)
+        self.bar_ops.append(
+            (uuid, operation, moved_fields(before, fields), before is not None)
+        )
+        if operation == "remove":
+            self.bar_state.pop(uuid, None)
+            self.log("<- boss bar %s removed" % uuid[:8])
+            return
+        if operation == "add":
+            self.bar_state[uuid] = dict(fields, uuid=uuid)
+        elif uuid in self.bar_state:
+            self.bar_state[uuid].update(fields)
+        else:
+            # An update for a bar this client was never given. The server is
+            # not allowed to do that, and saying so here beats silently
+            # inventing a bar to hang the field on.
+            self.log("<- boss bar %s %s with no Add before it" % (uuid[:8], operation))
+            return
+        bar = dict(self.bar_state[uuid])
+        bar["colour"] = colour_name(bar["colour"])
+        self.bars.append(bar)
+        self.log(
+            "<- boss bar %s %r %.3f full, %s"
+            % (operation, bar["title"], bar["progress"], bar["colour"])
+        )
+
+    def ops_for(self, uuid):
+        """Every operation this client was sent for one bar, in order."""
+        return [name for bar, name, _, _ in self.bar_ops if bar == uuid]
+
+    def bars_titled(self, pattern):
+        """Every id this client holds whose current title matches."""
+        return [
+            uuid for uuid, bar in self.bar_state.items() if pattern.match(bar["title"])
+        ]
 
     def absorb_slot(self, payload):
         """Only enough of `ContainerSetSlot` to know the hotbar has arrived."""
@@ -185,29 +246,69 @@ class Screen(match.MatchClient):
 
 
 def decode_boss_event(payload):
-    """One `ClientboundBossEventPacket`, or `None` for an operation this does
-    not read.
+    """One `ClientboundBossEventPacket`: which bar, which operation, and the
+    fields that operation carries.
 
-    Only `Add` is decoded, because it is the only one the server sends: see the
-    note on `adapter::boss_bar` for why every update is a fresh `Add`.
+    Every operation, not only `Add`. `egress::boss_bar` sends one packet per
+    field that actually moved, so a decoder that read `Add` and returned `None`
+    for the rest -- which is what this was, when the server only ever sent
+    `Add` -- would not fail against the new server. It would report that no
+    boss bar ever arrived, which is a silent pass, and it is why the model
+    below exists rather than a list of `Add`s.
     """
+    uuid = payload[:16].hex()
     operation, offset = take_var_int(payload, 16)
-    if operation != BOSS_ADD:
-        return None
-    title, offset = match.take_nbt_string(payload, offset)
-    (progress,) = struct.unpack_from(">f", payload, offset)
-    offset += 4
-    colour, offset = take_var_int(payload, offset)
-    overlay, offset = take_var_int(payload, offset)
-    flags = payload[offset]
-    return {
-        "uuid": payload[:16].hex(),
-        "title": title,
-        "progress": progress,
-        "colour": BOSS_COLOURS[colour] if colour < len(BOSS_COLOURS) else colour,
-        "overlay": overlay,
-        "flags": flags,
-    }
+    name = BOSS_OPERATIONS[operation] if operation < len(BOSS_OPERATIONS) else operation
+    fields = {}
+    if operation == BOSS_ADD:
+        fields["title"], offset = match.take_nbt_string(payload, offset)
+        (fields["progress"],) = struct.unpack_from(">f", payload, offset)
+        offset += 4
+        colour, offset = take_var_int(payload, offset)
+        fields["colour"] = colour
+        fields["overlay"], offset = take_var_int(payload, offset)
+        fields["flags"] = payload[offset]
+    elif name == "update_progress":
+        (fields["progress"],) = struct.unpack_from(">f", payload, offset)
+    elif name == "update_name":
+        fields["title"], offset = match.take_nbt_string(payload, offset)
+    elif name == "update_style":
+        fields["colour"], offset = take_var_int(payload, offset)
+        fields["overlay"], offset = take_var_int(payload, offset)
+    elif name == "update_properties":
+        fields["flags"] = payload[offset]
+    return uuid, name, fields
+
+
+def colour_name(ordinal):
+    return BOSS_COLOURS[ordinal] if ordinal < len(BOSS_COLOURS) else ordinal
+
+
+# A bar has four fields, and the protocol has one operation for each. Colour
+# and overlay are one field and not two: `UpdateStyle` carries both and there
+# is no operation that carries either alone, so "only the changed field" can
+# only ever mean "only the changed *pair*" for those.
+BOSS_FIELDS = {
+    "title": ("title",),
+    "progress": ("progress",),
+    "style": ("colour", "overlay"),
+    "flags": ("flags",),
+}
+
+
+def moved_fields(before, fields):
+    """Which of a bar's four fields this packet actually changed.
+
+    `None` for a bar the client did not have, where every field it carries is
+    new by definition.
+    """
+    if before is None:
+        return set(BOSS_FIELDS)
+    moved = set()
+    for name, keys in BOSS_FIELDS.items():
+        if any(key in fields and fields[key] != before[key] for key in keys):
+            moved.add(name)
+    return moved
 
 
 class Run:
@@ -284,9 +385,22 @@ class Run:
         )
         lobby = [bar for bar in client.bars if "Waiting for players" in bar["title"]]
         if lobby:
+            # The denominator is `LobbyConfig::min_players`, read off the bar
+            # rather than written down here. It was written down here, as the
+            # literal `1/4`, and hyperion#1019 moved that constant to two and
+            # left this line asserting a number the server had stopped saying.
+            # A gate that restates a server constant is a second place to
+            # change it and the first one to be forgotten.
+            counted = re.search(r"(\d+)/(\d+)$", lobby[0]["title"])
+            needed = int(counted.group(2)) if counted else 0
             self.check(
-                lobby[0]["colour"] == "blue" and lobby[0]["title"].endswith("1/4"),
-                "and it counts how many more it needs: %s" % lobby[0],
+                lobby[0]["colour"] == "blue"
+                and counted is not None
+                and int(counted.group(1)) == 1
+                and needed >= 2
+                and math.isclose(lobby[0]["progress"], 1.0 / needed, abs_tol=STEP),
+                "and it counts how many more it needs, with the bar under it "
+                "drawing the same fraction: %s" % lobby[0],
             )
 
         client.command("kit %s" % KIT)
@@ -529,6 +643,304 @@ class Run:
                 % fresh["flags"],
             )
 
+    # --- the server's own load ------------------------------------------
+
+    def load_check(self):
+        """The two bars carrying the host process's CPU and memory.
+
+        Also the three lifecycle claims the boss bar API rests on, because
+        these are the only bars in the game with an audience of more than one
+        person: a second viewer joining an already-running bar gets the *same*
+        id the first one holds, and a viewer leaving the audience gets a
+        `Remove` for it. A per-player bar can demonstrate neither.
+        """
+        admin = self.clients[0]
+        second = self.clients[1]
+
+        # `/serverload` is Admin, and there is no other way for a test client
+        # to reach an Admin command: no config default, no env override, and
+        # `PermissionStorage` starts empty and is keyed on UUID. So this gate
+        # promotes its own clients, which works only because `/perms` is itself
+        # gated at Normal. That is a real privilege escalation, filed as
+        # ENG-10871, and closing it has to land a way to seed a group at
+        # startup or this check goes with it.
+        for client in (admin, second):
+            # `Group` is a clap `ValueEnum`, so its variants are lower case.
+            admin.command("perms set %s admin" % client.name)
+        self.pump(1.0)
+
+        admin.bar_ops.clear()
+        admin.command("serverload")
+        shown = self.until(
+            lambda: len(admin.bars_titled(CPU_LABEL)) == 1
+            and len(admin.bars_titled(MEMORY_LABEL)) == 1,
+            20.0,
+            "the load bars, with a reading on each",
+        )
+        if not self.check(
+            shown,
+            "/serverload puts the host's CPU and memory on two boss bars: %s"
+            % [bar["title"] for bar in admin.bar_state.values()],
+        ):
+            return
+        cpu = admin.bars_titled(CPU_LABEL)[0]
+        memory = admin.bars_titled(MEMORY_LABEL)[0]
+
+        # The reading is what `top` would say and the ceiling is the machine.
+        used, ceiling = (int(value) for value in CPU_LABEL.match(admin.bar_state[cpu]["title"]).groups())
+        self.check(
+            ceiling > 100,
+            "the CPU label is unnormalised, so its ceiling is every core and "
+            "not one: %s" % admin.bar_state[cpu]["title"],
+        )
+        self.check(
+            0.0 <= admin.bar_state[cpu]["progress"] <= 1.0,
+            "and the fill stays a fraction however far past a core the "
+            "reading goes: %.4f" % admin.bar_state[cpu]["progress"],
+        )
+        # The property the whole choice of ceiling is defensible under. A
+        # ceiling nobody printed cannot satisfy it and neither can an invented
+        # one, because both numbers are read off the bar's own label here.
+        self.check(
+            abs(admin.bar_state[cpu]["progress"] - used / ceiling) <= 1.0 / LOAD_STEPS,
+            "the CPU fill is the quotient of the two numbers in its own "
+            "label: %.4f against %d/%d" % (admin.bar_state[cpu]["progress"], used, ceiling),
+        )
+        resident, total = (
+            float(value) for value in MEMORY_LABEL.match(admin.bar_state[memory]["title"]).groups()
+        )
+        self.check(
+            0.0 < resident < total and 0.0 <= admin.bar_state[memory]["progress"] <= 1.0,
+            "the memory bar is this process's resident set against the "
+            "machine's: %s" % admin.bar_state[memory]["title"],
+        )
+        self.check(
+            abs(admin.bar_state[memory]["progress"] - resident / total) <= 1.0 / LOAD_STEPS,
+            "and its fill is the quotient of its own two numbers too: %.4f "
+            "against %.2f/%.1f" % (admin.bar_state[memory]["progress"], resident, total),
+        )
+
+        # An update sends only the update. The CPU label is rewritten every
+        # second while its fill, quantised against every core the machine has,
+        # usually does not move at all, so a label-only second is an
+        # `UpdateName` on its own and nothing else. The colour and the effects
+        # never move, and after the `Add` that carried them they are never on
+        # the wire again.
+        self.until(
+            lambda: admin.ops_for(cpu).count("update_name") >= 3, 20.0, "three CPU readings"
+        )
+        for name, uuid in (("CPU", cpu), ("memory", memory)):
+            operations = admin.ops_for(uuid)
+            self.check(
+                operations[:1] == ["add"],
+                "the %s bar arrives as one packet carrying the whole bar: %s"
+                % (name, operations[:3]),
+            )
+            self.check(
+                "update_style" not in operations
+                and "update_properties" not in operations,
+                "and its colour and effects, which never move, are never on "
+                "the wire again after it: %s" % operations,
+            )
+        self.check(
+            admin.ops_for(cpu).count("update_name") >= 2,
+            "a new CPU reading that moves only the label costs one packet "
+            "carrying only the label: %s" % admin.ops_for(cpu),
+        )
+        # And the memory bar, whose reading did not move far enough to change
+        # either the two decimals on its label or a sixty-fourth of the
+        # machine, says nothing at all. There is no assertion on how many
+        # packets that is, because it depends on how much memory the box has:
+        # what is checked is that whatever it sent obeyed the rule, which
+        # `diff_check` does over every packet of the whole run.
+        self.log(
+            "the memory bar sent %d packet(s) against the CPU bar's %d"
+            % (len(admin.ops_for(memory)), len(admin.ops_for(cpu)))
+        )
+
+        # A viewer who joins an audience that already exists is told about the
+        # bars under the ids everybody else already holds. This is the whole
+        # reason the sent state is `(Sent, viewer)` pair data: the second
+        # viewer has none, so the next tick sends them `Add`, and there is no
+        # join handler anywhere.
+        second.bar_ops.clear()
+        second.command("serverload")
+        joined = self.until(
+            lambda: cpu in second.bar_state and memory in second.bar_state,
+            20.0,
+            "the second viewer to be given the running bars",
+        )
+        self.check(
+            joined,
+            "a viewer joining a running bar's audience is sent it under the "
+            "same id the others hold: %s" % sorted(second.bar_state),
+        )
+        if joined:
+            self.check(
+                second.ops_for(cpu)[0] == "add" and second.ops_for(memory)[0] == "add",
+                "as an Add and not as an update to a bar they never had: %s"
+                % [second.ops_for(cpu)[:2], second.ops_for(memory)[:2]],
+            )
+
+        # And leaving that audience takes them away, which is the same
+        # `(Sent, viewer)` pair going away as a viewer disconnecting.
+        second.bar_ops.clear()
+        second.command("serverload")
+        gone = self.until(
+            lambda: cpu not in second.bar_state and memory not in second.bar_state,
+            20.0,
+            "the second viewer's bars to be taken away",
+        )
+        self.check(
+            gone,
+            "leaving a bar's audience removes it from that screen and nobody "
+            "else's: %s" % sorted(second.bar_state),
+        )
+        self.check(
+            sorted(second.ops_for(cpu)) == ["remove"]
+            and cpu in admin.bar_state
+            and memory in admin.bar_state,
+            "with a Remove, while the viewer who is still watching keeps "
+            "theirs: %s / %s" % (second.ops_for(cpu), sorted(admin.bar_state)),
+        )
+
+        # A viewer disconnecting while a bar is on their screen is the third
+        # way a bar stops being shown, and the one with nothing to observe on
+        # the wire: the packet that must *not* be written is one to a socket
+        # that has gone. What is observable is that the server carries on.
+        leaver = Screen(self.args.host, self.args.port, "HX", self.started)
+        leaver.handshake(self.args.host, self.args.port, 2)
+        leaver.login()
+        leaver.configuration()
+        leaver.enter_play()
+        self.clients.append(leaver)
+        self.until(lambda: leaver.joined, 60.0, "the disconnecting viewer to join")
+        admin.command("perms set %s admin" % leaver.name)
+        self.pump(1.0)
+        leaver.command("serverload")
+        self.until(lambda: cpu in leaver.bar_state, 20.0, "the leaver's own load bars")
+        leaver.sock.close()
+        leaver.alive = False
+        admin.bar_ops.clear()
+        survived = self.until(
+            lambda: admin.ops_for(cpu).count("update_name") >= 2,
+            20.0,
+            "the load bars to keep updating after a viewer vanished",
+        )
+        self.check(
+            survived,
+            "a viewer disconnecting with a bar on their screen leaves the "
+            "server drawing everybody else's: %d further packet(s)"
+            % len(admin.bar_ops),
+        )
+
+    # --- a player who arrives after the match started --------------------
+
+    def joiner_check(self):
+        """Somebody who was not there when the bar was made still gets one.
+
+        The bar this server draws for a match is per player, so a joiner's own
+        bar is new; what the claim is about is that nothing in the server had
+        to notice they arrived. They have no `(Sent, bar)` pair, so the next
+        tick sends them an `Add`, and the join case is the absence of state
+        rather than a code path.
+        """
+        late = Screen(self.args.host, self.args.port, "H9", self.started)
+        late.handshake(self.args.host, self.args.port, 2)
+        late.login()
+        late.configuration()
+        late.enter_play()
+        self.clients.append(late)
+        if not self.until(lambda: late.joined, 60.0, "the late client in play"):
+            self.check(False, "a client joined after the match started")
+            return
+        arrived = self.until(lambda: late.bar_state, 20.0, "the late client's own bar")
+        self.check(
+            arrived,
+            "a player who joins after a match started is given the bar for "
+            "it: %s" % [bar["title"] for bar in late.bar_state.values()],
+        )
+        if not arrived:
+            return
+        uuid = next(iter(late.bar_state))
+        self.check(
+            late.ops_for(uuid)[0] == "add",
+            "as an Add carrying the whole bar, not as an update to one they "
+            "never had: %s" % late.ops_for(uuid)[:3],
+        )
+        held = {bar for client in self.clients[:8] for bar in client.bar_state}
+        self.check(
+            uuid not in held,
+            "and under its own id, because this bar carries a number that is "
+            "only true of them: %s against %d others" % (uuid[:8], len(held)),
+        )    # --- the diffing, over every packet of the whole run ------------------
+
+    def diff_check(self):
+        """No packet ever carried a field that did not change.
+
+        This is the one claim that cannot be made from any single moment, and
+        it is the claim the whole API is for. Every boss bar packet every
+        client received in this run is checked against the state that client
+        was in when it arrived, so a diff that leaked one field on one
+        transition fails here even though every screen looked right.
+
+        Three rules, and they are the whole of `egress::boss_bar::operation`
+        and the observer that tears a bar down:
+
+        * A packet that changes nothing must not exist. An unchanged bar is
+          silence, and a narrow operation can only carry its own field, so
+          this one rule covers "an update sends only the update" outright: an
+          `UpdateName` whose title the client already had is a packet with
+          nothing in it.
+        * A repeat `Add` is only allowed where it is *cheaper* than the narrow
+          operations it replaces, which is two or more fields at once, and it
+          is what makes a multi-field change atomic on a protocol that has no
+          other way to be.
+        * Nothing arrives for a bar the client was never given. A `Sent` pair
+          recorded without the `Add` that goes with it, or one left behind
+          after a `Remove`, both surface here and nowhere else -- from the
+          server both look exactly like doing it right.
+        """
+        packets = 0
+        empty = []
+        wasteful = []
+        orphans = []
+        for client in self.clients:
+            for uuid, operation, moved, known in client.bar_ops:
+                packets += 1
+                if not known:
+                    if operation != "add":
+                        orphans.append((client.name, uuid[:8], operation))
+                    continue
+                if operation == "remove":
+                    continue
+                if operation == "add":
+                    if len(moved) < 2:
+                        wasteful.append((client.name, uuid[:8], sorted(moved)))
+                elif not moved:
+                    empty.append((client.name, uuid[:8], operation))
+
+        self.check(
+            packets > 200,
+            "%d boss bar packet(s) went out this run, which is enough of them "
+            "for the rules below to mean something" % packets,
+        )
+        self.check(
+            not empty,
+            "no boss bar packet said anything the client already knew: "
+            "%d of %d %s" % (len(empty), packets, empty[:3]),
+        )
+        self.check(
+            not wasteful,
+            "and a whole bar was only ever resent where two or more fields "
+            "moved at once: %d of %d %s" % (len(wasteful), packets, wasteful[:3]),
+        )
+        self.check(
+            not orphans,
+            "and nothing arrived for a bar the client had never been given: "
+            "%d of %d %s" % (len(orphans), packets, orphans[:3]),
+        )
+
     def run(self):
         self.connect(1)
         if not self.until(lambda: self.clients[0].joined, 90.0, "the first client in play"):
@@ -536,6 +948,9 @@ class Run:
             return self.report()
         self.experience_check()
         self.match_check()
+        self.joiner_check()
+        self.load_check()
+        self.diff_check()
         return self.report()
 
     def report(self):
@@ -557,8 +972,11 @@ def main():
         "--clients",
         type=int,
         default=8,
-        help="`LobbyConfig::full_players`, which is what makes the countdown ten "
-        "seconds rather than sixty",
+        help="at or above `LobbyConfig::full_players`, which is what makes the "
+        "countdown its ten second one rather than its sixty second one. Eight "
+        "and not the four that now fills a lobby, because `diff_check` wants "
+        "more than one client's worth of traffic to count and the two joiner "
+        "checks want a match already under way to walk into",
     )
     args = parser.parse_args()
     return Run(args).run()

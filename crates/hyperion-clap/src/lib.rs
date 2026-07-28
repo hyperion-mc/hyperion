@@ -495,6 +495,40 @@ impl MinecraftCommand for PermissionCommand {
     }
 }
 
+/// `/serverload`: show or hide the host's own CPU and memory.
+///
+/// Admin, and opt in. Fifteen players in a lobby staring at server telemetry
+/// is a strange default, and three stacked bars is most of the strip; this way
+/// the operator who wants the numbers has them and nobody else pays for it.
+///
+/// Everything it does is one relationship. `egress::server_load::toggle` adds
+/// or removes `(ShownTo, caller)` on the two bars, and the `Add` packets, the
+/// `Remove` packets and the diffing in between are `egress::boss_bar`'s.
+#[derive(Parser, CommandPermission, Debug)]
+#[command(name = "serverload")]
+#[command_permission(group = "Admin")]
+pub struct ServerLoadCommand;
+
+impl MinecraftCommand for ServerLoadCommand {
+    fn execute(self, system: EntityView<'_>, caller: Entity) {
+        let world = system.world();
+        let showing = hyperion::egress::server_load::toggle(world, caller);
+        let message = if showing {
+            "§aServer load bars on."
+        } else {
+            "§7Server load bars off."
+        };
+        let chat = hyperion::net::agnostic::chat(message);
+        world.get::<&Compose>(|compose| {
+            caller.entity_view(world).get::<&ConnectionId>(|stream| {
+                if let Err(error) = compose.unicast(&chat, *stream) {
+                    tracing::warn!("dropping a /serverload reply: {error}");
+                }
+            });
+        });
+    }
+}
+
 impl Module for ClapCommandModule {
     fn module(world: &World) {
         world.import::<hyperion_command::CommandModule>();
@@ -505,6 +539,7 @@ impl Module for ClapCommandModule {
             // it is a clap `ValueEnum`, so registration already carried its
             // four values into the graph.
             PermissionCommand::register(registry, world).completes("player", Player::id());
+            ServerLoadCommand::register(registry, world);
         });
     }
 }
