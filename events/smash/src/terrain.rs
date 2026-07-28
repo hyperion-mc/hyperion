@@ -23,7 +23,7 @@ use hyperion::{
 };
 
 use crate::{
-    map::{MapSpec, parse},
+    map::{self, MapSpec, parse},
     module::{
         arena::Arena,
         lobby::{Lobby, Phase, PhaseChanged},
@@ -111,22 +111,6 @@ impl Hub {
     }
 }
 
-/// The hub, as a map file. It is an arena as far as the builder is concerned;
-/// it just never gets played on.
-const HUB_SOURCE: &str = include_str!("../maps/hub.map");
-
-/// Every arena, in rotation order.
-///
-/// A `const` list rather than a directory scan: `include_str!` needs the name
-/// at compile time anyway, and a map that exists but was never added to a list
-/// is a worse failure than a compile error.
-const ARENA_SOURCES: &[&str] = &[
-    include_str!("../maps/skylands.map"),
-    include_str!("../maps/mushroom_islands.map"),
-    include_str!("../maps/glacier.map"),
-    include_str!("../maps/desert.map"),
-];
-
 #[derive(Component)]
 pub struct MapModule;
 
@@ -139,10 +123,10 @@ impl Module for MapModule {
             .add_trait::<flecs::Singleton>();
         world.component::<Hub>().add_trait::<flecs::Singleton>();
 
-        let hub = parse(HUB_SOURCE).unwrap_or_else(|error| {
+        let hub = parse(map::HUB).unwrap_or_else(|error| {
             panic!("the hub map does not parse: {error}");
         });
-        let arenas: Vec<Loaded> = ARENA_SOURCES
+        let arenas: Vec<Loaded> = map::ARENAS
             .iter()
             .enumerate()
             .map(|(index, source)| {
