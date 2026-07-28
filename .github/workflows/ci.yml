@@ -11,9 +11,13 @@ on:
 jobs:
   # Each check is the same flake app a contributor runs locally, so CI cannot
   # drift from `nix run .#ci`.
-  # Job names are fixed by the merge queue ruleset on main, which requires
-  # these exact contexts. The app each one runs is the same one a contributor
-  # runs locally.
+  #
+  # A previous version of this comment said the job names were fixed by the
+  # merge queue ruleset, "which requires these exact contexts". It does not:
+  # ruleset 566717 on main carries no `required_status_checks` rule and the
+  # branch has no classic protection either, so today nothing here is a
+  # required context and a red job does not block a merge on its own. Renaming
+  # a job is therefore safe and enforcement is weaker than it reads. ENG-10827.
   check:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -55,7 +59,9 @@ jobs:
           cache-on-failure: "true"
       - run: nix run --accept-flake-config .#${{ matrix.app }}
 
-  # Every flake check, built. Blocking.
+  # Every flake check, built, and no longer advisory: a failure fails the run.
+  # It is not literally a required context, because this repository has none;
+  # see the note on `check` above and ENG-10827.
   #
   # What it enforces and what it does not is nix/ci/flake-gate.nix, by name,
   # and an excluded check is rebuilt here and required to still fail, so an
@@ -73,9 +79,9 @@ jobs:
   flake:
     name: Flake
     runs-on: ubuntu-latest
-    # p95 of the whole gate from a cold hosted store is under 20 minutes with
-    # cache.ix.dev warm (measured 2026-07-28, runs 30341722090 and 30342250503).
-    # This is a runner-level guard, not a target.
+    # A runner-level guard, not a target. The gate builds every check serially
+    # from a cold hosted store; the bedwars binary alone measured 620 to 670
+    # seconds across four runs on 2026-07-28 and everything else is minutes.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

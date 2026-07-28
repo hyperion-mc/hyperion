@@ -269,7 +269,8 @@ Every command is a flake app, so nix is the only thing you need installed.
 | `nix run .#proxy` | Proxy alone, release-full |
 | `nix run .#bedwars` | Game server alone, release-full |
 | `nix run .#bots -- <ip> <count>` | Connect bots to a running server |
-| `nix run .#ci` | Everything CI runs |
+| `nix run .#ci` | The cargo half of CI: format, lint, test, doc, deny, machete |
+| `nix run .#flake-gate` | The nix half: builds every flake check CI enforces |
 | `nix run .#fmt` | `cargo fmt`; add `-- --check` to verify only |
 | `nix run .#lint` | Clippy, warnings denied |
 | `nix run .#lint-fix` | Clippy with `--fix` |
@@ -282,9 +283,14 @@ Every command is a flake app, so nix is the only thing you need installed.
 | `nix run .#smash-e2e` | The same on smash: four clients, a whole match |
 | `nix run .#real-client -- <host:port>` | Joins with the actual game and says whether a player reached the world |
 
-`nix build .#bedwars` builds a release binary, and `nix flake check` builds every
-app. If you would rather use cargo directly, `nix develop` gives you a shell with
-the pinned toolchain and the cargo subcommands the apps use.
+`nix build .#bedwars` builds a release binary. `nix run .#flake-gate` is the
+whole nix gate: it builds every check the flake exposes, which is every app
+(proving each passes shellcheck and its tools resolve) plus the sandboxed
+end-to-end gates and the generated-source comparisons. Which of those CI
+enforces, and the named exceptions with the evidence behind each, is
+`nix/ci/flake-gate.nix`. If you would rather use cargo directly, `nix develop`
+gives you a shell with the pinned toolchain and the cargo subcommands the apps
+use.
 
 ## Features
 

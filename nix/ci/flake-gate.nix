@@ -20,18 +20,25 @@
   names,
 }:
 let
-  # Each entry is the evidence that set it, not a justification. A reason
-  # nobody can check is what ENG-10817 was about.
-  excluded = {
-    differential-traces = ''
-      The committed golden traces disagree with the vanilla server the pinned
-      jar runs. Measured 2026-07-28 on ubuntu-latest, GitHub Actions run
-      30341066882: the snowball trajectory differs from tick 0 onward, so the
-      recording predates a physics change rather than the server having
-      regressed. Re-record with `nix run .#record-differential-traces`, check
-      the diff is the physics change you expect, and delete this entry.
-    '';
-  };
+  # Empty, and that is the interesting part. ENG-10817 exempted the whole set
+  # on the belief that most of it could not pass. Measured per check on
+  # ubuntu-latest instead of as one all-or-nothing job (run 30341722090, 41
+  # checks), 38 passed and the 3 that failed were the sandboxed e2e gates,
+  # failing on a missing trust store rather than on the runner. nix/e2e.nix
+  # names the CA bundle now, so nothing is left to exempt.
+  #
+  # `differential-traces` is the one worth remembering: it failed on run
+  # 30341066882 and then passed four times (30341722090, plus three
+  # independent repeats in 30342250503). The only difference was whether the
+  # daemon could realise a content-addressed derivation, so it was the store
+  # and not the check, and it is enforced.
+  #
+  # An entry here is `name = <the evidence>`, never a justification. The gate
+  # prints that text, builds the check anyway, and fails if it passes, so an
+  # exception cannot outlive the defect it was written for. Anything you cannot
+  # write as an observation carrying a date and a run id does not belong here.
+  # Fix the check or delete it instead.
+  excluded = { };
 
   excludedNames = lib.attrNames excluded;
 
@@ -42,6 +49,15 @@ let
   enforced = lib.subtractLists excludedNames names;
 
   quote = xs: lib.concatMapStringsSep " " lib.escapeShellArg xs;
+
+  # The recorded evidence is printed by the gate, not left in this file for
+  # someone to go and read. An exception nobody sees is an exception nobody
+  # revisits.
+  reasonArms = lib.concatStrings (
+    lib.mapAttrsToList (
+      name: why: "${lib.escapeShellArg name}) printf '%s' ${lib.escapeShellArg why} ;;\n    "
+    ) excluded
+  );
 
   gate = writeShellApplication {
     name = "flake-gate";
@@ -80,6 +96,11 @@ let
       enforced=(${quote enforced})
       excluded=(${quote excludedNames})
 
+      reason() {
+        case "$1" in
+          ${reasonArms}esac
+      }
+
       build() {
         nix build --accept-flake-config --no-link --print-build-logs \
           "$flake#checks.${system}.$1"
@@ -105,11 +126,14 @@ let
           echo "STALE     $name"
           {
             echo "checks.${system}.$name is excluded from CI but now builds."
-            echo "Delete it from nix/ci/flake-gate.nix; CI enforces it after that."
+            echo "nix/ci/flake-gate.nix excluded it on this evidence:"
+            reason "$name"
+            echo "Delete the entry; CI enforces the check from then on."
           } >&2
           status=1
         else
-          echo "excluded  $name (still failing, as nix/ci/flake-gate.nix records)"
+          echo "excluded  $name (still failing, on the evidence recorded for it)"
+          reason "$name"
         fi
       done
 
