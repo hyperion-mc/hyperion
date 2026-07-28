@@ -72,6 +72,36 @@ pub struct MapSpec {
     pub brushes: Vec<Brush>,
 }
 
+/// The waiting lobby, as a map file. It is an arena as far as the builder is
+/// concerned; it just never gets played on.
+pub const HUB: &str = include_str!("../maps/hub.map");
+
+/// Every arena this server ships, in rotation order.
+///
+/// A `const` list rather than a directory scan: `include_str!` needs the name
+/// at compile time anyway, and a map that exists but was never added to a list
+/// is a worse failure than a compile error. Adding a map is a file under
+/// `maps/` and a line here, and nothing else.
+///
+/// The list lives beside the parser rather than beside the world builder so
+/// that reading a map costs nothing but this module. `terrain.rs` pulls in the
+/// whole of hyperion to turn a [`MapSpec`] into blocks, and a caller who only
+/// wants to know what the arenas are should not have to.
+pub const ARENAS: &[&str] = &[
+    include_str!("../maps/skylands.map"),
+    include_str!("../maps/mushroom_islands.map"),
+    include_str!("../maps/glacier.map"),
+    include_str!("../maps/desert.map"),
+];
+
+/// Parse every shipped arena, in rotation order.
+///
+/// # Errors
+/// As [`parse`], for the first arena that does not parse.
+pub fn arenas() -> Result<Vec<MapSpec>, ParseError> {
+    ARENAS.iter().copied().map(parse).collect()
+}
+
 /// Where a map file went wrong, with the line that did it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {

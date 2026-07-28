@@ -30,18 +30,28 @@ pub struct Arena {
 }
 
 impl Default for Arena {
+    /// The first committed arena, in its own local coordinates.
+    ///
+    /// This used to be six hand-written coordinates and a kill plane at y 0,
+    /// and they described no terrain that has ever existed: nothing placed a
+    /// block at any of them, and a player put there would have fallen through
+    /// empty air past a death plane thirty blocks below. Reading a real map
+    /// file instead is what stops the fallback drifting away from the game
+    /// again, because there is no second copy of the numbers to drift.
+    ///
+    /// `terrain.rs` overwrites this with the same map offset into its region
+    /// before anyone connects, so on a running server the default is only ever
+    /// the value between two `world.set` calls. It matters for the tests under
+    /// `tests/`, which import the game without a host and get their arena from
+    /// here.
     fn default() -> Self {
+        let spec = crate::map::parse(crate::map::ARENAS[0]).expect(
+            "the first committed arena parses; `tests/maps.rs` proves every one of them does",
+        );
         Self {
-            name: "Skylands",
-            kill_y: 0.0,
-            spawns: vec![
-                Vec3::new(-12.0, 34.0, 0.0),
-                Vec3::new(12.0, 34.0, 0.0),
-                Vec3::new(0.0, 34.0, -12.0),
-                Vec3::new(0.0, 34.0, 12.0),
-                Vec3::new(-8.0, 40.0, -8.0),
-                Vec3::new(8.0, 40.0, 8.0),
-            ],
+            name: spec.name,
+            kill_y: spec.kill_y,
+            spawns: spec.spawns,
         }
     }
 }

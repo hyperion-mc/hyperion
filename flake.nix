@@ -484,6 +484,31 @@
               '';
             };
 
+            # The same gate again, driving a client that reads blocks rather
+            # than positions.
+            #
+            # Separate from `smash-e2e` rather than folded into it because the
+            # two answer different questions and fail for different reasons.
+            # `smash-e2e` asks whether a match happens; this asks whether the
+            # world the match happens in is the one the map files describe, and
+            # whether the kill plane each of them declares is the height the
+            # game actually kills at. Its ports default off `smash-e2e`'s again
+            # so all three gates can run at once.
+            smash-map-e2e = {
+              deps = [
+                pkgs.process-compose
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/smash-map-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 3000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 3000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # `nix run .#dev` runs bedwars; this runs the same stack on smash.
             smash-dev = {
               deps = [ pkgs.process-compose pkgs.git ];
