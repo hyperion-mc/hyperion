@@ -453,21 +453,9 @@ pub fn manifest(world: &World) -> Vec<Declared> {
 /// Take back a grant that has run out: unlink it from whoever holds it and
 /// destroy the instance.
 fn expire(world: WorldRef<'_>, expired: &[Entity]) {
-    let mut edges = Vec::new();
-    world
-        .query::<()>()
-        .with(Player::id())
-        .build()
-        .each_entity(|player, ()| {
-            player.each_target_view(Grants, |ability| {
-                if expired.contains(&ability.id()) {
-                    edges.push((player.id(), ability.id()));
-                }
-            });
-        });
-    for (player, ability) in edges {
-        world.entity_at(player).remove((Grants, ability));
-    }
+    // Just destroy the ability entities. `(Grants, OnDeleteTarget, Remove)`
+    // takes the `(Grants, ability)` edge off whoever held it, so there is no
+    // scan of every player to unlink them first -- flecs owns that teardown.
     for ability in expired {
         let ability = world.entity_at(*ability);
         if ability.is_alive() {
@@ -483,26 +471,54 @@ impl Module for AbilityModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Ability");
 
-        world.component::<Ability>();
-        world.component::<Slot>();
-        world.component::<Item>();
-        world.component::<Named>();
-        world.component::<Description>();
-        world.component::<CooldownSpec>();
+        // Final: the Ability *tag* is a leaf -- is_a(Ability) aborts. This does
+        // not touch prefab instantiation: an instance is is_a(<a prefab that
+        // carries Ability>), and Final on a component only forbids inheriting
+        // from that component, not from an entity that merely has it.
+        world.component::<Ability>().add_trait::<flecs::Final>();
+        // An ability's declaration is shared, immutable data. A player's
+        // instance is `is_a(<the kit's prefab>)`, and these ten components are
+        // read back through that IsA edge rather than copied onto every
+        // instance -- flecs' default `Override` duplicates them per player, one
+        // ability at a time, for data that never diverges. `(OnInstantiate,
+        // Inherit)` leaves the one copy on the prefab; `try_get`/`has` follow
+        // IsA to resolve it, checked by the hotbar and manifest tests that read
+        // these off instances. This is the same storage choice `sound.rs` makes
+        // for its four relations. `Cooldown` and `Charging` are the exceptions:
+        // they are per-player state and stay on the instance (default Override).
+        for component in [
+            world.component::<Slot>().id(),
+            world.component::<Item>().id(),
+            world.component::<Named>().id(),
+            world.component::<Description>().id(),
+            world.component::<CooldownSpec>().id(),
+            world.component::<EnergyCost>().id(),
+            world.component::<OnActivate>().id(),
+            world.component::<OnRelease>().id(),
+            world.component::<ChargeTime>().id(),
+            world.component::<Proves>().id(),
+        ] {
+            world
+                .entity_from_id(component)
+                .add((flecs::OnInstantiate, flecs::Inherit));
+        }
         world.component::<Cooldown>();
-        world.component::<EnergyCost>();
         world.component::<RequiresGround>();
         world.component::<RefundsOnHit>();
-        world.component::<OnActivate>();
-        world.component::<OnRelease>();
-        world.component::<ChargeTime>();
         world.component::<Charging>();
         world.component::<UseSlot>();
         world.component::<ReleaseSlot>();
+        // Relationship, so a bare `Grants` add aborts. `(OnDeleteTarget,
+        // Remove)` -- flecs' default, spelled out because the teardown below is
+        // built on it -- means destroying an ability entity removes the
+        // `(Grants, ability)` edge from whoever held it, so `expire` and
+        // `kit::revoke` destroy the ability and let the edge go rather than
+        // unlinking it by hand first. Same lesson as boss_bar and tick_effects:
+        // the fact and its cleanup are one fact.
         world
             .component::<Grants>()
-            .add_trait::<flecs::Relationship>();
-        world.component::<Proves>();
+            .add_trait::<flecs::Relationship>()
+            .add_trait::<(flecs::OnDeleteTarget, flecs::Remove)>();
         world.component::<GrantedFor>();
 
         world
