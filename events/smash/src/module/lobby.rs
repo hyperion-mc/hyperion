@@ -11,12 +11,15 @@
 //! seconds, three-quarters full thirty, minimum sixty, and dropping back below
 //! the minimum cancels.
 
+use std::borrow::Cow;
+
 use flecs_ecs::prelude::*;
 
 use crate::{
     module::{
         arena::Arena,
         damage::MatchClock,
+        hud,
         kit::{self, KitName},
         lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
@@ -339,9 +342,25 @@ fn tick_countdown(world: &WorldRef<'_>, before: Lobby, after: Lobby) {
         return;
     };
     sound::play_to_everyone(*world, sound::countdown_tick(seconds_left));
+    // The same boundary drives the number on screen, so the digit and the tick
+    // that goes with it cannot come from two clocks and disagree. Which of
+    // those seconds gets a digit is `hud`'s to say, and it is fewer of them than
+    // get a sound: both phases here tick out loud and only one of them shows a
+    // number.
+    if let Some(title) = hud::countdown_title(after.phase, seconds_left) {
+        world.get::<&ServerHandle>(|server| server.broadcast_title(title));
+    }
 }
 
 fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
+    // Read before the transition's own side effects, because `reset` is one of
+    // them and it is what puts everybody's lives back.
+    let champion = if to == Phase::Ended {
+        hud::winner(*world)
+    } else {
+        None
+    };
+
     match to {
         Phase::Countdown => announce(world, "Enough players. The game starts shortly."),
         Phase::Preparing => {
@@ -357,10 +376,24 @@ fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
             );
         }
         Phase::Ended => {
-            announce(world, "Game over.");
+            // Chat is the record, so it carries the result and not just the
+            // fact that there was one. A player who was reading the panel when
+            // the last hit landed can scroll back to this line; the title that
+            // goes with it is gone in five seconds.
+            match champion.as_deref() {
+                Some(winner) => announce(world, format!("Game over. {winner} wins!")),
+                None => announce(world, "Game over. Nobody was left standing."),
+            }
             sound::play_to_everyone(*world, Sound::new(sound::MATCH_END, SoundCategory::Ui));
         }
         Phase::Waiting => reset(world),
+    }
+
+    // After the announcement and the sound, so the three arrive in the order a
+    // player reads them: the chat line is the record, the noise is the cue,
+    // and the title is the thing they are looking at.
+    if let Some(title) = hud::phase_title(to, champion.as_deref()) {
+        world.get::<&ServerHandle>(|server| server.broadcast_title(title));
     }
 
     world
@@ -370,7 +403,13 @@ fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
         .emit(&PhaseChanged { from, to });
 }
 
-fn announce(world: &WorldRef<'_>, text: &'static str) {
+/// One line to everybody's chat.
+///
+/// `Cow` rather than `&'static str` so the results line can name the winner.
+/// Deliberately unstyled: `Channel::Chat` cannot carry a style at all, and the
+/// adapter logs a warning for anything that tries, so a colour here would be a
+/// silent no-op with a log line nobody reads. ENG-10796 is the fix.
+fn announce(world: &WorldRef<'_>, text: impl Into<Cow<'static, str>>) {
     world.get::<&ServerHandle>(|server| server.broadcast(Channel::Chat, Text::text(text)));
 }
 

@@ -25,10 +25,10 @@ use hyperion::{Crypto, GameServerEndpoint, HyperionCore};
 use hyperion_clap::hyperion_command::CommandRegistry;
 
 use crate::module::{
-    ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
-    kits::StockKits, knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule,
-    player::PlayerModule, projectile::ProjectileModule, scoreboard::ScoreboardModule,
-    selector::SelectorModule, sound::SoundModule,
+    ability::AbilityModule, arena::ArenaModule, damage::DamageModule, hud::HudModule,
+    kit::KitModule, kits::StockKits, knockback::KnockbackModule, lives::LivesModule,
+    lobby::LobbyModule, player::PlayerModule, projectile::ProjectileModule,
+    scoreboard::ScoreboardModule, selector::SelectorModule, sound::SoundModule,
 };
 
 /// The whole game.
@@ -61,6 +61,7 @@ impl Module for SmashModule {
         world.import::<ProjectileModule>();
         world.import::<LobbyModule>();
         world.import::<ScoreboardModule>();
+        world.import::<HudModule>();
         world.import::<SelectorModule>();
         world.import::<StockKits>();
     }

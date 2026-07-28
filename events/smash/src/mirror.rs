@@ -9,8 +9,12 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion::simulation::{MovementTracking, Pitch, Yaw};
+use hyperion_inventory::PlayerInventory;
 
-use crate::module::player::{Facing, OnGround, Player, Position, Velocity};
+use crate::{
+    input::hotbar_slot,
+    module::player::{Facing, OnGround, Player, Position, SelectedSlot, Velocity},
+};
 
 #[derive(Component)]
 pub struct MirrorModule;
@@ -25,15 +29,28 @@ impl Module for MirrorModule {
                 &Yaw,
                 &Pitch,
                 &MovementTracking,
+                &PlayerInventory,
                 &mut Position,
                 &mut Facing,
                 &mut OnGround,
                 &mut Velocity,
+                &mut SelectedSlot,
             )>("smash::mirror_player_state")
             .kind(id::<flecs::pipeline::OnLoad>())
             .with(Player::id())
             .each(
-                |(source, yaw, pitch, tracking, position, facing, ground, velocity)| {
+                |(
+                    source,
+                    yaw,
+                    pitch,
+                    tracking,
+                    inventory,
+                    position,
+                    facing,
+                    ground,
+                    velocity,
+                    selected,
+                )| {
                     position.0 = **source;
                     facing.0 = look_vector(**yaw, **pitch);
                     ground.0 = tracking.was_on_ground;
@@ -43,6 +60,13 @@ impl Module for MirrorModule {
                     // and it is what abilities that scale with speed -- Block
                     // Toss, Iron Hook -- are asking for.
                     velocity.0 = tracking.server_velocity.as_vec3();
+                    // A cursor outside the hotbar leaves the last slot standing
+                    // rather than resetting to zero: the alternative reads as
+                    // "you are holding slot 0" and would put slot 0's cooldown
+                    // on the experience bar of somebody holding nothing.
+                    if let Some(slot) = hotbar_slot(inventory.get_cursor_index()) {
+                        selected.0 = slot;
+                    }
                 },
             );
     }

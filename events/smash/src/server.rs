@@ -184,11 +184,139 @@ impl Sound {
 }
 
 /// Where a message goes on screen.
+///
+/// The middle of the screen is deliberately absent. A title there is not a
+/// line of text but a pair of them with an animation, and the protocol makes
+/// the halves separable in a way that is a trap; [`Title`] is that shape and
+/// [`Server::show_title`] is the only way to reach it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Channel {
     Chat,
     ActionBar,
-    Title,
+}
+
+/// The experience bar, and the number over it.
+///
+/// Super Smash Mobs has no experience to spend, so the bar the client already
+/// draws above the hotbar is free real estate, and the mode used it for
+/// ability recharge. This is that bar, as the two numbers the client takes.
+///
+/// Level zero draws no number at all -- `Gui.renderExperienceLevel` is guarded
+/// by `experienceLevel > 0` -- which is what makes "nothing to count down"
+/// expressible rather than something that has to be drawn as a zero.
+///
+/// [`Default`] is the state a client is in before anything is sent to it: an
+/// empty bar and no number.
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct Experience {
+    /// How full the bar is, `0.0..=1.0`.
+    pub progress: f32,
+    /// The number in the green box, or zero to draw none.
+    pub level: i32,
+}
+
+/// How a boss bar is tinted.
+///
+/// The game's own vocabulary, like [`Cue`]: four bands and not the client's
+/// seven colours, because what the game means is "fine", "getting dangerous",
+/// "the next hit ends you" and "this is not about you". Which Minecraft colour
+/// each becomes is a hosting decision and lives in the adapter.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum BarColour {
+    Green,
+    Yellow,
+    Red,
+    /// Informational: a countdown, a lobby, a result. Not a warning.
+    Blue,
+}
+
+/// The bar across the top of one player's screen.
+///
+/// Per player and not per world, which is the whole reason it can carry a
+/// number that is only true of the person reading it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BossBar {
+    /// Drawn centred above the bar.
+    pub title: Text,
+    /// How full it is, `0.0..=1.0`.
+    pub progress: f32,
+    pub colour: BarColour,
+}
+
+/// How long a title spends fading in, on screen, and fading out, in ticks.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct TitleTimes {
+    pub fade_in: i32,
+    pub stay: i32,
+    pub fade_out: i32,
+}
+
+impl TitleTimes {
+    /// Vanilla's own, which is what a client uses when nothing says otherwise.
+    pub const DEFAULT: Self = Self {
+        fade_in: 10,
+        stay: 70,
+        fade_out: 20,
+    };
+    /// Exactly one second, with no fade at either end.
+    ///
+    /// For a sequence: a countdown digit that faded out over twenty ticks
+    /// would still be on screen when the next one arrived, and the two would
+    /// cross-fade into an unreadable smear right at the moment the number
+    /// matters.
+    pub const TICK: Self = Self {
+        fade_in: 0,
+        stay: 20,
+        fade_out: 0,
+    };
+}
+
+impl Default for TitleTimes {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// Big text across the middle of the screen, and the smaller line under it.
+///
+/// One value rather than two channels, because the protocol makes the halves
+/// separable and the separation is a trap. `ClientboundSetSubtitleTextPacket`
+/// does not draw anything: it stores a line, and the *next* title is what puts
+/// both on screen. Two independent sends therefore have an order that matters,
+/// and a subtitle nobody cleared outlives the title it was written for and
+/// reappears under an unrelated one. Carrying them together lets the adapter
+/// always write the subtitle first and always write one, empty included, so
+/// neither mistake is expressible here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Title {
+    pub title: Text,
+    pub subtitle: Option<Text>,
+    pub times: TitleTimes,
+}
+
+impl Title {
+    /// A title with no line under it, shown for vanilla's own duration.
+    #[must_use]
+    pub const fn new(title: Text) -> Self {
+        Self {
+            title,
+            subtitle: None,
+            times: TitleTimes::DEFAULT,
+        }
+    }
+
+    /// The smaller line under it.
+    #[must_use]
+    pub fn under(mut self, subtitle: Text) -> Self {
+        self.subtitle = Some(subtitle);
+        self
+    }
+
+    #[must_use]
+    pub const fn timed(mut self, times: TitleTimes) -> Self {
+        self.times = times;
+        self
+    }
 }
 
 /// Everything the game asks the host server to do.
@@ -233,6 +361,21 @@ pub trait Server: Send + Sync + 'static {
     /// countdown tick has no position, and playing one in the world would make
     /// it quieter for whoever happened to be furthest from the origin.
     fn play_sound_to(&self, player: PlayerId, sound: Sound);
+
+    /// Move `player`'s experience bar. See [`Experience`].
+    fn set_experience(&self, player: PlayerId, experience: Experience);
+
+    /// Put the bar across the top of `player`'s screen, replacing whatever is
+    /// there. There is no way to take it away, because there is no state of
+    /// the game with nothing worth putting on it: see
+    /// [`crate::module::hud::boss_bar`].
+    fn set_boss_bar(&self, player: PlayerId, bar: BossBar);
+
+    /// Put a title across the middle of `player`'s screen.
+    fn show_title(&self, player: PlayerId, title: Title);
+
+    /// The same, for everyone.
+    fn broadcast_title(&self, title: Title);
 }
 
 /// Singleton holding the live [`Server`].

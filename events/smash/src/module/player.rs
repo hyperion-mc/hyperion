@@ -119,6 +119,22 @@ impl Energy {
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct JumpsLeft(pub u8);
 
+/// Mirror of which of the nine hotbar slots the player is holding.
+///
+/// A mirror in the same sense as [`Position`]: the host owns it, the adapter
+/// copies it in once a tick, and the game reads it as a plain component. What
+/// reads it is the experience bar, which has to answer "how far along is the
+/// ability in the slot you are holding" for every player twenty times a
+/// second, and a call across the seam per player per tick is exactly the cost
+/// the mirrors in this module exist to avoid.
+///
+/// It is deliberately not what *fires* an ability. A right-click is a packet
+/// and the slot it means is the one the host knows at the instant the packet
+/// arrives, which is the same tick a client may have changed it in; the input
+/// layer therefore reads the host directly and this stays a display input.
+#[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub struct SelectedSlot(pub u8);
+
 /// Registers the mirrored components and the systems that maintain them.
 #[derive(Component)]
 pub struct PlayerModule;
@@ -135,6 +151,7 @@ impl Module for PlayerModule {
         world.component::<Health>();
         world.component::<Energy>();
         world.component::<JumpsLeft>();
+        world.component::<SelectedSlot>();
 
         // A player is never meaningfully without these, and forgetting one is
         // the kind of bug that shows up as a silently non-matching query three
@@ -146,7 +163,8 @@ impl Module for PlayerModule {
             .add_trait::<(flecs::With, Facing)>()
             .add_trait::<(flecs::With, OnGround)>()
             .add_trait::<(flecs::With, Health)>()
-            .add_trait::<(flecs::With, JumpsLeft)>();
+            .add_trait::<(flecs::With, JumpsLeft)>()
+            .add_trait::<(flecs::With, SelectedSlot)>();
 
         world
             .system_named::<(&OnGround, &mut JumpsLeft)>("smash::restore_double_jump")
