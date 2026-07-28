@@ -16,7 +16,10 @@ use glam::Vec3;
 
 use crate::{
     flecs_ext::{EntityViewExt, WorldRefExt},
-    module::player::{Energy, Facing, Health, OnGround, Player, Position},
+    module::{
+        player::{Energy, Facing, Health, OnGround, Player, Position},
+        sound::{self, PlaysOnCast},
+    },
     server::{Cue, PlayerId, Server, ServerHandle},
 };
 
@@ -288,6 +291,11 @@ pub fn activate(player: EntityView<'_>, slot: u8, charge: f32) -> Result<(), Ref
         } else if let Some(f) = ability.try_get::<&OnActivate>(|f| *f) {
             f.0(&cast);
         }
+        // One place, for every ability in the game. The dispatcher still names
+        // no kit: what to play is read off the ability entity that just fired.
+        if let Some(sound) = sound::declared(ability, PlaysOnCast) {
+            server.play_sound(cast.position.0, sound);
+        }
     });
 
     commit(ability, player);
@@ -329,6 +337,10 @@ pub struct Declared {
     /// Granted by the Smash Crystal rather than at spawn.
     pub ultimate: bool,
     pub proves: &'static [Observable],
+    /// The vanilla sound event firing it plays, read back off the ability's
+    /// `(PlaysOnCast, sound)` edge. Empty for an ability that declared none,
+    /// which is what `tests/sound.rs` fails on.
+    pub sound: &'static str,
 }
 
 /// Every ability every registered kit declares, kit registration order first
@@ -368,6 +380,8 @@ pub fn manifest(world: &World) -> Vec<Declared> {
                 refunds_on_hit: ability.has(RefundsOnHit::id()),
                 ultimate: ability.has(Ultimate::id()),
                 proves: ability.try_get::<&Proves>(|p| p.0).unwrap_or(&[]),
+                sound: crate::module::sound::declared(ability, PlaysOnCast)
+                    .map_or("", |sound| sound.id),
             });
         });
         abilities.sort_by_key(|ability| ability.slot);

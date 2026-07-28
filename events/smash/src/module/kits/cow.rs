@@ -11,13 +11,10 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash_at},
-        kit::{self, AbilitySpec, KitStats},
-        projectile::{Flight, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash_at},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    projectile::{Flight, Payload, fire},
 };
 
 /// `[VERIFIED]`: "you will slowly gain speed levels (up to 4)".
@@ -37,10 +34,15 @@ impl Module for Cow {
             regen: 0.25,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.cow.hurt",
+            death: "minecraft:entity.cow.death",
+        })
         .cost(6000)
         .blurb("Hard to move and hard to stop once it is moving.")
         .ability(AbilitySpec {
             name: "Angry Herd",
+            sound: "minecraft:entity.cow.ambient",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Five cows in a line. Each one can hit you.",
@@ -52,6 +54,7 @@ impl Module for Cow {
         })
         .ability(AbilitySpec {
             name: "Milk Spiral",
+            sound: "minecraft:entity.cow.milk",
             item: "minecraft:iron_shovel",
             slot: 2,
             description: "A helix of milk that carries you with it. Hits at most two people.",
@@ -67,6 +70,7 @@ impl Module for Cow {
         })
         .ultimate(AbilitySpec {
             name: "Mooshroom Madness",
+            sound: "minecraft:entity.mooshroom.convert",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Become a mooshroom: more damage, five more hearts, faster abilities.",
@@ -114,7 +118,6 @@ fn milk_spiral(cast: &Cast<'_>) {
             0.9,
         );
     }
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 /// `[VERIFIED]` "5 more hearts".

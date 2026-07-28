@@ -17,8 +17,11 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 
 use crate::{
-    module::player::{Health, OnGround, Player, Position},
-    server::{Cue, PlayerId, ServerHandle},
+    module::{
+        player::{Health, OnGround, Player, Position},
+        sound,
+    },
+    server::{PlayerId, ServerHandle},
 };
 
 /// The constants of Mineplex's knockback pipeline, as data.
@@ -241,7 +244,15 @@ impl Module for KnockbackModule {
                         let impulse =
                             resolve(*model, k, event.knockback.origin, position.0, ground.0);
                         server.add_velocity(*player, impulse);
-                        server.cue(position.0, Cue::Hurt);
+                        // The one number in the game that says how hard a hit
+                        // was is the one it launches you with, and it is
+                        // already computed here. A jab and a full smash are the
+                        // same sound at different pitch and volume, so what a
+                        // player hears tracks what the physics did rather than
+                        // which button produced it.
+                        if let Some(sound) = sound::impact(impulse) {
+                            server.play_sound(position.0, sound);
+                        }
                     });
             });
     }

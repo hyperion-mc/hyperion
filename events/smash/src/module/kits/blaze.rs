@@ -11,15 +11,12 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash_at},
-        damage::{DamageKind, Damaged, hurt},
-        kit::{self, AbilitySpec, KitStats},
-        knockback::Knockback,
-        player::{Health, Player, Position},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash_at},
+    damage::{DamageKind, Damaged, hurt},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    knockback::Knockback,
+    player::{Health, Player, Position},
 };
 
 /// `[VERIFIED]`: "it can be cancelled by taking 4 or more damage" while
@@ -44,10 +41,15 @@ impl Module for Blaze {
             energy: Some((100.0, 20.0)),
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.blaze.hurt",
+            death: "minecraft:entity.blaze.death",
+        })
         .cost(8000)
         .blurb("Set people on fire. Armour will not save them.")
         .ability(AbilitySpec {
             name: "Inferno",
+            sound: "minecraft:entity.blaze.shoot",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "Spew flame. No knockback, and armour does not reduce it.",
@@ -59,6 +61,7 @@ impl Module for Blaze {
         })
         .ability(AbilitySpec {
             name: "Firefly",
+            sound: "minecraft:entity.blaze.ambient",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "Charge a second and a half, then ram. Four damage while charging \
@@ -75,6 +78,7 @@ impl Module for Blaze {
         })
         .ultimate(AbilitySpec {
             name: "Phoenix",
+            sound: "minecraft:item.firecharge.use",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Twenty seconds of Firefly with no charge and free flight.",
@@ -122,7 +126,6 @@ fn inferno(cast: &Cast<'_>) {
             kind: DamageKind::Environment,
         });
     }
-    cast.server.cue(ahead, Cue::Charge);
 }
 
 /// `[APPROXIMATED]` damage; the 1.5-second charge is `[VERIFIED]`.

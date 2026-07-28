@@ -115,6 +115,7 @@ S2C_SET_ACTION_BAR_TEXT = 0x57
 S2C_SET_ENTITY_MOTION = 0x65
 S2C_SET_HEALTH = 0x68
 S2C_SET_TITLE_TEXT = 0x72
+S2C_SOUND = 0x75
 S2C_SYSTEM_CHAT = 0x79
 
 # `ServerboundMovePlayerPacket` packs the ground flag into a bitfield; bit 0 is
@@ -158,6 +159,36 @@ def take_lp_vec3(payload, offset):
     ), offset
 
 
+def take_sound(payload):
+    """`ClientboundSoundPacket`, as far as this file cares about it.
+
+    The sound event is a `Holder`: a var int that is either an index into the
+    client's `minecraft:sound_event` registry, biased by one, or zero followed
+    by the event inline. hyperion sends the registries by name and has no id
+    table to look one up in, so it always writes the inline form -- which is
+    also the only form this reads, because an id would tell a test nothing it
+    could compare against a kit declaration.
+
+    Returns `(id, source, position, volume, pitch)` with the position back in
+    blocks; the wire carries it in eighths.
+    """
+    holder, offset = take_var_int(payload)
+    if holder != 0:
+        return None
+    length, offset = take_var_int(payload, offset)
+    sound_id = payload[offset : offset + length].decode("utf-8", "replace")
+    offset += length
+    # `fixedRange` is optional and hyperion leaves it out, but a present one
+    # would shift everything after it.
+    has_range = payload[offset]
+    offset += 1
+    if has_range:
+        offset += 4
+    source, offset = take_var_int(payload, offset)
+    x, y, z, volume, pitch = struct.unpack(">iiiff", payload[offset : offset + 20])
+    return sound_id, source, (x / 8.0, y / 8.0, z / 8.0), volume, pitch
+
+
 def take_nbt_string(payload, offset):
     """Read a network-NBT tag that is a bare string.
 
@@ -183,6 +214,18 @@ REGION_STRIDE = 512
 
 # events/smash/src/module/lives.rs: Mineplex's `MAX_LIVES`.
 MAX_LIVES = 4
+
+# events/smash/src/module/sound.rs: `IMPACT`, the one sound every hit in the
+# game makes. Named here rather than read off the manifest because it is not an
+# ability's sound: it belongs to the hit, and its pitch and volume are what say
+# how hard that hit was.
+IMPACT_SOUND = "minecraft:entity.player.attack.strong"
+
+# How far the sound may be from where the client last claimed the victim was, in
+# blocks. Not zero: the server plays it at the position in its own mirror, which
+# is a tick or two behind whatever the client last sent, and the wire quantises
+# to an eighth of a block on top.
+IMPACT_TOLERANCE = 3.0
 
 # events/smash/src/module/knockback.rs: `KnockbackModel::default`, Mineplex's
 # own numbers. Restated here so the check below is a check and not a
@@ -343,6 +386,10 @@ class MatchClient(base.Client):
         self.seen = {}
         self.action_bar = []
         self.teleported_to = []
+        # Every `ClientboundSoundPacket` this client has been sent, decoded.
+        # Collected per client rather than once, because a positioned sound goes
+        # out on the chunk channel and a player is not always in their own.
+        self.sounds = []
         self.last_position_sent = 0.0
         self.alive = True
 
@@ -512,6 +559,7 @@ class Match:
         if args.abilities:
             self.proof["the server published its ability registry"] = None
             self.proof["every declared ability did what it declared"] = None
+            self.proof["every declared ability was heard"] = None
             self.proof["cooldowns refused a second use"] = None
         self.proof.update({
             "four in play": None,
@@ -519,6 +567,7 @@ class Match:
             "kits equipped": None,
             "arena is a committed map": None,
             "knockback from an ability": None,
+            "a hit was heard where it landed": None,
             "life lost and respawned": None,
             "match ended, back in the hub": None,
         })
@@ -531,6 +580,9 @@ class Match:
         self.sweep_failures = []
         self.cooldown_results = []
         self.cooldown_failures = []
+        # Abilities whose declared sound never arrived, and any sound that
+        # arrived in a form a client could not resolve.
+        self.sound_failures = []
         # Velocity packets seen this window, keyed by entity id. Collected from
         # every client rather than one, because a player is not always in their
         # own broadcast channel and the caster's own launch has to be visible.
@@ -633,6 +685,20 @@ class Match:
         elif packet_id == S2C_SET_TITLE_TEXT:
             text, _ = take_nbt_string(payload, 0)
             client.log("<- title: %s" % text)
+        elif packet_id == S2C_SOUND:
+            heard = take_sound(payload)
+            if heard is None:
+                self.sound_failures.append(
+                    "a sound arrived as a registry id; hyperion sends no id table, "
+                    "so a client would have nothing to resolve it against"
+                )
+                return
+            client.sounds.append(heard)
+            sound_id, _source, at, volume, pitch = heard
+            client.log(
+                "<- sound %s at (%.1f, %.1f, %.1f) vol %.2f pitch %.2f"
+                % ((sound_id,) + at + (volume, pitch))
+            )
         elif packet_id == S2C_SET_ACTION_BAR_TEXT:
             text, _ = take_nbt_string(payload, 0)
             client.action_bar.append(text)
@@ -854,6 +920,16 @@ class Match:
                 "%d abilities fired by a real client, each one checked against "
                 "the effects its own registry entry names" % len(self.manifest),
             )
+        if self.sound_failures:
+            for line in self.sound_failures:
+                self.log("SOUND FAILED %s" % line)
+        else:
+            self.prove(
+                "every declared ability was heard",
+                "%d abilities fired by a real client, each one answered by a "
+                "ClientboundSoundPacket carrying the vanilla sound event its own "
+                "registry entry names" % len(self.manifest),
+            )
         if self.cooldown_failures:
             for line in self.cooldown_failures:
                 self.log("COOLDOWN FAILED %s" % line)
@@ -985,6 +1061,7 @@ class Match:
         for client in self.clients:
             client.action_bar.clear()
             client.teleported_to.clear()
+            client.sounds.clear()
         return {
             "melee": melee,
             "health": {client.name: client.health for client in self.clients},
@@ -1051,6 +1128,10 @@ class Match:
                 )
         return found
 
+    def window_sounds(self):
+        """Every sound id any client has been sent since the last baseline."""
+        return {heard[0] for client in self.clients for heard in client.sounds}
+
     def probe_cooldown(self, entry):
         """Right-click again straight away and expect to be told no."""
         if entry["cooldown"] < 1.0 or entry["refunds_on_hit"]:
@@ -1082,9 +1163,10 @@ class Match:
         label = "%s / %s" % (entry["kit"], entry["name"])
         outstanding = list(entry["proves"])
         evidence = []
+        heard = False
 
         for attempt in range(SWEEP_ATTEMPTS):
-            if not outstanding:
+            if not outstanding and heard:
                 break
             self.stage(entry, attempt)
             if not self.arm(entry):
@@ -1100,12 +1182,23 @@ class Match:
                 if name in outstanding:
                     outstanding.remove(name)
                     evidence.append("%s: %s" % (name, note))
-            if outstanding:
+            # After `observe`, which is what waits out the window the sound
+            # arrives in.
+            if entry["sound"] in self.window_sounds():
+                if not heard:
+                    evidence.append("heard: %s" % entry["sound"])
+                heard = True
+            if outstanding or not heard:
                 self.wait(entry["cooldown"] + 0.5)
 
         if outstanding:
             self.sweep_failures.append(
                 "%s declares %s and did not do it" % (label, ", ".join(outstanding))
+            )
+        if not heard:
+            self.sound_failures.append(
+                "%s declares the sound %s and firing it sent no such packet"
+                % (label, entry["sound"])
             )
         self.sweep_results.append(
             "%-42s %s" % (label, "; ".join(evidence) or "nothing reached a client")
@@ -1325,6 +1418,61 @@ class Match:
         for victim in self.victims():
             attacker.attack(victim)
 
+    def check_impact_sound(self, victim):
+        """A hit is heard where it landed, at a pitch and volume that say how
+        hard.
+
+        The `knockback from an ability` proof above says the launch reached a
+        client. This says the *feedback* did, which is the whole reason this
+        change exists: the physics were already right and the player could not
+        feel them. The two are checked at the same moment because they come from
+        the same event.
+        """
+        vx, vy, vz = victim.position
+        impacts = [
+            heard
+            for client in self.clients
+            for heard in client.sounds
+            if heard[0] == IMPACT_SOUND
+        ]
+        near = [
+            heard
+            for heard in impacts
+            if distance(heard[2], (vx, vy, vz)) < IMPACT_TOLERANCE
+        ]
+        if not near:
+            self.log(
+                "no impact sound arrived near %s at (%.1f, %.1f, %.1f); %d were "
+                "heard elsewhere" % (victim.name, vx, vy, vz, len(impacts))
+            )
+            return
+
+        levels = sorted({(round(h[4], 3), round(h[3], 3)) for h in impacts})
+        _sound_id, _source, at, volume, pitch = near[0]
+        spread = ""
+        if len(levels) > 1:
+            softest, loudest = levels[-1], levels[0]
+            spread = (
+                ". Across the match the hits ranged from pitch %.2f at volume "
+                "%.2f to pitch %.2f at volume %.2f, so a jab and a smash do not "
+                "sound the same" % (softest[0], softest[1], loudest[0], loudest[1])
+            )
+        self.prove(
+            "a hit was heard where it landed",
+            "%s took an impact at (%.1f, %.1f, %.1f), %.2f blocks from where "
+            "they stand, at pitch %.2f and volume %.2f%s"
+            % (
+                victim.name,
+                at[0],
+                at[1],
+                at[2],
+                distance(at, (vx, vy, vz)),
+                pitch,
+                volume,
+                spread,
+            ),
+        )
+
     def check_knockback(self):
         """Hold the launch the ability produced against the model.
 
@@ -1397,6 +1545,7 @@ class Match:
                     attacker.name,
                 ),
             )
+            self.check_impact_sound(victim)
             return
 
         self.log(

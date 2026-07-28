@@ -16,11 +16,10 @@ use crate::{
     module::{
         ability::{Cast, Observable},
         damage::{DamageKind, Damaged, MeleeBonus},
-        kit::{self, AbilitySpec, KitName, KitStats, Playing},
+        kit::{self, AbilitySpec, KitName, KitSounds, KitStats, Playing},
         player::Player,
         projectile::{Flight, Impact, Payload, fire},
     },
-    server::Cue,
 };
 
 /// Damage added per landed melee hit, and the ceiling it climbs to.
@@ -54,10 +53,15 @@ impl Module for Wolf {
             jump_control: true,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.wolf.hurt",
+            death: "minecraft:entity.wolf.death",
+        })
         .cost(4000)
         .blurb("Stick to somebody and every hit lands harder than the last.")
         .ability(AbilitySpec {
             name: "Cub Tackle",
+            sound: "minecraft:entity.baby_wolf.ambient",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Throw a cub. Whoever it lands on can barely move for five seconds.",
@@ -68,6 +72,7 @@ impl Module for Wolf {
         })
         .ability(AbilitySpec {
             name: "Wolf Strike",
+            sound: "minecraft:entity.wolf.growl",
             item: "minecraft:iron_shovel",
             slot: 2,
             description: "Launch at what you are looking at. Triple knockback on a tackled target.",
@@ -82,6 +87,7 @@ impl Module for Wolf {
         })
         .ultimate(AbilitySpec {
             name: "Frenzy",
+            sound: "minecraft:entity.wolf_angry.growl",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Twenty seconds of everything at once.",
@@ -172,7 +178,6 @@ fn wolf_strike(cast: &Cast<'_>) {
 
     cast.server
         .add_velocity(cast.player, cast.facing.0.normalize_or_zero() * 1.6);
-    cast.server.cue(cast.position.0, Cue::Charge);
 
     let caster = cast.caster.id();
     let mut combo = false;

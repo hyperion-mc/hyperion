@@ -9,13 +9,10 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash_at},
-        kit::{self, AbilitySpec, KitStats},
-        projectile::{Flight, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash_at},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    projectile::{Flight, Payload, fire},
 };
 
 /// `[VERIFIED]`: "You also deal 1 more damage to mobs who are on your snow."
@@ -37,10 +34,15 @@ impl Module for Snowman {
             energy: Some((100.0, 18.0)),
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.snow_golem.hurt",
+            death: "minecraft:entity.snow_golem.death",
+        })
         .cost(5000)
         .blurb("Own the ground you are standing on.")
         .ability(AbilitySpec {
             name: "Blizzard",
+            sound: "minecraft:entity.snow_golem.shoot",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "Snowballs, endlessly. Low damage, good knockback, best at an edge.",
@@ -52,6 +54,7 @@ impl Module for Snowman {
         })
         .ability(AbilitySpec {
             name: "Ice Path",
+            sound: "minecraft:block.snow.place",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "A path of ice wherever you point, and a hop so you do not fall through.",
@@ -62,6 +65,7 @@ impl Module for Snowman {
         })
         .ability(AbilitySpec {
             name: "Arctic Aura",
+            sound: "minecraft:entity.snow_golem.ambient",
             item: "minecraft:snow_block",
             slot: 3,
             description: "Snow around you. Slows them, and you hit a point harder on it.",
@@ -73,6 +77,7 @@ impl Module for Snowman {
         })
         .ultimate(AbilitySpec {
             name: "Snow Turret",
+            sound: "minecraft:entity.snowball.throw",
             item: "minecraft:nether_star",
             slot: 8,
             description: "A snowman that shoots for you. Twenty seconds, three of them.",
@@ -108,7 +113,6 @@ fn ice_path(cast: &Cast<'_>) {
         cast.player,
         Vec3::Y * 0.42 + cast.facing.0.normalize_or_zero() * 0.6,
     );
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 /// `[APPROXIMATED]`: the aura is modelled as a pulse rather than as placed snow,

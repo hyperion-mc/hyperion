@@ -8,8 +8,11 @@
 //! tick of latency and buys immunity from that whole class of bug.
 //!
 //! [`Cue`] and [`HotbarItem`] are the game's own closed vocabulary. Choosing
-//! which Minecraft sound, particle and item each one becomes is a hosting
-//! decision, so the mapping lives here and nowhere under `src/module/`.
+//! which Minecraft particle and item each one becomes is a hosting decision, so
+//! the mapping lives here and nowhere under `src/module/`. [`Sound`] is the
+//! exception and arrives already naming a vanilla sound event, because which
+//! noise an ability makes is part of what the ability *is* and belongs with the
+//! kit that declares it; all that is left here is the encoding.
 
 use std::sync::{Arc, Mutex};
 
@@ -38,7 +41,9 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
 use valence_nbt::{Compound, List, Value};
 
-use crate::server::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Text};
+use crate::server::{
+    Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text,
+};
 
 /// One deferred write.
 ///
@@ -83,6 +88,14 @@ enum Op {
     Play {
         at: Vec3,
         cue: Cue,
+    },
+    PlaySound {
+        at: Vec3,
+        sound: Sound,
+    },
+    PlaySoundTo {
+        player: Entity,
+        sound: Sound,
     },
 }
 
@@ -174,6 +187,17 @@ impl Server for HyperionServer {
 
     fn cue(&self, at: Vec3, cue: Cue) {
         self.push(Op::Play { at, cue });
+    }
+
+    fn play_sound(&self, at: Vec3, sound: Sound) {
+        self.push(Op::PlaySound { at, sound });
+    }
+
+    fn play_sound_to(&self, player: PlayerId, sound: Sound) {
+        self.push(Op::PlaySoundTo {
+            player: entity_of(player),
+            sound,
+        });
     }
 }
 
@@ -320,6 +344,65 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             );
         }
         Op::Play { at, cue } => play_cue(compose, at, cue),
+        Op::PlaySound { at, sound } => {
+            let Some(packet) = encode(at, sound) else {
+                return;
+            };
+            if let Err(error) = packet.broadcast_near(compose) {
+                tracing::warn!("dropping a smash sound: {error}");
+            }
+        }
+        Op::PlaySoundTo { player, sound } => {
+            let entity = world.entity_from_id(player);
+            if !entity.is_alive() {
+                return;
+            }
+            let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
+                return;
+            };
+            // At the listener's own ears rather than anywhere in the world, so
+            // it is the same loudness wherever they are standing.
+            let at = entity
+                .try_get::<&hyperion::simulation::Position>(|p| **p)
+                .unwrap_or(Vec3::ZERO);
+            let Some(packet) = encode(at, sound) else {
+                return;
+            };
+            if let Err(error) = packet.play_to(compose, connection) {
+                tracing::warn!("dropping a smash sound: {error}");
+            }
+        }
+    }
+}
+
+/// Turn the game's sound into hyperion's.
+///
+/// `None` only for an id that is not a valid identifier at all, which is a bug
+/// in a kit declaration rather than a runtime condition; `tests/sound.rs` holds
+/// every id in the game to the vanilla registry so one cannot reach here.
+fn encode(at: Vec3, sound: Sound) -> Option<agnostic::Sound> {
+    let ident = hyperion::valence_ident::Ident::new(sound.id)
+        .inspect_err(|error| tracing::warn!("{} is not a sound id: {error}", sound.id))
+        .ok()?;
+    Some(
+        agnostic::sound(ident, at)
+            .volume(sound.volume)
+            .pitch(sound.pitch)
+            .category(category(sound.category))
+            .build(),
+    )
+}
+
+const fn category(category: SoundCategory) -> agnostic::SoundCategory {
+    match category {
+        SoundCategory::Master => agnostic::SoundCategory::Master,
+        SoundCategory::Weather => agnostic::SoundCategory::Weather,
+        SoundCategory::Blocks => agnostic::SoundCategory::Blocks,
+        SoundCategory::Hostile => agnostic::SoundCategory::Hostile,
+        SoundCategory::Neutral => agnostic::SoundCategory::Neutral,
+        SoundCategory::Players => agnostic::SoundCategory::Players,
+        SoundCategory::Ambient => agnostic::SoundCategory::Ambient,
+        SoundCategory::Ui => agnostic::SoundCategory::Ui,
     }
 }
 
@@ -459,7 +542,14 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &Text, lines: &[SidebarLi
     }
 }
 
-/// The game's six cues, as Minecraft sounds and particles.
+/// The game's three cues, as Minecraft particles.
+///
+/// Sound used to be decided here as well, from a six-variant enum, which is why
+/// every ability in the game shared four noises between them. Audio now arrives
+/// already named: the game picks the vanilla sound event, because which sound
+/// an ability makes is a design decision belonging to the kit that declares it,
+/// and only the encoding is a hosting one. What is still a hosting decision,
+/// and so still here, is which particle each cue draws.
 ///
 /// `[INFERRED]` throughout: Mineplex's own choices are not in the leaked source,
 /// which loaded them from the same spreadsheet as everything else.
@@ -467,30 +557,10 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &Text, lines: &[SidebarLi
 const CUE_SPREAD: f32 = 0.4;
 
 fn play_cue(compose: &Compose, at: Vec3, cue: Cue) {
-    let sound = match cue {
-        Cue::Explosion => "minecraft:entity.generic.explode",
-        Cue::Teleport => "minecraft:entity.enderman.teleport",
-        Cue::Hurt => "minecraft:entity.player.hurt",
-        Cue::Death => "minecraft:entity.player.big_fall",
-        Cue::AbilityReady => "minecraft:block.note_block.pling",
-        Cue::Charge => "minecraft:block.note_block.hat",
-    };
-
-    if let Ok(ident) = hyperion::valence_ident::Ident::new(sound) {
-        let packet = agnostic::sound(ident, at).volume(1.0).pitch(1.0).build();
-        if let Err(error) = compose.broadcast(&packet).send() {
-            tracing::warn!("dropping a smash sound: {error}");
-        }
-    }
-
     let particle = match cue {
-        Cue::Explosion => Some(Particle::Explosion),
-        Cue::Teleport => Some(Particle::Portal),
-        Cue::Death => Some(Particle::Cloud),
-        Cue::Hurt | Cue::AbilityReady | Cue::Charge => None,
-    };
-    let Some(particle) = particle else {
-        return;
+        Cue::Explosion => Particle::Explosion,
+        Cue::Teleport => Particle::Portal,
+        Cue::Death => Particle::Cloud,
     };
     let packet = LevelParticles {
         // A cue marks something that just happened to a player, so it is worth

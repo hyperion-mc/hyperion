@@ -14,7 +14,7 @@ use crate::{
     flecs_ext::EntityViewExt,
     module::{
         ability::{Cast, Cooldown, Grants, Named, Observable},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Impact, Payload, fire},
     },
     server::Cue,
@@ -42,10 +42,15 @@ impl Module for Chicken {
             energy: Some((100.0, 25.0)),
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.chicken.hurt",
+            death: "minecraft:entity.chicken.death",
+        })
         .cost(8000)
         .blurb("Cannot take a hit, and does not have to.")
         .ability(AbilitySpec {
             name: "Egg Blaster",
+            sound: "minecraft:entity.egg.throw",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "A stream of eggs. No knockback, but it stops people moving.",
@@ -59,6 +64,7 @@ impl Module for Chicken {
         })
         .ability(AbilitySpec {
             name: "Chicken Missile",
+            sound: "minecraft:entity.chicken.egg",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "A chick that explodes. Recharges the instant it hits something.",
@@ -70,6 +76,7 @@ impl Module for Chicken {
         })
         .ultimate(AbilitySpec {
             name: "Aerial Gunner",
+            sound: "minecraft:entity.chicken.ambient",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Unlimited flight and eggs, for twenty seconds.",

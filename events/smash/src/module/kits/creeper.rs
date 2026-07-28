@@ -13,7 +13,7 @@ use crate::{
     module::{
         ability::{Cast, Observable, splash},
         damage::DamageKind,
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Player,
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -43,10 +43,15 @@ impl Module for Creeper {
             regen: 0.40,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.creeper.hurt",
+            death: "minecraft:entity.creeper.death",
+        })
         .cost(4000)
         .blurb("Hits harder than anything and dies to a stiff breeze.")
         .ability(AbilitySpec {
             name: "Sulphur Bomb",
+            sound: "minecraft:entity.creeper.primed",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Throw coal. It goes off on whatever it touches.",
@@ -57,6 +62,7 @@ impl Module for Creeper {
         })
         .ability(AbilitySpec {
             name: "Explosion",
+            sound: "minecraft:entity.generic.explode",
             item: "minecraft:iron_shovel",
             slot: 2,
             // The wiki: "charge up for 1.5 seconds, then explode ... achieving
@@ -70,6 +76,7 @@ impl Module for Creeper {
         })
         .ultimate(AbilitySpec {
             name: "Atomic Blast",
+            sound: "minecraft:entity.wither.spawn",
             item: "minecraft:nether_star",
             slot: 8,
             description: "The same idea, without the restraint.",

@@ -13,7 +13,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Payload, fire},
     },
     server::Cue,
@@ -38,10 +38,15 @@ impl Module for SkySquid {
             regen: 0.25,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.squid.hurt",
+            death: "minecraft:entity.squid.death",
+        })
         .cost(3000)
         .blurb("Seven pellets up close, and one second of being untouchable.")
         .ability(AbilitySpec {
             name: "Super Squid",
+            sound: "minecraft:entity.squid.ambient",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "One second of flight, and nothing can touch you during it.",
@@ -52,6 +57,7 @@ impl Module for SkySquid {
         })
         .ability(AbilitySpec {
             name: "Ink Shotgun",
+            sound: "minecraft:entity.squid.squirt",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "Seven ink sacs at once. All seven is 12 damage and almost never happens.",
@@ -62,6 +68,7 @@ impl Module for SkySquid {
         })
         .ability(AbilitySpec {
             name: "Fish Flurry",
+            sound: "minecraft:entity.cod.flop",
             item: "minecraft:iron_shovel",
             slot: 3,
             description: "Fish erupt from the ground for four seconds. Hard to walk out of.",
@@ -73,6 +80,7 @@ impl Module for SkySquid {
         })
         .ultimate(AbilitySpec {
             name: "Storm Squid",
+            sound: "minecraft:entity.lightning_bolt.thunder",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Fly, and call lightning down once a second.",
@@ -93,7 +101,6 @@ fn super_squid(cast: &Cast<'_>) {
         cast.player,
         cast.facing.0.normalize_or_zero() * 1.1 + Vec3::Y * 0.9,
     );
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 fn ink_shotgun(cast: &Cast<'_>) {

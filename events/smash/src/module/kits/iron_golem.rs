@@ -13,7 +13,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable, splash, splash_at},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -40,9 +40,14 @@ impl Module for IronGolem {
             jump_power: 0.9,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.iron_golem.hurt",
+            death: "minecraft:entity.iron_golem.death",
+        })
         .blurb("Command space in the arena. Pull enemies in, then hit like a truck.")
         .ability(AbilitySpec {
             name: "Fissure",
+            sound: "minecraft:block.deepslate.break",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Split the ground in a line, launching whoever it reaches.",
@@ -54,6 +59,7 @@ impl Module for IronGolem {
         })
         .ability(AbilitySpec {
             name: "Iron Hook",
+            sound: "minecraft:block.chain.place",
             item: "minecraft:iron_pickaxe",
             slot: 2,
             description: "Throw a hook. On a hit it drags them to you.",
@@ -64,6 +70,7 @@ impl Module for IronGolem {
         })
         .ability(AbilitySpec {
             name: "Seismic Slam",
+            sound: "minecraft:entity.iron_golem.attack",
             item: "minecraft:iron_shovel",
             slot: 3,
             description: "Leap, then land hard. Everything nearby goes flying.",
@@ -75,6 +82,7 @@ impl Module for IronGolem {
         })
         .ultimate(AbilitySpec {
             name: "Earthquake",
+            sound: "minecraft:entity.ravager.roar",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Shake the whole map. Anyone touching the ground pays.",

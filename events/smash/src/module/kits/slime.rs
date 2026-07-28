@@ -16,7 +16,7 @@ use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
         damage::{DamageKind, Damaged, hurt},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         knockback::Knockback,
         player::Energy,
     },
@@ -49,9 +49,14 @@ impl Module for Slime {
             energy: Some((1.0, ENERGY_REGEN_PER_SECOND)),
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.slime.hurt",
+            death: "minecraft:entity.slime.death",
+        })
         .blurb("Spend yourself to send enemies flying, and shrink while you do it.")
         .ability(AbilitySpec {
             name: "Slime Rocket",
+            sound: "minecraft:entity.slime.squish",
             item: "minecraft:iron_sword",
             slot: 0,
             description: "Hold to grow a rocket out of yourself. Release to launch it.",
@@ -65,6 +70,7 @@ impl Module for Slime {
         })
         .ability(AbilitySpec {
             name: "Slime Slam",
+            sound: "minecraft:entity.slime.attack",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Throw yourself at someone. You take a quarter of it back.",
@@ -82,6 +88,7 @@ impl Module for Slime {
         })
         .ultimate(AbilitySpec {
             name: "Giga Slime",
+            sound: "minecraft:entity.slime.jump",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Become enormous and untouchable. Everything near you dies.",
