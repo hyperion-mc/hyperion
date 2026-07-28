@@ -124,11 +124,11 @@ fn losing_the_last_life_eliminates_you_permanently() {
     assert!(player.try_get::<&Placement>(|p| p.0).is_some());
     assert!(
         game.server
-            .messages_to(PlayerId(1))
+            .titles_to(PlayerId(1))
             .iter()
-            .any(|line| line.contains("GAME OVER")),
+            .any(|title| title.title.plain().contains("GAME OVER")),
         "{:?}",
-        game.server.messages_to(PlayerId(1))
+        game.server.titles_to(PlayerId(1))
     );
 
     // Further deaths do nothing.

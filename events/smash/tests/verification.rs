@@ -514,18 +514,19 @@ fn a_death_tells_the_player_what_it_cost_them() {
         kill(player, DeathCause::Void);
         player.remove(RespawnAt::id());
         player.get::<&mut Health>(|health| health.current = health.max);
-        said.push(game.server.messages_to(PlayerId(1)));
+        said.push(
+            game.server
+                .titles_to(PlayerId(1))
+                .into_iter()
+                .map(|title| title.title.plain())
+                .collect::<Vec<_>>(),
+        );
     }
 
     assert_eq!(said[0], vec!["3 lives left!".to_owned()], "{:?}", said[0]);
     assert_eq!(said[1], vec!["2 lives left!".to_owned()], "{:?}", said[1]);
-    assert_eq!(said[2], vec!["1 lives left!".to_owned()], "{:?}", said[2]);
-    assert_eq!(said[3].len(), 1, "{:?}", said[3]);
-    assert!(
-        said[3][0].contains("GAME OVER"),
-        "the last death said {:?}",
-        said[3][0]
-    );
+    assert_eq!(said[2], vec!["1 life left!".to_owned()], "{:?}", said[2]);
+    assert_eq!(said[3], vec!["GAME OVER".to_owned()], "{:?}", said[3]);
 }
 
 /// A respawn is immune for exactly the documented window and no longer.

@@ -136,6 +136,27 @@ pub fn strength(
     base * health_term * taken.0.max(0.0) * ability_multiplier
 }
 
+/// How much further this player is launched than a fresh one, as a percentage.
+///
+/// [`strength`]'s health term is `1 + health_scale_per_hp * missing_health`, so
+/// a player at half health is launched twice as far by an otherwise identical
+/// hit. This is that term with the one taken off and multiplied out: 0% at
+/// full health, 100% where a hit sends you twice as far, and about 190% on the
+/// last half-heart of a twenty-health kit.
+///
+/// It is the same number Super Smash Bros puts on screen, arrived at from the
+/// other direction. Smash accumulates damage and multiplies knockback by it;
+/// Mineplex subtracts health and multiplies knockback by what is missing.
+/// Written out as a percentage the two read identically, and the hearts a
+/// vanilla client draws do not: hearts say how much damage there is left to
+/// take, and this says what the next hit will do with it. Both are the same
+/// health, and only this one is the read the mode is played on.
+#[must_use]
+pub fn percent(model: KnockbackModel, health: Health) -> f32 {
+    let missing = (health.max - health.current).max(0.0);
+    model.health_scale_per_hp * missing * 100.0
+}
+
 /// Turn a strength into the velocity to add to the victim.
 ///
 /// Mineplex scaled a unit trajectory by `0.6 * strength`, read its length back

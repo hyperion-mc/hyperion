@@ -12,7 +12,7 @@ use crate::{
     module::{
         arena::Arena,
         damage::{KILL_CREDIT_WINDOW, LastHitAt, LastHitBy, MatchClock},
-        kit,
+        hud, kit,
         player::{self, Health, JumpsLeft, Player, Position},
         sound::{self, PlaysOnDeath},
     },
@@ -333,6 +333,7 @@ impl Module for LivesModule {
             .observer_named::<Died, (&mut Lives, &PlayerId, &mut Health)>("smash::on_death")
             .with(Player::id())
             .each_iter(|it, index, (lives, player, health)| {
+                let cause = it.param().cause;
                 let victim = it.entity(index);
                 if victim.has(Eliminated::id()) {
                     return;
@@ -347,6 +348,7 @@ impl Module for LivesModule {
 
                 let name = victim.name();
                 let killer = killer_of(victim, clock);
+                let killer_name = killer.map(|killer| world.entity_from_id(killer).name());
                 let at = sound::position_of(victim);
                 // The kit's last word, where it fell. Reached through the
                 // player's own `(Playing, kit)` edge, so this module still does
@@ -355,36 +357,27 @@ impl Module for LivesModule {
 
                 world.get::<&ServerHandle>(|server| {
                     server.cue(at, Cue::Death);
-                    match killer {
-                        Some(killer) => {
-                            let killer_name = world.entity_from_id(killer).name();
-                            server.broadcast(
-                                Channel::Chat,
-                                Text::text(format!("{name} was smashed by {killer_name}!")),
-                            );
-                        }
-                        None => {
-                            server.broadcast(
-                                Channel::Chat,
-                                Text::text(format!("{name} fell out of bounds!")),
-                            );
-                        }
+                    match killer_name.as_deref() {
+                        Some(killer_name) => server.broadcast(
+                            Channel::Chat,
+                            Text::text(format!("{name} was smashed by {killer_name}!")),
+                        ),
+                        None => server.broadcast(
+                            Channel::Chat,
+                            Text::text(format!("{name} fell out of bounds!")),
+                        ),
                     }
                     server.set_spectating(*player, true);
 
-                    if lives.0 == 0 {
-                        server.send_message(
-                            *player,
-                            Channel::Title,
-                            Text::text("GAME OVER: you ran out of lives!").color(NamedColor::Red),
-                        );
-                    } else {
-                        server.send_message(
-                            *player,
-                            Channel::Title,
-                            Text::text(format!("{} lives left!", lives.0)),
-                        );
-                    }
+                    // The victim's own screen, where the subtitle is what
+                    // finally spends the kill credit this module has been
+                    // recording all along: the chat line above names both
+                    // players and is read by everybody except the one person
+                    // who most wants it.
+                    server.show_title(
+                        *player,
+                        hud::death_title(lives.0, killer_name.as_deref(), cause),
+                    );
                 });
 
                 if lives.0 == 0 {

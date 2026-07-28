@@ -21,11 +21,16 @@ use glam::Vec3;
 use hyperion::{
     egress::player_join::roster,
     hyperion_minecraft_proto::{
+        Uuid,
         generated::packet_id::play::clientbound::PacketId,
         packets::play::{
             chunk::{LevelParticles, Particle},
-            clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
+            clientbound::{
+                SetActionBarText, SetDisplayObjective, SetExperience, SetHealth, SetSubtitleText,
+                SetTitleText, SetTitlesAnimation,
+            },
             player::{
+                BossBarColor, BossBarOverlay, BossBarProperties, BossEvent, BossEventOperation,
                 DisplaySlot, NumberFormat, ObjectiveDisplay, ObjectiveRenderType, SetObjective,
                 SetScore,
             },
@@ -46,7 +51,10 @@ use valence_nbt::{Compound, List, Value};
 
 use crate::{
     module::kit::{self, Playing},
-    server::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text},
+    server::{
+        BarColour, BossBar, Channel, Cue, Experience, HotbarItem, PlayerId, Server, SidebarLine,
+        Sound, SoundCategory, Text, Title,
+    },
 };
 
 /// One deferred write.
@@ -100,6 +108,21 @@ enum Op {
     PlaySoundTo {
         player: Entity,
         sound: Sound,
+    },
+    SetExperience {
+        player: Entity,
+        experience: Experience,
+    },
+    SetBossBar {
+        player: Entity,
+        bar: BossBar,
+    },
+    ShowTitle {
+        player: Entity,
+        title: Title,
+    },
+    BroadcastTitle {
+        title: Title,
     },
 }
 
@@ -202,6 +225,31 @@ impl Server for HyperionServer {
             player: entity_of(player),
             sound,
         });
+    }
+
+    fn set_experience(&self, player: PlayerId, experience: Experience) {
+        self.push(Op::SetExperience {
+            player: entity_of(player),
+            experience,
+        });
+    }
+
+    fn set_boss_bar(&self, player: PlayerId, bar: BossBar) {
+        self.push(Op::SetBossBar {
+            player: entity_of(player),
+            bar,
+        });
+    }
+
+    fn show_title(&self, player: PlayerId, title: Title) {
+        self.push(Op::ShowTitle {
+            player: entity_of(player),
+            title,
+        });
+    }
+
+    fn broadcast_title(&self, title: Title) {
+        self.push(Op::BroadcastTitle { title });
     }
 }
 
@@ -406,7 +454,140 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
                 tracing::warn!("dropping a smash sound: {error}");
             }
         }
+        Op::SetExperience { player, experience } => {
+            let Some(connection) = connection_of(world, player) else {
+                return;
+            };
+            let packet = SetExperience {
+                experience_progress: experience.progress,
+                experience_level: experience.level,
+                // Never read by the client's HUD, which draws the bar from
+                // `experience_progress` and the number from `experience_level`.
+                // It is the value `/xp query points` would answer with, and
+                // this game has no points to answer about.
+                total_experience: 0,
+            };
+            let _unused = protocol::send(
+                compose,
+                connection,
+                PacketId::SetExperience.to_raw(),
+                &packet,
+            );
+        }
+        Op::SetBossBar { player, bar } => {
+            let Some(connection) = connection_of(world, player) else {
+                return;
+            };
+            boss_bar(compose, connection, bar_id(player), &bar);
+        }
+        Op::ShowTitle { player, title } => {
+            let Some(connection) = connection_of(world, player) else {
+                return;
+            };
+            show_title(compose, &title, Some(connection));
+        }
+        Op::BroadcastTitle { title } => show_title(compose, &title, None),
     }
+}
+
+/// The connection behind a player, or nothing when they have left.
+fn connection_of(world: WorldRef<'_>, player: Entity) -> Option<ConnectionId> {
+    let entity = world.entity_from_id(player);
+    if !entity.is_alive() {
+        return None;
+    }
+    entity.try_get::<&ConnectionId>(|id| *id)
+}
+
+/// The high half of every boss bar id this game invents.
+///
+/// A bar is addressed by a UUID the *server* chooses and reuses across every
+/// update to it, so the id has to be stable for a player and distinct between
+/// them. The player's own entity id is both, so it is the low half and this is
+/// a namespace that keeps those ids away from any other bar a host might run.
+const BAR_NAMESPACE: u128 = 0x736d_6173_685f_6261_7200_0000_0000_0000;
+
+fn bar_id(player: Entity) -> Uuid {
+    Uuid(BAR_NAMESPACE | u128::from(player.0))
+}
+
+/// Push one player's boss bar.
+///
+/// `Add` every time rather than `Add` once and `UpdateProgress` after, which
+/// would need this file to remember which players already have a bar. It does
+/// not need to: the client's `BossHealthOverlay.add` is a `put` into a
+/// `LinkedHashMap` keyed on the id, so a second `Add` under the same id
+/// replaces the bar in place and keeps its slot on screen. What is lost is the
+/// client-side lerp between two progress values, and that is not wanted here:
+/// the number on this bar is a percentage that steps when somebody is hit, and
+/// sliding it smoothly would be an animation of something that did not happen
+/// smoothly.
+fn boss_bar(compose: &Compose, to: ConnectionId, id: Uuid, bar: &BossBar) {
+    let packet = BossEvent {
+        id,
+        operation: BossEventOperation::Add {
+            name: bar.title.clone(),
+            progress: bar.progress.clamp(0.0, 1.0),
+            color: colour(bar.colour),
+            overlay: BossBarOverlay::Progress,
+            // No fog, no darkened sky and no boss music. Every one of them is
+            // a change to how the arena looks or sounds, and this bar is a
+            // readout rather than an event.
+            properties: BossBarProperties::NONE,
+        },
+    };
+    let _unused = compose.unicast(Clientbound::new(PacketId::BossEvent.to_raw(), &packet), to);
+}
+
+const fn colour(colour: BarColour) -> BossBarColor {
+    match colour {
+        BarColour::Green => BossBarColor::Green,
+        BarColour::Yellow => BossBarColor::Yellow,
+        BarColour::Red => BossBarColor::Red,
+        BarColour::Blue => BossBarColor::Blue,
+    }
+}
+
+/// Put a title on screen: the timing, then the line under it, then the line
+/// itself.
+///
+/// That order is the whole reason [`Title`] is one value. The subtitle packet
+/// only stores a line; the title packet is what draws both and restarts the
+/// animation, so a subtitle written after its title is a line the player sees
+/// under the *next* one. The empty subtitle is sent rather than skipped for
+/// the same reason in reverse: the client keeps the last one it was given, so
+/// a title with nothing under it would otherwise inherit whatever the previous
+/// one said.
+fn show_title(compose: &Compose, title: &Title, to: Option<ConnectionId>) {
+    let animation = SetTitlesAnimation {
+        fade_in: title.times.fade_in,
+        stay: title.times.stay,
+        fade_out: title.times.fade_out,
+    };
+    dispatch(
+        compose,
+        Clientbound::new(PacketId::SetTitlesAnimation.to_raw(), &animation),
+        to,
+    );
+
+    let blank = Text::text("");
+    let subtitle = SetSubtitleText {
+        text: title.subtitle.as_ref().unwrap_or(&blank).to_tag(),
+    };
+    dispatch(
+        compose,
+        Clientbound::new(PacketId::SetSubtitleText.to_raw(), &subtitle),
+        to,
+    );
+
+    let text = SetTitleText {
+        text: title.title.to_tag(),
+    };
+    dispatch(
+        compose,
+        Clientbound::new(PacketId::SetTitleText.to_raw(), &text),
+        to,
+    );
 }
 
 /// Turn the game's sound into hyperion's.
@@ -468,16 +649,6 @@ fn send(compose: &Compose, channel: Channel, text: Text, to: Option<ConnectionId
             dispatch(
                 compose,
                 Clientbound::new(PacketId::SetActionBarText.to_raw(), &packet),
-                to,
-            );
-        }
-        Channel::Title => {
-            let packet = SetTitleText {
-                text: text.to_tag(),
-            };
-            dispatch(
-                compose,
-                Clientbound::new(PacketId::SetTitleText.to_raw(), &packet),
                 to,
             );
         }

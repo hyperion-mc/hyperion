@@ -30,6 +30,7 @@ use smash::{
         ability::AbilityModule,
         arena::{Arena, ArenaModule},
         damage::{Armor, DamageKind, DamageModule, Damaged, hurt},
+        hud::HudModule,
         kit::{self, KitModule, KitStats},
         kits::StockKits,
         knockback::{Knockback, KnockbackModel, KnockbackModule, KnockbackTaken, Smashed},
@@ -313,6 +314,46 @@ fn contracts() -> Vec<Contract> {
             ],
             runtime_requires: &[],
             exercise: |world, _player| {
+                world.progress_time(0.05);
+            },
+        },
+        Contract {
+            name: "Hud",
+            import: |world| {
+                world.import::<HudModule>();
+            },
+            // Everything its one system names in a query term or reads as a
+            // singleton: the player's health and held slot, the ability in that
+            // slot, the lobby's phase and config, and the knockback model the
+            // percentage is derived from.
+            requires: &[
+                "Player",
+                "Knockback",
+                "Damage",
+                "Ability",
+                "Kit",
+                "Arena",
+                "Lives",
+                "Lobby",
+            ],
+            runtime_requires: &[],
+            exercise: |world, player| {
+                // A held slot with an ability in it, so the tick walks the
+                // whole path rather than the empty one: the mirror is the
+                // host's and does not exist here, so the slot is set directly.
+                kit::define(world, "HudContract", KitStats::default())
+                    .ability(smash::module::kit::AbilitySpec {
+                        name: "HudContract",
+                        cooldown: 5.0,
+                        proves: &[smash::module::ability::Observable::HurtsTarget],
+                        ..smash::module::kit::AbilitySpec::DEFAULT
+                    })
+                    .register();
+                let chosen = kit::by_name(world, "HudContract").expect("just defined");
+                kit::apply(world, player, chosen);
+                // The kit's only ability, so the first slot along.
+                player.set(smash::module::player::SelectedSlot(0));
+                world.progress_time(0.05);
                 world.progress_time(0.05);
             },
         },

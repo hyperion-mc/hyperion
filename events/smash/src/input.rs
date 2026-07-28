@@ -230,8 +230,20 @@ impl Module for InputModule {
 
 /// Which of the nine hotbar slots the player is holding.
 fn held_slot(player: EntityView<'_>) -> Option<u8> {
-    let absolute = player.try_get::<&PlayerInventory>(PlayerInventory::get_cursor_index)?;
-    u8::try_from(absolute.checked_sub(PlayerInventory::HOTBAR_START_SLOT)?).ok()
+    hotbar_slot(player.try_get::<&PlayerInventory>(PlayerInventory::get_cursor_index)?)
+}
+
+/// The hotbar slot an inventory cursor index names, if it names one at all.
+///
+/// `ClientboundContainerSetSlot` and `PlayerInventory` both number the whole
+/// inventory; everything else in this game means one of the nine slots a
+/// player can see. Two places do that subtraction -- the input path, which
+/// asks the host what is held at the moment a right-click arrives, and the
+/// mirror, which copies it onto a component once a tick -- so it is written
+/// once here rather than twice with a chance of disagreeing about the bounds.
+pub(crate) fn hotbar_slot(cursor: u16) -> Option<u8> {
+    let slot = u8::try_from(cursor.checked_sub(PlayerInventory::HOTBAR_START_SLOT)?).ok()?;
+    (slot < 9).then_some(slot)
 }
 
 /// The attacker's kit's melee damage, plus whatever their kit has stacked onto

@@ -9,7 +9,10 @@ use std::sync::Mutex;
 
 use glam::Vec3;
 
-use super::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, Text};
+use super::{
+    BossBar, Channel, Cue, Experience, HotbarItem, PlayerId, Server, SidebarLine, Sound, Text,
+    Title,
+};
 
 /// One thing the game asked the server to do.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +30,10 @@ pub enum Call {
     Sound(Vec3, Sound),
     /// A sound only one player hears.
     SoundTo(PlayerId, Sound),
+    Experience(PlayerId, Experience),
+    BossBar(PlayerId, BossBar),
+    Title(PlayerId, Title),
+    BroadcastTitle(Title),
 }
 
 #[derive(Default)]
@@ -108,6 +115,54 @@ impl MockServer {
             .collect()
     }
 
+    /// Every experience bar pushed to `player`, oldest first.
+    #[must_use]
+    pub fn experience_of(&self, player: PlayerId) -> Vec<Experience> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Experience(id, experience) if *id == player => Some(*experience),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every boss bar pushed to `player`, oldest first.
+    #[must_use]
+    pub fn boss_bars_of(&self, player: PlayerId) -> Vec<BossBar> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::BossBar(id, bar) if *id == player => Some(bar.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every title shown to `player` alone.
+    #[must_use]
+    pub fn titles_to(&self, player: PlayerId) -> Vec<Title> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Title(id, title) if *id == player => Some(title.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every title shown to everyone.
+    #[must_use]
+    pub fn broadcast_titles(&self) -> Vec<Title> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::BroadcastTitle(title) => Some(title.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[must_use]
     pub fn broadcasts(&self) -> Vec<String> {
         self.calls()
@@ -163,5 +218,21 @@ impl Server for MockServer {
 
     fn play_sound_to(&self, player: PlayerId, sound: Sound) {
         self.push(Call::SoundTo(player, sound));
+    }
+
+    fn set_experience(&self, player: PlayerId, experience: Experience) {
+        self.push(Call::Experience(player, experience));
+    }
+
+    fn set_boss_bar(&self, player: PlayerId, bar: BossBar) {
+        self.push(Call::BossBar(player, bar));
+    }
+
+    fn show_title(&self, player: PlayerId, title: Title) {
+        self.push(Call::Title(player, title));
+    }
+
+    fn broadcast_title(&self, title: Title) {
+        self.push(Call::BroadcastTitle(title));
     }
 }

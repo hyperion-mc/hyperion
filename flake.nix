@@ -376,6 +376,8 @@
             smash-selector-e2e = 4000;
             smash-identity-e2e = 5000;
             completions-e2e = 6000;
+            smash-hotbar-e2e = 7000;
+            smash-hud-e2e = 8000;
           };
 
           # Two gates on one offset, as a build failure rather than as a race.
@@ -750,8 +752,35 @@
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/hotbar-check.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 6000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 6000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-hotbar-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-hotbar-e2e)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
+            # The same gate again, driving a client that reads the screen rather
+            # than the world: the experience bar as an ability recharges, the
+            # boss bar through every phase, and the titles a match punctuates
+            # itself with. Three of those packets were sent zero times by this
+            # server before the HUD landed, so nothing else here can tell a
+            # regression from the way it always was.
+            #
+            # Its ports come from `e2eOffsets`, which is also where
+            # `smash-hotbar-e2e` has just been moved to: it was written with a
+            # literal 6000, which is `completions-e2e`'s, and a literal is
+            # exactly what `e2ePortsDistinct` cannot see. Two gates on one
+            # offset is a race for a socket on darwin, and the guard only works
+            # if every gate is in the table it reads.
+            smash-hud-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/hud-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-hud-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-hud-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -908,6 +937,18 @@
               timeout = 300;
             };
 
+            # The screen, on a real connection. Eight clients rather than four,
+            # because `full_players` is what makes the lobby run its ten second
+            # countdown instead of its sixty second one, and the countdown is
+            # half of what this reads.
+            smash-hud-e2e = e2e.mkCheck {
+              name = "hyperion-smash-hud-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "hud-check.py";
+              timeout = 420;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
@@ -916,6 +957,7 @@
             smash-selector-e2e-app = scripts.smash-selector-e2e;
             smash-identity-e2e-app = scripts.smash-identity-e2e;
             smash-hotbar-e2e-app = scripts.smash-hotbar-e2e;
+            smash-hud-e2e-app = scripts.smash-hud-e2e;
 
             # Every kit's skin, checked offline against Mojang's committed
             # public keys. A derivation rather than only an app, because the
