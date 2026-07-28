@@ -117,6 +117,8 @@ import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundHurtAnimationPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerAbilitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
@@ -151,6 +153,8 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Abilities;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
@@ -474,6 +478,7 @@ public final class VanillaEncoder {
         playerAbilities(registries);
         sectionBlocksUpdate(registries);
         levelParticles(registries);
+        mobEffects(registries);
         containerPackets(registries);
         combatPackets(registries);
     }
@@ -645,6 +650,49 @@ public final class VanillaEncoder {
                             0.75f,
                             100)));
         }
+    }
+
+    /// The two mob-effect packets, through the game's own `holderRegistry`
+    /// codec.
+    ///
+    /// The effect id is what matters: `MobEffect.STREAM_CODEC` is
+    /// `holderRegistry`, and this crate types the field as a plain
+    /// `RegistryId`, so if `holderRegistry` biased the id the way the inline
+    /// `holder` codec does, these bytes would be off by one and a slow would
+    /// arrive as the wrong effect. The registry ids are pinned separately for
+    /// the two the tooltips reach for.
+    private void mobEffects(RegistryAccess.Frozen registries) {
+        Registry<MobEffect> effects = registries.lookupOrThrow(Registries.MOB_EFFECT);
+        // By name rather than through the `MobEffects` constants, which are not
+        // in the decompiled subset this harness is otherwise written against.
+        Holder<MobEffect> slowness = effects.getOrThrow(
+                ResourceKey.create(Registries.MOB_EFFECT, Identifier.withDefaultNamespace("slowness")));
+        Holder<MobEffect> speed = effects.getOrThrow(
+                ResourceKey.create(Registries.MOB_EFFECT, Identifier.withDefaultNamespace("speed")));
+
+        put("mob_effect_id.slowness", Integer.toString(BuiltInRegistries.MOB_EFFECT.getId(slowness.value())));
+        put("mob_effect_id.speed", Integer.toString(BuiltInRegistries.MOB_EFFECT.getId(speed.value())));
+
+        // Slowness IV for a second and a half, particles and icon on: the shape
+        // an immobilise or a web-slow takes. Amplifier is zero-based, so IV is
+        // 3, and 30 ticks is 1.5 s.
+        MobEffectInstance slow = new MobEffectInstance(slowness, 30, 3, false, true, true);
+        put("packet.update_mob_effect.slowness", encode(
+                registries,
+                ClientboundUpdateMobEffectPacket.STREAM_CODEC,
+                new ClientboundUpdateMobEffectPacket(0x2A, slow, false)));
+
+        // Speed II, indefinite (-1), which is the caster-buff shape.
+        MobEffectInstance fast = new MobEffectInstance(speed, -1, 1, false, true, true);
+        put("packet.update_mob_effect.speed", encode(
+                registries,
+                ClientboundUpdateMobEffectPacket.STREAM_CODEC,
+                new ClientboundUpdateMobEffectPacket(0x2A, fast, false)));
+
+        put("packet.remove_mob_effect.slowness", encode(
+                registries,
+                ClientboundRemoveMobEffectPacket.STREAM_CODEC,
+                new ClientboundRemoveMobEffectPacket(0x2A, slowness)));
     }
 
     private void setEquipment(RegistryAccess registries) {

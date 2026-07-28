@@ -24,11 +24,13 @@ use hyperion::{
         motion::{knockback_impulse, quantized},
         shape::sample,
         spawn::{Lifetime, facing, launch, spawn},
+        status::Status,
     },
     simulation::{Owner, Pitch, Player, Position, Uuid, Velocity, Yaw, entity_kind::EntityKind},
 };
 use hyperion_minecraft_proto::{
     Decode, Encode, Reader, Writer,
+    generated::registry::MobEffect,
     item::nbt::Scanner,
     packets::play::{chunk::LevelParticles, entity::SetEntityMotion},
     particle::{Argb, Particle},
@@ -491,4 +493,105 @@ fn answers_nearest_first(world: &World) {
     // ability multiplies its damage by.
     assert!((hits[0].falloff(10.0) - 0.9).abs() < 1e-5);
     assert_eq!(hits[0].falloff(0.0), 0.0);
+}
+
+// --- status effects --------------------------------------------------------
+
+/// A real slow reaches the wire as the effect, amplifier, duration and flags
+/// the builder was given.
+///
+/// Compared against the exact bytes the game's own encoder produced for the
+/// same `MobEffectInstance`, pinned in `hyperion-minecraft-proto`'s
+/// `play_mob_effect` differential. Byte-for-byte here ties the builder to that
+/// proof: `Slowness IV` for 1.5 s with particles and icon is `2a 01 03 1e 06`.
+#[test]
+fn a_slow_encodes_to_the_bytes_the_jar_produces() {
+    let packet = Status::new(MobEffect::Slowness, 3)
+        .seconds(1.5)
+        .packet(0x2A);
+    assert_eq!(encoded(&packet), [0x2A, 0x01, 0x03, 0x1E, 0x06]);
+}
+
+/// The default duration is indefinite, so an effect built without a duration
+/// does not silently vanish after a tick.
+#[test]
+fn an_effect_with_no_duration_set_is_indefinite() {
+    let packet = Status::new(MobEffect::Speed, 0).packet(1);
+    assert_eq!(packet.effect_duration_ticks, -1);
+}
+
+/// Seconds round to the nearest tick, the finest the wire counts.
+///
+/// The two values discriminate rounding from both truncation and ceiling: 1.58
+/// s is 31.6 ticks, which a truncation would drop to 31, and 1.52 s is 30.4,
+/// which a ceiling would push to 31. Only round-to-nearest gives 32 and 30.
+#[test]
+fn a_duration_rounds_to_the_nearest_tick() {
+    let ticks = |seconds: f32| {
+        Status::new(MobEffect::Slowness, 0)
+            .seconds(seconds)
+            .packet(0)
+            .effect_duration_ticks
+    };
+    assert_eq!(ticks(1.5), 30, "an exact multiple is itself");
+    assert_eq!(ticks(1.58), 32, "31.6 rounds up, not down to 31");
+    assert_eq!(ticks(1.52), 30, "30.4 rounds down, not up to 31");
+}
+
+/// The amplifier is passed through unwidened and unshifted: level IV is a 3 on
+/// the wire, not a 4.
+#[test]
+fn the_amplifier_is_zero_based_on_the_wire() {
+    assert_eq!(
+        Status::new(MobEffect::Slowness, 3)
+            .packet(0)
+            .effect_amplifier,
+        3
+    );
+}
+
+/// Each display flag lands in its own bit, and the default is visible plus
+/// icon.
+#[test]
+fn the_display_flags_pack_one_per_bit() {
+    // Default: FLAG_VISIBLE (2) | FLAG_SHOW_ICON (4).
+    assert_eq!(Status::new(MobEffect::Speed, 0).flags(), 0b110);
+
+    assert_eq!(
+        Status::new(MobEffect::Speed, 0)
+            .particles(false)
+            .icon(false)
+            .ambient(true)
+            .flags(),
+        0b001,
+        "ambient alone is bit 0"
+    );
+    assert_eq!(
+        Status::new(MobEffect::Speed, 0).icon(false).flags(),
+        0b010,
+        "particles alone is bit 1"
+    );
+    assert_eq!(
+        Status::new(MobEffect::Speed, 0)
+            .ambient(true)
+            .particles(true)
+            .icon(true)
+            .flags(),
+        0b111,
+        "all three set"
+    );
+}
+
+/// The effect carries the id the enum assigns, so a caller naming
+/// `MobEffect::Slowness` sends slowness and not the effect one id away.
+#[test]
+fn the_effect_id_is_the_one_the_enum_names() {
+    assert_eq!(
+        Status::new(MobEffect::Slowness, 0).packet(0).effect,
+        MobEffect::Slowness.id()
+    );
+    assert_eq!(
+        Status::new(MobEffect::Speed, 0).packet(0).effect,
+        MobEffect::Speed.id()
+    );
 }

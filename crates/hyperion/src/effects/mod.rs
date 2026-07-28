@@ -10,8 +10,9 @@
 //! second path to the same packet is worth less than the one that exists.
 //!
 //! Only [particles](particle) is a flecs module, because only particles have
-//! state that outlives the call that started them. Motion, area queries and
-//! spawning are functions over components other modules already own, and
+//! state that outlives the call that started them. Motion, area queries,
+//! spawning and status effects are functions over components other modules
+//! already own, or over packets the client itself keeps state for, and
 //! wrapping each in a `Module` that registers nothing would be ceremony.
 
 pub mod area;
@@ -19,6 +20,7 @@ pub mod motion;
 pub mod particle;
 pub mod shape;
 pub mod spawn;
+pub mod status;
 
 use flecs_ecs::prelude::*;
 
@@ -28,6 +30,7 @@ pub use self::{
     particle::{Effect, ParticleEmitter, ParticleModule},
     shape::Shape,
     spawn::{launch, spawn},
+    status::{Status, clear as clear_status},
 };
 
 /// Everything an ability needs to be seen and felt.
