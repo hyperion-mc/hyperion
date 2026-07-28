@@ -23,7 +23,10 @@ use std::io::Write;
 
 use anyhow::Context as _;
 use flecs_ecs::{
-    core::{Entity, EntityViewGet, IdOperations, World},
+    core::{
+        Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI, QueryBuilderImpl,
+        QueryFlags, World,
+    },
     macros::Component,
 };
 use hyperion_minecraft_proto::{
@@ -70,6 +73,82 @@ pub(crate) static ROOT_COMMAND: once_cell::sync::OnceCell<Entity> =
 
 pub fn get_root_command_entity() -> Entity {
     *ROOT_COMMAND.get().unwrap()
+}
+
+/// Relation on a command argument node: `(Suggests, tag)` says the values a
+/// client may complete this argument to are the entities carrying `tag`.
+///
+/// A relation rather than a registry of strings because the candidates already
+/// exist as entities, and a second copy of them is a second thing to keep in
+/// step. `/kit` suggests whatever carries smash's `Kit` tag at the moment the
+/// player presses tab, so a kit added, renamed or removed changes what the
+/// client offers with nothing else edited.
+#[derive(Component)]
+pub struct Suggests;
+
+/// On a tag entity that is the target of [`Suggests`]: how to render one of the
+/// entities carrying it as the text a client completes to. Returning `None`
+/// leaves that entity out.
+///
+/// It sits on the tag rather than on the argument node because it describes the
+/// thing being suggested, not the argument doing the suggesting. Every argument
+/// that suggests kits renders a kit the same way, and only the kit module knows
+/// that a kit's name is in its `KitName`.
+#[derive(Component)]
+pub struct SuggestionLabel(pub fn(EntityView<'_>) -> Option<String>);
+
+/// Completions an argument's own type already knows.
+///
+/// `hyperion-clap` fills this in from a clap `ValueEnum`'s possible values, so
+/// an argument whose type enumerates itself completes without anything being
+/// declared anywhere. A node carrying this ignores [`Suggests`].
+#[derive(Component)]
+pub struct FixedSuggestions(pub Vec<String>);
+
+/// Every value `node` may be completed to right now.
+///
+/// Answers from [`FixedSuggestions`] when the argument's type knows its own
+/// values, and otherwise follows every `(Suggests, tag)` edge and asks each
+/// entity carrying `tag` for its [`SuggestionLabel`]. A node with neither has
+/// no completions, which is the right answer for a free-form argument such as
+/// a chat message.
+///
+/// The query matches prefabs and disabled entities, because a completion source
+/// is game state in whatever form the module that owns it chose: smash's kits
+/// are prefabs, and flecs leaves prefabs out of a query unless asked.
+#[must_use]
+pub fn suggestions(world: &World, node: Entity) -> Vec<String> {
+    let view = world.entity_from_id(node);
+
+    if let Some(fixed) = view.try_get::<&FixedSuggestions>(|fixed| fixed.0.clone()) {
+        return fixed;
+    }
+
+    let mut tags = Vec::new();
+    view.each_target(Suggests, |tag| tags.push(tag.id()));
+
+    let mut out = Vec::new();
+    for tag in tags {
+        let Some(label) = world
+            .entity_from_id(tag)
+            .try_get::<&SuggestionLabel>(|label| label.0)
+        else {
+            warn!("a command argument suggests {tag}, which carries no SuggestionLabel");
+            continue;
+        };
+
+        world
+            .query::<()>()
+            .with(tag)
+            .query_flags(QueryFlags::MatchPrefab | QueryFlags::MatchDisabled)
+            .build()
+            .each_entity(|entity, ()| {
+                if let Some(text) = label(entity) {
+                    out.push(text);
+                }
+            });
+    }
+    out
 }
 
 impl Command {
@@ -349,9 +428,127 @@ pub fn get_command_packet(world: &World, root: Entity, player_opt: Option<Entity
 
 #[cfg(test)]
 mod tests {
+    use flecs_ecs::core::ComponentId;
     use hyperion_minecraft_proto::{Decode, Reader};
 
     use super::*;
+
+    /// Stands in for smash's `Kit`: a tag whose bearers are what an argument
+    /// completes to.
+    #[derive(Component)]
+    struct Choice;
+
+    /// Stands in for `KitName`.
+    #[derive(Component)]
+    struct Label(&'static str);
+
+    /// A world with the completion vocabulary registered, a `Choice` tag that
+    /// knows how to render itself, and one argument node pointed at it.
+    fn completion_world() -> (World, Entity) {
+        let world = World::new();
+        world.component::<Command>();
+        world.component::<Suggests>();
+        world.component::<SuggestionLabel>();
+        world.component::<FixedSuggestions>();
+        world.component::<Label>();
+        world.component::<Choice>().set(SuggestionLabel(|entity| {
+            entity.try_get::<&Label>(|label| label.0.to_owned())
+        }));
+
+        let node = world.entity().set(Command::argument(
+            "choice",
+            Parser::String(StringArg::GreedyPhrase),
+        ));
+        node.add((Suggests, Choice::id()));
+
+        let id = node.id();
+        (world, id)
+    }
+
+    #[test]
+    fn an_argument_with_no_source_offers_nothing() {
+        let world = World::new();
+        world.component::<Command>();
+        world.component::<Suggests>();
+        world.component::<SuggestionLabel>();
+        world.component::<FixedSuggestions>();
+
+        let node = world.entity().set(Command::argument(
+            "message",
+            Parser::String(StringArg::GreedyPhrase),
+        ));
+
+        assert!(suggestions(&world, node.id()).is_empty());
+    }
+
+    #[test]
+    fn suggestions_are_whatever_carries_the_tag_right_now() {
+        let (world, node) = completion_world();
+
+        // Prefabs, which is the shape smash's kits take, and which flecs leaves
+        // out of a query unless it is asked for them.
+        world
+            .prefab_named("golem")
+            .add(Choice::id())
+            .set(Label("Iron Golem"));
+        let skeleton = world
+            .prefab_named("skeleton")
+            .add(Choice::id())
+            .set(Label("Skeleton"));
+
+        let mut offered = suggestions(&world, node);
+        offered.sort();
+        assert_eq!(offered, vec![
+            "Iron Golem".to_owned(),
+            "Skeleton".to_owned()
+        ]);
+
+        // The point of the relation: the completions follow the world rather
+        // than a list somebody has to remember to edit.
+        skeleton.destruct();
+        assert_eq!(suggestions(&world, node), vec!["Iron Golem".to_owned()]);
+
+        world
+            .prefab_named("wolf")
+            .add(Choice::id())
+            .set(Label("Wolf"));
+        let mut offered = suggestions(&world, node);
+        offered.sort();
+        assert_eq!(offered, vec!["Iron Golem".to_owned(), "Wolf".to_owned()]);
+    }
+
+    #[test]
+    fn a_bearer_with_no_label_is_left_out_rather_than_offered_blank() {
+        let (world, node) = completion_world();
+
+        world.entity().add(Choice::id()).set(Label("Named"));
+        world.entity().add(Choice::id());
+
+        assert_eq!(suggestions(&world, node), vec!["Named".to_owned()]);
+    }
+
+    #[test]
+    fn a_type_that_knows_its_own_values_answers_without_the_world() {
+        let (world, node) = completion_world();
+
+        world
+            .prefab_named("golem")
+            .add(Choice::id())
+            .set(Label("Iron Golem"));
+
+        // What `hyperion-clap` writes for a clap `ValueEnum`. It wins over the
+        // relation, because an argument whose type enumerates itself cannot
+        // accept anything else.
+        world.entity_from_id(node).set(FixedSuggestions(vec![
+            "survival".to_owned(),
+            "creative".to_owned(),
+        ]));
+
+        assert_eq!(suggestions(&world, node), vec![
+            "survival".to_owned(),
+            "creative".to_owned()
+        ]);
+    }
 
     /// The bytes a tree encodes to, id byte and all.
     fn encode(tree: &CommandTree) -> Vec<u8> {

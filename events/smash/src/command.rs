@@ -6,18 +6,25 @@
 use std::fmt::Write;
 
 use clap::Parser;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider};
+use flecs_ecs::core::{
+    ComponentId, Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider,
+};
 use hyperion::net::{Compose, ConnectionId, agnostic};
 use hyperion_clap::{CommandPermission, MinecraftCommand, hyperion_command::CommandRegistry};
 
 use crate::module::{
     ability,
-    kit::{self, KitBlurb, KitName},
+    kit::{self, Kit, KitBlurb, KitName},
     lobby,
 };
 
 pub fn register(registry: &mut CommandRegistry, world: &World) {
-    KitCommand::register(registry, world);
+    // The kit names a client offers on tab are a query over the kit prefabs,
+    // taken when the player presses tab. Adding a kit changes what `/kit `
+    // completes to and there is no list here to update, which is the same claim
+    // the rest of this crate makes about kits and the same way it is kept
+    // honest: `tests/modularity.rs` adds one from outside the crate.
+    KitCommand::register(registry, world).completes("name", Kit::id());
     KitsCommand::register(registry, world);
     AbilitiesCommand::register(registry, world);
     CrystalCommand::register(registry, world);

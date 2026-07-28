@@ -10,6 +10,7 @@
 //! test in `tests/modularity.rs` adds a kit from outside the crate to prove it.
 
 use flecs_ecs::prelude::*;
+use hyperion::simulation::command::SuggestionLabel;
 
 use crate::{
     flecs_ext::EntityViewExt,
@@ -429,7 +430,19 @@ impl Module for KitModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Kit");
 
-        world.component::<Kit>();
+        // A `/kit` completion is a query over whatever carries this tag, and
+        // this is the one place that says what a kit's name is. Nothing else
+        // in the completion path knows a kit from a map or an ability.
+        //
+        // `SuggestionLabel` is registered here as well as by `HyperionCore`,
+        // the same way this crate registers hyperion's `Position` and `Health`:
+        // `tests/contract.rs` runs each module in a world holding only what
+        // that module declares, so a component reached for and never registered
+        // aborts there rather than on a server.
+        world.component::<SuggestionLabel>();
+        world.component::<Kit>().set(SuggestionLabel(|kit| {
+            kit.try_get::<&KitName>(|name| name.0.to_owned())
+        }));
         world.component::<KitStats>();
         world.component::<KitName>();
         world.component::<KitCost>();
