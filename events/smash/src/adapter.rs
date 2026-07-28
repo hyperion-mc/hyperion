@@ -23,12 +23,12 @@ use hyperion::{
                 chunk::{LevelParticles, Particle},
                 clientbound::{SetActionBarText, SetDisplayObjective, SetHealth, SetTitleText},
                 player::{
-                    DisplaySlot, ObjectiveDisplay, ObjectiveRenderType, SetObjective, SetScore,
+                    DisplaySlot, NumberFormat, ObjectiveDisplay, ObjectiveRenderType, SetObjective,
+                    SetScore,
                 },
             },
             play_login::{GameEvent, GameType},
         },
-        text::Component,
     },
     net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
     simulation::{PendingTeleportation, Velocity, metadata::living_entity::Health},
@@ -38,7 +38,7 @@ use hyperion_inventory::PlayerInventory;
 use hyperion_utils::EntityExt;
 use valence_nbt::{Compound, List, Value};
 
-use crate::server::{Channel, Cue, HotbarItem, PlayerId, Server};
+use crate::server::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Text};
 
 /// One deferred write.
 ///
@@ -65,16 +65,16 @@ enum Op {
     Message {
         player: Entity,
         channel: Channel,
-        text: String,
+        text: Text,
     },
     Broadcast {
         channel: Channel,
-        text: String,
+        text: Text,
     },
     Sidebar {
         player: Entity,
-        title: String,
-        lines: Vec<String>,
+        title: Text,
+        lines: Vec<SidebarLine>,
     },
     Spectating {
         player: Entity,
@@ -145,25 +145,22 @@ impl Server for HyperionServer {
         });
     }
 
-    fn send_message(&self, player: PlayerId, channel: Channel, text: &str) {
+    fn send_message(&self, player: PlayerId, channel: Channel, text: Text) {
         self.push(Op::Message {
             player: entity_of(player),
             channel,
-            text: text.to_owned(),
+            text,
         });
     }
 
-    fn broadcast(&self, channel: Channel, text: &str) {
-        self.push(Op::Broadcast {
-            channel,
-            text: text.to_owned(),
-        });
+    fn broadcast(&self, channel: Channel, text: Text) {
+        self.push(Op::Broadcast { channel, text });
     }
 
-    fn set_sidebar(&self, player: PlayerId, title: &str, lines: &[String]) {
+    fn set_sidebar(&self, player: PlayerId, title: Text, lines: &[SidebarLine]) {
         self.push(Op::Sidebar {
             player: entity_of(player),
-            title: title.to_owned(),
+            title,
             lines: lines.to_vec(),
         });
     }
@@ -283,9 +280,9 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
             let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
                 return;
             };
-            send(compose, channel, &text, Some(connection));
+            send(compose, channel, text, Some(connection));
         }
-        Op::Broadcast { channel, text } => send(compose, channel, &text, None),
+        Op::Broadcast { channel, text } => send(compose, channel, text, None),
         Op::Sidebar {
             player,
             title,
@@ -326,16 +323,30 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op) {
     }
 }
 
-fn send(compose: &Compose, channel: Channel, text: &str, to: Option<ConnectionId>) {
+fn send(compose: &Compose, channel: Channel, text: Text, to: Option<ConnectionId>) {
     match channel {
         Channel::Chat => {
-            let chat = agnostic::chat(text);
+            // `agnostic::chat` builds its own component from a string, so this
+            // is the one place in smash where a style cannot survive. Giving
+            // that helper a component-taking sibling is a change to hyperion's
+            // own API rather than to the game: ENG-10796.
+            //
+            // Until then the drop is loud. Not a `debug_assert`: the servers
+            // that would hit it are release builds, so an assertion is
+            // compiled out exactly where it would have been read, and the mock
+            // seam the tests use never reaches this function at all.
+            if !text.style.is_empty() || !text.extra.is_empty() {
+                tracing::warn!(
+                    "dropping the style off a chat line, which Channel::Chat cannot carry: \
+                     {text:?}"
+                );
+            }
+            let chat = agnostic::chat(text.plain());
             dispatch(compose, &chat, to);
         }
         Channel::ActionBar => {
-            let component = Component::text(text);
             let packet = SetActionBarText {
-                text: component.to_tag(),
+                text: text.to_tag(),
             };
             dispatch(
                 compose,
@@ -344,9 +355,8 @@ fn send(compose: &Compose, channel: Channel, text: &str, to: Option<ConnectionId
             );
         }
         Channel::Title => {
-            let component = Component::text(text);
             let packet = SetTitleText {
-                text: component.to_tag(),
+                text: text.to_tag(),
             };
             dispatch(
                 compose,
@@ -376,7 +386,7 @@ where
 /// objective is per player and the scoreboard is redrawn once a second at most,
 /// so keeping a shadow copy of every line to compute a delta would be more state
 /// than the whole feature is worth.
-fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
+fn sidebar(compose: &Compose, to: ConnectionId, title: &Text, lines: &[SidebarLine]) {
     const OBJECTIVE: &str = "smash";
 
     // `METHOD_REMOVE`, which takes every score with it, so the rows below are
@@ -391,11 +401,10 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
         to,
     );
 
-    let title_text = Component::text(title);
     let create = SetObjective {
         objective_name: OBJECTIVE,
         display: Some(ObjectiveDisplay {
-            display_name: title_text,
+            display_name: title.clone(),
             render_type: ObjectiveRenderType::Integer,
             number_format: None,
         }),
@@ -415,20 +424,36 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &str, lines: &[String]) {
         to,
     );
 
-    // A sidebar row is keyed by its own text, so two identical rows collapse
-    // into one. Padding with a run of colour codes keeps them distinct and
-    // renders as nothing.
+    // A sidebar row is keyed by its score holder, and two rows with the same
+    // holder collapse into one. The holder used to be the row's own text,
+    // padded with a run of legacy reset codes to keep duplicates apart, which
+    // meant the key and the visible text were the same string and neither
+    // could be chosen freely. `SetScore.display` separates them: the holder is
+    // a positional key nobody sees, and the row on screen is a component with
+    // a real style.
+    //
+    // The score used to be `lines.len() - index`, so the column the client
+    // draws in red carried this loop's counter. It is now the row's own score,
+    // which is what `render` decided it means, and a row that means nothing by
+    // it says so with `NumberFormat::Blank` rather than by hoping nobody
+    // reads it.
+    //
+    // The order is the score's, not the packet's: the client sorts by score
+    // descending and breaks ties on the holder, case-insensitively ascending.
+    // So the key is zero-padded, which makes its lexicographic order the same
+    // as this loop's and the same as the order `render` chose. Unpadded,
+    // `row10` would sort between `row1` and `row2` and a full lobby would come
+    // out shuffled.
     for (index, line) in lines.iter().enumerate() {
-        let Ok(score) = i32::try_from(lines.len().saturating_sub(index)) else {
-            continue;
-        };
-        let unique = format!("{line}{}", "§r".repeat(index));
+        let owner = format!("row{index:02}");
         let packet = SetScore {
-            owner: unique.as_str(),
+            owner: owner.as_str(),
             objective_name: OBJECTIVE,
-            score,
-            display: None,
-            number_format: None,
+            score: line.score.value(),
+            display: Some(line.text.clone()),
+            // A rank-only row still needs a score to sort on, so the number is
+            // suppressed at the client rather than left out of the packet.
+            number_format: line.score.drawn().is_none().then_some(NumberFormat::Blank),
         };
         let _unused = compose.unicast(Clientbound::new(PacketId::SetScore.to_raw(), &packet), to);
     }
@@ -502,13 +527,17 @@ fn stack_for(item: &HotbarItem) -> ItemStack {
 }
 
 /// The 1.20.1 `display` tag: a name and lore, each one a JSON chat component.
+///
+/// JSON and not [`Text`], because this tag predates the move to NBT
+/// components and `valence_nbt` is what carries it. Rewriting the item path
+/// onto the component codec is worth doing and is not this change.
 fn display_tag(name: &str, lore: &[String]) -> Compound {
     let mut display = Compound::new();
-    display.insert("Name", Value::String(json_text(name)));
+    display.insert("Name", Value::String(json_text(name, None)));
     if !lore.is_empty() {
         let rendered: Vec<_> = lore
             .iter()
-            .map(|line| json_text(&format!("§7{line}")))
+            .map(|line| json_text(line, Some("gray")))
             .collect();
         display.insert("Lore", Value::List(List::String(rendered)));
     }
@@ -517,9 +546,19 @@ fn display_tag(name: &str, lore: &[String]) -> Compound {
     tag
 }
 
-fn json_text(text: &str) -> String {
+/// One JSON text component.
+///
+/// The colour is a field and not a legacy section-sign prefix on the text. A
+/// formatting code inside the literal only renders at all because the client
+/// still runs the pre-1.16 formatter over component text, it cannot say
+/// anything outside the sixteen named colours, and it is the exact shape of
+/// the bug that put `[green]` on the smash sidebar.
+fn json_text(text: &str, color: Option<&str>) -> String {
     let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
-    format!(r#"{{"text":"{escaped}","italic":false}}"#)
+    color.map_or_else(
+        || format!(r#"{{"text":"{escaped}","italic":false}}"#),
+        |color| format!(r#"{{"text":"{escaped}","italic":false,"color":"{color}"}}"#),
+    )
 }
 
 /// The numeric id the client knows an entity by. Re-exported so the input layer

@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use glam::Vec3;
 
-use super::{Channel, Cue, HotbarItem, PlayerId, Server};
+use super::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Text};
 
 /// One thing the game asked the server to do.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,9 +18,9 @@ pub enum Call {
     Teleport(PlayerId, Vec3),
     SetHealth(PlayerId, f32, f32),
     SetHotbar(PlayerId, Vec<HotbarItem>),
-    Message(PlayerId, Channel, String),
-    Broadcast(Channel, String),
-    Sidebar(PlayerId, String, Vec<String>),
+    Message(PlayerId, Channel, Text),
+    Broadcast(Channel, Text),
+    Sidebar(PlayerId, Text, Vec<SidebarLine>),
     Spectating(PlayerId, bool),
     Cue(Vec3, Cue),
 }
@@ -65,12 +65,16 @@ impl MockServer {
             .sum()
     }
 
+    /// What was said to `player`, as the words without the styling.
+    ///
+    /// A test asserting on wording wants the words; a test asserting on colour
+    /// reads [`Call::Message`] and looks at the component.
     #[must_use]
     pub fn messages_to(&self, player: PlayerId) -> Vec<String> {
         self.calls()
             .iter()
             .filter_map(|call| match call {
-                Call::Message(id, _, text) if *id == player => Some(text.clone()),
+                Call::Message(id, _, text) if *id == player => Some(text.plain()),
                 _ => None,
             })
             .collect()
@@ -81,7 +85,7 @@ impl MockServer {
         self.calls()
             .iter()
             .filter_map(|call| match call {
-                Call::Broadcast(_, text) => Some(text.clone()),
+                Call::Broadcast(_, text) => Some(text.plain()),
                 _ => None,
             })
             .collect()
@@ -105,16 +109,16 @@ impl Server for MockServer {
         self.push(Call::SetHotbar(player, items.to_vec()));
     }
 
-    fn send_message(&self, player: PlayerId, channel: Channel, text: &str) {
-        self.push(Call::Message(player, channel, text.to_owned()));
+    fn send_message(&self, player: PlayerId, channel: Channel, text: Text) {
+        self.push(Call::Message(player, channel, text));
     }
 
-    fn broadcast(&self, channel: Channel, text: &str) {
-        self.push(Call::Broadcast(channel, text.to_owned()));
+    fn broadcast(&self, channel: Channel, text: Text) {
+        self.push(Call::Broadcast(channel, text));
     }
 
-    fn set_sidebar(&self, player: PlayerId, title: &str, lines: &[String]) {
-        self.push(Call::Sidebar(player, title.to_owned(), lines.to_vec()));
+    fn set_sidebar(&self, player: PlayerId, title: Text, lines: &[SidebarLine]) {
+        self.push(Call::Sidebar(player, title, lines.to_vec()));
     }
 
     fn set_spectating(&self, player: PlayerId, spectating: bool) {

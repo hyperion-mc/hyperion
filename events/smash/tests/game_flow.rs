@@ -19,7 +19,7 @@ use smash::{
         player::{Health, Position},
         scoreboard::{COLLAPSE_ABOVE, Row, render},
     },
-    server::{PlayerId, mock::Call},
+    server::{NamedColor, PlayerId, Score, TextColor, mock::Call},
 };
 
 #[test]
@@ -211,26 +211,46 @@ fn the_last_hit_is_the_one_that_counts() {
     );
 }
 
+/// A last life is red on the screen, not the word "red" on the screen.
+///
+/// The whole row is pinned, colour included, because the bug this replaces put
+/// `[green]` on a real client as literal text: an assertion that the row
+/// *contains* "red" passed happily while the player was reading the string.
 #[test]
-fn the_scoreboard_sorts_by_lives_and_colours_the_last_one_red() {
+fn the_scoreboard_sorts_by_lives_and_draws_a_last_life_in_red() {
     let rows = vec![
         Row {
             name: "low".to_owned(),
             lives: 1,
-            colour: Lives(1).colour(),
+            colour: NamedColor::Red,
         },
         Row {
             name: "high".to_owned(),
             lives: 4,
-            colour: Lives(4).colour(),
+            colour: NamedColor::Green,
         },
     ];
     let lines = render(Phase::Playing, rows);
-    assert!(lines[0].contains("high"), "{lines:?}");
-    assert!(
-        lines[1].contains("red"),
-        "a last life must read as red: {lines:?}"
+
+    let runs = lines[0].text.runs();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].text, "high");
+    assert_eq!(runs[0].color(), Some(TextColor::Named(NamedColor::Green)));
+    assert_eq!(lines[0].score, Score::Shown(4));
+
+    let runs = lines[1].text.runs();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(
+        runs[0].text, "low",
+        "the row is the name and nothing else: {:?}",
+        lines[1].text
     );
+    assert_eq!(
+        runs[0].color(),
+        Some(TextColor::Named(NamedColor::Red)),
+        "a last life must be drawn red, not described as red"
+    );
+    assert_eq!(lines[1].score, Score::Shown(1));
 }
 
 #[test]
@@ -239,14 +259,14 @@ fn a_big_lobby_collapses_to_two_counters() {
         .map(|index| Row {
             name: format!("p{index}"),
             lives: u8::from(index % 2 == 0),
-            colour: "green",
+            colour: NamedColor::Green,
         })
         .collect();
 
     let lines = render(Phase::Playing, rows);
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(lines[0].starts_with("Players Alive: "));
-    assert!(lines[1].starts_with("Players Dead: "));
+    assert!(lines[0].text.plain().starts_with("Players Alive: "));
+    assert!(lines[1].text.plain().starts_with("Players Dead: "));
 }
 
 #[test]

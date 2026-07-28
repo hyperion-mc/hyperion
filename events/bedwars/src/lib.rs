@@ -3,7 +3,10 @@
 use std::net::SocketAddr;
 
 use flecs_ecs::prelude::*;
-use hyperion::{Crypto, GameServerEndpoint, HyperionCore, simulation::Player, spatial};
+use hyperion::{
+    Crypto, GameServerEndpoint, HyperionCore, hyperion_minecraft_proto::text::Rgb24,
+    simulation::Player, spatial,
+};
 use hyperion_clap::hyperion_command::CommandRegistry;
 use hyperion_gui::Gui;
 use valence_text::IntoText;
@@ -66,35 +69,40 @@ impl Team {
 }
 
 impl Team {
-    /// The wool colour this team is drawn in, as packed `0xRRGGBB`.
+    /// The wool colour this team is drawn in.
+    ///
+    /// [`Rgb24`] rather than a packed `u32`, because the packed form has a
+    /// quarter of its values outside anything `#RRGGBB` can spell and every
+    /// consumer would have to decide what to do about that. Three channels are
+    /// a colour by construction, so nothing here can fail.
     #[must_use]
-    pub const fn rgb(self) -> u32 {
+    pub const fn rgb(self) -> Rgb24 {
         // Source: <https://minecraft.wiki/w/Wool/DV>
         // (<https://web.archive.org/web/20231011122724/https://minecraft.wiki/w/Wool/DV>)
         match self {
-            Self::Black => 0x0014_1519,
-            Self::Blue => 0x0035_399D,
-            Self::Brown => 0x0072_4728,
-            Self::Cyan => 0x0015_8991,
-            Self::Gray => 0x003E_4447,
-            Self::Green => 0x0054_6D1B,
-            Self::LightBlue => 0x003A_AFD9,
-            Self::LightGray => 0x008E_8E86,
-            Self::Lime => 0x0070_B919,
-            Self::Magenta => 0x00BD_44B3,
-            Self::Orange => 0x00F0_7613,
-            Self::Pink => 0x00ED_8DAC,
-            Self::Purple => 0x0079_2AAC,
-            Self::Red => 0x00A1_2722,
-            Self::White => 0x00E9_ECEC,
-            Self::Yellow => 0x00F8_C627,
+            Self::Black => Rgb24::new(0x14, 0x15, 0x19),
+            Self::Blue => Rgb24::new(0x35, 0x39, 0x9D),
+            Self::Brown => Rgb24::new(0x72, 0x47, 0x28),
+            Self::Cyan => Rgb24::new(0x15, 0x89, 0x91),
+            Self::Gray => Rgb24::new(0x3E, 0x44, 0x47),
+            Self::Green => Rgb24::new(0x54, 0x6D, 0x1B),
+            Self::LightBlue => Rgb24::new(0x3A, 0xAF, 0xD9),
+            Self::LightGray => Rgb24::new(0x8E, 0x8E, 0x86),
+            Self::Lime => Rgb24::new(0x70, 0xB9, 0x19),
+            Self::Magenta => Rgb24::new(0xBD, 0x44, 0xB3),
+            Self::Orange => Rgb24::new(0xF0, 0x76, 0x13),
+            Self::Pink => Rgb24::new(0xED, 0x8D, 0xAC),
+            Self::Purple => Rgb24::new(0x79, 0x2A, 0xAC),
+            Self::Red => Rgb24::new(0xA1, 0x27, 0x22),
+            Self::White => Rgb24::new(0xE9, 0xEC, 0xEC),
+            Self::Yellow => Rgb24::new(0xF8, 0xC6, 0x27),
         }
     }
 }
 
 impl From<Team> for valence_text::Color {
     fn from(team: Team) -> Self {
-        let [_, red, green, blue] = team.rgb().to_be_bytes();
+        let [red, green, blue] = team.rgb().channels();
         Self::rgb(red, green, blue)
     }
 }

@@ -39,7 +39,7 @@ use std::borrow::Cow;
 pub use crate::text::{
     contents::{Argument, Contents, DataSource, NbtContents, ObjectInfo, Score, Translatable},
     event::{ClickEvent, HoverEvent},
-    style::{NamedColor, Style, TextColor},
+    style::{Decoration, NamedColor, Rgb24, Style, TextColor},
 };
 use crate::{
     Decode, Encode, Error, Reader, Result, Writer,
@@ -97,6 +97,127 @@ impl<'a> Component<'a> {
     pub fn append(mut self, child: Self) -> Self {
         self.extra.push(child);
         self
+    }
+
+    /// The same component with every one of `children` appended.
+    #[must_use]
+    pub fn extend(mut self, children: impl IntoIterator<Item = Self>) -> Self {
+        self.extra.extend(children);
+        self
+    }
+
+    /// The same component drawn in `color`.
+    #[must_use]
+    pub fn color(mut self, color: impl Into<TextColor>) -> Self {
+        self.style = self.style.color(color);
+        self
+    }
+
+    /// The same component with `decoration` turned on.
+    #[must_use]
+    pub fn with(mut self, decoration: Decoration) -> Self {
+        self.style = self.style.with(decoration);
+        self
+    }
+
+    /// The same component with `decoration` turned off, overriding a parent
+    /// that turned it on.
+    #[must_use]
+    pub fn without(mut self, decoration: Decoration) -> Self {
+        self.style = self.style.without(decoration);
+        self
+    }
+
+    /// Bold.
+    #[must_use]
+    pub fn bold(self) -> Self {
+        self.with(Decoration::Bold)
+    }
+
+    /// Italic.
+    #[must_use]
+    pub fn italic(self) -> Self {
+        self.with(Decoration::Italic)
+    }
+
+    /// Underlined.
+    #[must_use]
+    pub fn underlined(self) -> Self {
+        self.with(Decoration::Underlined)
+    }
+
+    /// Struck through.
+    #[must_use]
+    pub fn strikethrough(self) -> Self {
+        self.with(Decoration::Strikethrough)
+    }
+
+    /// Obfuscated.
+    #[must_use]
+    pub fn obfuscated(self) -> Self {
+        self.with(Decoration::Obfuscated)
+    }
+
+    /// The same component drawn in `font`.
+    #[must_use]
+    pub fn font(mut self, font: impl Into<Cow<'a, str>>) -> Self {
+        self.style = self.style.font(font);
+        self
+    }
+
+    /// The same component with a click action.
+    #[must_use]
+    pub fn on_click(mut self, event: ClickEvent<'a>) -> Self {
+        self.style = self.style.on_click(event);
+        self
+    }
+
+    /// The same component with a hover tooltip.
+    #[must_use]
+    pub fn on_hover(mut self, event: HoverEvent<'a>) -> Self {
+        self.style = self.style.on_hover(event);
+        self
+    }
+
+    /// The literal runs a client draws this component as, with style
+    /// inheritance already resolved.
+    ///
+    /// Only [`Contents::Text`] contributes a run. A translation key, a
+    /// keybind, a score or an NBT path is text the *client* produces, and the
+    /// server cannot know what it will say; those contribute nothing rather
+    /// than a guess. So `runs` answers "what has this server spelled out, and
+    /// in what colour", which is exactly the question a layout calculation and
+    /// a rendering test each want, and it does not pretend to answer "what
+    /// will appear on screen".
+    #[must_use]
+    pub fn runs(&self) -> Vec<Run<'_>> {
+        let mut runs = Vec::new();
+        self.collect_runs(&Style::new(), &mut runs);
+        runs
+    }
+
+    fn collect_runs<'s>(&'s self, inherited: &Style<'s>, runs: &mut Vec<Run<'s>>) {
+        let style = self.style.clone().inheriting(inherited);
+        if let Contents::Text(text) = &self.contents
+            && !text.is_empty()
+        {
+            runs.push(Run {
+                text: Cow::Borrowed(text.as_ref()),
+                style: style.clone(),
+            });
+        }
+        for child in &self.extra {
+            child.collect_runs(&style, runs);
+        }
+    }
+
+    /// The literal text of every run, concatenated (`Component.getString`).
+    ///
+    /// The width a row takes on screen is measured from this and not from the
+    /// component, because style costs no columns.
+    #[must_use]
+    pub fn plain(&self) -> String {
+        self.runs().into_iter().map(|run| run.text).collect()
     }
 
     /// The literal text this component collapses to, if it collapses at all
@@ -159,6 +280,26 @@ impl<'a> Component<'a> {
                 found: other.id(),
             }),
         }
+    }
+}
+
+/// One stretch of literal text and the style a client draws it in.
+///
+/// Produced by [`Component::runs`], where the style is already resolved
+/// against every ancestor, so a `Run` needs no context to be read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Run<'a> {
+    /// The literal text.
+    pub text: Cow<'a, str>,
+    /// The style it is drawn in, with inheritance applied.
+    pub style: Style<'a>,
+}
+
+impl Run<'_> {
+    /// The colour this run is drawn in, or `None` for the client's default.
+    #[must_use]
+    pub const fn color(&self) -> Option<TextColor> {
+        self.style.color
     }
 }
 
