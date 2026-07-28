@@ -204,6 +204,25 @@ def match_bracket(text: str, open_index: int) -> int:
     raise ValueError(f"unbalanced {opener} at {open_index}")
 
 
+def brace_depths(text: str) -> list[int]:
+    """Curly-brace nesting depth before each character.
+
+    Only curly braces count, so a generic argument list or a lambda arrow
+    cannot move the depth. Used to tell a class's own members from the members
+    of the nested and anonymous classes the decompiler writes inline inside it.
+    """
+    out = [0] * (len(text) + 1)
+    depth = 0
+    for i, ch in enumerate(text):
+        out[i] = depth
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+    out[len(text)] = depth
+    return out
+
+
 def statements(body: str) -> list[str]:
     """Split a class or method body into top-level statements.
 
@@ -756,17 +775,30 @@ class Resolver:
         return None
 
     def methods(self, owner: str, name: str) -> list[tuple[list[str], str]]:
-        """Every overload of a method as (parameter names, body).
+        """Every overload of a method *this class declares*, as (params, body).
 
         Overloads are kept apart by arity rather than collapsed to the first
         match: ``CustomPacketPayload.codec`` has two, and picking the wrong one
         would attach the wrong layout to every custom payload.
+
+        Declarations nested inside another class are skipped. A class body
+        carries its nested and anonymous classes inline, so a plain text scan
+        cannot tell whose method it found, and the first match is not even
+        reliably the outer one: ``ClientboundBossEventPacket`` declares an
+        anonymous ``Operation`` whose ``write`` is empty *above* its own
+        ``write``, and reading that one made the boss bar packet extract as
+        carrying no bytes -- a wrong layout marked ``complete``, which the
+        coverage gate cannot see because it only counts refusals. A member at
+        brace depth zero is this class's own.
         """
         body = self.index.body_of(owner)
         if body is None:
             return []
+        depth = brace_depths(body)
         out: list[tuple[list[str], str]] = []
         for m in re.finditer(rf"\b{re.escape(name)}\s*\(", body):
+            if depth[m.start()] != 0:
+                continue
             close = match_bracket(body, m.end() - 1)
             rest = body[close:].lstrip()
             if not rest.startswith("{"):
@@ -1167,7 +1199,18 @@ class Resolver:
                 return unresolved(f"unmodelled statement: {' '.join(stmt.split())[:90]}")
             fields.extend(got)
         if not fields:
-            return prim("unit", note="carries no bytes")
+            # Every statement was accounted for and none of them wrote a byte.
+            # That is a claim this reader is not entitled to make: the same
+            # result comes out when the body read was the wrong one, and a
+            # zero-byte layout is indistinguishable from success to every gate
+            # we have -- `complete: true`, nothing in `coverage.incomplete`,
+            # nothing for the ratchet to catch. It is how the boss bar packet
+            # spent this version being extracted as carrying no bytes at all.
+            #
+            # An empty layout is therefore only ever Mojang's own word for it,
+            # spelled `StreamCodec.unit(..)` and handled in `_eval_stream_codec`.
+            # Inferred from an encoder body, it is a refusal.
+            return unresolved("encoder body wrote no bytes; only StreamCodec.unit declares an empty layout")
         if unwrap_single and len(fields) == 1:
             # A value codec that writes one thing is that thing; wrapping it in
             # a one-field struct would only add a layer for readers to peel.
@@ -1806,6 +1849,109 @@ def _register_target(stmt: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+# Layouts with nothing to recover, and the phrase that proves each one is still
+# refused for the reason claimed here rather than for some new one.
+#
+# A custom payload is a channel name followed by bytes whose meaning belongs to
+# whoever registered the channel; there is no layout in the server either, which
+# is why `CustomPacketPayload.codec` reads as unmodelled. Counting these as gaps
+# makes the remaining number mean "work left, plus four that are finished", so
+# they are carved out here the same way `minecraft:particle_type` is carved out
+# of the registry enums -- with the reason written at the site.
+#
+# The carve-out is checked, not asserted: an id that stops being refused, or
+# starts being refused for a different reason, fails the extraction rather than
+# quietly hiding a real gap behind a finished one.
+_OPAQUE_PAYLOAD = (
+    "unmodelled factory CustomPacketPayload.codec",
+    "channel id then opaque bytes; the server has no layout for these either",
+)
+
+OPAQUE: dict[str, tuple[str, str]] = {
+    "configuration/clientbound/minecraft:custom_payload": _OPAQUE_PAYLOAD,
+    "configuration/serverbound/minecraft:custom_payload": _OPAQUE_PAYLOAD,
+    "play/clientbound/minecraft:custom_payload": _OPAQUE_PAYLOAD,
+    "play/serverbound/minecraft:custom_payload": _OPAQUE_PAYLOAD,
+}
+
+
+def partition_opaque(
+    refusals: list[tuple[str, list[str]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Split refusals into real gaps and the ones with no layout to recover."""
+    gaps: list[dict[str, Any]] = []
+    opaque: list[dict[str, Any]] = []
+    stale: list[str] = []
+    seen: set[str] = set()
+    for entry_id, reasons in refusals:
+        carve = OPAQUE.get(entry_id)
+        if carve is None:
+            gaps.append({"id": entry_id, "reasons": reasons})
+            continue
+        seen.add(entry_id)
+        phrase, why = carve
+        if not any(phrase in reason for reason in reasons):
+            stale.append(
+                f"{entry_id} is carved out of the gap list as {phrase!r}, but it is now "
+                f"refused for {reasons!r}; the carve-out would hide a real gap"
+            )
+            gaps.append({"id": entry_id, "reasons": reasons})
+            continue
+        opaque.append({"id": entry_id, "reasons": reasons, "why": why})
+    for entry_id in sorted(set(OPAQUE) - seen):
+        stale.append(
+            f"{entry_id} is carved out of the gap list but is no longer refused at all; "
+            "delete the OPAQUE entry"
+        )
+    return gaps, opaque, stale
+
+
+def empty_packets(
+    packets: list[Packet],
+    index: SourceIndex,
+    types: dict[str, Wire],
+    registered: dict[str, tuple[str, str]],
+) -> tuple[list[str], list[str]]:
+    """Packets claimed to carry no bytes, and the ones with no warrant to.
+
+    A zero-byte layout is the one wrong answer no other check can see. It sets
+    ``complete: true``, it adds nothing to ``coverage.incomplete``, and it makes
+    the ratchet report *progress* -- so the way this failed on the boss bar
+    packet, a three-field packet read as empty, looks from every angle exactly
+    like the extractor getting better.
+
+    So an empty layout has to be Mojang's own word rather than this file's
+    inference, and the warrant is read back out of the source independently of
+    the code path that produced the layout: ``StreamCodec.unit(..)`` has to
+    appear either in the packet's own class or in the expression it was
+    registered with, which is where the bundle delimiter's lives. A packet that
+    comes out empty without that fails the extraction.
+    """
+    empty: list[str] = []
+    unwarranted: list[str] = []
+    for pkt in packets:
+        wire = pkt.wire
+        seen: set[str] = set()
+        while wire.get("kind") == "named" and wire["ref"] not in seen:
+            seen.add(wire["ref"])
+            target = types.get(wire["ref"])
+            if target is None:
+                break
+            wire = target
+        if wire.get("kind") != "unit":
+            continue
+        name = f"{pkt.state}/{pkt.direction}/{pkt.resource}"
+        empty.append(name)
+        warrant = index.body_of(pkt.java_class) or "" if pkt.java_class else ""
+        warrant += registered.get(pkt.java_class or "", ("", ""))[0]
+        if not re.search(r"\bStreamCodec\s*\.\s*unit\s*\(", warrant):
+            unwarranted.append(
+                f"{name} ({pkt.java_class}) extracted as carrying no bytes, but its source "
+                "never says StreamCodec.unit"
+            )
+    return sorted(empty), unwarranted
+
+
 def cross_check_packet_ids(
     packets: list[Packet],
     order: dict[str, list[str]],
@@ -1901,11 +2047,19 @@ def main() -> int:
         components, registries_json["minecraft:data_component_type"]
     )
     id_mismatches = cross_check_packet_ids(packets, order, const_to_resource)
+    empty, unwarranted_empty = empty_packets(packets, index, resolver.types, registered)
 
     complete = [p for p in packets if p.complete]
     partial = [p for p in packets if not p.complete and p.layout_source != "none"]
     unrecovered = [p for p in packets if not p.complete and p.layout_source == "none"]
     done_components = [c for c in components if c["complete"]]
+
+    gaps, opaque, stale_opaque = partition_opaque(
+        sorted(
+            [(f"{p.state}/{p.direction}/{p.resource}", p.reasons) for p in partial]
+            + [(f"dataComponent/{c['name']}", c["reasons"]) for c in components if not c["complete"]]
+        )
+    )
 
     doc = {
         "version": {
@@ -1931,17 +2085,16 @@ def main() -> int:
             #
             # `nix flake check .#minecraft-proto-coverage` holds this list
             # against the committed baseline in nix/proto-coverage-baseline.json.
-            "incomplete": [
-                {"id": entry_id, "reasons": reasons}
-                for entry_id, reasons in sorted(
-                    [(f"{p.state}/{p.direction}/{p.resource}", p.reasons) for p in partial]
-                    + [
-                        (f"dataComponent/{c['name']}", c["reasons"])
-                        for c in components
-                        if not c["complete"]
-                    ]
-                )
-            ],
+            "incomplete": gaps,
+            # Refusals with no layout to recover, carved out so that the gap
+            # count means work left. See OPAQUE above for the reason on each.
+            "opaque": opaque,
+            # Every packet whose whole layout is zero bytes, each one warranted
+            # by a `StreamCodec.unit(..)` in its own source. Reported rather
+            # than merely asserted so the ratchet holds the set too: a packet
+            # that starts claiming emptiness is the one regression that would
+            # otherwise read as the extractor improving.
+            "empty": empty,
             "idCrossCheckMismatches": id_mismatches,
             "dataComponentProblems": component_problems,
         },
@@ -1986,6 +2139,18 @@ def main() -> int:
     print(f"  registries:           {len(doc['registries'])}", file=sys.stderr)
 
     failed = False
+    if stale_opaque:
+        print(f"  OPAQUE CARVE-OUT STALE: {len(stale_opaque)}", file=sys.stderr)
+        for line in stale_opaque:
+            print(f"    {line}", file=sys.stderr)
+        failed = True
+    if unwarranted_empty:
+        print(f"  EMPTY-LAYOUT CHECK FAILED: {len(unwarranted_empty)}", file=sys.stderr)
+        for line in unwarranted_empty:
+            print(f"    {line}", file=sys.stderr)
+        failed = True
+    else:
+        print(f"  empty-layout check:    ok ({len(empty)} declared)", file=sys.stderr)
     if id_mismatches:
         print(f"  ID CROSS-CHECK FAILED: {len(id_mismatches)}", file=sys.stderr)
         for line in id_mismatches[:10]:

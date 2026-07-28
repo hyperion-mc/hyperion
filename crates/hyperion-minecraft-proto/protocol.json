@@ -7,12 +7,12 @@
   },
   "coverage": {
     "packets": 256,
-    "fullyMechanical": 205,
-    "partial": 51,
+    "fullyMechanical": 204,
+    "partial": 52,
     "unrecovered": 0,
     "dataComponents": 111,
     "dataComponentsMechanical": 100,
-    "namedTypes": 474,
+    "namedTypes": 478,
     "assertedTypes": [
       "net.minecraft.network.codec.ByteBufCodecs#GAME_PROFILE_PROPERTIES"
     ],
@@ -21,21 +21,9 @@
     ],
     "incomplete": [
       {
-        "id": "configuration/clientbound/minecraft:custom_payload",
-        "reasons": [
-          "unmodelled factory CustomPacketPayload.codec(..)"
-        ]
-      },
-      {
         "id": "configuration/clientbound/minecraft:update_tags",
         "reasons": [
           "|value: unmodelled statement: value.write((FriendlyByteBuf)((Object)buffer))"
-        ]
-      },
-      {
-        "id": "configuration/serverbound/minecraft:custom_payload",
-        "reasons": [
-          "unmodelled factory CustomPacketPayload.codec(..)"
         ]
       },
       {
@@ -125,6 +113,12 @@
         ]
       },
       {
+        "id": "play/clientbound/minecraft:boss_event",
+        "reasons": [
+          "unmodelled statement: this.operation.write(output)"
+        ]
+      },
+      {
         "id": "play/clientbound/minecraft:chunks_biomes",
         "reasons": [
           "[]: unmodelled statement: c.write((FriendlyByteBuf)((Object)o))"
@@ -147,12 +141,6 @@
         "id": "play/clientbound/minecraft:container_set_slot",
         "reasons": [
           "itemStack: branching encode body: if (itemStack.isEmpty()) {\n                    output.writeV"
-        ]
-      },
-      {
-        "id": "play/clientbound/minecraft:custom_payload",
-        "reasons": [
-          "unmodelled factory CustomPacketPayload.codec(..)"
         ]
       },
       {
@@ -195,7 +183,7 @@
       {
         "id": "play/clientbound/minecraft:level_chunk_with_light",
         "reasons": [
-          "unmodelled statement: this.chunkData.write(output)"
+          "chunkData: unmodelled statement: output.writeBytes(this.buffer)"
         ]
       },
       {
@@ -320,7 +308,7 @@
       {
         "id": "play/clientbound/minecraft:update_recipes",
         "reasons": [
-          "stonecutterRecipes.entries[].recipe: unmodelled factory SelectableRecipe.noRecipeCodec(..)"
+          "stonecutterRecipes.entries[].recipe.optionDisplay: dispatched codec: the layout depends on a runtime type"
         ]
       },
       {
@@ -351,12 +339,6 @@
         "id": "play/serverbound/minecraft:chat_session_update",
         "reasons": [
           "unmodelled statement: data.profilePublicKey.write(output)"
-        ]
-      },
-      {
-        "id": "play/serverbound/minecraft:custom_payload",
-        "reasons": [
-          "unmodelled factory CustomPacketPayload.codec(..)"
         ]
       },
       {
@@ -401,6 +383,54 @@
           "branching encode body: for (int i = 0; i < 4; ++i) {\n            output.writeUtf(th"
         ]
       }
+    ],
+    "opaque": [
+      {
+        "id": "configuration/clientbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ],
+        "why": "channel id then opaque bytes; the server has no layout for these either"
+      },
+      {
+        "id": "configuration/serverbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ],
+        "why": "channel id then opaque bytes; the server has no layout for these either"
+      },
+      {
+        "id": "play/clientbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ],
+        "why": "channel id then opaque bytes; the server has no layout for these either"
+      },
+      {
+        "id": "play/serverbound/minecraft:custom_payload",
+        "reasons": [
+          "unmodelled factory CustomPacketPayload.codec(..)"
+        ],
+        "why": "channel id then opaque bytes; the server has no layout for these either"
+      }
+    ],
+    "empty": [
+      "configuration/clientbound/minecraft:clear_dialog",
+      "configuration/clientbound/minecraft:finish_configuration",
+      "configuration/clientbound/minecraft:reset_chat",
+      "configuration/serverbound/minecraft:accept_code_of_conduct",
+      "configuration/serverbound/minecraft:finish_configuration",
+      "login/serverbound/minecraft:login_acknowledged",
+      "play/clientbound/minecraft:bundle_delimiter",
+      "play/clientbound/minecraft:chunk_batch_start",
+      "play/clientbound/minecraft:clear_dialog",
+      "play/clientbound/minecraft:low_disk_space_warning",
+      "play/clientbound/minecraft:player_combat_enter",
+      "play/clientbound/minecraft:start_configuration",
+      "play/serverbound/minecraft:client_tick_end",
+      "play/serverbound/minecraft:configuration_acknowledged",
+      "play/serverbound/minecraft:player_loaded",
+      "status/serverbound/minecraft:status_request"
     ],
     "idCrossCheckMismatches": [],
     "dataComponentProblems": []
@@ -943,6 +973,10 @@
     },
     "net.minecraft.network.codec.ByteBufCodecs#LONG": {
       "kind": "i64"
+    },
+    "net.minecraft.network.codec.ByteBufCodecs#LONG_ARRAY": {
+      "kind": "long_array",
+      "note": "varint length, then that many i64"
     },
     "net.minecraft.network.codec.ByteBufCodecs#OPTIONAL_VAR_INT": {
       "kind": "named",
@@ -1636,8 +1670,8 @@
       ]
     },
     "net.minecraft.network.protocol.game.ClientboundBossEventPacket#STREAM_CODEC": {
-      "kind": "unit",
-      "note": "carries no bytes"
+      "kind": "unresolved",
+      "why": "unmodelled statement: this.operation.write(output)"
     },
     "net.minecraft.network.protocol.game.ClientboundChangeDifficultyPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -2312,9 +2346,92 @@
         }
       ]
     },
+    "net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData#HEIGHTMAPS_STREAM_CODEC": {
+      "kind": "map",
+      "key": {
+        "kind": "named",
+        "ref": "net.minecraft.world.level.levelgen.Heightmap$Types#STREAM_CODEC"
+      },
+      "value": {
+        "kind": "named",
+        "ref": "net.minecraft.network.codec.ByteBufCodecs#LONG_ARRAY"
+      }
+    },
     "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket#STREAM_CODEC": {
-      "kind": "unresolved",
-      "why": "unmodelled statement: this.chunkData.write(output)"
+      "kind": "struct",
+      "fields": [
+        {
+          "name": "x",
+          "wire": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "z",
+          "wire": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "chunkData",
+          "wire": {
+            "kind": "unresolved",
+            "why": "unmodelled statement: output.writeBytes(this.buffer)"
+          }
+        },
+        {
+          "name": "lightData",
+          "wire": {
+            "kind": "struct",
+            "fields": [
+              {
+                "name": "skyYMask",
+                "wire": {
+                  "kind": "long_array"
+                }
+              },
+              {
+                "name": "blockYMask",
+                "wire": {
+                  "kind": "long_array"
+                }
+              },
+              {
+                "name": "emptySkyYMask",
+                "wire": {
+                  "kind": "long_array"
+                }
+              },
+              {
+                "name": "emptyBlockYMask",
+                "wire": {
+                  "kind": "long_array"
+                }
+              },
+              {
+                "name": "skyUpdates",
+                "wire": {
+                  "kind": "list",
+                  "of": {
+                    "kind": "named",
+                    "ref": "net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData#DATA_LAYER_STREAM_CODEC"
+                  }
+                }
+              },
+              {
+                "name": "blockUpdates",
+                "wire": {
+                  "kind": "list",
+                  "of": {
+                    "kind": "named",
+                    "ref": "net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData#DATA_LAYER_STREAM_CODEC"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
     },
     "net.minecraft.network.protocol.game.ClientboundLevelEventPacket#STREAM_CODEC": {
       "kind": "struct",
@@ -4454,8 +4571,16 @@
                       {
                         "name": "recipe",
                         "wire": {
-                          "kind": "unresolved",
-                          "why": "unmodelled factory SelectableRecipe.noRecipeCodec(..)"
+                          "kind": "struct",
+                          "fields": [
+                            {
+                              "name": "optionDisplay",
+                              "wire": {
+                                "kind": "named",
+                                "ref": "net.minecraft.world.item.crafting.display.SlotDisplay#STREAM_CODEC"
+                              }
+                            }
+                          ]
                         }
                       }
                     ]
@@ -8430,6 +8555,10 @@
         }
       ]
     },
+    "net.minecraft.world.item.crafting.display.SlotDisplay#STREAM_CODEC": {
+      "kind": "unresolved",
+      "why": "dispatched codec: the layout depends on a runtime type"
+    },
     "net.minecraft.world.item.enchantment.Enchantable#STREAM_CODEC": {
       "kind": "struct",
       "fields": [
@@ -9041,6 +9170,37 @@
     "net.minecraft.world.level.dimension.DimensionType#STREAM_CODEC": {
       "kind": "registry_id",
       "registry": "minecraft:dimension_type"
+    },
+    "net.minecraft.world.level.levelgen.Heightmap$Types#STREAM_CODEC": {
+      "kind": "enum",
+      "type": "net.minecraft.world.level.levelgen.Heightmap$Types",
+      "constants": [
+        {
+          "name": "WORLD_SURFACE_WG",
+          "value": 0
+        },
+        {
+          "name": "WORLD_SURFACE",
+          "value": 1
+        },
+        {
+          "name": "OCEAN_FLOOR_WG",
+          "value": 2
+        },
+        {
+          "name": "OCEAN_FLOOR",
+          "value": 3
+        },
+        {
+          "name": "MOTION_BLOCKING",
+          "value": 4
+        },
+        {
+          "name": "MOTION_BLOCKING_NO_LEAVES",
+          "value": 5
+        }
+      ],
+      "note": "varint id"
     },
     "net.minecraft.world.level.saveddata.maps.MapDecoration#STREAM_CODEC": {
       "kind": "struct",
@@ -9829,11 +9989,14 @@
       "protocolId": 9,
       "javaClass": "net.minecraft.network.protocol.game.ClientboundBossEventPacket",
       "layoutSource": "net.minecraft.network.protocol.game.ClientboundBossEventPacket#STREAM_CODEC",
-      "complete": true,
+      "complete": false,
       "wire": {
         "kind": "named",
         "ref": "net.minecraft.network.protocol.game.ClientboundBossEventPacket#STREAM_CODEC"
-      }
+      },
+      "reasons": [
+        "unmodelled statement: this.operation.write(output)"
+      ]
     },
     {
       "resource": "minecraft:bundle_delimiter",
@@ -10364,7 +10527,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket#STREAM_CODEC"
       },
       "reasons": [
-        "unmodelled statement: this.chunkData.write(output)"
+        "chunkData: unmodelled statement: output.writeBytes(this.buffer)"
       ]
     },
     {
@@ -11625,7 +11788,7 @@
         "ref": "net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket#STREAM_CODEC"
       },
       "reasons": [
-        "stonecutterRecipes.entries[].recipe: unmodelled factory SelectableRecipe.noRecipeCodec(..)"
+        "stonecutterRecipes.entries[].recipe.optionDisplay: dispatched codec: the layout depends on a runtime type"
       ]
     },
     {

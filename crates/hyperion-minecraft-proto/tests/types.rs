@@ -118,6 +118,6 @@ fn the_generator_covers_every_layout_it_can() {
     let [written, declined] = counts[..] else {
         panic!("coverage.txt should hold two counts, found {COVERAGE:?}");
     };
-    assert_eq!(written, 180, "packet classes generated");
+    assert_eq!(written, 179, "packet classes generated");
     assert_eq!(declined, 3, "layouts the generator declined");
 }
