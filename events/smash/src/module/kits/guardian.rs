@@ -16,7 +16,7 @@ use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
         damage::MatchClock,
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         player::{Player, Position},
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -53,10 +53,15 @@ impl Module for Guardian {
             regen: 0.25,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.guardian.hurt",
+            death: "minecraft:entity.guardian.death",
+        })
         .cost(8000)
         .blurb("Pick somebody. They are now your problem and you are theirs.")
         .ability(AbilitySpec {
             name: "Whirlpool Axe",
+            sound: "minecraft:entity.player.splash.high_speed",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "A shard that pulls, like a weaker hook on a shorter cooldown.",
@@ -68,6 +73,7 @@ impl Module for Guardian {
         })
         .ability(AbilitySpec {
             name: "Water Splash",
+            sound: "minecraft:entity.generic.splash",
             item: "minecraft:iron_sword",
             slot: 2,
             description: "Bounce up, dragging everyone within five blocks with you.",
@@ -83,6 +89,7 @@ impl Module for Guardian {
         })
         .ability(AbilitySpec {
             name: "Target Laser",
+            sound: "minecraft:entity.guardian.attack",
             item: "minecraft:iron_pickaxe",
             slot: 3,
             description: "Mark someone within ten blocks. Everything hurts them more for eight \
@@ -95,6 +102,7 @@ impl Module for Guardian {
         })
         .ultimate(AbilitySpec {
             name: "Tidal Wave",
+            sound: "minecraft:entity.elder_guardian.curse",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Everything in the water goes where the water goes.",
@@ -201,7 +209,6 @@ fn target_laser(cast: &Cast<'_>) {
         against: Some(victim),
         until: now + LASER_SECONDS,
     });
-    cast.server.cue(cast.position.0, Cue::AbilityReady);
 }
 
 fn tidal_wave(cast: &Cast<'_>) {

@@ -10,7 +10,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -31,10 +31,15 @@ impl Module for Zombie {
             regen: 0.25,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.zombie.hurt",
+            death: "minecraft:entity.zombie.death",
+        })
         .cost(6000)
         .blurb("Something for every range, and nothing outstanding at any of them.")
         .ability(AbilitySpec {
             name: "Bile Blaster",
+            sound: "minecraft:entity.witch.throw",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Spray bile. It lands where you point and hurts what it lands on.",
@@ -45,6 +50,7 @@ impl Module for Zombie {
         })
         .ability(AbilitySpec {
             name: "Deaths Grasp",
+            sound: "minecraft:entity.fishing_bobber.retrieve",
             item: "minecraft:bow",
             slot: 2,
             description: "An arrow that drags whoever it hits back to you.",
@@ -56,6 +62,7 @@ impl Module for Zombie {
         })
         .ultimate(AbilitySpec {
             name: "Night of the Living Dead",
+            sound: "minecraft:entity.zombie.ambient",
             item: "minecraft:nether_star",
             slot: 8,
             description: "The dead get up around you.",

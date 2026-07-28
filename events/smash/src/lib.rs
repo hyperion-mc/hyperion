@@ -28,6 +28,7 @@ use crate::module::{
     ability::AbilityModule, arena::ArenaModule, damage::DamageModule, kit::KitModule,
     kits::StockKits, knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule,
     player::PlayerModule, projectile::ProjectileModule, scoreboard::ScoreboardModule,
+    sound::SoundModule,
 };
 
 /// The whole game.
@@ -49,6 +50,10 @@ impl Module for SmashModule {
         world.import::<PlayerModule>();
         world.import::<KnockbackModule>();
         world.import::<DamageModule>();
+        // Before the abilities and the kits: both declare sound relationships,
+        // and a relationship used before it is registered is not the one the
+        // module later configures.
+        world.import::<SoundModule>();
         world.import::<AbilityModule>();
         world.import::<KitModule>();
         world.import::<ArenaModule>();

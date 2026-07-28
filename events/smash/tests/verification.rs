@@ -2095,10 +2095,12 @@ mod projectiles {
             .calls()
             .into_iter()
             .find_map(|call| match call {
-                Call::Cue(at, _) => Some(at),
+                Call::Sound(at, sound) if sound.id == smash::module::sound::PROJECTILE_HIT => {
+                    Some(at)
+                }
                 _ => None,
             })
-            .expect("a hit is cued where it landed");
+            .expect("a hit is heard where it landed");
         assert!(
             contact.distance(Vec3::ZERO) < 0.5,
             "the hit was reported at {contact}, which is not where the path crossed the target"

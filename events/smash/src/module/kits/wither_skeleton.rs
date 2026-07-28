@@ -16,7 +16,7 @@ use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
         damage::MatchClock,
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Impact, Payload, fire},
     },
     server::Cue,
@@ -47,10 +47,15 @@ impl Module for WitherSkeleton {
             regen: 0.30,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.wither_skeleton.hurt",
+            death: "minecraft:entity.wither_skeleton.death",
+        })
         .cost(6000)
         .blurb("Leave a copy of yourself somewhere useful, then be there instead.")
         .ability(AbilitySpec {
             name: "Guided Wither Skull",
+            sound: "minecraft:entity.wither.shoot",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "A skull with a wide blast. Hold to steer it.",
@@ -62,6 +67,7 @@ impl Module for WitherSkeleton {
         })
         .ability(AbilitySpec {
             name: "Wither Image",
+            sound: "minecraft:entity.illusioner.mirror_move",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "Drop a copy of yourself. Use it again to swap places with it.",
@@ -72,6 +78,7 @@ impl Module for WitherSkeleton {
         })
         .ultimate(AbilitySpec {
             name: "Wither Swap",
+            sound: "minecraft:entity.shulker.teleport",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Every image at once.",
@@ -127,7 +134,6 @@ fn wither_image(cast: &Cast<'_>) {
         at: cast.position.0,
         until: now + IMAGE_SECONDS,
     });
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 fn wither_swap(cast: &Cast<'_>) {

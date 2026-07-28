@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use glam::Vec3;
 
-use super::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Text};
+use super::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, Text};
 
 /// One thing the game asked the server to do.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +23,10 @@ pub enum Call {
     Sidebar(PlayerId, Text, Vec<SidebarLine>),
     Spectating(PlayerId, bool),
     Cue(Vec3, Cue),
+    /// A positioned sound, heard by everyone in range.
+    Sound(Vec3, Sound),
+    /// A sound only one player hears.
+    SoundTo(PlayerId, Sound),
 }
 
 #[derive(Default)]
@@ -80,6 +84,30 @@ impl MockServer {
             .collect()
     }
 
+    /// Every positioned sound so far, with where it played.
+    #[must_use]
+    pub fn sounds(&self) -> Vec<(Vec3, Sound)> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Sound(at, sound) => Some((*at, *sound)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every sound sent to `player` alone.
+    #[must_use]
+    pub fn sounds_to(&self, player: PlayerId) -> Vec<Sound> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::SoundTo(id, sound) if *id == player => Some(*sound),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[must_use]
     pub fn broadcasts(&self) -> Vec<String> {
         self.calls()
@@ -127,5 +155,13 @@ impl Server for MockServer {
 
     fn cue(&self, at: Vec3, cue: Cue) {
         self.push(Call::Cue(at, cue));
+    }
+
+    fn play_sound(&self, at: Vec3, sound: Sound) {
+        self.push(Call::Sound(at, sound));
+    }
+
+    fn play_sound_to(&self, player: PlayerId, sound: Sound) {
+        self.push(Call::SoundTo(player, sound));
     }
 }

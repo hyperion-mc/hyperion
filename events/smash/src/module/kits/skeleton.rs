@@ -11,14 +11,11 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, charge_steps, splash},
-        kit::{self, AbilitySpec, KitStats},
-        player::Position,
-        projectile::{Flight, Impact, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, charge_steps, splash},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    player::Position,
+    projectile::{Flight, Impact, Payload, fire},
 };
 
 /// Flat, regardless of draw. `KitSkeleton.arrowDamage` overwrites the vanilla
@@ -47,9 +44,14 @@ impl Module for Skeleton {
             jump_power: 0.9,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.skeleton.hurt",
+            death: "minecraft:entity.skeleton.death",
+        })
         .blurb("Keep everyone at arm's length, then overcharge the bow and let go.")
         .ability(AbilitySpec {
             name: "Barrage",
+            sound: "minecraft:entity.arrow.shoot",
             item: "minecraft:bow",
             slot: 0,
             description: "Hold to load arrows, up to five. Release to fire them all.",
@@ -63,6 +65,7 @@ impl Module for Skeleton {
         })
         .ability(AbilitySpec {
             name: "Bone Explosion",
+            sound: "minecraft:block.bone_block.break",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Scatter your bones. Little damage, enormous knockback.",
@@ -73,6 +76,7 @@ impl Module for Skeleton {
         })
         .ability(AbilitySpec {
             name: "Roped Arrow",
+            sound: "minecraft:entity.fishing_bobber.throw",
             item: "minecraft:arrow",
             slot: 2,
             description: "Fire an arrow and be dragged after it. Your way back onto the map.",
@@ -87,6 +91,7 @@ impl Module for Skeleton {
         })
         .ultimate(AbilitySpec {
             name: "Arrow Storm",
+            sound: "minecraft:item.crossbow.shoot",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Fire without ever reloading.",
@@ -122,7 +127,6 @@ fn barrage(cast: &Cast<'_>) {
     for index in 0..arrows.min(MAX_BARRAGE_ARROWS) {
         arrow(cast, index as f32 * 0.02);
     }
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 /// Damage 6 over radius 7 at a 2.5x knockback multiplier — the highest of any

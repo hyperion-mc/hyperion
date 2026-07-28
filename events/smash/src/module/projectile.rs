@@ -19,8 +19,9 @@ use crate::{
         damage::{DamageKind, Damaged, hurt},
         knockback::Knockback,
         player::{Health, Player, Position},
+        sound,
     },
-    server::{Cue, ServerHandle},
+    server::{PlayerId, ServerHandle, Sound, SoundCategory},
 };
 
 /// Tag on projectile entities.
@@ -149,7 +150,24 @@ impl Module for ProjectileModule {
                     at,
                 });
 
-                world.get::<&ServerHandle>(|server| server.cue(at, Cue::Hurt));
+                world.get::<&ServerHandle>(|server| {
+                    // At the crossing point, not at either endpoint of the
+                    // step and not at the victim: a projectile that connects
+                    // mid-step connected somewhere neither of those is.
+                    server.play_sound(
+                        at,
+                        Sound::new(sound::PROJECTILE_HIT, SoundCategory::Players),
+                    );
+                    // And the shooter gets told, however far away they are.
+                    if let Some(id) =
+                        shooter.and_then(|s| world.entity_at(s).try_get::<&PlayerId>(|p| *p))
+                    {
+                        server.play_sound_to(
+                            id,
+                            Sound::new(sound::RANGED_HITMARKER, SoundCategory::Players),
+                        );
+                    }
+                });
                 projectile.destruct();
             });
     }

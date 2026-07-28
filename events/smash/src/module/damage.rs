@@ -13,8 +13,9 @@ use crate::{
     module::{
         knockback::{Knockback, Smashed},
         player::{self, Health, Player, Position},
+        sound::{self, PlaysOnHurt},
     },
-    server::{Cue, PlayerId, ServerHandle},
+    server::{PlayerId, ServerHandle},
 };
 
 /// Where a hit came from. Several kits' passives key off this — Creeper's
@@ -203,8 +204,11 @@ impl Module for DamageModule {
 
                 world.get::<&ServerHandle>(|server| {
                     server.set_health(*player, current, max);
-                    server.cue(position.0, Cue::Hurt);
                 });
+                // The victim's own kit cries out, wherever the hit came from
+                // and whether or not it moved them. How *hard* it landed is the
+                // knockback observer's to say: see `sound::impact`.
+                sound::play_kit_voice(world, victim, PlaysOnHurt, position.0);
 
                 player::notify(victim, &Smashed {
                     attacker: event.attacker,

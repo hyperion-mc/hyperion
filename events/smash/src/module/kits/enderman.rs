@@ -14,7 +14,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable},
-        kit::{self, AbilitySpec, KitStats},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Payload, fire},
     },
@@ -44,10 +44,15 @@ impl Module for Enderman {
             jump_power: 0.9,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.enderman.hurt",
+            death: "minecraft:entity.enderman.death",
+        })
         .cost(4000)
         .blurb("Throw the arena at people, then blink away before they reach you.")
         .ability(AbilitySpec {
             name: "Block Toss",
+            sound: "minecraft:block.stone.place",
             item: "minecraft:iron_sword",
             slot: 0,
             description: "Pick up a block and hurl it. Charge it for the extra point.",
@@ -59,6 +64,7 @@ impl Module for Enderman {
         })
         .ability(AbilitySpec {
             name: "Blink",
+            sound: "minecraft:entity.enderman.teleport",
             item: "minecraft:iron_axe",
             slot: 1,
             description: "Instantly cross sixteen blocks in the direction you are looking.",
@@ -69,6 +75,7 @@ impl Module for Enderman {
         })
         .ability(AbilitySpec {
             name: "Teleport",
+            sound: "minecraft:entity.ender_pearl.throw",
             item: "minecraft:compass",
             slot: 2,
             description: "Charge, then go wherever you are looking. Getting hit cancels it.",
@@ -80,6 +87,7 @@ impl Module for Enderman {
         })
         .ultimate(AbilitySpec {
             name: "Dragon Rider",
+            sound: "minecraft:entity.ender_dragon.flap",
             item: "minecraft:nether_star",
             slot: 8,
             description: "Ride a dragon through everyone.",

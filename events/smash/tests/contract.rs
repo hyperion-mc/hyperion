@@ -38,6 +38,7 @@ use smash::{
         player::{self, Health, OnGround, Player, PlayerModule, Position},
         projectile::ProjectileModule,
         scoreboard::ScoreboardModule,
+        sound::{self, Levels, PlaysOnCast, PlaysOnHurt, SoundModule},
     },
     server::{PlayerId, ServerHandle, mock::MockServer},
 };
@@ -138,7 +139,10 @@ fn contracts() -> Vec<Contract> {
             // `MatchClock`. A second mutual pair, found by this test rather
             // than by reading: nothing else in the suite imports one without
             // the other, so nothing else could have noticed.
-            runtime_requires: &["Lives"],
+            //
+            // The victim's kit cries out when it is hurt, which walks Sound's
+            // `(PlaysOnHurt, sound)` edge from the kit Kit's `Playing` names.
+            runtime_requires: &["Lives", "Sound", "Kit"],
             exercise: |_world, player| {
                 player.set(Armor(10.0));
                 hurt(player, Damaged {
@@ -152,13 +156,44 @@ fn contracts() -> Vec<Contract> {
             },
         },
         Contract {
+            name: "Sound",
+            import: |world| {
+                world.import::<SoundModule>();
+            },
+            // Registration touches only this module's own components. What
+            // needs Player is the module's own API: `play_to_everyone` queries
+            // `Player` and `PlayerId`, and `position_of` reads `Position`.
+            requires: &["Player"],
+            // `kit_of` walks the `Playing` relationship, which Kit owns, and
+            // Kit cannot import without Ability, which is imported after this.
+            // A forward edge, and the reason this field exists.
+            runtime_requires: &["Kit"],
+            exercise: |world, player| {
+                let voice = sound::intern(world, "minecraft:block.note_block.hat", Levels {
+                    volume: 0.5,
+                    ..Levels::default()
+                });
+                let subject = world.entity().add((PlaysOnCast, voice));
+                let declared = sound::declared(subject, PlaysOnCast)
+                    .expect("a sound hung off an entity reads back off it");
+                assert!((declared.volume - 0.5).abs() < 1e-6);
+
+                // The two paths that reach out of this module: one through the
+                // player's kit, one over every player.
+                sound::play_kit_voice(world.into(), player, PlaysOnHurt, Vec3::ZERO);
+                sound::play_to_everyone(world.into(), declared);
+            },
+        },
+        Contract {
             name: "Ability",
             import: |world| {
                 world.import::<AbilityModule>();
             },
             requires: &["Player", "Knockback", "Damage"],
-            // `activate` clears the respawn immunity, which is Lives'.
-            runtime_requires: &["Lives"],
+            // `activate` clears the respawn immunity, which is Lives'; and it
+            // reads the firing ability's `(PlaysOnCast, sound)` edge, which is
+            // Sound's.
+            runtime_requires: &["Lives", "Sound"],
             exercise: |world, player| {
                 // No kit, so no ability is granted and this is the empty path
                 // through the dispatcher. That it runs at all is the claim.
@@ -172,7 +207,8 @@ fn contracts() -> Vec<Contract> {
                 world.import::<KitModule>();
             },
             requires: &["Player", "Knockback", "Damage", "Ability"],
-            runtime_requires: &[],
+            // Declaring a kit interns its ability and voice sounds.
+            runtime_requires: &["Sound"],
             exercise: |world, player| {
                 let kit =
                     smash::module::kit::define(world, "Contract", smash::module::kit::KitStats {
@@ -216,7 +252,9 @@ fn contracts() -> Vec<Contract> {
             // `smash::respawn` names `&Arena` in its signature, so Arena must
             // be imported first. This is the hard half of the cycle.
             requires: &["Player", "Knockback", "Damage", "Ability", "Kit", "Arena"],
-            runtime_requires: &["Lobby"],
+            // A death plays the kit's last word and, on the last life, the
+            // elimination.
+            runtime_requires: &["Lobby", "Sound"],
             exercise: |_world, player| {
                 kill(player, DeathCause::Void);
                 assert_eq!(
@@ -250,7 +288,8 @@ fn contracts() -> Vec<Contract> {
                 "Arena",
                 "Lives",
             ],
-            runtime_requires: &[],
+            // The countdown and the two match boundaries.
+            runtime_requires: &["Sound"],
             exercise: |world, _player| {
                 world.progress_time(0.05);
                 assert!(world.cloned::<&Lobby>().timer >= 0.0);
@@ -281,7 +320,11 @@ fn contracts() -> Vec<Contract> {
             import: |world| {
                 world.import::<StockKits>();
             },
-            requires: &["Player", "Knockback", "Damage", "Ability", "Kit"],
+            // An import-time requirement rather than a runtime one, and the
+            // difference is the whole shape of this module: every kit is built
+            // inside `module()`, so all fifteen intern their sounds before this
+            // import returns.
+            requires: &["Player", "Knockback", "Damage", "Sound", "Ability", "Kit"],
             runtime_requires: &[],
             exercise: |world, _player| {
                 assert!(

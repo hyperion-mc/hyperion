@@ -100,16 +100,87 @@ pub struct HotbarItem {
     pub lore: Vec<String>,
 }
 
-/// A one-shot audiovisual cue. Purely cosmetic, so the game never branches on
-/// whether it succeeded.
+/// A one-shot burst of particles. Purely cosmetic, so the game never branches
+/// on whether it succeeded.
+///
+/// Sound used to travel on this enum too, which is why every ability that
+/// wanted to be heard reached for [`Self::Explosion`] and the game had four
+/// noises for fifty-one abilities. Audio is now [`Sound`], which carries the
+/// vanilla sound event itself rather than a name something else has to map, so
+/// what is left here is only the particle: three shapes, each of which really
+/// is one of three things a client can be shown.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Cue {
     Explosion,
     Teleport,
-    Hurt,
     Death,
-    AbilityReady,
-    Charge,
+}
+
+/// Which of the listener's volume sliders governs a sound.
+///
+/// A player who has turned monsters down should hear a Wither Skull quieter and
+/// their own countdown unchanged, and the only thing that can arrange that is
+/// the server naming the right category. Mirrors the vanilla `SoundSource`
+/// ordinals; the adapter is what turns one into the other.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+pub enum SoundCategory {
+    #[default]
+    Master,
+    Weather,
+    Blocks,
+    /// Monsters. Most kit abilities are this.
+    Hostile,
+    /// Passive and neutral mobs.
+    Neutral,
+    /// Other players, and a weapon connecting.
+    Players,
+    Ambient,
+    /// Feedback rather than a thing in the world: a countdown, a result.
+    Ui,
+}
+
+/// One sound, exactly as it goes on the wire.
+///
+/// A vanilla sound event id and nothing else, because every sound this game
+/// plays has to be one a client already owns. Shipping an id the client does
+/// not know is silence with no error anywhere, so `tests/sound.rs` holds every
+/// id in the game against the generated `minecraft:sound_event` registry.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Sound {
+    /// A vanilla sound event id, e.g. `minecraft:entity.blaze.shoot`.
+    pub id: &'static str,
+    pub category: SoundCategory,
+    /// Loudness at the source. Also the range: a client culls a sound past
+    /// `16 * volume` blocks and attenuates linearly to nothing there, so this
+    /// is how far away a hit can be felt as much as how loud it is.
+    pub volume: f32,
+    /// Playback speed. The client clamps it to `0.5..=2.0`.
+    pub pitch: f32,
+}
+
+impl Sound {
+    /// A sound at its natural volume and pitch.
+    #[must_use]
+    pub const fn new(id: &'static str, category: SoundCategory) -> Self {
+        Self {
+            id,
+            category,
+            volume: 1.0,
+            pitch: 1.0,
+        }
+    }
+
+    #[must_use]
+    pub const fn volume(mut self, volume: f32) -> Self {
+        self.volume = volume;
+        self
+    }
+
+    #[must_use]
+    pub const fn pitch(mut self, pitch: f32) -> Self {
+        self.pitch = pitch;
+        self
+    }
 }
 
 /// Where a message goes on screen.
@@ -122,7 +193,7 @@ pub enum Channel {
 
 /// Everything the game asks the host server to do.
 ///
-/// Kept to eight methods on purpose. Anything that can be computed from
+/// Kept small on purpose. Anything that can be computed from
 /// mirrored components is computed in the game instead of being asked for here,
 /// because every method on this trait is a wiring task later and a virtual call
 /// now.
@@ -150,6 +221,18 @@ pub trait Server: Send + Sync + 'static {
     fn set_spectating(&self, player: PlayerId, spectating: bool);
 
     fn cue(&self, at: Vec3, cue: Cue);
+
+    /// Play a sound at a point in the world. Everyone close enough hears it,
+    /// attenuated by how far they are standing from `at`.
+    fn play_sound(&self, at: Vec3, sound: Sound);
+
+    /// Play a sound only `player` hears, at their own ears, so it is the same
+    /// loudness wherever they are standing.
+    ///
+    /// For feedback that is about the match rather than about a place: a
+    /// countdown tick has no position, and playing one in the world would make
+    /// it quieter for whoever happened to be furthest from the origin.
+    fn play_sound_to(&self, player: PlayerId, sound: Sound);
 }
 
 /// Singleton holding the live [`Server`].

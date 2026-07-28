@@ -14,8 +14,9 @@ use crate::{
         damage::{KILL_CREDIT_WINDOW, LastHitAt, LastHitBy, MatchClock},
         kit,
         player::{self, Health, JumpsLeft, Player, Position},
+        sound::{self, PlaysOnDeath},
     },
-    server::{Channel, Cue, NamedColor, PlayerId, ServerHandle, Text},
+    server::{Channel, Cue, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 /// Mineplex's `MAX_LIVES`.
@@ -28,6 +29,12 @@ pub const DEATH_SPECTATE_SECS: f32 = 4.0;
 /// Seconds of immunity after respawning. Mineplex's `RESPAWN_INVUL`, and it is
 /// cancelled early the moment you use an item so you cannot camp under it.
 pub const RESPAWN_INVULNERABLE_SECS: f32 = 1.5;
+
+/// How loud an elimination is, against 1.0 for a sound at natural volume.
+///
+/// Volume is range, so this is really "how far away should somebody be and
+/// still be told the match just got smaller". Everyone in the arena.
+pub const ELIMINATION_VOLUME: f32 = 2.0;
 
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Lives(pub u8);
@@ -340,9 +347,14 @@ impl Module for LivesModule {
 
                 let name = victim.name();
                 let killer = killer_of(victim, clock);
+                let at = sound::position_of(victim);
+                // The kit's last word, where it fell. Reached through the
+                // player's own `(Playing, kit)` edge, so this module still does
+                // not know that kits have names.
+                sound::play_kit_voice(world, victim, PlaysOnDeath, at);
 
                 world.get::<&ServerHandle>(|server| {
-                    server.cue(Vec3::ZERO, Cue::Death);
+                    server.cue(at, Cue::Death);
                     match killer {
                         Some(killer) => {
                             let killer_name = world.entity_from_id(killer).name();
@@ -379,6 +391,15 @@ impl Module for LivesModule {
                     let placement = u32::try_from(remaining_alive(world)).unwrap_or(0);
                     victim.add(Eliminated::id());
                     victim.set(Placement(placement));
+                    // Louder than the death that preceded it, because losing a
+                    // life and losing the match are the same animation and only
+                    // the sound tells the arena which one it just watched.
+                    sound::play_at(
+                        world,
+                        at,
+                        Sound::new(sound::ELIMINATION, SoundCategory::Ui)
+                            .volume(ELIMINATION_VOLUME),
+                    );
                     player::notify(victim, &EliminatedEvent { placement });
                 } else {
                     victim.set(RespawnAt(clock + DEATH_SPECTATE_SECS));
@@ -413,8 +434,6 @@ impl Module for LivesModule {
             });
     }
 }
-
-use glam::Vec3;
 
 /// How many players are still in the match.
 #[must_use]

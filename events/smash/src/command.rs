@@ -179,8 +179,11 @@ fn json(entry: &ability::Declared) -> String {
     }
     let _unused = write!(
         out,
-        r#""requires_ground":{},"refunds_on_hit":{},"ultimate":{},"proves":["#,
-        entry.requires_ground, entry.refunds_on_hit, entry.ultimate,
+        r#""requires_ground":{},"refunds_on_hit":{},"ultimate":{},"sound":"{}","proves":["#,
+        entry.requires_ground,
+        entry.refunds_on_hit,
+        entry.ultimate,
+        escape(entry.sound),
     );
     for (index, observable) in entry.proves.iter().enumerate() {
         if index > 0 {

@@ -23,8 +23,9 @@ use crate::{
         damage::Armor,
         knockback::KnockbackTaken,
         player::{Energy, Health, JumpsLeft},
+        sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt},
     },
-    server::HotbarItem,
+    server::{HotbarItem, SoundCategory},
 };
 
 /// Tag on kit prefabs.
@@ -115,12 +116,13 @@ const fn noop(_: &Cast<'_>) {}
 ///     slot: 1,
 ///     cooldown: 7.0,
 ///     proves: &[Observable::TeleportsCaster],
+///     sound: "minecraft:entity.enderman.teleport",
 ///     activate: blink,
 ///     ..AbilitySpec::DEFAULT
 /// }
 /// ```
 ///
-/// `proves` is the one field with no sensible default. Everything else
+/// `proves` and `sound` are the two fields with no sensible default. Everything else
 /// describes the ability; that field is the ability's own claim about what a
 /// player will see, and it is what the two gates enumerate. Leaving it empty is
 /// caught by `tests/abilities.rs`, so a kit cannot be added without saying what
@@ -148,6 +150,13 @@ pub struct AbilitySpec {
     pub refunds_on_hit: bool,
     /// What a client sees when this fires. Must not be empty.
     pub proves: &'static [Observable],
+    /// The vanilla sound event firing this plays, e.g.
+    /// `minecraft:entity.blaze.shoot`. Must not be empty, and must be a sound
+    /// the client already owns: `tests/sound.rs` enumerates the whole roster
+    /// and holds every id against the generated `minecraft:sound_event`
+    /// registry, so an ability that forgets one fails there rather than going
+    /// quietly silent in play.
+    pub sound: &'static str,
     pub activate: fn(&Cast<'_>),
 }
 
@@ -163,6 +172,7 @@ impl AbilitySpec {
         requires_ground: false,
         refunds_on_hit: false,
         proves: &[],
+        sound: "",
         activate: noop,
     };
 }
@@ -171,6 +181,22 @@ impl Default for AbilitySpec {
     fn default() -> Self {
         Self::DEFAULT
     }
+}
+
+/// How loud an ultimate's cast is, against 1.0 for an ordinary ability.
+pub const ULTIMATE_VOLUME: f32 = 1.6;
+
+/// The voice of the mob a kit is.
+///
+/// Two sounds and not three: what *landing* a hit sounds like is deliberately
+/// the same for every kit, so that its pitch and volume can mean how hard
+/// rather than who. See [`crate::module::sound::IMPACT`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct KitSounds {
+    /// Played on the victim when they are hurt, whoever hurt them.
+    pub hurt: &'static str,
+    /// Played where they died.
+    pub death: &'static str,
 }
 
 /// Builds one kit prefab. Returned by [`define`].
@@ -200,6 +226,27 @@ impl<'w> KitBuilder<'w> {
     #[must_use]
     pub fn blurb(self, text: &'static str) -> Self {
         self.kit.set(KitBlurb(text));
+        self
+    }
+
+    /// What this kit's mob sounds like when it is hurt and when it dies.
+    ///
+    /// Hung off the kit prefab as `(PlaysOnHurt, sound)` and
+    /// `(PlaysOnDeath, sound)`, so the damage and death paths reach it through
+    /// the player's own `(Playing, kit)` edge and no subsystem learns a kit
+    /// name to do it.
+    #[must_use]
+    pub fn sounds(self, sounds: KitSounds) -> Self {
+        let voice = Levels {
+            // A kit is a mob, and a mob's voice belongs under the slider a
+            // player uses to turn mobs down.
+            category: SoundCategory::Hostile,
+            ..Levels::default()
+        };
+        self.kit
+            .add((PlaysOnHurt, sound::intern(self.world, sounds.hurt, voice)));
+        self.kit
+            .add((PlaysOnDeath, sound::intern(self.world, sounds.death, voice)));
         self
     }
 
@@ -257,6 +304,26 @@ impl<'w> KitBuilder<'w> {
         }
         if ultimate {
             ability.add(Ultimate::id());
+        }
+        // On the ability entity, not in a table somewhere keyed by its name.
+        // What a player fires is an instance of this prefab, and how the
+        // declaration reaches that instance is `module/sound.rs`'s business.
+        if !spec.sound.is_empty() {
+            let sound = sound::intern(self.world, spec.sound, Levels {
+                // Every kit is a combatant whatever mob it is skinned as, so
+                // they all belong under one slider and a player who turns
+                // monsters down turns the whole roster down evenly. The two
+                // categories that are deliberately not this are the impact of
+                // a hit, which is `Players`, and the countdown, which is `Ui`.
+                category: SoundCategory::Hostile,
+                // An ultimate carries further, and volume is range: see
+                // `hyperion::net::agnostic::RANGE_PER_VOLUME`. A Smash Crystal
+                // going off is the loudest thing in a match and should be heard
+                // by people who are not in it yet.
+                volume: if ultimate { ULTIMATE_VOLUME } else { 1.0 },
+                ..Levels::default()
+            });
+            ability.add((PlaysOnCast, sound));
         }
         // Every ability the kit has, ultimate included, hangs off the same
         // relationship, so one traversal enumerates the whole kit. What

@@ -12,13 +12,10 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash},
-        kit::{self, AbilitySpec, KitStats},
-        projectile::{Flight, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    projectile::{Flight, Payload, fire},
 };
 
 #[derive(Component)]
@@ -39,10 +36,15 @@ impl Module for Spider {
             jump_control: true,
             ..KitStats::default()
         })
+        .sounds(KitSounds {
+            hurt: "minecraft:entity.spider.hurt",
+            death: "minecraft:entity.spider.death",
+        })
         .cost(0)
         .blurb("Fast, fragile and everywhere at once. Leap where you look.")
         .ability(AbilitySpec {
             name: "Needler",
+            sound: "minecraft:entity.bee.sting",
             item: "minecraft:iron_sword",
             slot: 1,
             description: "Spray six needles. They poison, which armour does not stop.",
@@ -54,6 +56,7 @@ impl Module for Spider {
         })
         .ability(AbilitySpec {
             name: "Spin Web",
+            sound: "minecraft:block.cobweb.place",
             item: "minecraft:iron_axe",
             slot: 2,
             description: "Launch forward, trailing web. Mostly a way back onto the map.",
@@ -64,6 +67,7 @@ impl Module for Spider {
         })
         .ultimate(AbilitySpec {
             name: "Spiders Nest",
+            sound: "minecraft:entity.spider.ambient",
             item: "minecraft:nether_star",
             slot: 8,
             description: "A dome of web. Everything you hit heals you.",
@@ -110,7 +114,6 @@ fn needler(cast: &Cast<'_>) {
 fn spin_web(cast: &Cast<'_>) {
     let launch = cast.facing.0.normalize_or_zero() * 1.4 + Vec3::Y * 0.45;
     cast.server.add_velocity(cast.player, launch);
-    cast.server.cue(cast.position.0, Cue::Charge);
 }
 
 /// `[APPROXIMATED]`: the dome traps, which needs block writes the game half

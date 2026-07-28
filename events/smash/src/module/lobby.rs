@@ -20,8 +20,9 @@ use crate::{
         kit,
         lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
+        sound,
     },
-    server::{Channel, PlayerId, ServerHandle, Text},
+    server::{Channel, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -259,12 +260,43 @@ impl Module for LobbyModule {
                     world.get::<&mut MatchClock>(|clock| clock.0 += dt);
                 }
 
+                tick_countdown(&world, before, after);
+
                 if before.phase != after.phase {
                     on_phase_change(&world, before.phase, after.phase);
                 }
             }
         });
     }
+}
+
+/// Whether a phase is one whose timer is a countdown to something.
+///
+/// Both of the phases before a match are: the lobby countdown runs out into
+/// `Preparing`, and `Preparing` runs out into the match itself. `Playing`
+/// counts *up* and `Ended` is a results screen nobody is waiting on, so neither
+/// is ticked.
+const fn counts_down(phase: Phase) -> bool {
+    matches!(phase, Phase::Countdown | Phase::Preparing)
+}
+
+/// A tick a second through the last seconds before the match, to everyone.
+///
+/// Driven off the whole-second boundary the timer just crossed rather than off
+/// a counter of its own, so it stays right when a join shortens the countdown
+/// and cannot drift from the number the rest of the game is working to. A
+/// transition between the two counting-down phases is not a boundary crossing:
+/// `Preparing` starts at nine seconds having just been handed a fresh timer,
+/// and treating that as a tick would double up on the handover.
+fn tick_countdown(world: &WorldRef<'_>, before: Lobby, after: Lobby) {
+    if !counts_down(after.phase) || before.phase != after.phase {
+        return;
+    }
+    let (was, now) = (before.timer.ceil(), after.timer.ceil());
+    if now >= was || now <= 0.0 || now > f32::from(sound::COUNTDOWN_AUDIBLE_SECONDS) {
+        return;
+    }
+    sound::play_to_everyone(*world, sound::countdown_tick(now));
 }
 
 fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
@@ -277,8 +309,15 @@ fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
         Phase::Playing => {
             world.get::<&mut MatchClock>(|clock| clock.0 = 0.0);
             announce(world, "Go!");
+            sound::play_to_everyone(
+                *world,
+                Sound::new(sound::MATCH_START, SoundCategory::Master),
+            );
         }
-        Phase::Ended => announce(world, "Game over."),
+        Phase::Ended => {
+            announce(world, "Game over.");
+            sound::play_to_everyone(*world, Sound::new(sound::MATCH_END, SoundCategory::Ui));
+        }
         Phase::Waiting => reset(world),
     }
 
