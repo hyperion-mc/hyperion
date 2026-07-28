@@ -14,8 +14,9 @@ use flecs_ecs::prelude::*;
 use crate::{
     flecs_ext::EntityViewExt,
     module::{
-        ability::{Cast, Observable},
+        ability::{self, Cast, Observable},
         damage::{DamageKind, Damaged, MeleeBonus},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitName, KitSounds, KitStats, Playing},
         player::Player,
         projectile::{Flight, Impact, Payload, fire},
@@ -90,9 +91,16 @@ impl Module for Wolf {
             name: "Frenzy",
             sound: "minecraft:entity.wolf_angry.growl",
             item: "minecraft:nether_star",
-            description: "Twenty seconds of everything at once.",
+            description: "Twenty seconds of everything at once: harder hits, and a lunge every \
+                          two seconds.",
             cooldown: 20.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+                Observable::BuffsMelee,
+                Observable::Sustains,
+            ],
             activate: frenzy,
             ..AbilitySpec::DEFAULT
         })
@@ -202,11 +210,36 @@ fn wolf_strike(cast: &Cast<'_>) {
     splash_at(cast, ahead, REACH, 6.0, knockback);
 }
 
-/// "Speed III, Regeneration III, and Strength III, and all your abilities
-/// recharge much faster. Lasts 20 seconds." The status effects need the host's
-/// potion machinery, so what is modelled here is the damage burst.
-/// `[APPROXIMATED]`.
+/// `[WIKI]` "Speed III, Regeneration III, and Strength III, and all your
+/// abilities recharge much faster. Lasts 20 seconds."
+///
+/// The twenty seconds is the ability, and it used to be one burst. Speed and
+/// Regeneration are `ClientboundUpdateMobEffect`, which the seam does not carry
+/// yet; Strength is [`MeleeBonus`], which it does. What stands in for "abilities
+/// recharge much faster" is a Wolf Strike on a beat -- the kit's own lunge,
+/// arriving faster than its seven-second cooldown ever allows.
 fn frenzy(cast: &Cast<'_>) {
-    use crate::module::ability::splash;
-    splash(cast, 5.0, 8.0, 1.5);
+    let now = cast.world.cloned::<&crate::module::damage::MatchClock>().0;
+    // Strength III is +3 in vanilla's own table, which is also exactly the gap
+    // between Wolf's base 5 and the 8 its own Ravage ceiling reaches -- so a
+    // frenzied Wolf starts where a Wolf who has been landing hits ends up.
+    cast.caster.set(MeleeBonus {
+        flat: FRENZY_BONUS_DAMAGE,
+        against: None,
+        until: now + ability::ULTIMATE_SECONDS,
+    });
+
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, FRENZY_INTERVAL, wolf_strike),
+    );
 }
+
+/// `[WIKI]` Strength III, which vanilla scores at +3 damage.
+pub const FRENZY_BONUS_DAMAGE: f32 = RAVAGE_MAX_DAMAGE - 5.0;
+
+/// `[APPROXIMATED]`. Wolf Strike's own cooldown is seven seconds; "much faster"
+/// is read here as a lunge every two.
+const FRENZY_INTERVAL: f32 = 2.0;

@@ -12,7 +12,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable, splash_at},
+        ability::{self, Cast, Observable, splash_at},
         effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Payload, fire},
@@ -91,9 +91,14 @@ impl Module for SkySquid {
             name: "Storm Squid",
             sound: "minecraft:entity.lightning_bolt.thunder",
             item: "minecraft:nether_star",
-            description: "Fly, and call lightning down once a second.",
+            description: "Fly, and call lightning down once a second for twenty seconds.",
             cooldown: 1.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+                Observable::Sustains,
+            ],
             activate: storm_squid,
             ..AbilitySpec::DEFAULT
         })
@@ -152,10 +157,34 @@ fn fish_flurry(cast: &Cast<'_>) {
     cast.server.cue(at, Cue::Explosion);
 }
 
-/// `[APPROXIMATED]`: a lightning bolt a second for the crystal's duration needs
-/// a repeating effect the ability layer does not have. One strike stands in.
+/// `[VERIFIED]` "call lightning down once a second"; the twenty seconds is
+/// [`crate::module::ability::ULTIMATE_SECONDS`], and the per-bolt damage is
+/// `[APPROXIMATED]`.
+///
+/// The ability is the duration. It used to be one strike, because the ability
+/// layer had no way to say "and again, nineteen more times"; it now says
+/// exactly that and the strike itself is unchanged.
 fn storm_squid(cast: &Cast<'_>) {
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, STORM_INTERVAL, storm_bolt),
+    );
+}
+
+/// `[VERIFIED]` one second.
+const STORM_INTERVAL: f32 = 1.0;
+
+/// One bolt on each other player, wherever they are standing, and a beat of
+/// flight for the squid.
+fn storm_bolt(cast: &Cast<'_>) {
     use crate::module::{ability::splash_from, player::Position};
+
+    // "Fly" -- a small lift every beat, which is the closest the seam gets to
+    // a flight mode and is enough to keep a squid off the floor for the
+    // duration.
+    cast.server.add_velocity(cast.player, Vec3::Y * STORM_LIFT);
 
     let caster = cast.caster.id();
     let mut targets = Vec::new();
@@ -171,7 +200,16 @@ fn storm_squid(cast: &Cast<'_>) {
     for at in targets {
         // The bolt lands on the victim, so the launch has to be measured from
         // the squid: away from the point you are standing on is not a direction.
-        splash_from(cast, cast.position.0, at, 2.0, 6.0, 1.2);
+        splash_from(cast, cast.position.0, at, 2.0, STORM_DAMAGE, 1.2);
         cast.server.cue(at, Cue::Explosion);
     }
 }
+
+/// `[APPROXIMATED]`. Per bolt, and there are twenty of them, so this is
+/// deliberately a fraction of what the single-strike version dealt: the old
+/// number applied once a second for twenty seconds would be 120 damage.
+const STORM_DAMAGE: f32 = 2.0;
+
+/// `[APPROXIMATED]`. Enough lift per beat to hold a squid up without launching
+/// them off the map, which a bolt's own knockback would do if this were larger.
+const STORM_LIFT: f32 = 0.35;

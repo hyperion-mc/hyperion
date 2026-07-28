@@ -9,7 +9,8 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable, splash_at},
+        ability::{self, Cast, Observable, splash_at},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -65,9 +66,13 @@ impl Module for Zombie {
             name: "Night of the Living Dead",
             sound: "minecraft:entity.zombie.ambient",
             item: "minecraft:nether_star",
-            description: "The dead get up around you.",
+            description: "The dead get up around you, and keep getting up for twenty seconds.",
             cooldown: 20.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: night_of_the_living_dead,
             ..AbilitySpec::DEFAULT
         })
@@ -125,7 +130,29 @@ fn drag_back(impact: &Impact<'_>) {
         .get::<&ServerHandle>(|server| server.add_velocity(id, pull));
 }
 
+/// `[APPROXIMATED]` throughout; the wiki names the ability and describes it and
+/// gives no figures.
+///
+/// "The dead get up around you" is a horde, and a horde is not one moment. A
+/// wave every second and a half for twenty seconds is the closest the kit gets
+/// to one without a spawned mob to walk around, and it makes standing next to a
+/// Zombie holding a crystal the mistake the name implies.
 fn night_of_the_living_dead(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 7.0, 10.0, 1.6);
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, HORDE_INTERVAL, horde_wave),
+    );
+}
+
+const HORDE_INTERVAL: f32 = 1.5;
+
+/// Per wave, and there are thirteen of them, so it is a fraction of what the
+/// single burst dealt.
+const HORDE_DAMAGE: f32 = 2.5;
+
+fn horde_wave(cast: &Cast<'_>) {
+    splash_at(cast, cast.position.0, 7.0, HORDE_DAMAGE, 1.6);
     cast.server.cue(cast.position.0, Cue::Explosion);
 }

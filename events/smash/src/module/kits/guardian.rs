@@ -14,8 +14,9 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable, splash_at},
+        ability::{self, Cast, Observable, splash_at},
         damage::MatchClock,
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::{Player, Position},
         projectile::{Flight, Impact, Payload, fire},
@@ -104,9 +105,13 @@ impl Module for Guardian {
             name: "Tidal Wave",
             sound: "minecraft:entity.elder_guardian.curse",
             item: "minecraft:nether_star",
-            description: "Everything in the water goes where the water goes.",
+            description: "Twenty seconds of water. Everything in it goes where it goes.",
             cooldown: 20.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: tidal_wave,
             ..AbilitySpec::DEFAULT
         })
@@ -210,6 +215,24 @@ fn target_laser(cast: &Cast<'_>) {
     });
 }
 
+/// `[APPROXIMATED]` throughout; the wiki describes the ultimate and gives no
+/// figures.
+///
+/// A wave is a thing that keeps arriving. One splash was a slap.
 fn tidal_wave(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 10.0, 12.0, 2.2);
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, TIDE_INTERVAL, tide),
+    );
+}
+
+const TIDE_INTERVAL: f32 = 1.5;
+
+/// Per wave, and there are thirteen.
+const TIDE_DAMAGE: f32 = 3.0;
+
+fn tide(cast: &Cast<'_>) {
+    splash_at(cast, cast.position.0, 10.0, TIDE_DAMAGE, 2.2);
 }

@@ -14,7 +14,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable, splash},
+        ability::{self, Cast, Observable, splash},
         damage::DamageKind,
         effect::{self, Affliction, Shows},
         kit::{self, AbilitySpec, KitSounds, KitStats},
@@ -103,12 +103,13 @@ impl Module for Spider {
             name: "Spiders Nest",
             sound: "minecraft:entity.spider.ambient",
             item: "minecraft:nether_star",
-            description: "A dome of web. Everything you hit heals you.",
+            description: "Twenty seconds inside a dome of web. Everything you hit heals you.",
             cooldown: 1.0,
             proves: &[
                 Observable::HurtsTarget,
                 Observable::LaunchesTarget,
                 Observable::HealsCaster,
+                Observable::Sustains,
             ],
             activate: spiders_nest,
             ..AbilitySpec::DEFAULT
@@ -178,8 +179,24 @@ fn spin_web(cast: &Cast<'_>) {
 
 /// `[APPROXIMATED]`: the dome traps, which needs block writes the game half
 /// cannot make. The damage and the one-second recharge are the wiki's, and so
-/// is "everything you hit heals you", which is the part that was missing.
+/// is "everything you hit heals you".
+///
+/// A dome is somewhere you stand for a while. The ability is now the twenty
+/// seconds, with the same pulse -- and the lifesteal on every beat, which is
+/// what makes a Spider in their own nest the problem the wiki describes.
 fn spiders_nest(cast: &Cast<'_>) {
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, NEST_INTERVAL, nest_pulse),
+    );
+}
+
+/// `[WIKI]` "the one-second recharge", which is the beat.
+const NEST_INTERVAL: f32 = 1.0;
+
+fn nest_pulse(cast: &Cast<'_>) {
     const DAMAGE: f32 = 4.0;
 
     // Counted from the victims the blast returned rather than from a second

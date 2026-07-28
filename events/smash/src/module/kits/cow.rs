@@ -12,7 +12,9 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 
 use crate::module::{
-    ability::{Cast, Observable, splash_at},
+    ability::{self, Cast, Observable, splash_at},
+    damage::MeleeBonus,
+    effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     projectile::{Flight, Payload, fire},
 };
@@ -73,9 +75,18 @@ impl Module for Cow {
             name: "Mooshroom Madness",
             sound: "minecraft:entity.mooshroom.convert",
             item: "minecraft:nether_star",
-            description: "Become a mooshroom: more damage, five more hearts, faster abilities.",
+            description: "Become a mooshroom for twenty seconds: more damage, five more hearts, \
+                          and a herd every two seconds.",
             cooldown: 20.0,
-            proves: &[Observable::HealsCaster],
+            proves: &[
+                Observable::HealsCaster,
+                Observable::BuffsMelee,
+                Observable::HurtsTarget,
+                // The herd on each beat is the kit's own Angry Herd, and a cow
+                // that hits you moves you.
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: mooshroom_madness,
             ..AbilitySpec::DEFAULT
         })
@@ -123,30 +134,79 @@ fn milk_spiral(cast: &Cast<'_>) {
 /// `[VERIFIED]` "5 more hearts".
 pub const MOOSHROOM_BONUS_HEALTH: f32 = 10.0;
 
-/// `[VERIFIED]` "+1 Damage ... 5 more hearts"; the transformation itself needs
-/// the host's entity type machinery, so what lands is the heal.
-fn mooshroom_madness(cast: &Cast<'_>) {
-    use crate::{
-        flecs_ext::EntityViewExt,
-        module::{
-            kit::{KitStats, Playing},
-            player::Health,
-        },
-    };
+/// `[VERIFIED]` "+1 Damage".
+pub const MOOSHROOM_BONUS_DAMAGE: f32 = 1.0;
 
-    // Set against the kit's own maximum rather than added to whatever the
-    // player currently has. Adding compounds: the crystal can be picked up more
-    // than once in a match, and two Mooshroom Madnesses used to leave a Cow on
-    // forty hearts and a third on fifty.
-    let base = cast
-        .caster
+/// `[APPROXIMATED]`. The wiki's "faster abilities" needs a cooldown scale the
+/// ability layer does not carry, so what stands in for it is the kit's own herd
+/// arriving on a beat -- which is what a Cow whose abilities are coming faster
+/// than usual looks like from the outside.
+const MOOSHROOM_INTERVAL: f32 = 2.0;
+
+/// The kit's own maximum health, which the bonus is measured against.
+///
+/// Read from the kit prefab and not from the player, because the player's
+/// maximum is the thing this ability changes and reading it back would compound:
+/// two crystals in one match used to leave a Cow on forty hearts and a third on
+/// fifty.
+fn base_health(cast: &Cast<'_>) -> f32 {
+    use crate::{flecs_ext::EntityViewExt, module::kit::Playing};
+    cast.caster
         .find_target(Playing, |_| true)
         .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.max_health))
-        .unwrap_or(20.0);
+        .unwrap_or(20.0)
+}
+
+/// `[VERIFIED]` "+1 Damage ... 5 more hearts", for twenty seconds.
+///
+/// The transformation itself needs the host's entity type machinery. What lands
+/// is everything else -- and, the part that was missing, it is taken back when
+/// the twenty seconds are up. The maximum used to be raised permanently, so the
+/// ultimate was strictly stronger than the wiki describes and got stronger again
+/// with every crystal.
+fn mooshroom_madness(cast: &Cast<'_>) {
+    use crate::module::player::Health;
 
     let (current, max) = cast.caster.get::<&mut Health>(|health| {
-        health.max = base + MOOSHROOM_BONUS_HEALTH;
+        health.max = base_health(cast) + MOOSHROOM_BONUS_HEALTH;
         health.current = health.max;
+        (health.current, health.max)
+    });
+    cast.server.set_health(cast.player, current, max);
+
+    // `against: None`, because the wiki's +1 is against everybody -- unlike
+    // Guardian's mark, which is the other user of this component. The deadline
+    // is the ability layer's own, so the bonus and the mode cannot disagree
+    // about when they end.
+    let now = cast.world.cloned::<&crate::module::damage::MatchClock>().0;
+    cast.caster.set(MeleeBonus {
+        flat: MOOSHROOM_BONUS_DAMAGE,
+        against: None,
+        until: now + ability::ULTIMATE_SECONDS,
+    });
+
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, MOOSHROOM_INTERVAL, angry_herd)
+            .undone_by(shrink_back),
+    );
+}
+
+/// Put the Cow back the size it was.
+///
+/// Runs however the mode ends -- expiry, a respawn clearing effects, the holder
+/// dying -- because [`crate::module::effect::Ends`] has exactly one teardown
+/// path. Current health is clamped rather than left above a maximum that just
+/// dropped, which `tests/properties.rs` checks on every tick.
+fn shrink_back(cast: &Cast<'_>) {
+    use crate::module::player::Health;
+
+    let base = base_health(cast);
+    let (current, max) = cast.caster.get::<&mut Health>(|health| {
+        health.max = base;
+        health.current = health.current.min(base);
         (health.current, health.max)
     });
     cast.server.set_health(cast.player, current, max);

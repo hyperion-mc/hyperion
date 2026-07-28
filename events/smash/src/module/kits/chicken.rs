@@ -13,7 +13,8 @@ use glam::Vec3;
 use crate::{
     flecs_ext::EntityViewExt,
     module::{
-        ability::{Cast, Cooldown, Grants, Named, Observable},
+        ability::{self, Cast, Cooldown, Grants, Named, Observable},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -81,7 +82,11 @@ impl Module for Chicken {
             item: "minecraft:nether_star",
             description: "Unlimited flight and eggs, for twenty seconds.",
             cooldown: 1.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesCaster],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesCaster,
+                Observable::Sustains,
+            ],
             activate: aerial_gunner,
             ..AbilitySpec::DEFAULT
         })
@@ -154,8 +159,31 @@ fn refund(impact: &Impact<'_>) {
         .get::<&crate::server::ServerHandle>(|server| server.cue(impact.at, Cue::Explosion));
 }
 
-/// `[APPROXIMATED]`: unlimited flight is not a state the game half can enter.
+/// `[WIKI]` "unlimited flight and eggs, for twenty seconds".
+///
+/// The twenty seconds is the ability, and the description already said so while
+/// the code did it once. Unlimited flight is not a state the seam can enter, so
+/// each beat is a lift and a volley: a chicken that stays up and keeps firing
+/// for as long as the crystal lasts, which is what the sentence describes from
+/// the ground.
 fn aerial_gunner(cast: &Cast<'_>) {
-    cast.server.add_velocity(cast.player, Vec3::Y * 0.8);
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, GUNNER_INTERVAL, gunner_beat),
+    );
+}
+
+/// `[APPROXIMATED]`. Egg Blaster's own cooldown is two seconds and the ultimate
+/// removes it; twice a second is "unlimited" without being a solid wall of egg.
+const GUNNER_INTERVAL: f32 = 0.5;
+
+/// `[APPROXIMATED]`. Enough lift each beat to stay airborne and not enough to
+/// climb out of the map over twenty seconds.
+const GUNNER_LIFT: f32 = 0.4;
+
+fn gunner_beat(cast: &Cast<'_>) {
+    cast.server.add_velocity(cast.player, Vec3::Y * GUNNER_LIFT);
     egg_blaster(cast);
 }

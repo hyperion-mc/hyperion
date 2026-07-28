@@ -13,7 +13,8 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable},
+        ability::{self, Cast, Observable},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Payload, fire},
@@ -89,9 +90,14 @@ impl Module for Enderman {
             name: "Dragon Rider",
             sound: "minecraft:entity.ender_dragon.flap",
             item: "minecraft:nether_star",
-            description: "Ride a dragon through everyone.",
+            description: "Ride a dragon through everyone, for twenty seconds.",
             cooldown: 30.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+                Observable::Sustains,
+            ],
             activate: dragon_rider,
             ..AbilitySpec::DEFAULT
         })
@@ -139,14 +145,34 @@ fn long_teleport(cast: &Cast<'_>) {
     );
 }
 
+/// `[APPROXIMATED]` throughout; the wiki names the ultimate and gives no
+/// figures.
+///
+/// "Ride a dragon through everyone" is two verbs and the code did neither: the
+/// Enderman never moved, so nothing was ridden and nobody was passed through.
+/// Each beat now carries the rider forward and hits whatever is in front of
+/// them, which is the sentence.
 fn dragon_rider(cast: &Cast<'_>) {
-    crate::module::ability::splash_at(
-        cast,
-        cast.position.0 + cast.facing.0.normalize_or_zero() * 8.0,
-        6.0,
-        20.0,
-        4.0,
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, RIDE_INTERVAL, dragon_pass),
     );
+}
+
+const RIDE_INTERVAL: f32 = 1.0;
+
+/// Per pass, and there are twenty.
+const RIDE_DAMAGE: f32 = 5.0;
+
+fn dragon_pass(cast: &Cast<'_>) {
+    let forward = cast.facing.0.normalize_or_zero();
+    // The ride. Forward and a little up, so the dragon clears the lip of a
+    // platform rather than stopping at it.
+    cast.server
+        .add_velocity(cast.player, forward * 1.6 + Vec3::Y * 0.3);
+    crate::module::ability::splash_at(cast, cast.position.0 + forward * 8.0, 6.0, RIDE_DAMAGE, 4.0);
 }
 
 fn teleport_to(cast: &Cast<'_>, to: Vec3) {
