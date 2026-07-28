@@ -404,6 +404,23 @@ SWEEP_ATTEMPTS = 3
 # cross the far victim.
 SWEEP_WINDOW = 2.0
 
+# Seconds to keep watching, with nothing cast, for an ability that declared it
+# leaves something behind.
+#
+# Runs after `SWEEP_WINDOW`, so an effect has to still be ticking three and a
+# half seconds after the press to be seen. Blaze's burn lasts four and Spider's
+# poison six, both with room to spare; anything shorter than this would be
+# indistinguishable here from an ability that left nothing at all, so a kit
+# adding a briefer effect has to shorten the wait rather than trust it.
+LINGER_WINDOW = 1.5
+
+# Seconds to wait for a probe hit on the caster to show up on their health bar.
+#
+# Short on purpose. The only shield in the roster is one second long, and this
+# probe is spent from inside that second: a generous timeout here would burn the
+# window it is trying to measure and turn a working shield into a failure.
+SHIELD_PROBE_WINDOW = 0.4
+
 ITEM_REGISTRY = ROOT / "crates/hyperion-minecraft-proto/src/generated/registry.rs"
 
 
@@ -1227,6 +1244,41 @@ class Match:
             2.0,
         )
 
+    def hit_caster(self):
+        """One hit on the caster from the near victim. Returns whether it landed.
+
+        The wire fact behind `shields_caster`, in both directions: inside the
+        window this has to send no `ClientboundSetHealth` for the caster, and
+        outside it, it has to send one. Only the pair proves anything -- a
+        shield that never lifts and a server that cannot deal damage look
+        identical from one probe.
+        """
+        attacker, victim = self.clients[0], self.clients[1]
+        before = attacker.health
+        victim.attack(attacker)
+        return self.wait_until(
+            lambda: attacker.health is not None
+            and before is not None
+            and attacker.health < before - 0.05,
+            SHIELD_PROBE_WINDOW,
+        )
+
+    def probe_shield(self, entry):
+        """Whether a hit landed on the caster immediately after the press.
+
+        Taken in `exercise` rather than in `observe`, because the shield is one
+        second long and `observe` waits two: a reading taken afterwards finds
+        every window already closed and calls a working ability broken.
+
+        `None` when the entry claims no shield. The probe costs the caster
+        health, and running it on all fifty-one would perturb every other
+        reading in the sweep -- `heals_caster` most of all, which is measured as
+        the caster's health going *up*.
+        """
+        if "shields_caster" not in entry["proves"]:
+            return None
+        return not self.hit_caster()
+
     def measure_melee(self):
         """What one melee swing at the near victim takes off, right now."""
         attacker, victim = self.clients[0], self.clients[1]
@@ -1264,8 +1316,12 @@ class Match:
             self.wait(entry["charge_time"] + 0.2)
             attacker.release_slot(entry["slot"], "(%s, fully charged)" % entry["name"])
 
-    def observe(self, entry, before):
-        """Everything from `entry`'s declaration that actually reached a client."""
+    def observe(self, entry, before, held=None):
+        """Everything from `entry`'s declaration that actually reached a client.
+
+        `held` is `probe_shield`'s reading, which has to be taken before this
+        runs and cannot be taken here. See that method.
+        """
         attacker = self.clients[0]
         victims = self.clients[1:]
         found = {}
@@ -1315,6 +1371,32 @@ class Match:
                     "a melee swing took %.2f health where the same swing took "
                     "%.2f before" % (after, before["melee"])
                 )
+
+        # The distinguishing word is *keeps*. Every ability in the game can take
+        # health off somebody once, and `hurts_target` above is already that. So
+        # nothing is cast, the health each victim is showing right now is
+        # written down, and the question is whether a further
+        # `ClientboundSetHealth` arrives for any of them.
+        if "afflicts_target" in entry["proves"]:
+            watched = {victim.name: victim.health for victim in victims}
+            self.wait(LINGER_WINDOW)
+            for victim in victims:
+                was = watched.get(victim.name)
+                if was is not None and victim.health is not None and victim.health < was - 0.05:
+                    found.setdefault(
+                        "afflicts_target",
+                        "%s went on losing health with nothing cast: %.2f to %.2f"
+                        % (victim.name, was, victim.health),
+                    )
+
+        # `held` was the probe taken inside the window; this is the one taken
+        # after it. Both halves, because a shield that never lifts and a server
+        # that cannot deal damage produce the same single reading.
+        if "shields_caster" in entry["proves"] and held and self.hit_caster():
+            found["shields_caster"] = (
+                "a hit inside the window sent no health packet and the same hit "
+                "after it did"
+            )
         return found
 
     def window_sounds(self):
@@ -1365,9 +1447,12 @@ class Match:
 
             before = self.baseline(entry)
             self.press(entry)
+            # Immediately, before anything waits: the only shield in the roster
+            # is one second long.
+            held = self.probe_shield(entry)
             if attempt == 0:
                 self.probe_cooldown(entry)
-            for name, note in self.observe(entry, before).items():
+            for name, note in self.observe(entry, before, held).items():
                 if name in outstanding:
                     outstanding.remove(name)
                     evidence.append("%s: %s" % (name, note))

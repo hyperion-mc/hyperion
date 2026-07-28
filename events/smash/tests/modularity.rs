@@ -90,7 +90,7 @@ impl Module for Porcupine {
             item: "minecraft:nether_star",
             description: "All of the quills, all at once.",
             cooldown: 12.0,
-            activate: |cast| splash(cast, 20.0, 18.0, 3.0),
+            activate: |cast| drop(splash(cast, 20.0, 18.0, 3.0)),
             ..AbilitySpec::DEFAULT
         })
         .register();

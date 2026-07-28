@@ -13,6 +13,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Payload, fire},
     },
@@ -23,6 +24,14 @@ use crate::{
 /// all pellets were to hit their target."
 pub const PELLETS: usize = 7;
 pub const PELLET_DAMAGE: f32 = 1.725;
+
+/// `[VERIFIED]`: "one second of flight, and nothing can touch you during it".
+///
+/// The window is exactly the flight, which is what makes the ability an escape
+/// rather than a reposition: a Squid who uses it to cross a gap arrives with
+/// nothing left, and one who uses it to eat a Creeper's Explosion has spent it
+/// correctly.
+pub const SUPER_SQUID_SECONDS: f32 = 1.0;
 
 #[derive(Component)]
 pub struct SkySquid;
@@ -53,7 +62,7 @@ impl Module for SkySquid {
             item: "minecraft:iron_sword",
             description: "One second of flight, and nothing can touch you during it.",
             cooldown: 9.0,
-            proves: &[Observable::LaunchesCaster],
+            proves: &[Observable::LaunchesCaster, Observable::ShieldsCaster],
             activate: super_squid,
             ..AbilitySpec::DEFAULT
         })
@@ -92,13 +101,21 @@ impl Module for SkySquid {
     }
 }
 
-/// `[VERIFIED]` one second of flight; the invulnerability needs a damage-immune
-/// window the game half does not model yet, so what lands here is the movement.
+/// `[VERIFIED]` one second of flight and one second of being untouchable.
 /// `[APPROXIMATED]` impulse.
+///
+/// The shield is an effect rather than a flag on the player, so the window ends
+/// on its own even if the Squid dies, disconnects or changes kit inside it.
 fn super_squid(cast: &Cast<'_>) {
     cast.server.add_velocity(
         cast.player,
         cast.facing.0.normalize_or_zero() * 1.1 + Vec3::Y * 0.9,
+    );
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::shield(SUPER_SQUID_SECONDS),
     );
 }
 

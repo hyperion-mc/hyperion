@@ -107,13 +107,23 @@ pub struct HotbarItem {
 /// wanted to be heard reached for [`Self::Explosion`] and the game had four
 /// noises for fifty-one abilities. Audio is now [`Sound`], which carries the
 /// vanilla sound event itself rather than a name something else has to map, so
-/// what is left here is only the particle: three shapes, each of which really
-/// is one of three things a client can be shown.
+/// what is left here is only the particle: a short list of shapes, each of
+/// which really is one distinct thing a client can be shown.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Cue {
     Explosion,
     Teleport,
     Death,
+    /// One tick of something burning a player.
+    Burn,
+    /// One tick of something poisoning them.
+    ///
+    /// A separate cue from [`Self::Burn`] and not a shared "damage over time"
+    /// one, because the two are told apart by their picture and by nothing
+    /// else: both take a point of health a second off somebody who is standing
+    /// still, and a player who cannot see which is which cannot tell a Blaze
+    /// from a Spider.
+    Venom,
 }
 
 /// Which of the listener's volume sliders governs a sound.

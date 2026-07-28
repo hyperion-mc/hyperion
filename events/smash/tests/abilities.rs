@@ -160,7 +160,9 @@ impl Bench {
 }
 
 /// Whether the log shows `observable` happening to the right party.
-fn observed(bench: &Bench, observable: Observable, before: &Snapshot) -> bool {
+///
+/// `held` is the one reading that cannot be taken here: see [`Immediate`].
+fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool) -> bool {
     let calls = bench.game.server.calls();
     match observable {
         Observable::HurtsTarget => {
@@ -198,7 +200,78 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot) -> bool {
             let boosted = melee_damage(bench, clock);
             boosted > before.baseline_melee + 1e-3
         }
+        // The distinguishing word is *keeps*. Every ability can take health off
+        // somebody once, and reading a single drop would pass for all fifty-one
+        // of them. So the clock is advanced with nothing cast, and what is
+        // measured is health lost during a window in which the ability is over.
+        Observable::AfflictsTarget => {
+            // Read eagerly, into an array. A lazy iterator here would sample
+            // health *after* the wait and compare it against itself, which
+            // passes for every ability in the game.
+            let watched = [
+                (bench.near, bench.health_of(bench.near).current),
+                (bench.far, bench.health_of(bench.far).current),
+            ];
+            bench.game.advance(LINGER_SECONDS, 40);
+            watched
+                .into_iter()
+                .any(|(victim, was)| bench.health_of(victim).current < was - 1e-3)
+        }
+        // Two probes, because "took no damage" on its own is also what a broken
+        // damage pipeline looks like: a shield that never lifts and a game that
+        // cannot hurt anybody are the same reading. The window has to hold, and
+        // then it has to end. `held` is the first probe, taken back when the
+        // window was still open; this is the second.
+        Observable::ShieldsCaster => held && probe_hit(bench),
     }
+}
+
+/// How long the sweep waits, with nothing cast, to see whether something the
+/// ability left behind is still working.
+///
+/// Longer than the slowest interval any effect in the roster ticks on, which is
+/// Spider's poison at 1.25 s. An effect that ticks slower than this and an
+/// effect that does not exist look identical from here, so a kit adding one has
+/// to raise this with it.
+const LINGER_SECONDS: f32 = 2.0;
+
+/// Facts whose lifetime is shorter than [`Bench::settle`], taken the instant a
+/// cast returns.
+///
+/// Sky Squid's shield lasts one second and `settle` waits one and a half, so a
+/// reading taken only after settling finds every shield already over and calls
+/// a working ability broken. This is the one observation that has to be made
+/// before the sweep waits.
+struct Immediate {
+    /// Whether a hit on the caster was refused. Only meaningful, and only
+    /// taken, when the entry claims [`Observable::ShieldsCaster`]: the probe
+    /// costs the caster health and would otherwise perturb every other reading.
+    held: bool,
+}
+
+impl Immediate {
+    fn taken(bench: &Bench, entry: &Declared) -> Self {
+        Self {
+            held: entry.proves.contains(&Observable::ShieldsCaster) && !probe_hit(bench),
+        }
+    }
+}
+
+/// Hit the caster for a fixed amount and report whether it landed.
+///
+/// The amount only has to survive the heaviest armour in the game: Iron Golem's
+/// 64% reduction would turn a one-point probe into 0.36 and a rounding argument
+/// into a test failure.
+fn probe_hit(bench: &Bench) -> bool {
+    let caster = bench.caster();
+    let before = bench.health_of(bench.caster).current;
+    hurt(caster, Damaged {
+        attacker: Some(bench.near),
+        amount: 4.0,
+        knockback: Knockback::from(Vec3::ZERO).times(0.0),
+        kind: DamageKind::Ability,
+    });
+    bench.health_of(bench.caster).current < before - 1e-3
 }
 
 /// What one melee swing at the near victim takes off, right now.
@@ -330,8 +403,10 @@ fn every_declared_effect_actually_happens() {
             bench.arm(&entry);
             let before = snapshot(&bench);
             bench.press(&entry);
+            let immediate = Immediate::taken(&bench, &entry);
             bench.settle();
-            outstanding.retain(|observable| !observed(&bench, *observable, &before));
+            outstanding
+                .retain(|observable| !observed(&bench, *observable, &before, immediate.held));
         }
 
         for observable in outstanding {
@@ -376,7 +451,9 @@ fn nothing_moves_that_did_not_say_it_would() {
             Observable::LaunchesCaster,
             Observable::TeleportsCaster,
         ] {
-            if !entry.proves.contains(&observable) && observed(&bench, observable, &before) {
+            // `held` is false: this test asks only about movement, and no
+            // movement observation reads it.
+            if !entry.proves.contains(&observable) && observed(&bench, observable, &before, false) {
                 failures.push(format!(
                     "{} / {} does not declare {} and did it anyway",
                     entry.kit,
@@ -500,4 +577,111 @@ fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
         Ok(()),
         "an expired ultimate should be nothing at all in that slot, not a refusal"
     );
+}
+
+/// What the charge accumulator hands a payload, against wall clock.
+///
+/// Seven abilities in the roster are hold-and-release, and every one of them
+/// scales off `Cast::charge`. If the accumulator under-counts, all seven fire
+/// weaker than they declare and the two that gate on a threshold -- Slime's
+/// rocket size and Skeleton's arrow count -- reach it late or never, which is
+/// a bug that presents as "this kit feels bad" and as nothing else.
+///
+/// Measured through the payload rather than by reading `Charging::held`,
+/// because what matters is the number the ability is given.
+mod charge {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use flecs_ecs::prelude::*;
+    use glam::Vec3;
+    use smash::module::{
+        ability::{self, Cast, Observable},
+        kit::{self, AbilitySpec, KitStats},
+        player::Position,
+    };
+
+    use super::harness::Game;
+
+    /// The last charge a payload was handed, as bits. An atomic because the
+    /// payload is a bare `fn` with nowhere to put a closure capture, which is
+    /// the same reason `OnActivate` is a `fn` in the first place.
+    static SEEN: AtomicU32 = AtomicU32::new(0);
+
+    fn record(cast: &Cast<'_>) {
+        SEEN.store(cast.charge.to_bits(), Ordering::SeqCst);
+    }
+
+    /// Seconds to full charge for the ability under test. Arbitrary, and
+    /// deliberately not any real kit's, so the test measures the accumulator
+    /// rather than a kit's tuning.
+    const FULL: f32 = 2.0;
+
+    fn charge_after(held_for: f32, steps: u32) -> f32 {
+        let mut game = Game::new();
+        kit::define(&game.world, "ChargeProbe", KitStats::default())
+            .ability(AbilitySpec {
+                name: "Probe",
+                sound: "minecraft:entity.arrow.shoot",
+                description: "Held for a known time, and reports what it was given.",
+                charge_time: Some(FULL),
+                proves: &[Observable::HurtsTarget],
+                activate: record,
+                ..AbilitySpec::DEFAULT
+            })
+            .register();
+
+        let player = game.player("holder", Vec3::ZERO);
+        let player = game.world.entity_from_id(player);
+        player.set(Position(Vec3::ZERO));
+        let probe = kit::by_name(&game.world, "ChargeProbe").expect("just defined");
+        kit::apply(&game.world, player, probe);
+
+        SEEN.store(0, Ordering::SeqCst);
+        ability::use_slot(player, 0);
+        game.advance(held_for, steps);
+        ability::release_slot(player, 0);
+        f32::from_bits(SEEN.load(Ordering::SeqCst))
+    }
+
+    /// Holding for the full charge time hands the payload 1.0, and holding for
+    /// half of it hands over a half.
+    ///
+    /// The tolerance is one tick's worth. `Charging` is created by the observer
+    /// that handles the press and first ticked by the system on the frame
+    /// after, so a hold measured in whole ticks is short by at most one of
+    /// them, and asserting exactness would be asserting an ordering the game
+    /// does not have.
+    #[test]
+    fn a_hold_is_worth_its_wall_clock() {
+        let tolerance = 1.0 / 20.0 / FULL + 1e-3;
+
+        let full = charge_after(FULL, 40);
+        assert!(
+            (full - 1.0).abs() <= tolerance,
+            "holding for the whole {FULL}s charge time was worth {full}, not 1.0"
+        );
+
+        let half = charge_after(FULL / 2.0, 20);
+        assert!(
+            (half - 0.5).abs() <= tolerance,
+            "holding for half the {FULL}s charge time was worth {half}, not 0.5"
+        );
+    }
+
+    /// And the step function the two threshold abilities use agrees with it.
+    ///
+    /// Barrage is `1 + charge_steps(charge, 4)`, so a full hold has to be five
+    /// arrows and not four or three. Checked here against the accumulator
+    /// rather than in isolation, because the two being individually defensible
+    /// and jointly wrong is exactly how a five-arrow ability fires three.
+    #[test]
+    fn a_full_hold_reaches_the_top_step() {
+        let full = charge_after(FULL, 40);
+        assert_eq!(
+            1 + ability::charge_steps(full, 4),
+            5,
+            "a full hold was worth {full}, which is {} arrows and not five",
+            1 + ability::charge_steps(full, 4)
+        );
+    }
 }

@@ -25,9 +25,9 @@ use hyperion::{Crypto, GameServerEndpoint, HyperionCore};
 use hyperion_clap::hyperion_command::CommandRegistry;
 
 use crate::module::{
-    ability::AbilityModule, arena::ArenaModule, damage::DamageModule, hud::HudModule,
-    kit::KitModule, kits::StockKits, knockback::KnockbackModule, lives::LivesModule,
-    lobby::LobbyModule, player::PlayerModule, projectile::ProjectileModule,
+    ability::AbilityModule, arena::ArenaModule, damage::DamageModule, effect::EffectModule,
+    hud::HudModule, kit::KitModule, kits::StockKits, knockback::KnockbackModule,
+    lives::LivesModule, lobby::LobbyModule, player::PlayerModule, projectile::ProjectileModule,
     scoreboard::ScoreboardModule, selector::SelectorModule, sound::SoundModule,
 };
 
@@ -55,6 +55,9 @@ impl Module for SmashModule {
         // module later configures.
         world.import::<SoundModule>();
         world.import::<AbilityModule>();
+        // Before the kits, which hand it afflictions, and after `DamageModule`,
+        // whose `MatchClock` every effect's deadline is measured against.
+        world.import::<EffectModule>();
         world.import::<KitModule>();
         world.import::<ArenaModule>();
         world.import::<LivesModule>();

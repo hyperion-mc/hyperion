@@ -100,6 +100,26 @@ impl MeleeBonus {
     }
 }
 
+/// While this is on a player, no hit lands on them.
+///
+/// Deliberately *not* [`crate::module::lives::InvulnerableUntil`], which the
+/// arena's kill plane reads as well. A respawn's immunity has to cover both,
+/// because a player who just respawned is briefly still reported under the map
+/// by a mirror the host has not refreshed yet. A combat shield must cover
+/// exactly one: Sky Squid's Super Squid says nothing can *touch* you, and a
+/// version of it that also caught you when you flew off the edge would be a
+/// one-second immortality rather than a one-second escape.
+///
+/// The two were the same flag for exactly as long as it took
+/// `tests/properties.rs` to find a Squid falling past the kill plane and living.
+///
+/// Owned by this module and not by the one that writes it, so that
+/// `smash::apply_damage` -- the hottest observer in the game -- reads a tag it
+/// already has in scope, and so that `Effect` depends on `Damage` without
+/// `Damage` depending back.
+#[derive(Component, Debug)]
+pub struct Immune;
+
 /// Relationship: `(LastHitBy, attacker)` on the victim.
 ///
 /// Exclusive, because "who gets the kill" has exactly one answer. Storing it as
@@ -153,6 +173,7 @@ impl Module for DamageModule {
 
         world.component::<Armor>();
         world.component::<Damaged>();
+        world.component::<Immune>();
         world.component::<MeleeBonus>();
         // This module is what makes armour mean anything, so this module is
         // what says every player has some.
@@ -180,7 +201,10 @@ impl Module for DamageModule {
                 let world = it.world();
 
                 let clock = world.cloned::<&MatchClock>().0;
-                if crate::module::lives::is_invulnerable(victim, clock) {
+                // Two questions, not one. See [`Immune`] for why they are not
+                // the same flag.
+                if crate::module::lives::is_invulnerable(victim, clock) || victim.has(Immune::id())
+                {
                     return;
                 }
 
