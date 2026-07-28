@@ -271,12 +271,28 @@ impl Blocks {
     {
         const START_Y: i32 = -64;
 
-        let start_xz = IVec2::new(start.x, start.z);
-        let end_xz = IVec2::new(end.x, end.z);
+        // Chunk columns are keyed by `i16` (`self.chunk_cache` is an
+        // `I16Vec2` map), so a block whose chunk coordinate does not fit in
+        // `i16` has no column here. Clamp the requested horizontal range into
+        // the representable block window before deriving chunk coordinates:
+        // `as_i16vec2()` below *silently wraps* on an out-of-range value
+        // (ENG-10914), which turns a far-away query into a bogus chunk range
+        // -- a `debug_assert` failure here in debug, a wrapped `cx` loop and
+        // narrowing `unwrap`s in release. The move handler already rejects
+        // such positions (see `handlers::within_representable_bounds`), so in
+        // practice this only ever clamps internally-generated coordinates; it
+        // is what keeps this walk total regardless of caller.
+        const MIN_BLOCK: i32 = (i16::MIN as i32) << 4;
+        const MAX_BLOCK: i32 = ((i16::MAX as i32) << 4) | 0b1111;
+        let clamp_xz = |v: IVec2| v.clamp(IVec2::splat(MIN_BLOCK), IVec2::splat(MAX_BLOCK));
+
+        let start_xz = clamp_xz(IVec2::new(start.x, start.z));
+        let end_xz = clamp_xz(IVec2::new(end.x, end.z));
 
         let start_chunk_pos: IVec2 = start_xz >> 4;
         let end_chunk_pos: IVec2 = end_xz >> 4;
 
+        // In range after the clamp, so this no longer wraps.
         let start_chunk_pos = start_chunk_pos.as_i16vec2();
         let end_chunk_pos = end_chunk_pos.as_i16vec2();
 

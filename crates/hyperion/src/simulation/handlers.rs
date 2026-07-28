@@ -13,6 +13,16 @@
 // Every handler shares one signature so that `route` can hand back a function
 // pointer, which leaves several of them returning a Result they never fail.
 #![allow(clippy::unnecessary_wraps)]
+// The class gate for ENG-10914. Everything in this module runs on bytes a
+// client chose, so a panic reachable from any of it is a remote crash of the
+// whole process for every connected player. Denying these here makes the next
+// `unwrap`/`expect`/`panic!` on client input a build failure rather than a P0:
+// a handler that cannot represent a value must return `Err` (the shared
+// signature already carries one) and let the caller kick the connection, not
+// abort the server. Fallible conversions that genuinely cannot fail get an
+// `#[expect(clippy::unwrap_used, reason = "...")]` naming the invariant, so the
+// exception is visible in review rather than silent.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use anyhow::bail;
 use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
@@ -30,7 +40,7 @@ use hyperion_minecraft_proto::{
     types::{Direction, HumanoidArm, InteractionHand},
 };
 use hyperion_utils::EntityExt;
-use tracing::warn;
+use tracing::{debug, warn};
 use valence_generated::{
     block::{BlockKind, BlockState, PropName},
     item::ItemKind,
@@ -749,6 +759,35 @@ const fn hand(hand: InteractionHand) -> Hand {
     }
 }
 
+/// The horizontal block coordinate this server can actually represent, with a
+/// full chunk of margin.
+///
+/// Chunk columns are keyed by `i16` here: [`Blocks`](crate::simulation::blocks)
+/// stores them in an `I16Vec2` map and [`Position::to_chunk`] returns one. A
+/// block whose chunk coordinate (`block >> 4`) does not fit in `i16` therefore
+/// has no column to live in. This is a *tighter* limit than the world border
+/// above -- `i16::MAX * 16 == 524_272` blocks versus 29,999,984 -- which is the
+/// whole point of ENG-10914: the crashing packet's `x = 2_000_000` is far
+/// inside the border yet its chunk key `2_000_000 >> 4 == 125_000` overflows
+/// `i16` and wraps. The one-chunk margin (`i16::MAX - 1`) leaves room for the
+/// player's bounding box, whose floor/ceil push the queried block range out by
+/// up to a block on each side, to be converted without reaching `i16::MAX`.
+const MAX_SAFE_BLOCK: f32 = ((i16::MAX as i32 - 1) * 16) as f32; // 524_256
+
+/// Whether a proposed position is one the server will accept from a client.
+///
+/// A `MovePlayerPos` carries three client-supplied `f64`s and nothing upstream
+/// bounds them. A coordinate outside the representable chunk range (or a
+/// non-finite one) is fed straight into the chunk math -- [`Position::to_chunk`]
+/// and the block-range walk in `Blocks::get_blocks`, both reached from the
+/// handlers below every tick -- where it used to crash the whole process: a
+/// `debug_assert` in a debug build, a narrowing `unwrap` / silent `as_i16vec2`
+/// wrap in release. This is the load-bearing safety bound; making those
+/// downstream conversions total is defence in depth behind it.
+fn within_representable_bounds(proposed: Vec3) -> bool {
+    proposed.is_finite() && proposed.x.abs() <= MAX_SAFE_BLOCK && proposed.z.abs() <= MAX_SAFE_BLOCK
+}
+
 // #[instrument(skip_all)]
 fn change_position_or_correct_client(
     query: &mut PacketSwitchQuery<'_>,
@@ -756,6 +795,23 @@ fn change_position_or_correct_client(
     on_ground: bool,
 ) {
     let pose = &mut *query.position;
+
+    // Reject a move outside the world border before it reaches any chunk math,
+    // and snap the client back to where it legitimately was. This matches
+    // vanilla, which refuses movement past the border rather than clamping the
+    // player onto it; a silent clamp would teleport a cheating or buggy client
+    // to a surprising place, whereas a correction leaves them exactly where the
+    // server last agreed they were. Crucially this returns *before*
+    // `**pose = proposed` below, so the out-of-bounds coordinate is never
+    // stored and never seen by the per-tick chunk conversions.
+    if !within_representable_bounds(proposed) {
+        debug!("rejecting out-of-border move to {proposed:?}");
+        query
+            .id
+            .entity_view(query.world)
+            .set(PendingTeleportation::new(**pose));
+        return;
+    }
 
     if let Err(e) = try_change_position(proposed, pose, *query.size, query.blocks) {
         // Send error message to player

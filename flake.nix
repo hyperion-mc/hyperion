@@ -382,6 +382,12 @@
             smash-hotbar-e2e = 7000;
             smash-hud-e2e = 8000;
             bedwars-bow-e2e = 9000;
+            # Not 10000: gameServerPort - proxyPort == 10000, so an offset of
+            # 10000 aliases this gate's player port onto the base game-server
+            # port (35565), which a running dev server or `nix run .#run` holds.
+            # Kept under 10000 so every player port stays below that base, the
+            # invariant the offsets 1000..9000 already rely on. See ENG-10933.
+            oob-move-e2e = 9500;
           };
 
           # The accounts `smash-hud-e2e` runs its `Admin` commands as.
@@ -868,6 +874,27 @@
               '';
             };
 
+            # A denial-of-service gate: a single connected client sends the
+            # movement packets ENG-10914 proved could crash the whole server --
+            # a finite coordinate past the i16 chunk range, then NaN and +inf --
+            # and the run passes only if the server refuses them and keeps
+            # ticking. Drives the proven client-26.2.py + bedwars pair the `e2e`
+            # gate uses, so reaching play is not in question; the crash is in the
+            # shared movement handler, so the event it runs against is incidental.
+            oob-move-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=bedwars
+                export HYPERION_E2E_CLIENT="tools/client-26.2.py --name oob --oob-move"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.oob-move-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.oob-move-e2e)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # The bow, on bedwars, read off the wire by the client that fired it.
             #
             # The only gate here that is not a smash gate, because the bow is
@@ -1072,6 +1099,32 @@
               timeout = 420;
             };
 
+            # The denial-of-service regression from ENG-10914. One client
+            # reaches play and sends the movement packets that used to crash
+            # the whole server for everyone -- a finite coordinate past the i16
+            # chunk range (x = 2_000_000), then NaN and +inf -- and the gate is
+            # green only if the server refuses each and keeps ticking. The
+            # client keys its exit code on survival alone, so the event it runs
+            # against does not matter. Reverting the move-handler bound turns
+            # this red. bedwars is used because it is the pair the proven `e2e`
+            # gate already drives.
+            oob-move-e2e = e2e.mkCheck {
+              name = "hyperion-oob-move-e2e";
+              gameServer = gameBinaries.bedwars;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "client-26.2.py";
+              clientArgs = [
+                "--name"
+                "oob"
+                "--oob-move"
+              ];
+              # The same proven client + server pair the `e2e` gate drives, so
+              # reaching play is not in question; bedwars downloads its world at
+              # boot, so the sandbox is handed one.
+              needsGenMap = true;
+              timeout = 300;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
@@ -1081,6 +1134,7 @@
             smash-identity-e2e-app = scripts.smash-identity-e2e;
             smash-hotbar-e2e-app = scripts.smash-hotbar-e2e;
             smash-hud-e2e-app = scripts.smash-hud-e2e;
+            oob-move-e2e-app = scripts.oob-move-e2e;
 
             # Every kit's skin, checked offline against Mojang's committed
             # public keys. A derivation rather than only an app, because the
