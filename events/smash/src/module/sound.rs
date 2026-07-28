@@ -57,6 +57,16 @@ pub struct Levels {
 }
 
 impl Default for Levels {
+    /// [`SoundCategory::Hostile`], and this is the only place that says so.
+    ///
+    /// Every kit is a combatant whatever mob it is skinned as, so they all
+    /// belong under one slider and a player who turns monsters down turns the
+    /// whole roster down evenly. Nothing declared through a relationship wants
+    /// a different category, so a caller that restates this one is writing a
+    /// line no test can distinguish from its absence. The two categories that
+    /// are deliberately not this belong to sounds that are not declared at all:
+    /// the impact of a hit is [`SoundCategory::Players`] and the countdown is
+    /// [`SoundCategory::Ui`].
     fn default() -> Self {
         Self {
             category: SoundCategory::Hostile,
@@ -118,6 +128,23 @@ pub const COUNTDOWN_AUDIBLE_SECONDS: u8 = 5;
 
 /// How much the pitch climbs with each second closer to the start.
 pub const COUNTDOWN_PITCH_STEP: f32 = 0.2;
+
+/// Whether a timer going from `before` to `after` seconds just crossed a whole
+/// second inside the audible window, and which second it landed on.
+///
+/// Pulled out of the lobby and made pure because it is four conditions with a
+/// boundary at each end, and a test that drives it through a whole match can
+/// only observe the ones that happen to fire. Driven directly, each edge is one
+/// line: a timer that has not crossed a boundary, one that crossed above the
+/// window, one that crossed into it, and one that ran out.
+#[must_use]
+pub fn countdown_second_crossed(before: f32, after: f32) -> Option<f32> {
+    let (was, now) = (before.ceil(), after.ceil());
+    if now >= was || now <= 0.0 || now > f32::from(COUNTDOWN_AUDIBLE_SECONDS) {
+        return None;
+    }
+    Some(now)
+}
 
 /// One countdown tick, rising as the wait runs out.
 ///

@@ -25,7 +25,7 @@ use crate::{
         player::{Energy, Health, JumpsLeft},
         sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt},
     },
-    server::{HotbarItem, SoundCategory},
+    server::HotbarItem,
 };
 
 /// Tag on kit prefabs.
@@ -303,12 +303,7 @@ impl<'w> KitBuilder<'w> {
     /// name to do it.
     #[must_use]
     pub fn sounds(self, sounds: KitSounds) -> Self {
-        let voice = Levels {
-            // A kit is a mob, and a mob's voice belongs under the slider a
-            // player uses to turn mobs down.
-            category: SoundCategory::Hostile,
-            ..Levels::default()
-        };
+        let voice = Levels::default();
         self.kit
             .add((PlaysOnHurt, sound::intern(self.world, sounds.hurt, voice)));
         self.kit
@@ -390,16 +385,12 @@ impl<'w> KitBuilder<'w> {
         // declaration reaches that instance is `module/sound.rs`'s business.
         if !spec.sound.is_empty() {
             let sound = sound::intern(self.world, spec.sound, Levels {
-                // Every kit is a combatant whatever mob it is skinned as, so
-                // they all belong under one slider and a player who turns
-                // monsters down turns the whole roster down evenly. The two
-                // categories that are deliberately not this are the impact of
-                // a hit, which is `Players`, and the countdown, which is `Ui`.
-                category: SoundCategory::Hostile,
                 // An ultimate carries further, and volume is range: see
                 // `hyperion::net::agnostic::RANGE_PER_VOLUME`. A Smash Crystal
                 // going off is the loudest thing in a match and should be heard
-                // by people who are not in it yet.
+                // by people who are not in it yet. Everything else about how it
+                // plays is `Levels::default`, which is where the reasoning for
+                // the category lives.
                 volume: if ultimate { ULTIMATE_VOLUME } else { 1.0 },
                 ..Levels::default()
             });

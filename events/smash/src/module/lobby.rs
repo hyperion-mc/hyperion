@@ -327,11 +327,10 @@ fn tick_countdown(world: &WorldRef<'_>, before: Lobby, after: Lobby) {
     if !counts_down(after.phase) || before.phase != after.phase {
         return;
     }
-    let (was, now) = (before.timer.ceil(), after.timer.ceil());
-    if now >= was || now <= 0.0 || now > f32::from(sound::COUNTDOWN_AUDIBLE_SECONDS) {
+    let Some(seconds_left) = sound::countdown_second_crossed(before.timer, after.timer) else {
         return;
-    }
-    sound::play_to_everyone(*world, sound::countdown_tick(now));
+    };
+    sound::play_to_everyone(*world, sound::countdown_tick(seconds_left));
 }
 
 fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {

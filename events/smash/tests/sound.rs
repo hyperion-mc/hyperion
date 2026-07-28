@@ -459,14 +459,6 @@ fn the_countdown_ticks_once_a_second_and_then_the_match_starts() {
     game.advance(6.0, 120);
     assert_eq!(game.world.cloned::<&Lobby>().phase, Phase::Countdown);
 
-    // Every whole second inside the audible window, once each, rising. Built
-    // from the same function the game calls rather than from a literal, so this
-    // is a claim about the sequence and not a copy of the pitch table.
-    let mut wanted: Vec<f32> = (1..=sound::COUNTDOWN_AUDIBLE_SECONDS)
-        .map(|second| sound::countdown_tick(f32::from(second)).pitch)
-        .collect();
-    wanted.reverse();
-
     let ticks: Vec<f32> = game
         .server
         .sounds_to(listener)
@@ -474,9 +466,12 @@ fn the_countdown_ticks_once_a_second_and_then_the_match_starts() {
         .filter(|played| played.id == sound::COUNTDOWN_TICK)
         .map(|played| played.pitch)
         .collect();
+    // The literal sequence, not one derived from `countdown_tick`. Deriving it
+    // would compare the function against itself and pass for any pitch curve at
+    // all, including a flat one.
     assert_eq!(
         ticks,
-        wanted,
+        vec![1.0, 1.2, 1.4, 1.6, 1.8],
         "the countdown should tick once a second through its last {} and rise as it goes",
         sound::COUNTDOWN_AUDIBLE_SECONDS
     );
@@ -618,6 +613,93 @@ fn declaring_a_sound_twice_keeps_the_second() {
         declared.id, "minecraft:block.note_block.bell",
         "the first declaration outlived the one that replaced it"
     );
+}
+
+/// The countdown pitch, against the numbers the documentation quotes.
+///
+/// Absolute rather than relative, and that is the point: a test that builds its
+/// expectation by calling `countdown_tick` compares the function against itself
+/// and passes for any curve, flat included.
+#[test]
+fn a_countdown_tick_rises_a_fixed_step_a_second() {
+    assert!((sound::countdown_tick(5.0).pitch - 1.0).abs() < 1e-6);
+    assert!((sound::countdown_tick(1.0).pitch - 1.8).abs() < 1e-6);
+    // Outside the window in either direction, clamped rather than extrapolated,
+    // so nothing can hand the client a pitch it would flatten.
+    assert!((sound::countdown_tick(9.0).pitch - 1.0).abs() < 1e-6);
+    assert!((sound::countdown_tick(0.0).pitch - 2.0).abs() < 1e-6);
+}
+
+/// Which timer steps are a tick, one edge per line.
+///
+/// A whole match only exercises the edges it happens to reach, and the ones
+/// that matter here are the ones it does not: a step crossing a second above
+/// the audible window, and the step that takes the timer to zero. Both are
+/// silent, and neither shows up in a run that only counts the ticks it got.
+#[test]
+fn only_a_whole_second_inside_the_window_is_a_tick() {
+    let window = f32::from(sound::COUNTDOWN_AUDIBLE_SECONDS);
+
+    // Inside the window, crossing a boundary: a tick, named by the second it
+    // landed on.
+    assert_eq!(sound::countdown_second_crossed(5.01, 4.99), Some(5.0));
+    assert_eq!(sound::countdown_second_crossed(1.01, 0.99), Some(1.0));
+
+    // Inside the window and not crossing anything.
+    assert_eq!(sound::countdown_second_crossed(4.99, 4.90), None);
+
+    // Crossing, but above the window. Sixty seconds of metronome is what this
+    // rejects.
+    assert_eq!(
+        sound::countdown_second_crossed(window + 2.01, window + 1.99),
+        None
+    );
+    assert_eq!(
+        sound::countdown_second_crossed(window + 1.01, window + 0.99),
+        None
+    );
+
+    // The timer running out is the match starting, which has its own sound.
+    assert_eq!(sound::countdown_second_crossed(0.01, 0.0), None);
+    assert_eq!(sound::countdown_second_crossed(0.5, -0.5), None);
+
+    // A timer that went up, which is what a join filling the lobby does.
+    assert_eq!(sound::countdown_second_crossed(3.0, 4.0), None);
+}
+
+/// Two declarations of the same sound at the same levels are one node in the
+/// graph, so "which abilities play this" stays a query over the world.
+#[test]
+fn the_same_sound_at_the_same_levels_is_one_entity() {
+    let game = Game::new();
+    let first = sound::intern(
+        &game.world,
+        "minecraft:block.note_block.bell",
+        Levels::default(),
+    );
+    let again = sound::intern(
+        &game.world,
+        "minecraft:block.note_block.bell",
+        Levels::default(),
+    );
+    assert_eq!(
+        first.id(),
+        again.id(),
+        "interning the same sound twice made two entities"
+    );
+
+    // Different levels are a different node, because the levels are what an
+    // occasion reads back. Sharing one would hand the second caller the first
+    // one's volume with nothing anywhere reporting it.
+    let louder = sound::intern(&game.world, "minecraft:block.note_block.bell", Levels {
+        volume: 2.0,
+        ..Levels::default()
+    });
+    assert_ne!(first.id(), louder.id());
+    let volume = louder
+        .try_get::<&Levels>(|l| l.volume)
+        .expect("an interned sound carries its levels");
+    assert!((volume - 2.0).abs() < 1e-6);
 }
 
 /// Almost everything here is a sweep over the registry; the three checks that
