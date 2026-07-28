@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Drive four scripted clients through one whole Super Smash Mobs match.
+"""Drive a roster of scripted clients through one whole Super Smash Mobs match.
 
 `client-26.2.py` answers "is the server joinable". This answers the next
 question, which is the one a single client structurally cannot: does a *match*
-happen. `min_players` is four, so nothing past the hub is reachable until four
-clients are in the world at once, and four separate processes cannot hit each
-other because neither knows the other's entity id. Both problems disappear if
-one process owns every socket, so this drives all of them from a single loop
-and prints one interleaved transcript.
+happen. Nothing past the hub is reachable until the lobby has reached its
+minimum, which is more clients than one process usually is, and separate
+processes cannot hit each other because neither knows the other's entity id.
+Both problems disappear if one process owns every socket, so this drives all of
+them from a single loop and prints one interleaved transcript.
 
 Protocol 776 throughout. The framing, the handshake, the login and the
 configuration state are `client-26.2.py`'s, imported rather than copied, so
@@ -22,10 +22,16 @@ each one and holds it to the effects that entry declares. Nothing here lists a
 kit or an ability, so a kit added tomorrow is a kit this gate tests tomorrow,
 and one whose ability does nothing fails here rather than passing quietly.
 
-The sweep runs in the hub with one client short of `min_players`, which is what
-keeps the lobby in `Waiting` for as long as it takes: there is no countdown to
-race, no kill plane under the lobby, and kits can still be changed. The last
-client joins when the sweep is done and the match runs after it.
+The sweep runs in the hub, on a roster small enough that the lobby will not
+start under it: a committed match has a kill plane, locks abilities and refuses
+to change a kit, and the sweep needs all three of those not to be true. How
+small that is depends on the server's thresholds, so `--sweep-clients` says it
+outright and nothing here computes it. This file does not know the lobby's
+numbers and must not guess: a guess that is wrong reads as fifteen kits passing
+when the last three never ran. It is checked against the running server
+instead -- if the lobby leaves the hub while the sweep is in it, the run fails
+there, naming the roster. The rest of the clients join once the sweep is done,
+and the match runs after them.
 
 What this proves and what it does not
 -------------------------------------
@@ -635,7 +641,7 @@ class MatchClient(base.Client):
 
 
 class Match:
-    """The run: four clients, one transcript, and what it proved."""
+    """The run: a roster of clients, one transcript, and what it proved."""
 
     def __init__(self, args):
         self.args = args
@@ -690,6 +696,9 @@ class Match:
         self.died_awaiting_respawn = set()
         self.falls = 0
         self.phase = "hub"
+        # Set by `hub_only` when the lobby starts under a sweep that needed it
+        # not to. Fatal, because everything after it measures the wrong game.
+        self.hub_lost = False
         self.last_step = 0.0
 
     def log(self, line):
@@ -732,6 +741,42 @@ class Match:
 
     def wait(self, seconds):
         self.wait_until(lambda: False, seconds)
+
+    def hub_only(self, during):
+        """Whether the lobby is still in the hub, where the sweep can work.
+
+        The sweep changes kits, and a committed match refuses to: every `/kit`
+        after the countdown commits is answered with a red line and ignored.
+        So a sweep roster the lobby will start on does not fail the run, it
+        silently stops proving anything. That is how this last broke -- three
+        clients against thresholds that had moved under them produced twelve
+        real ability results, three that were only `You cannot change kit once
+        the game has started.`, and then a loop with no exit, because the match
+        it was waiting to run had already run without it.
+
+        Checking the phase costs nothing and turns all of that into one line.
+        `self.phase` is driven by the server's own broadcasts, so this asks the
+        server what state it is in rather than deciding from a player count.
+        It therefore stays correct whatever the thresholds are, and it is not a
+        second copy of them.
+        """
+        if self.phase == "hub":
+            return True
+        self.hub_lost = True
+        # Logged here rather than left to the caller. The caller's job is to
+        # stop, and the first version of this only recorded the line in
+        # `sweep_failures`, which `sweep` prints at the end of a sweep it no
+        # longer reaches -- so the run failed with the reason nowhere in the
+        # transcript. A guard that stops the right run for a reason nobody can
+        # read is most of a guard.
+        self.log(
+            "SWEEP ABANDONED the lobby left the hub %s. %d clients is enough "
+            "for this server to start a countdown, so kits can no longer be "
+            "changed and nothing further would be proved. Either "
+            "--sweep-clients is too many for this lobby, or the server needs a "
+            "higher SMASH_MIN_PLAYERS/SMASH_FULL_PLAYERS." % (during, len(self.clients))
+        )
+        return False
 
     # --- reading -------------------------------------------------------
 
@@ -989,6 +1034,12 @@ class Match:
 
     def sweep(self):
         """Fire every ability the registry names and check what it promised."""
+        # Before the manifest rather than after, because the sweep is ten
+        # minutes and a lobby that has already started makes every result in it
+        # meaningless. The roster joined a moment ago, so a countdown it was
+        # enough to trigger has had time to be announced.
+        if not self.hub_only("before the sweep began"):
+            return
         if not self.fetch_manifest():
             return
 
@@ -996,7 +1047,11 @@ class Match:
         for entry in self.manifest:
             by_kit.setdefault(entry["kit"], []).append(entry)
 
-        for kit, abilities in by_kit.items():
+        for done, (kit, abilities) in enumerate(by_kit.items()):
+            # Again per kit: the roster is constant, but a player who is not
+            # this harness can join the same server and push it over.
+            if not self.hub_only("with %d of %d kits swept" % (done, len(by_kit))):
+                return
             self.log("== %s ==" % kit)
             if not self.select_kit(kit):
                 self.sweep_failures.append("%s: the kit never equipped" % kit)
@@ -1481,16 +1536,24 @@ class Match:
     # --- the script ----------------------------------------------------
 
     def run(self):
-        # One short of the lobby's minimum, so the sweep runs in a hub that
-        # cannot start a countdown under it, has no kill plane and still allows
-        # a kit to be changed. The last client joins once the sweep is done.
-        self.connect(max(1, self.args.clients - 1))
+        # The sweep's roster, which the gate declares and `hub_only` checks
+        # against the server. Nothing is subtracted from anything here: the
+        # number that matters is the largest roster this lobby will not start
+        # on, and that is the server's to know, not this file's. The rest of
+        # the clients join once the sweep is done.
+        self.connect(self.args.sweep_clients)
         if not self.wait_until(lambda: all(c.joined for c in self.clients), 60.0):
             self.log("clients never reached the world")
             return self.report()
 
         if self.args.abilities:
             self.sweep()
+            # Straight to the report. Running the match now would be running it
+            # in a countdown the sweep already lost to, and the transcript
+            # would show a mostly-passing match under a failed run -- which is
+            # exactly the reading that let this bug survive its first sighting.
+            if self.hub_lost:
+                return self.report()
 
         self.connect(self.args.clients - len(self.clients))
         kits = [kit.strip() for kit in self.args.kits.split(",")]
@@ -1941,6 +2004,17 @@ def main():
     parser.add_argument("--port", type=int, default=25565)
     parser.add_argument("--clients", type=int, default=4)
     parser.add_argument(
+        "--sweep-clients",
+        type=int,
+        default=3,
+        help="how many clients are in the world for the ability sweep. Must be "
+        "a roster this server's lobby will not start a countdown on: the sweep "
+        "changes kits and a committed match refuses to. The run fails naming "
+        "this flag if the lobby starts anyway, so it is checked and not "
+        "trusted. Minimum 2, because an ability that hurts or heals a target "
+        "needs a target",
+    )
+    parser.add_argument(
         "--kits",
         default="Iron Golem,Skeleton,Enderman,Slime",
         help="comma-separated, one per client; the first one attacks",
@@ -1966,6 +2040,21 @@ def main():
         help="the Y a client claims to be at when the script wants it to die",
     )
     args = parser.parse_args()
+
+    # Two floors, both structural. The upper one is not about the lobby: the
+    # lobby's limit is the server's to state and `hub_only` is what checks it.
+    if args.sweep_clients < 2:
+        raise SystemExit(
+            "--sweep-clients is %d: the sweep proves `hurts_target` and calls "
+            "`wound_attacker` for `heals_caster`, and both are claims about a "
+            "body that is not the caster's" % args.sweep_clients
+        )
+    if args.sweep_clients > args.clients:
+        raise SystemExit(
+            "--sweep-clients is %d but --clients is %d, so the match after the "
+            "sweep would have fewer players than the sweep did"
+            % (args.sweep_clients, args.clients)
+        )
 
     chosen = [kit.strip() for kit in args.kits.split(",")]
     if args.clients > len(chosen):

@@ -297,6 +297,10 @@ let
       proxy,
       client,
       clientArgs ? [ ],
+      # Environment for the game server process. A gate whose question needs a
+      # server configured differently from the one the product ships says so
+      # here, rather than the client inferring it.
+      serverEnv ? { },
       needsGenMap ? false,
       timeout ? 300,
     }:
@@ -327,6 +331,9 @@ let
         mkdir -p "$XDG_CACHE_HOME"
         ${lib.optionalString needsGenMap seedGenMap}
 
+        ${lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: value: "export ${name}=${toString value}") serverEnv
+        )}
         export HYPERION_E2E_GAME_SERVER="${lib.getExe gameServer}"
         export HYPERION_E2E_PROXY="${lib.getExe proxy}"
         export HYPERION_E2E_CLIENT="${clients}/tools/${client} ${lib.escapeShellArgs clientArgs}"
