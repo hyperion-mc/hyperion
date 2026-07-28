@@ -12,11 +12,40 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::module::{
-    ability::{Cast, Observable, splash},
-    kit::{self, AbilitySpec, KitSounds, KitStats},
-    projectile::{Flight, Payload, fire},
+use crate::{
+    module::{
+        ability::{Cast, Observable, splash},
+        damage::DamageKind,
+        effect::{self, Affliction, Shows},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
+        player::Health,
+        projectile::{Flight, Impact, Payload, fire},
+    },
+    server::Cue,
 };
+
+/// What a needle leaves behind.
+///
+/// `[APPROXIMATED]`. The wiki says only that Needler poisons and that armour
+/// does not stop it; vanilla Poison I is one point every 25 ticks, which is
+/// where the interval comes from. Six seconds is the wiki's "lingers", pinned
+/// to a number so the gate has something to wait for.
+pub const POISON_SECONDS: f32 = 6.0;
+pub const POISON_PER_TICK: f32 = 1.0;
+pub const POISON_INTERVAL: f32 = 1.25;
+
+const POISONED: Shows = Shows {
+    cue: Cue::Venom,
+    sound: "minecraft:entity.player.hurt_sweet_berry_bush",
+};
+
+/// How much of a hit Spiders Nest gives back to the caster, as a fraction of
+/// the damage it dealt.
+///
+/// `[APPROXIMATED]`. The wiki gives the ultimate as "everything you hit heals
+/// you" and no figure; a half is enough to be worth using the dome for and not
+/// enough to make a Spider unkillable inside it.
+pub const NEST_LIFESTEAL: f32 = 0.5;
 
 #[derive(Component)]
 pub struct Spider;
@@ -52,7 +81,11 @@ impl Module for Spider {
             description: "Spray six needles. They poison, which armour does not stop.",
             cooldown: 6.0,
             charge_time: Some(1.0),
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::AfflictsTarget,
+            ],
             activate: needler,
             ..AbilitySpec::DEFAULT
         })
@@ -72,7 +105,11 @@ impl Module for Spider {
             item: "minecraft:nether_star",
             description: "A dome of web. Everything you hit heals you.",
             cooldown: 1.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::HealsCaster,
+            ],
             activate: spiders_nest,
             ..AbilitySpec::DEFAULT
         })
@@ -104,9 +141,32 @@ fn needler(cast: &Cast<'_>) {
                 seconds_left: 1.5,
                 radius: 0.6,
             },
-            Payload::new(1.5, 0.35),
+            Payload::new(1.5, 0.35).then(envenom),
         );
     }
+}
+
+/// The half of Needler the tooltip promises and the impact alone cannot give:
+/// the needle goes in, and the poison keeps working afterwards.
+///
+/// `DamageKind::Environment` is what "armour does not stop it" means; it is the
+/// same mechanism Blaze's burn uses and the same reason.
+fn envenom(impact: &Impact<'_>) {
+    let Some(blame) = effect::Blame::impact(impact) else {
+        return;
+    };
+    effect::afflict(
+        impact.world,
+        impact.victim,
+        blame,
+        Affliction::over_time(
+            POISON_SECONDS,
+            POISON_PER_TICK,
+            POISON_INTERVAL,
+            DamageKind::Environment,
+            POISONED,
+        ),
+    );
 }
 
 /// A leap that leaves web behind. `[APPROXIMATED]`: the recovery distance is
@@ -117,7 +177,27 @@ fn spin_web(cast: &Cast<'_>) {
 }
 
 /// `[APPROXIMATED]`: the dome traps, which needs block writes the game half
-/// cannot make. The damage and the one-second recharge are the wiki's.
+/// cannot make. The damage and the one-second recharge are the wiki's, and so
+/// is "everything you hit heals you", which is the part that was missing.
 fn spiders_nest(cast: &Cast<'_>) {
-    splash(cast, 6.0, 4.0, 0.8);
+    const DAMAGE: f32 = 4.0;
+
+    // Counted from the victims the blast returned rather than from a second
+    // query, so the heal is exactly as large as the damage that was dealt: a
+    // Spider standing alone in their own dome heals for nothing.
+    let hits = splash(cast, 6.0, DAMAGE, 0.8).len();
+    if hits == 0 {
+        return;
+    }
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a splash cannot return more victims than there are players in a match"
+    )]
+    let stolen = DAMAGE * NEST_LIFESTEAL * hits as f32;
+    let (current, max) = cast.caster.get::<&mut Health>(|health| {
+        health.heal(stolen);
+        (health.current, health.max)
+    });
+    cast.server.set_health(cast.player, current, max);
 }

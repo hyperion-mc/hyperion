@@ -414,6 +414,11 @@ impl Module for LivesModule {
                 health.current = health.max;
                 position.0 = at;
                 player.remove(RespawnAt::id());
+                // Whatever was burning, poisoning or shielding the life that
+                // just ended does not follow you onto the next one. Done before
+                // the immunity is written, because clearing a shield takes the
+                // deadline with it and would otherwise delete this one.
+                crate::module::effect::clear(world, player.id());
                 player.set(InvulnerableUntil(clock + RESPAWN_INVULNERABLE_SECS));
                 player.set(JumpsLeft(1));
 

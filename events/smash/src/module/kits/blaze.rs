@@ -11,17 +11,60 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::module::{
-    ability::{Cast, Observable, splash_at},
-    damage::{DamageKind, Damaged, hurt},
-    kit::{self, AbilitySpec, KitSounds, KitStats},
-    knockback::Knockback,
-    player::{Health, Player, Position},
+use crate::{
+    flecs_ext::WorldRefExt,
+    module::{
+        ability::{Cast, Observable, splash_at},
+        damage::{DamageKind, Damaged, hurt},
+        effect::{self, Affliction, Shows},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
+        knockback::Knockback,
+        player::{Health, Player, Position},
+    },
+    server::Cue,
 };
 
 /// `[VERIFIED]`: "it can be cancelled by taking 4 or more damage" while
 /// charging Firefly.
 pub const FIREFLY_CANCEL_DAMAGE: f32 = 4.0;
+
+/// How long Inferno leaves somebody burning, and what the burn costs them.
+///
+/// `[APPROXIMATED]`. The wiki gives Inferno no figures at all -- only "low
+/// damage ... keeping enemies in the Inferno will rack up a lot of damage,
+/// regardless of armor" -- so these are vanilla's own fire: one point a second,
+/// for the four seconds a `minecraft:fire_charge` sets. Tuned to the wiki's
+/// description rather than to a number, which is why they are marked.
+pub const BURN_SECONDS: f32 = 4.0;
+pub const BURN_PER_SECOND: f32 = 1.0;
+pub const BURN_INTERVAL: f32 = 1.0;
+
+/// What a burning player looks and sounds like, once, so Inferno and Phoenix
+/// cannot drift into looking like two different things.
+const BURNING: Shows = Shows {
+    cue: Cue::Burn,
+    sound: "minecraft:entity.player.hurt_on_fire",
+};
+
+/// Set `victim` alight. Re-applying refreshes rather than stacks, which
+/// [`effect::afflict`] arranges through the ability's own identity.
+fn ignite(cast: &Cast<'_>, victim: EntityView<'_>) {
+    effect::afflict(
+        cast.world,
+        victim,
+        effect::Blame::cast(cast),
+        Affliction::over_time(
+            BURN_SECONDS,
+            BURN_PER_SECOND,
+            BURN_INTERVAL,
+            // The reason the kit exists: Iron Golem's 64% reduction means
+            // nothing against it, and the burn has to inherit that or the
+            // lingering half of the ability quietly does not.
+            DamageKind::Environment,
+            BURNING,
+        ),
+    );
+}
 
 #[derive(Component)]
 pub struct Blaze;
@@ -54,10 +97,10 @@ impl Module for Blaze {
             name: "Inferno",
             sound: "minecraft:entity.blaze.shoot",
             item: "minecraft:iron_sword",
-            description: "Spew flame. No knockback, and armour does not reduce it.",
+            description: "Spew flame. They keep burning, and armour stops none of it.",
             cooldown: 0.5,
             energy_cost: Some(12.0),
-            proves: &[Observable::HurtsTarget],
+            proves: &[Observable::HurtsTarget, Observable::AfflictsTarget],
             activate: inferno,
             ..AbilitySpec::DEFAULT
         })
@@ -81,12 +124,14 @@ impl Module for Blaze {
             name: "Phoenix",
             sound: "minecraft:item.firecharge.use",
             item: "minecraft:nether_star",
-            description: "Twenty seconds of Firefly with no charge and free flight.",
+            description: "Twenty seconds of Firefly with no charge and free flight. Everything \
+                          you touch burns.",
             cooldown: 1.0,
             proves: &[
                 Observable::HurtsTarget,
                 Observable::LaunchesTarget,
                 Observable::LaunchesCaster,
+                Observable::AfflictsTarget,
             ],
             activate: phoenix,
             ..AbilitySpec::DEFAULT
@@ -118,13 +163,18 @@ fn inferno(cast: &Cast<'_>) {
         });
 
     for victim in victims {
-        hurt(cast.world.entity_from_id(victim), Damaged {
+        let victim = cast.world.entity_from_id(victim);
+        hurt(victim, Damaged {
             attacker: Some(caster),
             amount: DAMAGE,
             // No knockback at all, per the wiki.
             knockback: Knockback::from(cast.position.0).times(0.0),
             kind: DamageKind::Environment,
         });
+        // The lingering half. "Keeping enemies in the Inferno will rack up a
+        // lot of damage" is the wiki describing a burn that outlives the cone,
+        // not a bigger number on the cone itself.
+        ignite(cast, victim);
     }
 }
 
@@ -139,12 +189,15 @@ fn firefly(cast: &Cast<'_>) {
 }
 
 /// `[APPROXIMATED]`: free flight for twenty seconds is a movement mode the game
-/// half has no way to enter, so the damage pass is what is modelled.
+/// half has no way to enter, so what is modelled is the damage pass and the
+/// fire it leaves on everyone it passes through.
 fn phoenix(cast: &Cast<'_>) {
     let ahead = cast.position.0 + cast.facing.0.normalize_or_zero() * 3.0;
     cast.server.add_velocity(
         cast.player,
         cast.facing.0.normalize_or_zero() * 2.4 + Vec3::Y * 0.4,
     );
-    splash_at(cast, ahead, 4.0, 7.0, 1.4);
+    for victim in splash_at(cast, ahead, 4.0, 7.0, 1.4) {
+        ignite(cast, cast.world.entity_at(victim));
+    }
 }

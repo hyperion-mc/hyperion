@@ -160,7 +160,9 @@ impl Bench {
 }
 
 /// Whether the log shows `observable` happening to the right party.
-fn observed(bench: &Bench, observable: Observable, before: &Snapshot) -> bool {
+///
+/// `held` is the one reading that cannot be taken here: see [`Immediate`].
+fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool) -> bool {
     let calls = bench.game.server.calls();
     match observable {
         Observable::HurtsTarget => {
@@ -198,7 +200,78 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot) -> bool {
             let boosted = melee_damage(bench, clock);
             boosted > before.baseline_melee + 1e-3
         }
+        // The distinguishing word is *keeps*. Every ability can take health off
+        // somebody once, and reading a single drop would pass for all fifty-one
+        // of them. So the clock is advanced with nothing cast, and what is
+        // measured is health lost during a window in which the ability is over.
+        Observable::AfflictsTarget => {
+            // Read eagerly, into an array. A lazy iterator here would sample
+            // health *after* the wait and compare it against itself, which
+            // passes for every ability in the game.
+            let watched = [
+                (bench.near, bench.health_of(bench.near).current),
+                (bench.far, bench.health_of(bench.far).current),
+            ];
+            bench.game.advance(LINGER_SECONDS, 40);
+            watched
+                .into_iter()
+                .any(|(victim, was)| bench.health_of(victim).current < was - 1e-3)
+        }
+        // Two probes, because "took no damage" on its own is also what a broken
+        // damage pipeline looks like: a shield that never lifts and a game that
+        // cannot hurt anybody are the same reading. The window has to hold, and
+        // then it has to end. `held` is the first probe, taken back when the
+        // window was still open; this is the second.
+        Observable::ShieldsCaster => held && probe_hit(bench),
     }
+}
+
+/// How long the sweep waits, with nothing cast, to see whether something the
+/// ability left behind is still working.
+///
+/// Longer than the slowest interval any effect in the roster ticks on, which is
+/// Spider's poison at 1.25 s. An effect that ticks slower than this and an
+/// effect that does not exist look identical from here, so a kit adding one has
+/// to raise this with it.
+const LINGER_SECONDS: f32 = 2.0;
+
+/// Facts whose lifetime is shorter than [`Bench::settle`], taken the instant a
+/// cast returns.
+///
+/// Sky Squid's shield lasts one second and `settle` waits one and a half, so a
+/// reading taken only after settling finds every shield already over and calls
+/// a working ability broken. This is the one observation that has to be made
+/// before the sweep waits.
+struct Immediate {
+    /// Whether a hit on the caster was refused. Only meaningful, and only
+    /// taken, when the entry claims [`Observable::ShieldsCaster`]: the probe
+    /// costs the caster health and would otherwise perturb every other reading.
+    held: bool,
+}
+
+impl Immediate {
+    fn taken(bench: &Bench, entry: &Declared) -> Self {
+        Self {
+            held: entry.proves.contains(&Observable::ShieldsCaster) && !probe_hit(bench),
+        }
+    }
+}
+
+/// Hit the caster for a fixed amount and report whether it landed.
+///
+/// The amount only has to survive the heaviest armour in the game: Iron Golem's
+/// 64% reduction would turn a one-point probe into 0.36 and a rounding argument
+/// into a test failure.
+fn probe_hit(bench: &Bench) -> bool {
+    let caster = bench.caster();
+    let before = bench.health_of(bench.caster).current;
+    hurt(caster, Damaged {
+        attacker: Some(bench.near),
+        amount: 4.0,
+        knockback: Knockback::from(Vec3::ZERO).times(0.0),
+        kind: DamageKind::Ability,
+    });
+    bench.health_of(bench.caster).current < before - 1e-3
 }
 
 /// What one melee swing at the near victim takes off, right now.
@@ -330,8 +403,10 @@ fn every_declared_effect_actually_happens() {
             bench.arm(&entry);
             let before = snapshot(&bench);
             bench.press(&entry);
+            let immediate = Immediate::taken(&bench, &entry);
             bench.settle();
-            outstanding.retain(|observable| !observed(&bench, *observable, &before));
+            outstanding
+                .retain(|observable| !observed(&bench, *observable, &before, immediate.held));
         }
 
         for observable in outstanding {
@@ -376,7 +451,9 @@ fn nothing_moves_that_did_not_say_it_would() {
             Observable::LaunchesCaster,
             Observable::TeleportsCaster,
         ] {
-            if !entry.proves.contains(&observable) && observed(&bench, observable, &before) {
+            // `held` is false: this test asks only about movement, and no
+            // movement observation reads it.
+            if !entry.proves.contains(&observable) && observed(&bench, observable, &before, false) {
                 failures.push(format!(
                     "{} / {} does not declare {} and did it anyway",
                     entry.kit,

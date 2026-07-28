@@ -1,6 +1,7 @@
 pub mod ability;
 pub mod arena;
 pub mod damage;
+pub mod effect;
 pub mod hud;
 pub mod kit;
 pub mod kits;

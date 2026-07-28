@@ -30,6 +30,7 @@ use smash::{
         ability::AbilityModule,
         arena::{Arena, ArenaModule},
         damage::{Armor, DamageKind, DamageModule, Damaged, hurt},
+        effect::{self, EffectModule},
         hud::HudModule,
         kit::{self, KitModule, KitStats},
         kits::StockKits,
@@ -201,6 +202,101 @@ fn contracts() -> Vec<Contract> {
                 // through the dispatcher. That it runs at all is the claim.
                 smash::module::ability::use_slot(player, 0);
                 world.progress_time(0.05);
+            },
+        },
+        Contract {
+            name: "Effect",
+            import: |world| {
+                world.import::<EffectModule>();
+            },
+            // A tick is a `Damaged` event, so the whole damage chain has to be
+            // standing before this module's system can name its terms.
+            requires: &["Player", "Knockback", "Damage"],
+            // What emitting that event reaches, which is whatever `Damage`
+            // itself reaches. Deliberately *not* `Lobby`: durations here are
+            // counted in delta time rather than against the match clock, so an
+            // effect ticks the same in the hub as in a match. That is the whole
+            // reason `Expires` holds a remaining time and not a deadline.
+            //
+            // Worth knowing about this entry specifically: the closure of these
+            // two sets already contains every module in the game, so removing a
+            // name from `requires` does not make this test fail. It documents
+            // the edge rather than enforcing it. What it does enforce is the
+            // exercise below, which fails if either path through the module
+            // stops working.
+            runtime_requires: &["Lives", "Sound", "Kit"],
+            exercise: |world, player| {
+                let before = player.cloned::<&Health>().current;
+                // No `Cast` and no ability here -- the point is that the module
+                // stands up alone -- so the player is blamed for their own burn.
+                effect::afflict(
+                    world.into(),
+                    player,
+                    effect::Blame {
+                        source: player.id(),
+                        attacker: player.id(),
+                    },
+                    effect::Affliction::over_time(
+                        1.0,
+                        2.0,
+                        0.1,
+                        DamageKind::Environment,
+                        effect::Shows {
+                            cue: smash::server::Cue::Burn,
+                            sound: "minecraft:entity.player.hurt_on_fire",
+                        },
+                    ),
+                );
+                world.progress_time(0.2);
+                assert!(
+                    player.cloned::<&Health>().current < before,
+                    "the effect never ticked"
+                );
+
+                // And it ends on its own, taking its entity with it.
+                world.progress_time(2.0);
+                assert!(
+                    effect::on(world.into(), player.id()).is_empty(),
+                    "the effect outlived its duration"
+                );
+
+                // The other path through the module: a shield adds and later
+                // removes `Damage`'s `Immune` tag. Exercised here rather than
+                // left to `tests/abilities.rs` because the window ending is the
+                // half that silently does not happen, and a shield that never
+                // lifts looks exactly like a shield that works.
+                effect::afflict(
+                    world.into(),
+                    player,
+                    effect::Blame {
+                        source: player.id(),
+                        attacker: player.id(),
+                    },
+                    effect::Affliction::shield(1.0),
+                );
+                let shielded = player.cloned::<&Health>().current;
+                hurt(player, Damaged {
+                    attacker: None,
+                    amount: 5.0,
+                    knockback: Knockback::from(Vec3::ZERO),
+                    kind: DamageKind::Ability,
+                });
+                assert!(
+                    (player.cloned::<&Health>().current - shielded).abs() < 1e-6,
+                    "the shield did not refuse the hit"
+                );
+
+                world.progress_time(1.5);
+                hurt(player, Damaged {
+                    attacker: None,
+                    amount: 5.0,
+                    knockback: Knockback::from(Vec3::ZERO),
+                    kind: DamageKind::Ability,
+                });
+                assert!(
+                    player.cloned::<&Health>().current < shielded,
+                    "the shield outlived its window"
+                );
             },
         },
         Contract {

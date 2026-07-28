@@ -766,6 +766,18 @@ fn play_cue(compose: &Compose, at: Vec3, cue: Cue) {
         Cue::Explosion => Particle::Explosion,
         Cue::Teleport => Particle::Portal,
         Cue::Death => Particle::Cloud,
+        // `[PLACEHOLDER]` both. Vanilla draws a burn with `minecraft:flame` and
+        // a poison with `minecraft:entity_effect`, and
+        // `hyperion_minecraft_proto::packets::play::chunk::Particle` carries
+        // neither yet, so each is pinned to the nearest thing it does carry:
+        // `crit`'s orange sparks read as "this is hurting you", and dragon
+        // breath is already vanilla's own lingering harmful cloud. Swap both
+        // the moment the proto grows the real ones; this comment is the fossil
+        // to remove, not a design decision to keep.
+        Cue::Burn => Particle::Crit,
+        // Half power, because a full-strength breath puff is a wall of purple
+        // and this marks one point of damage.
+        Cue::Venom => Particle::DragonBreath { power: 0.5 },
     };
     let packet = LevelParticles {
         // A cue marks something that just happened to a player, so it is worth

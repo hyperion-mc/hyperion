@@ -72,6 +72,11 @@ pub struct Description(pub &'static str);
 ///   `ClientboundSetEntityMotion`
 /// - [`Self::TeleportsCaster`] is `ClientboundPlayerPosition`
 /// - [`Self::BuffsMelee`] is the same melee swing hurting more than it did
+/// - [`Self::AfflictsTarget`] is a *second* `ClientboundSetHealth` for the
+///   victim, on a later tick, with nothing cast in between
+/// - [`Self::ShieldsCaster`] is the absence of one: a hit lands on the caster
+///   during the window and no `ClientboundSetHealth` follows it, and the same
+///   hit after the window does
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Observable {
     /// A player in front of the caster loses health.
@@ -86,6 +91,21 @@ pub enum Observable {
     HealsCaster,
     /// The caster's melee swing hurts more than it did before.
     BuffsMelee,
+    /// A player the ability touched keeps losing health after it is over.
+    ///
+    /// The distinguishing word is *keeps*. Every ability in the game can take
+    /// health off somebody once; what this claims is that the cast left
+    /// something behind on the victim which is still acting on its own a
+    /// second later, which is [`crate::module::effect`] and nothing else. An
+    /// ability that declares it and merely hits hard fails the gate, because
+    /// the gate stops casting and watches.
+    AfflictsTarget,
+    /// The caster cannot be hurt for a window.
+    ///
+    /// Proved by hitting them and finding no health lost, and then waiting the
+    /// window out and hitting them again to find some -- because "no damage"
+    /// on its own is also what a broken damage pipeline looks like.
+    ShieldsCaster,
 }
 
 impl Observable {
@@ -99,6 +119,8 @@ impl Observable {
             Self::TeleportsCaster => "teleports_caster",
             Self::HealsCaster => "heals_caster",
             Self::BuffsMelee => "buffs_melee",
+            Self::AfflictsTarget => "afflicts_target",
+            Self::ShieldsCaster => "shields_caster",
         }
     }
 }
@@ -279,6 +301,12 @@ pub fn activate(player: EntityView<'_>, slot: u8, charge: f32) -> Result<(), Ref
     };
     check(ability, player)?;
 
+    // Before the payload, not after. Mineplex's `RESPAWN_INVUL` ends the moment
+    // you act, which is what this is; running it afterwards also deleted a
+    // window the payload had just granted, so Sky Squid's one untouchable
+    // second lasted exactly no frames and nothing anywhere said so.
+    player.remove(crate::module::lives::InvulnerableUntil::id());
+
     let world = player.world();
     world.get::<&ServerHandle>(|server| {
         let Some(cast) = cast_from(world, player, ability, &**server, charge) else {
@@ -299,9 +327,6 @@ pub fn activate(player: EntityView<'_>, slot: u8, charge: f32) -> Result<(), Ref
     });
 
     commit(ability, player);
-    // Mineplex's `RESPAWN_INVUL` ends the moment you act, so a player cannot
-    // spend it attacking from under a platform nobody can answer from.
-    player.remove(crate::module::lives::InvulnerableUntil::id());
     Ok(())
 }
 
@@ -567,6 +592,19 @@ fn report(player: EntityView<'_>, outcome: Result<(), Refusal>) {
 /// own victims -- Storm Squid calls down a bolt on each player where they stand
 /// -- has to name the caster as the origin or it silently deals damage and no
 /// knockback at all.
+///
+/// Returns whoever it hit, so an ability whose blast leaves something behind --
+/// a burn, a poison, a mark -- can reach those victims without running the same
+/// query a second time and getting a different answer because the first pass
+/// moved somebody.
+///
+/// Deliberately not `#[must_use]`: most of the roster fires a splash for what it
+/// does and not for who it hit, and forcing thirty call sites to discard a list
+/// they never wanted would bury the handful that do use it.
+#[expect(
+    clippy::must_use_candidate,
+    reason = "most callers want the blast, not the list; see above"
+)]
 pub fn splash_from(
     cast: &Cast<'_>,
     origin: Vec3,
@@ -574,7 +612,7 @@ pub fn splash_from(
     radius: f32,
     damage: f32,
     multiplier: f32,
-) {
+) -> Vec<Entity> {
     use crate::module::{
         damage::{DamageKind, Damaged},
         knockback::Knockback,
@@ -592,20 +630,31 @@ pub fn splash_from(
             }
         });
 
-    for victim in victims {
-        crate::module::damage::hurt(cast.world.entity_at(victim), Damaged {
+    for victim in &victims {
+        crate::module::damage::hurt(cast.world.entity_at(*victim), Damaged {
             attacker: Some(caster),
             amount: damage,
             knockback: Knockback::from(origin).times(multiplier),
             kind: DamageKind::Ability,
         });
     }
+    victims
 }
 
 /// [`splash_from`] with the blast's own centre as the origin, which is what an
 /// explosion somewhere other than on top of a victim wants.
-pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier: f32) {
-    splash_from(cast, at, at, radius, damage, multiplier);
+#[expect(
+    clippy::must_use_candidate,
+    reason = "see splash_from: the victims are the rare want, not the usual one"
+)]
+pub fn splash_at(
+    cast: &Cast<'_>,
+    at: Vec3,
+    radius: f32,
+    damage: f32,
+    multiplier: f32,
+) -> Vec<Entity> {
+    splash_from(cast, at, at, radius, damage, multiplier)
 }
 
 /// Turn a 0..=1 charge fraction into a whole number of steps.
@@ -622,7 +671,12 @@ pub fn charge_steps(charge: f32, max: u32) -> u32 {
 }
 
 /// [`splash_at`] centred on the caster, with the bang.
-pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) {
-    splash_at(cast, cast.position.0, radius, damage, multiplier);
+#[expect(
+    clippy::must_use_candidate,
+    reason = "see splash_from: the victims are the rare want, not the usual one"
+)]
+pub fn splash(cast: &Cast<'_>, radius: f32, damage: f32, multiplier: f32) -> Vec<Entity> {
+    let victims = splash_at(cast, cast.position.0, radius, damage, multiplier);
     cast.server.cue(cast.position.0, Cue::Explosion);
+    victims
 }
