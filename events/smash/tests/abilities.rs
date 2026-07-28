@@ -242,7 +242,7 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool
                 || bench.game.server.calls().iter().any(|call| {
                     matches!(
                         call,
-                        Call::AddVelocity(..) | Call::SetHealth(..) | Call::Cue(..)
+                        Call::AddVelocity(..) | Call::SetHealth(..) | Call::Particles(..)
                     )
                 })
         }

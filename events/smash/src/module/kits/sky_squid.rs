@@ -10,14 +10,12 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{self, Cast, Observable, splash_at},
-        effect::{self, Affliction},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        projectile::{Flight, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{self, Cast, Observable, splash_at},
+    effect::{self, Affliction},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    projectile::{Flight, Payload, fire},
+    visuals,
 };
 
 /// `[VERIFIED]` "Each pellet deals 1.725 damage, so a total damage of 12.075 if
@@ -154,7 +152,7 @@ fn ink_shotgun(cast: &Cast<'_>) {
 fn fish_flurry(cast: &Cast<'_>) {
     let at = cast.position.0 + cast.facing.0.normalize_or_zero() * 4.0;
     splash_at(cast, at, 2.5, 2.0, 0.7);
-    cast.server.cue(at, Cue::Explosion);
+    cast.server.particles(visuals::blast(at));
 }
 
 /// `[VERIFIED]` "call lightning down once a second"; the twenty seconds is
@@ -201,7 +199,7 @@ fn storm_bolt(cast: &Cast<'_>) {
         // The bolt lands on the victim, so the launch has to be measured from
         // the squid: away from the point you are standing on is not a direction.
         splash_from(cast, cast.position.0, at, 2.0, STORM_DAMAGE, 1.2);
-        cast.server.cue(at, Cue::Explosion);
+        cast.server.particles(visuals::blast(at));
     }
 }
 

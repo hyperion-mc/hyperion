@@ -7,12 +7,13 @@
 //! aborts at runtime. Draining once per tick in `PostUpdate` costs knockback one
 //! tick of latency and buys immunity from that whole class of bug.
 //!
-//! [`Cue`] and [`HotbarItem`] are the game's own closed vocabulary. Choosing
-//! which Minecraft particle and item each one becomes is a hosting decision, so
-//! the mapping lives here and nowhere under `src/module/`. [`Sound`] is the
-//! exception and arrives already naming a vanilla sound event, because which
-//! noise an ability makes is part of what the ability *is* and belongs with the
-//! kit that declares it; all that is left here is the encoding.
+//! [`HotbarItem`] is the game's own closed vocabulary, and choosing which
+//! Minecraft item each one becomes is a hosting decision, so that mapping
+//! lives here and nowhere under `src/module/`. [`Sound`] and [`Particles`] are
+//! the exceptions and arrive already naming a vanilla sound event and a
+//! vanilla particle, because what an ability sounds and looks like is part of
+//! what the ability *is* and belongs with the kit that declares it; all that
+//! is left here is handing them to the engine.
 
 use std::{
     collections::{HashMap, hash_map::Entry},
@@ -26,7 +27,6 @@ use hyperion::{
     hyperion_minecraft_proto::{
         generated::packet_id::play::clientbound::PacketId,
         packets::play::{
-            chunk::{LevelParticles, Particle},
             clientbound::{
                 SetActionBarText, SetDisplayObjective, SetExperience, SetHealth, SetSubtitleText,
                 SetTitleText, SetTitlesAnimation,
@@ -36,7 +36,6 @@ use hyperion::{
                 ObjectiveRenderType, SetObjective, SetScore,
             },
         },
-        particle::Argb,
     },
     net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
     simulation::{
@@ -54,8 +53,8 @@ use valence_nbt::{Compound, List, Value};
 use crate::{
     module::kit::{self, Playing},
     server::{
-        BarColour, BossBar, Channel, Cue, Experience, HotbarItem, PlayerId, Server, SidebarLine,
-        Sound, SoundCategory, Text, Title,
+        BarColour, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server,
+        SidebarLine, Sound, SoundCategory, Text, Title,
     },
 };
 
@@ -99,10 +98,7 @@ enum Op {
         player: Entity,
         spectating: bool,
     },
-    Play {
-        at: Vec3,
-        cue: Cue,
-    },
+    Particles(Particles),
     PlaySound {
         at: Vec3,
         sound: Sound,
@@ -214,8 +210,8 @@ impl Server for HyperionServer {
         });
     }
 
-    fn cue(&self, at: Vec3, cue: Cue) {
-        self.push(Op::Play { at, cue });
+    fn particles(&self, effect: Particles) {
+        self.push(Op::Particles(effect));
     }
 
     fn play_sound(&self, at: Vec3, sound: Sound) {
@@ -445,7 +441,7 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
                 world.get::<&DefaultGamemode>(|default| entity.add_enum(default.0));
             }
         }
-        Op::Play { at, cue } => play_cue(compose, at, cue),
+        Op::Particles(effect) => effect.emit(world),
         Op::PlaySound { at, sound } => {
             let Some(packet) = encode(at, sound) else {
                 return;
@@ -773,59 +769,6 @@ fn sidebar(compose: &Compose, to: ConnectionId, title: &Text, lines: &[SidebarLi
             number_format: line.score.drawn().is_none().then_some(NumberFormat::Blank),
         };
         let _unused = compose.unicast(Clientbound::new(PacketId::SetScore.to_raw(), &packet), to);
-    }
-}
-
-/// The game's three cues, as Minecraft particles.
-///
-/// Sound used to be decided here as well, from a six-variant enum, which is why
-/// every ability in the game shared four noises between them. Audio now arrives
-/// already named: the game picks the vanilla sound event, because which sound
-/// an ability makes is a design decision belonging to the kit that declares it,
-/// and only the encoding is a hosting one. What is still a hosting decision,
-/// and so still here, is which particle each cue draws.
-///
-/// `[INFERRED]` throughout: Mineplex's own choices are not in the leaked source,
-/// which loaded them from the same spreadsheet as everything else.
-/// Half-width of the box a cue's particles are scattered through, in blocks.
-const CUE_SPREAD: f32 = 0.4;
-
-fn play_cue(compose: &Compose, at: Vec3, cue: Cue) {
-    let particle = match cue {
-        Cue::Explosion => Particle::Explosion,
-        Cue::Teleport => Particle::Portal,
-        Cue::Death => Particle::Cloud,
-        Cue::Burn => Particle::Flame,
-        // Vanilla's own poison colour, which is what `entity_effect` is drawn
-        // in when a `minecraft:poison` instance renders: `MobEffects.POISON`
-        // carries `0x4E9331`. Taken from the effect rather than picked, so the
-        // haze around a poisoned player is the green a player already reads as
-        // poison rather than an arbitrary green.
-        Cue::Venom => Particle::EntityEffect {
-            color: Argb::opaque(0x4E, 0x93, 0x31),
-        },
-    };
-    let packet = LevelParticles {
-        // A cue marks something that just happened to a player, so it is worth
-        // seeing from further out than the client's normal particle radius.
-        override_limiter: true,
-        // The client's particle setting is the player's own choice.
-        always_show: false,
-        x: f64::from(at.x),
-        y: f64::from(at.y),
-        z: f64::from(at.z),
-        x_dist: CUE_SPREAD,
-        y_dist: CUE_SPREAD,
-        z_dist: CUE_SPREAD,
-        max_speed: 0.5,
-        count: 40,
-        particle,
-    };
-    if let Err(error) = compose
-        .broadcast(Clientbound::new(PacketId::LevelParticles.to_raw(), &packet))
-        .send()
-    {
-        tracing::warn!("dropping a smash particle: {error}");
     }
 }
 

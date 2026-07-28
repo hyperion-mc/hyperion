@@ -309,10 +309,8 @@ pub trait MinecraftCommand: Parser + CommandPermission + 'static {
                 .get::<&Group>(|group| Self::has_required_permission(*group))
         };
 
-        let node_to_register = hyperion::simulation::command::Command::literal(
-            name.clone(),
-            gate_for::<Self>(None),
-        );
+        let node_to_register =
+            hyperion::simulation::command::Command::literal(name.clone(), gate_for::<Self>(None));
 
         let root = world
             .entity()
@@ -730,7 +728,10 @@ mod permission_gates {
     #[test]
     fn every_subcommand_clap_has_carries_a_declared_group() {
         let command = PermissionCommand::command();
-        let actual: Vec<&str> = command.get_subcommands().map(clap::Command::get_name).collect();
+        let actual: Vec<&str> = command
+            .get_subcommands()
+            .map(clap::Command::get_name)
+            .collect();
         let declared = PermissionCommand::declared_subcommands();
 
         assert!(!actual.is_empty(), "perms has subcommands");

@@ -10,8 +10,8 @@ use std::sync::Mutex;
 use glam::Vec3;
 
 use super::{
-    BossBar, Channel, Cue, Experience, HotbarItem, PlayerId, Server, SidebarLine, Sound, Text,
-    Title,
+    BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server, SidebarLine, Sound,
+    Text, Title,
 };
 
 /// One thing the game asked the server to do.
@@ -25,7 +25,7 @@ pub enum Call {
     Broadcast(Channel, Text),
     Sidebar(PlayerId, Text, Vec<SidebarLine>),
     Spectating(PlayerId, bool),
-    Cue(Vec3, Cue),
+    Particles(Particles),
     /// A positioned sound, heard by everyone in range.
     Sound(Vec3, Sound),
     /// A sound only one player hears.
@@ -93,6 +93,17 @@ impl MockServer {
 
     /// Every positioned sound so far, with where it played.
     #[must_use]
+    /// Every particle effect asked for, in order.
+    pub fn particles(&self) -> Vec<Particles> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Particles(effect) => Some(effect.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn sounds(&self) -> Vec<(Vec3, Sound)> {
         self.calls()
             .iter()
@@ -208,8 +219,8 @@ impl Server for MockServer {
         self.push(Call::Spectating(player, spectating));
     }
 
-    fn cue(&self, at: Vec3, cue: Cue) {
-        self.push(Call::Cue(at, cue));
+    fn particles(&self, effect: Particles) {
+        self.push(Call::Particles(effect));
     }
 
     fn play_sound(&self, at: Vec3, sound: Sound) {

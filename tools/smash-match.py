@@ -114,6 +114,7 @@ ACTION_RELEASE_USE_ITEM = 5
 S2C_CONTAINER_SET_SLOT = 0x14
 S2C_DISCONNECT = 0x20
 S2C_KEEP_ALIVE = 0x2C
+S2C_LEVEL_PARTICLES = 0x2F
 S2C_LOGIN = 0x31
 S2C_PLAYER_POSITION = 0x48
 S2C_SET_ACTION_BAR_TEXT = 0x57
@@ -162,6 +163,26 @@ def take_lp_vec3(payload, offset):
         unpack(buffer >> (3 + LP_DATA_BITS)) * scale,
         unpack(buffer >> (3 + 2 * LP_DATA_BITS)) * scale,
     ), offset
+
+
+def take_particles(payload):
+    """`ClientboundLevelParticlesPacket`, as far as this file cares about it.
+
+    Fixed-width up to the particle, then a var int type id and whatever that
+    type's own codec writes. The body is not read: which particle arrived and
+    how many of it are what a kit declares, and the body shapes are already
+    held against Mojang's own encoder by `play_particles.rs`.
+
+    Returns `(particle_id, position, count)`, position in blocks.
+    """
+    override_limiter = payload[0]
+    always_show = payload[1]
+    x, y, z, x_dist, y_dist, z_dist, max_speed, count = struct.unpack(
+        ">dddffffi", payload[2:46]
+    )
+    particle_id, _ = take_var_int(payload, 46)
+    del override_limiter, always_show, x_dist, y_dist, z_dist, max_speed
+    return particle_id, (x, y, z), count
 
 
 def take_sound(payload):
@@ -650,6 +671,7 @@ class Match:
             self.proof["the server published its ability registry"] = None
             self.proof["every declared ability did what it declared"] = None
             self.proof["every declared ability was heard"] = None
+            self.proof["every declared ability was seen"] = None
             self.proof["cooldowns refused a second use"] = None
         self.proof.update({
             "four in play": None,
@@ -678,10 +700,16 @@ class Match:
         # Abilities whose declared sound never arrived, and any sound that
         # arrived in a form a client could not resolve.
         self.sound_failures = []
+        # Abilities that drew nothing a client could see.
+        self.particle_failures = []
         # Velocity packets seen this window, keyed by entity id. Collected from
         # every client rather than one, because a player is not always in their
         # own broadcast channel and the caster's own launch has to be visible.
         self.window_motions = {}
+        # Particle packets seen this window, from every client for the same
+        # reason motions are: the caster is not always in their own broadcast
+        # channel, and an effect drawn at the caster has to be visible.
+        self.window_particles = []
         self.motions = []
         self.deaths = []
         self.respawns = []
@@ -832,6 +860,13 @@ class Match:
             client.log(
                 "<- sound %s at (%.1f, %.1f, %.1f) vol %.2f pitch %.2f"
                 % ((sound_id,) + at + (volume, pitch))
+            )
+        elif packet_id == S2C_LEVEL_PARTICLES:
+            particle_id, at, count = take_particles(payload)
+            self.window_particles.append((particle_id, at, count))
+            client.log(
+                "<- particles %d x%d at (%.1f, %.1f, %.1f)"
+                % ((particle_id, count) + at)
             )
         elif packet_id == S2C_SET_ACTION_BAR_TEXT:
             text, _ = take_nbt_string(payload, 0)
@@ -1073,6 +1108,16 @@ class Match:
                 "%d abilities fired by a real client, each one answered by a "
                 "ClientboundSoundPacket carrying the vanilla sound event its own "
                 "registry entry names" % len(self.manifest),
+            )
+        if self.particle_failures:
+            for line in self.particle_failures:
+                self.log("PARTICLE FAILED %s" % line)
+        else:
+            self.prove(
+                "every declared ability was seen",
+                "%d abilities fired by a real client, each one answered by a "
+                "ClientboundLevelParticlesPacket with a non-zero count"
+                % len(self.manifest),
             )
         if self.cooldown_failures:
             for line in self.cooldown_failures:
@@ -1353,6 +1398,7 @@ class Match:
         # makes reads as the ability having hurt somebody.
         melee = self.measure_melee() if "buffs_melee" in entry["proves"] else 0.0
         self.window_motions.clear()
+        self.window_particles.clear()
         for client in self.clients:
             client.action_bar.clear()
             client.teleported_to.clear()
@@ -1512,6 +1558,7 @@ class Match:
         outstanding = list(entry["proves"])
         evidence = []
         heard = False
+        seen = False
 
         for attempt in range(SWEEP_ATTEMPTS):
             if not outstanding and heard:
@@ -1540,7 +1587,21 @@ class Match:
                 if not heard:
                     evidence.append("heard: %s" % entry["sound"])
                 heard = True
-            if outstanding or not heard:
+            # Every ability draws something. Which particle is the kit's
+            # business and not this file's, so the claim is only that a real
+            # client was sent one and that it carries a real count -- a
+            # `level_particles` with a count of zero is a packet that spends
+            # bandwidth and draws nothing.
+            drawn = [seen_at for seen_at in self.window_particles if seen_at[2] > 0]
+            if drawn:
+                if not seen:
+                    particle_id, at, count = drawn[0]
+                    evidence.append(
+                        "seen: particle %d x%d at (%.1f, %.1f, %.1f)"
+                        % ((particle_id, count) + at)
+                    )
+                seen = True
+            if outstanding or not heard or not seen:
                 self.wait(entry["cooldown"] + 0.5)
 
         if outstanding:
@@ -1551,6 +1612,10 @@ class Match:
             self.sound_failures.append(
                 "%s declares the sound %s and firing it sent no such packet"
                 % (label, entry["sound"])
+            )
+        if not seen:
+            self.particle_failures.append(
+                "%s fired and sent no level_particles a client could draw" % label
             )
         self.sweep_results.append(
             "%-42s %s" % (label, "; ".join(evidence) or "nothing reached a client")

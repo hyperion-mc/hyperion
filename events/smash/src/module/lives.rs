@@ -15,8 +15,9 @@ use crate::{
         hud, kit,
         player::{self, Health, JumpsLeft, Player, Position},
         sound::{self, PlaysOnDeath},
+        visuals,
     },
-    server::{Channel, Cue, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
+    server::{Channel, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 /// Mineplex's `MAX_LIVES`.
@@ -356,7 +357,7 @@ impl Module for LivesModule {
                 sound::play_kit_voice(world, victim, PlaysOnDeath, at);
 
                 world.get::<&ServerHandle>(|server| {
-                    server.cue(at, Cue::Death);
+                    server.particles(visuals::death(at));
                     match killer_name.as_deref() {
                         Some(killer_name) => server.broadcast(
                             Channel::Chat,

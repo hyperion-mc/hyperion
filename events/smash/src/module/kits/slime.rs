@@ -12,16 +12,14 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{Cast, Observable, splash_at},
-        damage::{DamageKind, Damaged, hurt},
-        effect::{self, Affliction},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        knockback::Knockback,
-        player::Energy,
-    },
-    server::Cue,
+use crate::module::{
+    ability::{Cast, Observable, splash_at},
+    damage::{DamageKind, Damaged, hurt},
+    effect::{self, Affliction},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    knockback::Knockback,
+    player::Energy,
+    visuals,
 };
 
 /// `Energy Per Tick = 0.004` on a 49 ms tick.
@@ -144,7 +142,7 @@ fn slime_rocket(cast: &Cast<'_>) {
         rocket_damage(size),
         cast.charge.mul_add(1.4, 1.0),
     );
-    cast.server.cue(ahead, Cue::Explosion);
+    cast.server.particles(visuals::blast(ahead));
 }
 
 /// Deals 7 at a 2.0 multiplier, and hands a quarter of both back to the caster

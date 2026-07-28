@@ -125,11 +125,10 @@ impl BowCharging {
     #[must_use]
     #[expect(
         clippy::suboptimal_flops,
-        reason = "mul_add is a fused multiply-add: one rounding where Java does \
-                  two. getPowerForTime evaluates `(f * f + f * 2.0F) / 3.0F` as \
-                  separate float operations, and this file exists to give the \
-                  same answer it does, so the two roundings are the behaviour \
-                  rather than an oversight"
+        reason = "mul_add is a fused multiply-add: one rounding where Java does two. \
+                  getPowerForTime evaluates `(f * f + f * 2.0F) / 3.0F` as separate float \
+                  operations, and this file exists to give the same answer it does, so the two \
+                  roundings are the behaviour rather than an oversight"
     )]
     pub fn get_charge(&self) -> f32 {
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);

@@ -12,16 +12,14 @@
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use crate::{
-    module::{
-        ability::{self, Cast, Observable, splash},
-        damage::DamageKind,
-        effect::{self, Affliction, Shows},
-        kit::{self, AbilitySpec, KitSounds, KitStats},
-        player::Health,
-        projectile::{Flight, Impact, Payload, fire},
-    },
-    server::Cue,
+use crate::module::{
+    ability::{self, Cast, Observable, splash},
+    damage::DamageKind,
+    effect::{self, Affliction, Shows},
+    kit::{self, AbilitySpec, KitSounds, KitStats},
+    player::Health,
+    projectile::{Flight, Impact, Payload, fire},
+    visuals,
 };
 
 /// What a needle leaves behind.
@@ -35,7 +33,7 @@ pub const POISON_PER_TICK: f32 = 1.0;
 pub const POISON_INTERVAL: f32 = 1.25;
 
 const POISONED: Shows = Shows {
-    cue: Cue::Venom,
+    effect: visuals::venom,
     sound: "minecraft:entity.player.hurt_sweet_berry_bush",
 };
 

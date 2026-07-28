@@ -80,8 +80,7 @@ fn declared_group(attrs: &[Attribute]) -> syn::Result<Option<Ident>> {
         let Some(found) = found else {
             return Err(Error::new_spanned(
                 attr,
-                "`#[command_permission]` needs a group: `#[command_permission(group = \
-                 \"Admin\")]`",
+                "`#[command_permission]` needs a group: `#[command_permission(group = \"Admin\")]`",
             ));
         };
 
@@ -105,8 +104,8 @@ fn reject_group_on_fields(fields: &Fields) -> syn::Result<()> {
         {
             return Err(Error::new(
                 field.span(),
-                "a group belongs on the command or on one of its subcommands, not on an \
-                 argument; a `#[command_permission]` here would be ignored",
+                "a group belongs on the command or on one of its subcommands, not on an argument; \
+                 a `#[command_permission]` here would be ignored",
             ));
         }
     }
@@ -163,7 +162,10 @@ fn kebab_case(ident: &str) -> String {
         if current.is_uppercase() && index != 0 {
             let previous = chars[index - 1];
             let next_is_lower = chars.get(index + 1).is_some_and(|c| c.is_lowercase());
-            if previous.is_lowercase() || previous.is_numeric() || (previous.is_uppercase() && next_is_lower) {
+            if previous.is_lowercase()
+                || previous.is_numeric()
+                || (previous.is_uppercase() && next_is_lower)
+            {
                 out.push('-');
             }
         }
@@ -288,12 +290,11 @@ fn enum_arms(
         return Err(Error::new_spanned(
             name,
             format!(
-                "these subcommands declare no group and the command declares no default for \
-                 them: {undeclared:?}. Either give the command a \
-                 `#[command_permission(group = ...)]` covering every subcommand, or give each \
-                 subcommand its own. Declaring only some is refused because the fallback would \
-                 be a guess, and the guess that used to be made here let any player run \
-                 `/perms set` (ENG-10871)."
+                "these subcommands declare no group and the command declares no default for them: \
+                 {undeclared:?}. Either give the command a `#[command_permission(group = ...)]` \
+                 covering every subcommand, or give each subcommand its own. Declaring only some \
+                 is refused because the fallback would be a guess, and the guess that used to be \
+                 made here let any player run `/perms set` (ENG-10871)."
             ),
         ));
     }

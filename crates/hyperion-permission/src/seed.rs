@@ -134,7 +134,9 @@ impl FromStr for SeededGroups {
                     .filter_map(ValueEnum::to_possible_value)
                     .map(|value| value.get_name().to_owned())
                     .collect();
-                anyhow::anyhow!("{ENV_VAR} entry {entry:?} names no group; the groups are {known:?}")
+                anyhow::anyhow!(
+                    "{ENV_VAR} entry {entry:?} names no group; the groups are {known:?}"
+                )
             })?;
 
             if let Some(previous) = seeded.insert(uuid, group) {
@@ -181,7 +183,8 @@ mod tests {
             "069a79f4-44e9-4726-a5be-fca90e38aaf5",
             "069a79f4-44e9-4726-a5be-fca90e38aaf5=Owner",
             "andrew=Admin",
-            "069a79f4-44e9-4726-a5be-fca90e38aaf5=Admin,069a79f4-44e9-4726-a5be-fca90e38aaf5=Normal",
+            "069a79f4-44e9-4726-a5be-fca90e38aaf5=Admin,\
+             069a79f4-44e9-4726-a5be-fca90e38aaf5=Normal",
         ] {
             assert!(
                 broken.parse::<SeededGroups>().is_err(),

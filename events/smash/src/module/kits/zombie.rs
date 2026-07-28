@@ -14,8 +14,9 @@ use crate::{
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
+        visuals,
     },
-    server::{Cue, PlayerId, ServerHandle},
+    server::{PlayerId, ServerHandle},
 };
 
 #[derive(Component)]
@@ -154,5 +155,5 @@ const HORDE_DAMAGE: f32 = 2.5;
 
 fn horde_wave(cast: &Cast<'_>) {
     splash_at(cast, cast.position.0, 7.0, HORDE_DAMAGE, 1.6);
-    cast.server.cue(cast.position.0, Cue::Explosion);
+    cast.server.particles(visuals::blast(cast.position.0));
 }
