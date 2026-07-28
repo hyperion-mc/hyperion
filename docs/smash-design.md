@@ -559,13 +559,55 @@ process carries on, which is a hard failure to read. Making it a flag lets
 `nix run .#smash` be a whole server in one process and `nix run .#smash-dev`
 run the deployed shape with no race.
 
+### New: `events/smash/src/module/selector.rs`
+
+Mineplex's waiting lobby put one mob per kit on a pedestal of coloured wool and
+you right-clicked the mob you wanted to be. This is that: a ring of fifteen
+podiums in the middle of the hub, each a wool block with the kit's own mob
+standing on it, generated from the roster at boot so adding a kit adds a podium.
+
+Everything about it is a relation. A podium *is* its `(Offers, kit)` edge and a
+mob *is* its `(StandsOn, podium)` edge, so a click that arrives naming an entity
+becomes a kit in two hops with no table keyed on entity id or block position.
+Whether a mob is taken is a query for any player with `(Playing, thatKit)`,
+derived on every call rather than stored, which is what makes a disconnect free
+a mob with no cleanup code anywhere: the claim was the player's edge and the
+player is gone.
+
+**One player per mob.** Nothing found says whether Mineplex reserved a kit, and
+since kits were bought per account with gems it would be a strange rule to have
+shipped, so treat this as ours. The claim lasts the rest of the match without a
+second rule saying so, because `lobby::choose` already refuses any kit change
+once the match commits.
+
+**How a player is told.** The wool goes green to red the moment somebody takes
+the mob, which is the only channel that works in the last seconds of a countdown
+when nobody is reading chat, and it says *which* mob is gone. The action bar
+line explains a refusal that has already happened rather than delivering the
+news. There is no sound yet; that belongs with the audio work.
+
+Making the mob clickable took a change to the engine. hyperion routed no
+entity-interaction packet, so `minecraft:interact` reached the dispatch table
+and fell through it. It is routed now as `event::EntityInteract`, and since 26.2
+split attacking out into `minecraft:attack` that packet means a right-click and
+nothing else. Its body is hand-written in `packets/play/entity.rs`: the
+extractor models the field list but marks the packet `complete: false` over one
+statement inside the `Vec3` LP codec, which this crate already has.
+
 ### New: `events/smash/src/command.rs`
 
-Not in the original plan. `/kit <name>` and `/kits`, through `hyperion-clap`,
-because there is no kit menu and something has to select a kit. A Minecraft
-command argument is one whitespace-delimited token and half the kit names have
-a space in them, so `/kit` matches on the name with case and punctuation
-discarded: `/kit irongolem` finds `Iron Golem`.
+`/kit <name>` and `/kits`, through `hyperion-clap`. No longer the only way to
+pick a kit, but still the one a screen reader can use and the one every gate
+that is not testing the selector reaches for. A Minecraft command argument is
+one whitespace-delimited token and half the kit names have a space in them, so
+`/kit` matches on the name with case and punctuation discarded: `/kit irongolem`
+finds `Iron Golem`.
+
+`/podiums` answers with one JSON object per podium: which kit, where its mob
+stands, what colour its wool is and who holds it. It exists so that
+`tools/smash-selector.py` can right-click a podium without recomputing the ring
+in Python, which would be a second copy of the geometry and would keep passing
+after the real ring moved.
 
 ### Changed: `events/smash/Cargo.toml`
 

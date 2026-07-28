@@ -96,6 +96,28 @@ pub struct KitCost(pub u32);
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct KitBlurb(pub &'static str);
 
+/// The mob that stands on this kit's podium in the lobby.
+///
+/// A vanilla entity id, the same vocabulary [`AbilitySpec::item`] uses for
+/// items. It is the kit's own to declare for the same reason its abilities
+/// are: nothing outside a kit file may name a kit, so a selector that mapped
+/// kit to mob centrally would be the one table this crate has spent its whole
+/// design avoiding.
+///
+/// Mostly the obvious thing, because the roster is named after the mobs. The
+/// two that are not are the ones whose kit name is Mineplex's rather than
+/// Mojang's: the Sky Squid is a `minecraft:squid` and the Snowman is a
+/// `minecraft:snow_golem`.
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+pub struct KitMob(pub &'static str);
+
+/// What a kit that never called [`KitBuilder::mob`] stands on its podium.
+///
+/// A podium still appears, because a kit nobody can select is worse than an
+/// ugly one, and `tests/selector.rs` fails on any registered kit that leaves it
+/// at this.
+pub const DEFAULT_MOB: &str = "minecraft:armor_stand";
+
 /// Marks the ability the Smash Crystal unlocks, rather than one of the four the
 /// kit starts with.
 #[derive(Component, Debug)]
@@ -247,6 +269,13 @@ impl<'w> KitBuilder<'w> {
             .add((PlaysOnHurt, sound::intern(self.world, sounds.hurt, voice)));
         self.kit
             .add((PlaysOnDeath, sound::intern(self.world, sounds.death, voice)));
+        self
+    }
+
+    /// The mob that stands on this kit's podium. See [`KitMob`].
+    #[must_use]
+    pub fn mob(self, entity: &'static str) -> Self {
+        self.kit.set(KitMob(entity));
         self
     }
 
@@ -468,6 +497,54 @@ pub fn registry(world: &World) -> Vec<Entity> {
     kits
 }
 
+/// Who is playing what, right now.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Claim {
+    pub kit: Entity,
+    pub player: Entity,
+}
+
+/// Every kit somebody is currently playing.
+///
+/// Derived on every call by walking the `(Playing, kit)` edges themselves.
+/// There is deliberately no `taken` flag on a kit and no set of claims kept on
+/// the side, because a second copy of this answer is a thing that can disagree
+/// with the first, and the disagreement that matters is the one nobody
+/// notices: a player who disconnects is destroyed and takes their edge with
+/// them, so this function frees their mob on the very next call and a cached
+/// set would go on reserving it for somebody who left.
+#[must_use]
+pub fn claims(world: &World) -> Vec<Claim> {
+    let mut found = Vec::new();
+    world
+        .query::<()>()
+        .with((Playing, id::<flecs::Wildcard>()))
+        .build()
+        .each_entity(|player, ()| {
+            let Some(kit) = player.find_target(Playing, |_| true) else {
+                return;
+            };
+            found.push(Claim {
+                kit: kit.id(),
+                player: player.id(),
+            });
+        });
+    found
+}
+
+/// The one player playing `kit`, if anybody is.
+///
+/// One, and not a list, because [`Playing`] is registered `Exclusive` and the
+/// selection rule is one player per mob; a second holder is a bug rather than
+/// a case to handle, and `tests/selector.rs` is what says so.
+#[must_use]
+pub fn claimant(world: &World, kit: Entity) -> Option<Entity> {
+    claims(world)
+        .into_iter()
+        .find(|claim| claim.kit == kit)
+        .map(|claim| claim.player)
+}
+
 /// Look a kit up by its [`KitName`].
 ///
 /// Deliberately not `world.try_lookup(name)`: a kit prefab is created inside
@@ -514,6 +591,7 @@ impl Module for KitModule {
         world.component::<KitName>();
         world.component::<KitCost>();
         world.component::<KitBlurb>();
+        world.component::<KitMob>();
         world.component::<Ultimate>();
         world.component::<Playing>().add(flecs::Exclusive);
     }

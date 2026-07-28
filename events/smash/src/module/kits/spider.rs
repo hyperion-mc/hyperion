@@ -42,6 +42,7 @@ impl Module for Spider {
         })
         .cost(0)
         .blurb("Fast, fragile and everywhere at once. Leap where you look.")
+        .mob("minecraft:spider")
         .ability(AbilitySpec {
             name: "Needler",
             sound: "minecraft:entity.bee.sting",

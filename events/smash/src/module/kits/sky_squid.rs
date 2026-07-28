@@ -44,6 +44,7 @@ impl Module for SkySquid {
         })
         .cost(3000)
         .blurb("Seven pellets up close, and one second of being untouchable.")
+        .mob("minecraft:squid")
         .ability(AbilitySpec {
             name: "Super Squid",
             sound: "minecraft:entity.squid.ambient",

@@ -49,6 +49,7 @@ impl Module for Creeper {
         })
         .cost(4000)
         .blurb("Hits harder than anything and dies to a stiff breeze.")
+        .mob("minecraft:creeper")
         .ability(AbilitySpec {
             name: "Sulphur Bomb",
             sound: "minecraft:entity.creeper.primed",

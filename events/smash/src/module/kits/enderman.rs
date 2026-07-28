@@ -50,6 +50,7 @@ impl Module for Enderman {
         })
         .cost(4000)
         .blurb("Throw the arena at people, then blink away before they reach you.")
+        .mob("minecraft:enderman")
         .ability(AbilitySpec {
             name: "Block Toss",
             sound: "minecraft:block.stone.place",

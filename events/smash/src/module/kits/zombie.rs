@@ -37,6 +37,7 @@ impl Module for Zombie {
         })
         .cost(6000)
         .blurb("Something for every range, and nothing outstanding at any of them.")
+        .mob("minecraft:zombie")
         .ability(AbilitySpec {
             name: "Bile Blaster",
             sound: "minecraft:entity.witch.throw",

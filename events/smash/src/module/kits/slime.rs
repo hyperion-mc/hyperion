@@ -54,6 +54,7 @@ impl Module for Slime {
             death: "minecraft:entity.slime.death",
         })
         .blurb("Spend yourself to send enemies flying, and shrink while you do it.")
+        .mob("minecraft:slime")
         .ability(AbilitySpec {
             name: "Slime Rocket",
             sound: "minecraft:entity.slime.squish",

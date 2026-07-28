@@ -24,6 +24,7 @@ use hyperion_minecraft_proto::{
     },
     packets::play::{
         clientbound::OpenBook,
+        entity::Interact,
         serverbound::{self as c2s, client_command, player_action, player_command},
     },
     types::{Direction, HumanoidArm, InteractionHand},
@@ -137,6 +138,7 @@ pub fn route(id: i32) -> Route {
         PacketId::ClientCommand => Route::Act(client_command),
         PacketId::ClientInformation => Route::Act(client_information),
         PacketId::CommandSuggestion => Route::Act(command_suggestion),
+        PacketId::Interact => Route::Act(interact),
         PacketId::ContainerClose => Route::Act(container_close),
         PacketId::MovePlayerPos => Route::Act(move_player_pos),
         PacketId::MovePlayerPosRot => Route::Act(move_player_pos_rot),
@@ -248,6 +250,27 @@ fn attack(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> 
             origin: query.id,
             target: Entity::from_minecraft_id(packet.entity_id),
             damage: 1.0,
+        },
+        query.world,
+    );
+
+    Ok(())
+}
+
+/// A right-click on an entity.
+///
+/// The mirror of [`attack`], which 26.2 split out of this packet. Nothing here
+/// decides what the click means: the position on the entity and the sneak flag
+/// are dropped because no caller has wanted them, and the game is left to
+/// resolve the target however it likes.
+fn interact(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let packet: Interact = decode_body(body)?;
+
+    query.events.push(
+        event::EntityInteract {
+            target: Entity::from_minecraft_id(packet.entity_id),
+            from: query.id,
+            hand: hand(packet.hand),
         },
         query.world,
     );
@@ -579,6 +602,23 @@ fn use_item_on(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result
 
     let hit = packet.block_hit;
     let interacted = IVec3::new(hit.block_pos.x, hit.block_pos.y, hit.block_pos.z);
+
+    // Raised for the click itself, ahead of the two branches below that ask
+    // what the click should *change*. A game whose blocks are interactive --
+    // a kit selector, a shop, a button -- needs the position of the block that
+    // was clicked and nothing else, and neither `ToggleDoor` nor `PlaceBlock`
+    // will fire for it: the first wants an openable block and the second wants
+    // a placeable item in hand, so an empty-handed click on a quartz plinth
+    // used to reach the world as nothing at all.
+    query.events.push(
+        event::BlockInteract {
+            position: interacted,
+            from: query.id,
+            hand: hand(packet.hand),
+            sequence: packet.sequence,
+        },
+        query.world,
+    );
 
     let Some(interacted_block) = query.blocks.get_block(interacted) else {
         return Ok(());

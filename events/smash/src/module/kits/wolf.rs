@@ -59,6 +59,7 @@ impl Module for Wolf {
         })
         .cost(4000)
         .blurb("Stick to somebody and every hit lands harder than the last.")
+        .mob("minecraft:wolf")
         .ability(AbilitySpec {
             name: "Cub Tackle",
             sound: "minecraft:entity.baby_wolf.ambient",

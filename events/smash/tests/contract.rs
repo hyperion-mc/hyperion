@@ -24,13 +24,13 @@ mod harness;
 use std::sync::Arc;
 
 use flecs_ecs::prelude::*;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 use smash::{
     module::{
         ability::AbilityModule,
         arena::{Arena, ArenaModule},
         damage::{Armor, DamageKind, DamageModule, Damaged, hurt},
-        kit::KitModule,
+        kit::{self, KitModule, KitStats},
         kits::StockKits,
         knockback::{Knockback, KnockbackModel, KnockbackModule, KnockbackTaken, Smashed},
         lives::{DeathCause, Lives, LivesModule, kill},
@@ -38,6 +38,7 @@ use smash::{
         player::{self, Health, OnGround, Player, PlayerModule, Position},
         projectile::ProjectileModule,
         scoreboard::ScoreboardModule,
+        selector::{self, SelectorModule, TAKEN_BLOCK},
         sound::{self, Levels, PlaysOnCast, PlaysOnHurt, SoundModule},
     },
     server::{PlayerId, ServerHandle, mock::MockServer},
@@ -313,6 +314,53 @@ fn contracts() -> Vec<Contract> {
             runtime_requires: &[],
             exercise: |world, _player| {
                 world.progress_time(0.05);
+            },
+        },
+        Contract {
+            name: "Selector",
+            import: |world| {
+                world.import::<SelectorModule>();
+            },
+            // Only `Player`, and only because every world this file builds puts
+            // a player in it. The module itself registers three components of
+            // its own, declares no system and names nothing else at
+            // registration, so it would import into a bare world.
+            requires: &["Player"],
+            // Everything a selection touches, which is only reached when
+            // somebody clicks: the kit registry it builds the ring from, and
+            // the lobby whose phase and rules decide whether the click lands.
+            runtime_requires: &[
+                "Player",
+                "Knockback",
+                "Damage",
+                "Ability",
+                "Kit",
+                "Arena",
+                "Lives",
+                "Lobby",
+            ],
+            exercise: |world, player| {
+                // A kit defined here rather than imported, because `StockKits`
+                // comes after this module and the point is that the ring is
+                // built from whatever the registry holds.
+                kit::define(world, "Contract", KitStats::default())
+                    .mob("minecraft:creeper")
+                    .register();
+                selector::build(world, IVec3::ZERO);
+
+                let (_, plinth, _) = selector::podiums(world)
+                    .into_iter()
+                    .next()
+                    .expect("one kit, one podium");
+                assert!(
+                    selector::click(world, player, plinth.stand()),
+                    "the podium did not answer a click"
+                );
+                assert_eq!(
+                    selector::plinths(world).first().map(|(_, block)| *block),
+                    Some(TAKEN_BLOCK),
+                    "the podium did not turn"
+                );
             },
         },
         Contract {

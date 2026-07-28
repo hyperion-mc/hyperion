@@ -45,6 +45,7 @@ impl Module for IronGolem {
             death: "minecraft:entity.iron_golem.death",
         })
         .blurb("Command space in the arena. Pull enemies in, then hit like a truck.")
+        .mob("minecraft:iron_golem")
         .ability(AbilitySpec {
             name: "Fissure",
             sound: "minecraft:block.deepslate.break",
