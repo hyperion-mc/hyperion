@@ -319,9 +319,6 @@ let
   blockStateCodegen = pkgs.writers.writePython3Bin "generate-minecraft-block-states" pythonWriterOptions
     (builtins.readFile ./generate-block-states.py);
 
-  entityTypeCodegen = pkgs.writers.writePython3Bin "generate-minecraft-entity-types" pythonWriterOptions
-    (builtins.readFile ./generate-entity-types.py);
-
   coverageChecker = pkgs.writers.writePython3Bin "check-minecraft-proto-coverage" pythonWriterOptions
     (builtins.readFile ./check-proto-coverage.py);
 
@@ -380,23 +377,6 @@ let
         --protocol ${toString pin.protocolVersion} \
         --out $out/block_state.rs
       rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/block_state.rs
-    '';
-
-  # Entity type ids come out of protocol.json's registries rather than out of a
-  # second read of the jar, so this table and generated/registry.rs cannot
-  # disagree about what `minecraft:entity_type` holds. A single file, so the
-  # staleness check below is a plain diff.
-  generatedEntityTypes = pkgs.runCommand "hyperion-minecraft-entity-types-${pin.id}"
-    {
-      nativeBuildInputs = [ entityTypeCodegen rustfmt ];
-      meta.description = "Generated Rust entity type table for Minecraft ${pin.id}";
-    }
-    ''
-      mkdir -p $out
-      generate-minecraft-entity-types \
-        --protocol ${protocolJson}/protocol.json \
-        --out $out/entity_type.rs
-      rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/entity_type.rs
     '';
 
   protocolJson = pkgs.runCommand "minecraft-protocol-${pin.id}.json"
@@ -583,17 +563,6 @@ let
     '';
   };
 
-  syncEntityTypesScript = pkgs.writeShellApplication {
-    name = "sync-minecraft-entity-types";
-    runtimeInputs = [ pkgs.coreutils pkgs.git ];
-    text = ''
-      root=$(git rev-parse --show-toplevel)
-      dest="$root/crates/hyperion-minecraft-proto/src/entity_type.rs"
-      install -m 644 ${generatedEntityTypes}/entity_type.rs "$dest"
-      echo "synced $dest" >&2
-    '';
-  };
-
   # The fixtures are committed so `cargo test` runs without nix. That only
   # stays honest if something notices when the jar stops producing them.
   fixturesUpToDate = pkgs.runCommand "check-minecraft-encoder-fixtures"
@@ -702,19 +671,6 @@ let
       fi
     '';
 
-  entityTypesUpToDate = pkgs.runCommand "check-minecraft-entity-types"
-    { }
-    ''
-      committed=${../crates/hyperion-minecraft-proto/src/entity_type.rs}
-      if diff -u "$committed" ${generatedEntityTypes}/entity_type.rs > diff.txt 2>&1; then
-        touch $out
-      else
-        echo "committed entity type table is stale; run: nix run .#sync-minecraft-entity-types" >&2
-        head -n 200 diff.txt >&2
-        exit 1
-      fi
-    '';
-
   # The coverage gap, held against a committed baseline.
   #
   # `complete: false` in protocol.json means a packet has to be hand-written or
@@ -770,19 +726,16 @@ in
     generatedRegistryData
     generatedTagData
     generatedBlockStates
-    generatedEntityTypes
     extractor
     codegen
     registryCodegen
     tagDataCodegen
     blockStateCodegen
-    entityTypeCodegen
     updateScript
     syncScript
     syncRegistryDataScript
     syncTagDataScript
     syncBlockStatesScript
-    syncEntityTypesScript
     coverageChecker
     coverageRatchet
     generatedUpToDate
@@ -790,7 +743,6 @@ in
     tagDataUpToDate
     tagsLoadForClient
     blockStatesUpToDate
-    entityTypesUpToDate
     fixturesUpToDate
     protocolJsonUpToDate
     ;

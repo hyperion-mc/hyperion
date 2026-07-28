@@ -989,7 +989,6 @@
             minecraft-tag-data = minecraft.tagDataUpToDate;
             minecraft-tags-load = minecraft.tagsLoadForClient;
             minecraft-block-states = minecraft.blockStatesUpToDate;
-            minecraft-entity-types = minecraft.entityTypesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
             minecraft-protocol = minecraft.protocolJson;
@@ -1070,7 +1069,6 @@
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
               sync-minecraft-tag-data = minecraft.syncTagDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;
-              sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
               # Re-records the golden traces `crates/hyperion/tests/differential.rs`
               # compares against. See docs/differential-testing.md.
               record-differential-traces = differential.syncScript;
@@ -1100,7 +1098,6 @@
             differential-recorder = differential.recorder;
             differential-traces = differential.recordedTraces;
             minecraft-block-states-rust = minecraft.generatedBlockStates;
-            minecraft-entity-types-rust = minecraft.generatedEntityTypes;
           };
 
           # What CI enforces of this set is nix/ci/flake-gate.nix.
