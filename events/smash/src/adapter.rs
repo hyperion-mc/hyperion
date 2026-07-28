@@ -54,7 +54,7 @@ use crate::{
     module::kit::{self, Playing},
     server::{
         BarColour, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server,
-        SidebarLine, Sound, SoundCategory, Text, Title,
+        SidebarLine, Sound, SoundCategory, Status, Text, Title,
     },
 };
 
@@ -75,6 +75,10 @@ enum Op {
         player: Entity,
         health: f32,
         max: f32,
+    },
+    Status {
+        player: Entity,
+        status: Status,
     },
     SetHotbar {
         player: Entity,
@@ -173,6 +177,13 @@ impl Server for HyperionServer {
             player: entity_of(player),
             health,
             max,
+        });
+    }
+
+    fn status(&self, player: PlayerId, status: Status) {
+        self.push(Op::Status {
+            player: entity_of(player),
+            status,
         });
     }
 
@@ -380,6 +391,16 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
             };
             let _unused =
                 protocol::send(compose, connection, PacketId::SetHealth.to_raw(), &packet);
+        }
+        Op::Status { player, status } => {
+            let entity = world.entity_from_id(player);
+            if !entity.is_alive() {
+                return;
+            }
+            // `Status::apply` broadcasts locally around the victim with nobody
+            // excluded, so the victim's own client -- the one that owns the
+            // movement prediction a slow has to change -- is in the broadcast.
+            status.apply(entity);
         }
         Op::SetHotbar { player, items } => {
             let entity = world.entity_from_id(player);

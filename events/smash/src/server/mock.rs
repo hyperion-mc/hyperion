@@ -11,7 +11,7 @@ use glam::Vec3;
 
 use super::{
     BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server, SidebarLine, Sound,
-    Text, Title,
+    Status, Text, Title,
 };
 
 /// One thing the game asked the server to do.
@@ -20,6 +20,8 @@ pub enum Call {
     AddVelocity(PlayerId, Vec3),
     Teleport(PlayerId, Vec3),
     SetHealth(PlayerId, f32, f32),
+    /// A potion effect applied to a player.
+    Status(PlayerId, Status),
     SetHotbar(PlayerId, Vec<HotbarItem>),
     Message(PlayerId, Channel, Text),
     Broadcast(Channel, Text),
@@ -74,6 +76,18 @@ impl MockServer {
                 _ => None,
             })
             .sum()
+    }
+
+    /// Every status effect applied to `player`, oldest first.
+    #[must_use]
+    pub fn statuses_of(&self, player: PlayerId) -> Vec<Status> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Status(id, status) if *id == player => Some(*status),
+                _ => None,
+            })
+            .collect()
     }
 
     /// What was said to `player`, as the words without the styling.
@@ -197,6 +211,10 @@ impl Server for MockServer {
 
     fn set_health(&self, player: PlayerId, health: f32, max: f32) {
         self.push(Call::SetHealth(player, health, max));
+    }
+
+    fn status(&self, player: PlayerId, status: Status) {
+        self.push(Call::Status(player, status));
     }
 
     fn set_hotbar(&self, player: PlayerId, items: &[HotbarItem]) {

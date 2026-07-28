@@ -10,7 +10,8 @@
 //! disagreement is recorded in docs/smash-design.md.
 
 use flecs_ecs::prelude::*;
-use hyperion::simulation::entity_kind::EntityKind;
+use hyperion::{effects::Status, simulation::entity_kind::EntityKind};
+use hyperion_minecraft_proto::generated::registry::MobEffect;
 
 use crate::{
     flecs_ext::EntityViewExt,
@@ -22,6 +23,7 @@ use crate::{
         player::Player,
         projectile::{Flight, Impact, Payload, Visual, fire},
     },
+    server::{PlayerId, ServerHandle},
 };
 
 /// Damage added per landed melee hit, and the ceiling it climbs to.
@@ -37,6 +39,21 @@ pub struct Tackled(pub f32);
 
 /// Seconds of near-immobility a cub leaves behind.
 pub const TACKLE_SLOW_SECS: f32 = 5.0;
+
+/// The Slowness amplifier Cub Tackle applies. Zero-based on the wire, the way
+/// the game counts it, so `5` is Slowness VI -- the level at which a player can
+/// no longer move, which is what the tooltip's "can barely move" means. See
+/// [`hyperion::effects::Status`].
+pub const TACKLE_SLOW_AMPLIFIER: u8 = 5;
+
+/// The immobilising slow a cub leaves on whoever it lands on.
+///
+/// Exposed so a wire test can assert the exact effect the ability sends rather
+/// than a re-derivation of it, the way `hyperion`'s own `play_mob_effect`
+/// differential pins the bytes against Mojang's encoder.
+pub fn tackle_slow() -> Status {
+    Status::new(MobEffect::Slowness, TACKLE_SLOW_AMPLIFIER).seconds(TACKLE_SLOW_SECS)
+}
 
 #[derive(Component)]
 pub struct Wolf;
@@ -170,7 +187,18 @@ fn tackle(impact: &Impact<'_>) {
     let now = impact
         .world
         .get::<&crate::module::damage::MatchClock>(|clock| clock.0);
+    // The marker Wolf Strike reads to know its combo target is still slowed.
     impact.victim.set(Tackled(now + TACKLE_SLOW_SECS));
+
+    // And the real slow, alongside the marker rather than instead of it: a
+    // `Slowness VI` the client applies to its own movement prediction, so the
+    // victim actually can barely move rather than only appearing to a bystander.
+    let Some(player) = impact.victim.try_get::<&PlayerId>(|id| *id) else {
+        return;
+    };
+    impact
+        .world
+        .get::<&ServerHandle>(|server| server.status(player, tackle_slow()));
 }
 
 /// The wiki: base knockback dealt 200%, rising to 300% against a target still
