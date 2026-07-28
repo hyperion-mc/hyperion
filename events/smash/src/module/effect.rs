@@ -449,6 +449,13 @@ fn disarm_shield(world: WorldRef<'_>, victim: Entity, excluding: Entity) {
 /// "which effects point at this player" with a different filter, and three
 /// copies of a relationship traversal is three places to get the direction of
 /// the edge wrong.
+///
+/// The `(Upon, victim)` term names the concrete victim, so flecs hands back the
+/// effects on that one player rather than making us scan every effect in the
+/// world and discard the ones pointing elsewhere. `Upon` is `DontFragment`, so
+/// there is no archetype per victim to fragment -- the sparse relation is
+/// queried by its target directly, which is the indexed lookup a `ChildOf`
+/// tree would also have bought without the per-victim fragmentation it costs.
 fn matching(
     world: WorldRef<'_>,
     victim: Entity,
@@ -457,10 +464,10 @@ fn matching(
     let mut found = Vec::new();
     world
         .query::<()>()
-        .with(Effect::id())
+        .with((Upon, victim))
         .build()
         .each_entity(|effect, ()| {
-            if effect.target(Upon, 0).map(|target| target.id()) == Some(victim) && keep(effect) {
+            if keep(effect) {
                 found.push(effect.id());
             }
         });
