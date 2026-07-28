@@ -13,7 +13,7 @@ use glam::Vec3;
 use crate::{
     flecs_ext::EntityViewExt,
     module::{
-        ability::{Cast, Cooldown, Grants, Named},
+        ability::{Cast, Cooldown, Grants, Named, Observable},
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -53,6 +53,7 @@ impl Module for Chicken {
             // of 2 seconds."
             cooldown: 2.0,
             charge_time: Some(0.8),
+            proves: &[Observable::HurtsTarget],
             activate: egg_blaster,
             ..AbilitySpec::DEFAULT
         })
@@ -62,6 +63,8 @@ impl Module for Chicken {
             slot: 2,
             description: "A chick that explodes. Recharges the instant it hits something.",
             cooldown: 8.0,
+            refunds_on_hit: true,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: chicken_missile,
             ..AbilitySpec::DEFAULT
         })
@@ -71,6 +74,7 @@ impl Module for Chicken {
             slot: 8,
             description: "Unlimited flight and eggs, for twenty seconds.",
             cooldown: 1.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesCaster],
             activate: aerial_gunner,
             ..AbilitySpec::DEFAULT
         })

@@ -13,7 +13,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Payload, fire},
     },
@@ -46,6 +46,7 @@ impl Module for Cow {
             description: "Five cows in a line. Each one can hit you.",
             // `[VERIFIED]` "(Cooldown: 13 seconds)".
             cooldown: 13.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: angry_herd,
             ..AbilitySpec::DEFAULT
         })
@@ -56,6 +57,11 @@ impl Module for Cow {
             description: "A helix of milk that carries you with it. Hits at most two people.",
             // `[VERIFIED]` "(Cooldown: 11 seconds)".
             cooldown: 11.0,
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: milk_spiral,
             ..AbilitySpec::DEFAULT
         })
@@ -65,6 +71,7 @@ impl Module for Cow {
             slot: 8,
             description: "Become a mooshroom: more damage, five more hearts, faster abilities.",
             cooldown: 20.0,
+            proves: &[Observable::HealsCaster],
             activate: mooshroom_madness,
             ..AbilitySpec::DEFAULT
         })
@@ -110,18 +117,34 @@ fn milk_spiral(cast: &Cast<'_>) {
     cast.server.cue(cast.position.0, Cue::Charge);
 }
 
+/// `[VERIFIED]` "5 more hearts".
+pub const MOOSHROOM_BONUS_HEALTH: f32 = 10.0;
+
 /// `[VERIFIED]` "+1 Damage ... 5 more hearts"; the transformation itself needs
 /// the host's entity type machinery, so what lands is the heal.
 fn mooshroom_madness(cast: &Cast<'_>) {
-    use crate::module::player::Health;
+    use crate::{
+        flecs_ext::EntityViewExt,
+        module::{
+            kit::{KitStats, Playing},
+            player::Health,
+        },
+    };
 
-    cast.caster.get::<&mut Health>(|health| {
-        health.max += 10.0;
-        health.current = health.max;
-    });
-    let (current, max) = cast
+    // Set against the kit's own maximum rather than added to whatever the
+    // player currently has. Adding compounds: the crystal can be picked up more
+    // than once in a match, and two Mooshroom Madnesses used to leave a Cow on
+    // forty hearts and a third on fifty.
+    let base = cast
         .caster
-        .try_get::<&Health>(|h| (h.current, h.max))
-        .unwrap_or((20.0, 20.0));
+        .find_target(Playing, |_| true)
+        .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.max_health))
+        .unwrap_or(20.0);
+
+    let (current, max) = cast.caster.get::<&mut Health>(|health| {
+        health.max = base + MOOSHROOM_BONUS_HEALTH;
+        health.current = health.max;
+        (health.current, health.max)
+    });
     cast.server.set_health(cast.player, current, max);
 }

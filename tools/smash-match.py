@@ -15,13 +15,27 @@ there is one place where "how do you get into this server" is written down.
 What this file adds is the play state: the serverbound ids a player uses, the
 clientbound ids a match is visible through, and the schedule.
 
+It also drives every ability in the game, and it does not know what those are.
+The server answers `/abilities` with its own registry -- one JSON object per
+ability, built by walking the ability entities themselves -- and this file fires
+each one and holds it to the effects that entry declares. Nothing here lists a
+kit or an ability, so a kit added tomorrow is a kit this gate tests tomorrow,
+and one whose ability does nothing fails here rather than passing quietly.
+
+The sweep runs in the hub with one client short of `min_players`, which is what
+keeps the lobby in `Waiting` for as long as it takes: there is no countdown to
+race, no kill plane under the lobby, and kits can still be changed. The last
+client joins when the sweep is done and the match runs after it.
+
 What this proves and what it does not
 -------------------------------------
 It proves the server's own state machine, on the wire, at 776 ids: the lobby
 count, the countdown, the scatter onto a committed map's spawn points, the kit
 hotbar arriving as real item stacks, knockback matching the model in
 `events/smash/src/module/knockback.rs`, the life counter, the respawn, and the
-return to the hub.
+return to the hub. It proves each declared ability by its effect -- health
+lost, a velocity packet, a teleport, a heal, a melee swing that got stronger --
+and never by the fact that a right-click was sent.
 
 It does not prove the game is playable by a human. These clients do not render,
 do not simulate physics and never disagree with the server. They teleport
@@ -36,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import math
 import pathlib
 import re
@@ -79,9 +94,15 @@ C2S_CHAT_COMMAND = 0x07
 C2S_KEEP_ALIVE = 0x1C
 C2S_MOVE_PLAYER_POS = 0x1E
 C2S_MOVE_PLAYER_POS_ROT = 0x1F
+C2S_PLAYER_ACTION = 0x29
 C2S_SET_CARRIED_ITEM = 0x35
 C2S_SWING = 0x3F
 C2S_USE_ITEM = 0x43
+
+# `ServerboundPlayerActionPacket$Action#RELEASE_USE_ITEM`. Letting go of a held
+# item is a player action and not its own packet, which is why a client that
+# only ever sends `use_item` can start a charge and never finish one.
+ACTION_RELEASE_USE_ITEM = 5
 
 # Clientbound play ids this file decodes. Everything else is counted by id and
 # reported in the census.
@@ -90,6 +111,7 @@ S2C_DISCONNECT = 0x20
 S2C_KEEP_ALIVE = 0x2C
 S2C_LOGIN = 0x31
 S2C_PLAYER_POSITION = 0x48
+S2C_SET_ACTION_BAR_TEXT = 0x57
 S2C_SET_ENTITY_MOTION = 0x65
 S2C_SET_HEALTH = 0x68
 S2C_SET_TITLE_TEXT = 0x72
@@ -201,6 +223,71 @@ MAIN_ISLAND_RADIUS = 16.0
 # air after it.
 RIM_HOP = 6.0
 
+# events/smash/src/command.rs. The markers `/abilities` puts on each line, so a
+# reader can tell the registry apart from the rest of the chat channel.
+MANIFEST_PREFIX = "smash-ability "
+MANIFEST_END_PREFIX = "smash-abilities-end "
+
+# events/smash/src/module/ability.rs: the refusal an ability on cooldown sends to
+# the action bar. Restated here so the check below is a check.
+COOLDOWN_REFUSAL = "That ability is recharging."
+
+# Where the sweep stands everyone, in events/smash/maps/hub.map's coordinates.
+#
+# A clear line at x = 6: outside the raised centre (a disc of radius 4 at y 65,
+# which a player standing at the origin is inside rather than on), inside the
+# glass rim at radius 19, and clear of all twelve pillars, none of which is at
+# that x. The attacker looks along +Z, which is yaw 0.
+SWEEP_X = 6.0
+SWEEP_Y = 65.0
+SWEEP_Z = -11.0
+SWEEP_YAW = 0.0
+
+# How far in front of the attacker the two victims stand.
+#
+# Neither is a whole number, and neither is a distance an ability centres its
+# blast on. Knockback is horizontal and points away from the blast, so a victim
+# standing exactly on a splash centre has no direction to be launched in and does
+# not move: a round number would make several abilities look like they deal no
+# knockback when it is the arrangement that has no answer.
+NEAR_VICTIM = 3.5
+FAR_VICTIM = 8.5
+
+# How far the whole arrangement shifts along the aim axis between attempts.
+#
+# The three of them move together, so every distance and bearing an ability cares
+# about is identical and only the absolute position differs. Wither Image needs
+# exactly that: it drops a decoy on one press and swaps you to it on the next,
+# and a swap back to the spot you never left is not a teleport anybody can see.
+ATTEMPT_STRIDE = 4.0
+
+# `PlayerInventory::HOTBAR_START_SLOT`: where the nine hotbar slots begin in the
+# inventory numbering `ClientboundContainerSetSlot` uses.
+HOTBAR_START_SLOT = 36
+
+# The height the sweep travels at between marks.
+#
+# Above everything the hub puts down -- the pillars stop at 68 and their lanterns
+# at 69 -- so a route that goes up, across and down never ends a step inside a
+# block, which is the one move hyperion refuses outright. Going in a straight
+# line at head height does not work: half the hub's spawn ring is on the far side
+# of the raised centre.
+#
+# The route is walked at `STEP_BLOCKS` a step and not claimed in one packet:
+# hyperion teleports a player back when a tick's movement exceeds about ten
+# blocks against one movement packet, which is `sync_entity_state`'s speed check
+# rather than the collision one, so it reports nothing at all and simply undoes
+# the move.
+HUB_CLEAR_Y = 72.0
+
+# How many presses an ability gets before it has to have done what it declared.
+SWEEP_ATTEMPTS = 3
+
+# Seconds to wait for an ability's effects after the press. Two hundred server
+# ticks, which is far longer than the slowest projectile in the game takes to
+# cross the far victim.
+SWEEP_WINDOW = 2.0
+
 ITEM_REGISTRY = ROOT / "crates/hyperion-minecraft-proto/src/generated/registry.rs"
 
 
@@ -222,6 +309,10 @@ def stamp(started):
     return "%7.2fs" % (time.time() - started)
 
 
+def distance(one, other):
+    return math.sqrt(sum((a - b) ** 2 for a, b in zip(one, other)))
+
+
 class MatchClient(base.Client):
     """One scripted player.
 
@@ -240,9 +331,18 @@ class MatchClient(base.Client):
         self.position = (0.0, 65.0, 0.0)
         self.path = []
         self.on_ground = True
+        # A scripted client that never sends a rotation looks along +Z forever,
+        # which is what every ability that fires "where you look" would have
+        # read. Carrying yaw and pitch and sending pos-rot rather than pos is
+        # what lets the sweep aim.
+        self.yaw = 0.0
+        self.pitch = 0.0
         self.health = None
+        self.kit = None
         self.hotbar = {}
         self.seen = {}
+        self.action_bar = []
+        self.teleported_to = []
         self.last_position_sent = 0.0
         self.alive = True
 
@@ -340,11 +440,33 @@ class MatchClient(base.Client):
                 scale = STEP_BLOCKS / distance
                 self.position = (x + dx * scale, y + dy * scale, z + dz * scale)
 
+        self.send_position()
+
+    def send_position(self):
         x, y, z = self.position
         self.send(
-            C2S_MOVE_PLAYER_POS,
-            struct.pack(">dddb", x, y, z, ON_GROUND if self.on_ground else 0),
+            C2S_MOVE_PLAYER_POS_ROT,
+            struct.pack(
+                ">dddffb",
+                x,
+                y,
+                z,
+                self.yaw,
+                self.pitch,
+                ON_GROUND if self.on_ground else 0,
+            ),
         )
+
+    def aim(self, yaw, pitch=0.0):
+        self.yaw = yaw
+        self.pitch = pitch
+
+    def look_at(self, other):
+        """Face `other`, in Minecraft's yaw, which is clockwise from +Z."""
+        dx = other.position[0] - self.position[0]
+        dz = other.position[2] - self.position[2]
+        self.aim(math.degrees(math.atan2(-dx, dz)))
+        self.send_position()
 
     def attack(self, target):
         self.log("-> attack %s (entity %d)" % (target.name, target.entity_id))
@@ -359,6 +481,21 @@ class MatchClient(base.Client):
         self.send(C2S_USE_ITEM, var_int(0) + var_int(0) + struct.pack(">ff", 0.0, 0.0))
         self.send(C2S_SWING, var_int(0))
 
+    def release_slot(self, slot, note=""):
+        """Let go of a held item, which is how a charge ability fires.
+
+        `ServerboundPlayerActionPacket` with `RELEASE_USE_ITEM`: the block
+        position and face are what a dig would have filled in and are ignored for
+        this action.
+        """
+        self.log("-> release hotbar slot %d %s" % (slot, note))
+        self.send(
+            C2S_PLAYER_ACTION,
+            var_int(ACTION_RELEASE_USE_ITEM)
+            + struct.pack(">qb", 0, 0)
+            + var_int(0),
+        )
+
 
 class Match:
     """The run: four clients, one transcript, and what it proved."""
@@ -371,7 +508,12 @@ class Match:
         self.by_entity = {}
         # Every claim the report at the end makes, in the order a match makes
         # them. A step is proved by a packet, never by a timer expiring.
-        self.proof = {
+        self.proof = {}
+        if args.abilities:
+            self.proof["the server published its ability registry"] = None
+            self.proof["every declared ability did what it declared"] = None
+            self.proof["cooldowns refused a second use"] = None
+        self.proof.update({
             "four in play": None,
             "lobby started a match": None,
             "kits equipped": None,
@@ -379,7 +521,20 @@ class Match:
             "knockback from an ability": None,
             "life lost and respawned": None,
             "match ended, back in the hub": None,
-        }
+        })
+        # The registry, as the server describes it. Nothing in this file adds to
+        # it or filters it.
+        self.manifest = []
+        self.manifest_expected = None
+        # What the sweep found, one line per ability, for the report.
+        self.sweep_results = []
+        self.sweep_failures = []
+        self.cooldown_results = []
+        self.cooldown_failures = []
+        # Velocity packets seen this window, keyed by entity id. Collected from
+        # every client rather than one, because a player is not always in their
+        # own broadcast channel and the caster's own launch has to be visible.
+        self.window_motions = {}
         self.motions = []
         self.deaths = []
         self.respawns = []
@@ -400,9 +555,9 @@ class Match:
 
     # --- setup ---------------------------------------------------------
 
-    def connect(self):
-        for index in range(self.args.clients):
-            name = "P%d" % (index + 1)
+    def connect(self, count):
+        for _ in range(count):
+            name = "P%d" % (len(self.clients) + 1)
             client = MatchClient(self.args.host, self.args.port, name, self.started)
             client.handshake(self.args.host, self.args.port, 2)
             client.login()
@@ -410,6 +565,26 @@ class Match:
             client.enter_play()
             self.clients.append(client)
             client.log("configuration acknowledged")
+
+    def pump_all(self):
+        for client in self.clients:
+            if client.alive:
+                self.pump(client)
+                if client.joined:
+                    client.repeat_position()
+
+    def wait_until(self, predicate, seconds):
+        """Pump every socket until `predicate` holds. Returns whether it did."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            self.pump_all()
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return False
+
+    def wait(self, seconds):
+        self.wait_until(lambda: False, seconds)
 
     # --- reading -------------------------------------------------------
 
@@ -440,6 +615,7 @@ class Match:
             x, y, z = struct.unpack(">ddd", payload[offset : offset + 24])
             client.position = (x, y, z)
             client.send(C2S_ACCEPT_TELEPORTATION, var_int(teleport_id))
+            client.teleported_to.append((x, y, z))
             client.log("<- teleported to (%.1f, %.1f, %.1f)" % (x, y, z))
             self.on_teleport(client, x, y, z)
         elif packet_id == S2C_KEEP_ALIVE:
@@ -457,9 +633,16 @@ class Match:
         elif packet_id == S2C_SET_TITLE_TEXT:
             text, _ = take_nbt_string(payload, 0)
             client.log("<- title: %s" % text)
+        elif packet_id == S2C_SET_ACTION_BAR_TEXT:
+            text, _ = take_nbt_string(payload, 0)
+            client.action_bar.append(text)
+            client.log("<- action bar: %s" % text)
         elif packet_id == S2C_SET_ENTITY_MOTION:
             entity, offset = take_var_int(payload)
             motion, _ = take_lp_vec3(payload, offset)
+            speed = math.sqrt(sum(component * component for component in motion))
+            if speed > 1e-4:
+                self.window_motions[entity] = motion
             self.on_motion(client, entity, motion)
         elif packet_id == S2C_CONTAINER_SET_SLOT:
             self.on_slot(client, payload)
@@ -473,6 +656,13 @@ class Match:
         _state, offset = take_var_int(payload, offset)
         (slot,) = struct.unpack(">h", payload[offset : offset + 2])
         offset += 2
+        # `ClientboundContainerSetSlot` numbers the whole inventory, and the
+        # hotbar starts at 36. Everything else in this file talks about the nine
+        # slots a player sees, which is also what the ability registry means by
+        # a slot.
+        slot -= HOTBAR_START_SLOT
+        if not 0 <= slot < 9:
+            return
         count, offset = take_var_int(payload, offset)
         if count <= 0:
             client.hotbar.pop(slot, None)
@@ -502,6 +692,18 @@ class Match:
             )
 
     def on_chat(self, client, text):
+        # Both of these are unicast to whoever asked, so they arrive before the
+        # narrator check below and would otherwise be discarded.
+        if text.startswith("Kit set to "):
+            client.kit = text[len("Kit set to ") :].rstrip(".")
+            return
+        if text.startswith(MANIFEST_PREFIX):
+            self.manifest.append(json.loads(text[len(MANIFEST_PREFIX) :]))
+            return
+        if text.startswith(MANIFEST_END_PREFIX):
+            self.manifest_expected = int(text[len(MANIFEST_END_PREFIX) :])
+            return
+
         # Every announcement is a broadcast, so one client narrates the match
         # and the rest are only proof it reached them too.
         if client is not self.clients[0]:
@@ -585,21 +787,352 @@ class Match:
         )
         self.motions.append((entity, motion))
 
+    # --- the ability sweep ---------------------------------------------
+
+    def fetch_manifest(self):
+        """Ask the server what every kit can do, and believe only the answer."""
+        self.clients[0].command("abilities")
+        done = lambda: (
+            self.manifest_expected is not None
+            and len(self.manifest) >= self.manifest_expected
+        )
+        if not self.wait_until(done, 30.0):
+            self.sweep_failures.append(
+                "the server answered /abilities with %d of %s lines"
+                % (len(self.manifest), self.manifest_expected)
+            )
+            return False
+
+        # An ability that declares nothing is one no gate can check, so the
+        # roster is refused rather than swept: this is the property that makes
+        # everything below mandatory instead of optional.
+        silent = [
+            "%s / %s" % (entry["kit"], entry["name"])
+            for entry in self.manifest
+            if not entry["proves"]
+        ]
+        if silent:
+            self.sweep_failures.append(
+                "these abilities declare no observable effect, so nothing can "
+                "test them: %s" % ", ".join(silent)
+            )
+            return False
+
+        kits = sorted({entry["kit"] for entry in self.manifest})
+        self.prove(
+            "the server published its ability registry",
+            "%d abilities across %d kits (%s), every one of them declaring what "
+            "a client would see" % (len(self.manifest), len(kits), ", ".join(kits)),
+        )
+        return True
+
+    def sweep(self):
+        """Fire every ability the registry names and check what it promised."""
+        if not self.fetch_manifest():
+            return
+
+        by_kit = {}
+        for entry in self.manifest:
+            by_kit.setdefault(entry["kit"], []).append(entry)
+
+        for kit, abilities in by_kit.items():
+            self.log("== %s ==" % kit)
+            if not self.select_kit(kit):
+                self.sweep_failures.append("%s: the kit never equipped" % kit)
+                continue
+            # Starting abilities first, then the Smash Crystal's, so the
+            # crystal's twenty-second window is not spent on anything else.
+            for entry in sorted(abilities, key=lambda e: (e["ultimate"], e["slot"])):
+                self.exercise(entry)
+
+        if self.sweep_failures:
+            for line in self.sweep_failures:
+                self.log("ABILITY FAILED %s" % line)
+        else:
+            self.prove(
+                "every declared ability did what it declared",
+                "%d abilities fired by a real client, each one checked against "
+                "the effects its own registry entry names" % len(self.manifest),
+            )
+        if self.cooldown_failures:
+            for line in self.cooldown_failures:
+                self.log("COOLDOWN FAILED %s" % line)
+        elif self.cooldown_results:
+            self.prove(
+                "cooldowns refused a second use",
+                "%d abilities answered a second right-click inside their "
+                "cooldown with %r on the action bar"
+                % (len(self.cooldown_results), COOLDOWN_REFUSAL),
+            )
+
+    def select_kit(self, kit):
+        """Put every client on `kit`, which also restores them to full health."""
+        for client in self.clients:
+            client.kit = None
+            client.command("kit %s" % kit)
+        if not self.wait_until(
+            lambda: all(client.kit == kit for client in self.clients), 15.0
+        ):
+            return False
+        # The hotbar is rebuilt a tick later, in PostUpdate, and an ability
+        # cannot be used before the item backing it exists.
+        wanted = {
+            entry["slot"]
+            for entry in self.manifest
+            if entry["kit"] == kit and not entry["ultimate"]
+        }
+        attacker = self.clients[0]
+        self.wait_until(lambda: wanted <= set(attacker.hotbar), 5.0)
+        return True
+
+    def stage(self, entry, attempt):
+        """Put the three of them on their marks, at full health, the attacker
+        looking down the line at both victims.
+
+        Health first: a victim left on nothing by the last ability is a victim
+        every splash skips, and an ability would then read as doing nothing when
+        it was the arrangement that was spent. Picking the kit again is the
+        game's own way of saying "start of a life", so it is what is used.
+        """
+        for victim in self.clients[1:]:
+            victim.kit = None
+            victim.command("kit %s" % entry["kit"])
+        self.wait_until(
+            lambda: all(victim.kit == entry["kit"] for victim in self.clients[1:]), 5.0
+        )
+
+        base = SWEEP_Z + attempt * ATTEMPT_STRIDE
+        marks = [base, base + NEAR_VICTIM, base + FAR_VICTIM]
+        for client, z in zip(self.clients, marks):
+            client.aim(SWEEP_YAW)
+            self.route_in_hub(client, (SWEEP_X, SWEEP_Y, z))
+        if not self.wait_until(
+            lambda: all(client.arrived() for client in self.clients), 15.0
+        ):
+            self.log("a client never reached its mark; the arrangement may be wrong")
+        # Long enough for hyperion to mirror the last claim onto the components
+        # the abilities read.
+        self.wait(0.2)
+
+    @staticmethod
+    def route_in_hub(client, mark):
+        """Walk `client` to `mark`, over the top of everything in the way."""
+        if distance(client.position, mark) < 0.5:
+            client.path = []
+            return
+        x, y, z = client.position
+        client.walk(
+            [
+                (x, HUB_CLEAR_Y, z),
+                (mark[0], HUB_CLEAR_Y, mark[2]),
+                mark,
+            ]
+        )
+
+    def arm(self, entry):
+        """Pick up a Smash Crystal, if this ability needs one."""
+        if not entry["ultimate"]:
+            return True
+        attacker = self.clients[0]
+        if entry["slot"] in attacker.hotbar:
+            return True
+        attacker.command("crystal")
+        if self.wait_until(lambda: entry["slot"] in attacker.hotbar, 6.0):
+            return True
+        self.sweep_failures.append(
+            "%s / %s: the Smash Crystal never put anything in slot %d"
+            % (entry["kit"], entry["name"], entry["slot"])
+        )
+        return False
+
+    def wound_attacker(self):
+        """Take the attacker off full health.
+
+        `ClientboundSetHealth` is scaled to twenty, so an ability that heals to a
+        raised maximum -- Mooshroom Madness is exactly that -- lands on the same
+        number a full-health player was already showing. Somebody has to hit them
+        first or the heal is invisible on the wire.
+        """
+        attacker, victim = self.clients[0], self.clients[1]
+        before = attacker.health
+        victim.attack(attacker)
+        self.wait_until(
+            lambda: attacker.health is not None
+            and (before is None or attacker.health < before - 0.05),
+            2.0,
+        )
+
+    def measure_melee(self):
+        """What one melee swing at the near victim takes off, right now."""
+        attacker, victim = self.clients[0], self.clients[1]
+        before = victim.health
+        attacker.attack(victim)
+        self.wait_until(
+            lambda: victim.health is not None
+            and before is not None
+            and victim.health < before - 0.05,
+            2.0,
+        )
+        if before is None or victim.health is None:
+            return 0.0
+        return before - victim.health
+
+    def baseline(self, entry):
+        # The melee probe is taken before the health snapshot, or the swing it
+        # makes reads as the ability having hurt somebody.
+        melee = self.measure_melee() if "buffs_melee" in entry["proves"] else 0.0
+        self.window_motions.clear()
+        for client in self.clients:
+            client.action_bar.clear()
+            client.teleported_to.clear()
+        return {
+            "melee": melee,
+            "health": {client.name: client.health for client in self.clients},
+            "position": {client.name: client.position for client in self.clients},
+        }
+
+    def press(self, entry):
+        attacker = self.clients[0]
+        attacker.use_slot(entry["slot"], "(%s)" % entry["name"])
+        if entry["charge_time"] is not None:
+            self.wait(entry["charge_time"] + 0.2)
+            attacker.release_slot(entry["slot"], "(%s, fully charged)" % entry["name"])
+
+    def observe(self, entry, before):
+        """Everything from `entry`'s declaration that actually reached a client."""
+        attacker = self.clients[0]
+        victims = self.clients[1:]
+        found = {}
+
+        def look():
+            for victim in victims:
+                was = before["health"].get(victim.name)
+                if was is not None and victim.health is not None and victim.health < was - 0.05:
+                    found.setdefault(
+                        "hurts_target",
+                        "%s went from %.2f to %.2f health" % (victim.name, was, victim.health),
+                    )
+                motion = self.window_motions.get(victim.entity_id)
+                if motion:
+                    found.setdefault(
+                        "launches_target",
+                        "%s took (%.3f, %.3f, %.3f) blocks/tick" % ((victim.name,) + motion),
+                    )
+            motion = self.window_motions.get(attacker.entity_id)
+            if motion:
+                found.setdefault(
+                    "launches_caster",
+                    "the caster took (%.3f, %.3f, %.3f) blocks/tick" % motion,
+                )
+            for at in attacker.teleported_to:
+                moved = distance(at, before["position"][attacker.name])
+                if moved > 1.0:
+                    found.setdefault(
+                        "teleports_caster",
+                        "the caster was moved %.1f blocks, to (%.1f, %.1f, %.1f)"
+                        % ((moved,) + at),
+                    )
+            was = before["health"].get(attacker.name)
+            if was is not None and attacker.health is not None and attacker.health > was + 0.05:
+                found.setdefault(
+                    "heals_caster",
+                    "the caster went from %.2f to %.2f health" % (was, attacker.health),
+                )
+            return set(entry["proves"]) <= set(found)
+
+        self.wait_until(look, SWEEP_WINDOW)
+
+        if "buffs_melee" in entry["proves"]:
+            after = self.measure_melee()
+            if after > before["melee"] + 0.05:
+                found["buffs_melee"] = (
+                    "a melee swing took %.2f health where the same swing took "
+                    "%.2f before" % (after, before["melee"])
+                )
+        return found
+
+    def probe_cooldown(self, entry):
+        """Right-click again straight away and expect to be told no."""
+        if entry["cooldown"] < 1.0 or entry["refunds_on_hit"]:
+            return
+        # A few ticks after the press, not the same one. Releasing a held item
+        # is a separate packet from using one, and a second use that arrives in
+        # the same tick as the release is handled before it: the ability is
+        # still charging rather than on cooldown, so the press restarts the
+        # charge and there is nothing to refuse.
+        self.wait(0.25)
+        attacker = self.clients[0]
+        attacker.action_bar.clear()
+        attacker.use_slot(entry["slot"], "(again, expecting a refusal)")
+        refused = self.wait_until(
+            lambda: any(COOLDOWN_REFUSAL in line for line in attacker.action_bar), 0.8
+        )
+        label = "%s / %s" % (entry["kit"], entry["name"])
+        if refused:
+            self.cooldown_results.append(
+                "%-42s refused inside its %.1fs cooldown" % (label, entry["cooldown"])
+            )
+        else:
+            self.cooldown_failures.append(
+                "%s has a %.1fs cooldown and let a second use through"
+                % (label, entry["cooldown"])
+            )
+
+    def exercise(self, entry):
+        label = "%s / %s" % (entry["kit"], entry["name"])
+        outstanding = list(entry["proves"])
+        evidence = []
+
+        for attempt in range(SWEEP_ATTEMPTS):
+            if not outstanding:
+                break
+            self.stage(entry, attempt)
+            if not self.arm(entry):
+                return
+            if "heals_caster" in outstanding:
+                self.wound_attacker()
+
+            before = self.baseline(entry)
+            self.press(entry)
+            if attempt == 0:
+                self.probe_cooldown(entry)
+            for name, note in self.observe(entry, before).items():
+                if name in outstanding:
+                    outstanding.remove(name)
+                    evidence.append("%s: %s" % (name, note))
+            if outstanding:
+                self.wait(entry["cooldown"] + 0.5)
+
+        if outstanding:
+            self.sweep_failures.append(
+                "%s declares %s and did not do it" % (label, ", ".join(outstanding))
+            )
+        self.sweep_results.append(
+            "%-42s %s" % (label, "; ".join(evidence) or "nothing reached a client")
+        )
+
     # --- the script ----------------------------------------------------
 
     def run(self):
-        self.connect()
+        # One short of the lobby's minimum, so the sweep runs in a hub that
+        # cannot start a countdown under it, has no kill plane and still allows
+        # a kit to be changed. The last client joins once the sweep is done.
+        self.connect(max(1, self.args.clients - 1))
+        if not self.wait_until(lambda: all(c.joined for c in self.clients), 60.0):
+            self.log("clients never reached the world")
+            return self.report()
+
+        if self.args.abilities:
+            self.sweep()
+
+        self.connect(self.args.clients - len(self.clients))
         kits = [kit.strip() for kit in self.args.kits.split(",")]
         deadline = time.time() + self.args.seconds
 
         step = 0
         script = self.build_script(kits)
         while time.time() < deadline:
-            for client in self.clients:
-                if client.alive:
-                    self.pump(client)
-                    if client.joined:
-                        client.repeat_position()
+            self.pump_all()
             if step < len(script):
                 when, action = script[step]
                 if self.ready(when):
@@ -658,7 +1191,8 @@ class Match:
         )
 
         at(playing, self.gather)
-        at(gathered, self.smash)
+        at(gathered, self.take_aim)
+        at(0.3, self.smash)
         at(launched, self.check_knockback)
         at(0.5, self.melee)
         at(1.0, self.fall)
@@ -737,10 +1271,54 @@ class Match:
             )
             client.walk(self.route(client, spot), "into range of %s" % attacker.name)
 
+    def take_aim(self):
+        """Turn to face the nearest victim.
+
+        Its own step, a beat before the ability, because a rotation does not
+        take effect in the tick it arrives: hyperion decodes packets after the
+        phase that copies yaw onto the component abilities read, so an ability
+        fired in the same tick as the turn fires along the old bearing. The
+        original script hid this by using a radial ability; anything aimed does
+        not have that luxury.
+        """
+        living = self.victims()
+        if living:
+            self.clients[0].look_at(living[0])
+
     def smash(self):
-        """Seismic Slam, which launches everything within eight blocks."""
+        """The attacker's own launching ability, chosen out of the registry."""
         self.motions.clear()
-        self.clients[0].use_slot(self.args.ability_slot, "(the kit's radial ability)")
+        attacker = self.clients[0]
+        slot = self.launching_slot(attacker.kit)
+        attacker.use_slot(slot, "(the knockback check's single-impulse ability)")
+
+    def launching_slot(self, kit):
+        """The slot the knockback check fires, and the registry's opinion of it.
+
+        A fixed slot rather than the first launching ability the registry
+        offers, because the check below solves one hidden strength out of two
+        different functions of it and that only works on a single impulse. Iron
+        Golem's Fissure puts three of its fourteen columns on one victim in one
+        tick and hyperion sums them into one velocity packet, which solves to
+        nothing at all. The sweep above is what covers every ability; this step
+        is about the model.
+
+        What the registry is for here is checking the choice rather than making
+        it: a slot holding something that does not launch is a slot this check
+        cannot use, and saying so beats a silent miss.
+        """
+        slot = self.args.ability_slot
+        declared = [
+            entry
+            for entry in self.manifest
+            if entry["kit"] == kit and entry["slot"] == slot
+        ]
+        if declared and "launches_target" not in declared[0]["proves"]:
+            self.log(
+                "--ability-slot %d on %s is %s, which the registry says does "
+                "not launch anybody" % (slot, kit, declared[0]["name"])
+            )
+        return slot
 
     def melee(self):
         attacker = self.clients[0]
@@ -850,6 +1428,17 @@ class Match:
     # --- the verdict ---------------------------------------------------
 
     def report(self):
+        if self.sweep_results:
+            print("", flush=True)
+            self.log("=== every ability the server declares, and what it did ===")
+            for line in self.sweep_results:
+                self.log("    %s" % line)
+        if self.cooldown_results:
+            print("", flush=True)
+            self.log("=== cooldowns, checked by right-clicking twice ===")
+            for line in self.cooldown_results:
+                self.log("    %s" % line)
+
         print("", flush=True)
         self.log("=== packets received in play state, by id ===")
         census = {}
@@ -906,8 +1495,14 @@ def main():
         "--ability-slot",
         type=int,
         default=3,
-        help="hotbar slot the attacker right-clicks; 3 is Iron Golem's "
-        "Seismic Slam, which is radial and so does not depend on facing",
+        help="hotbar slot the match's knockback check fires; 3 is Iron Golem's "
+        "Seismic Slam, which lands one hit and so solves against the model",
+    )
+    parser.add_argument(
+        "--no-abilities",
+        dest="abilities",
+        action="store_false",
+        help="skip the registry sweep and run only the match",
     )
     parser.add_argument("--seconds", type=float, default=300.0)
     parser.add_argument(

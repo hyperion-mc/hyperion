@@ -11,7 +11,7 @@ use flecs_ecs::prelude::*;
 
 use crate::{
     module::{
-        ability::{Cast, splash},
+        ability::{Cast, Observable, splash},
         damage::DamageKind,
         kit::{self, AbilitySpec, KitStats},
         player::Player,
@@ -51,6 +51,7 @@ impl Module for Creeper {
             slot: 1,
             description: "Throw coal. It goes off on whatever it touches.",
             cooldown: 6.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: sulphur_bomb,
             ..AbilitySpec::DEFAULT
         })
@@ -63,6 +64,7 @@ impl Module for Creeper {
             description: "Charge for a second and a half, then take everything nearby with you.",
             cooldown: 10.0,
             charge_time: Some(1.5),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: explosion,
             ..AbilitySpec::DEFAULT
         })
@@ -72,6 +74,7 @@ impl Module for Creeper {
             slot: 8,
             description: "The same idea, without the restraint.",
             cooldown: 20.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: atomic_blast,
             ..AbilitySpec::DEFAULT
         })

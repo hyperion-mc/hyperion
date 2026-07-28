@@ -12,7 +12,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Payload, fire},
     },
@@ -46,6 +46,7 @@ impl Module for SkySquid {
             slot: 1,
             description: "One second of flight, and nothing can touch you during it.",
             cooldown: 9.0,
+            proves: &[Observable::LaunchesCaster],
             activate: super_squid,
             ..AbilitySpec::DEFAULT
         })
@@ -55,6 +56,7 @@ impl Module for SkySquid {
             slot: 2,
             description: "Seven ink sacs at once. All seven is 12 damage and almost never happens.",
             cooldown: 5.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: ink_shotgun,
             ..AbilitySpec::DEFAULT
         })
@@ -65,6 +67,7 @@ impl Module for SkySquid {
             description: "Fish erupt from the ground for four seconds. Hard to walk out of.",
             // `[VERIFIED]`: "a ridiculous 16 seconds cooldown to balance it".
             cooldown: 16.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: fish_flurry,
             ..AbilitySpec::DEFAULT
         })
@@ -74,6 +77,7 @@ impl Module for SkySquid {
             slot: 8,
             description: "Fly, and call lightning down once a second.",
             cooldown: 1.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: storm_squid,
             ..AbilitySpec::DEFAULT
         })
@@ -128,7 +132,7 @@ fn fish_flurry(cast: &Cast<'_>) {
 /// `[APPROXIMATED]`: a lightning bolt a second for the crystal's duration needs
 /// a repeating effect the ability layer does not have. One strike stands in.
 fn storm_squid(cast: &Cast<'_>) {
-    use crate::module::{ability::splash_at as splash_there, player::Position};
+    use crate::module::{ability::splash_from, player::Position};
 
     let caster = cast.caster.id();
     let mut targets = Vec::new();
@@ -142,7 +146,9 @@ fn storm_squid(cast: &Cast<'_>) {
             }
         });
     for at in targets {
-        splash_there(cast, at, 2.0, 6.0, 1.2);
+        // The bolt lands on the victim, so the launch has to be measured from
+        // the squid: away from the point you are standing on is not a direction.
+        splash_from(cast, cast.position.0, at, 2.0, 6.0, 1.2);
         cast.server.cue(at, Cue::Explosion);
     }
 }

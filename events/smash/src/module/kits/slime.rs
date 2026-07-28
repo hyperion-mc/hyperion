@@ -14,7 +14,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         damage::{DamageKind, Damaged, hurt},
         kit::{self, AbilitySpec, KitStats},
         knockback::Knockback,
@@ -59,6 +59,7 @@ impl Module for Slime {
             charge_time: Some(MAX_CHARGE_SECONDS),
             // A third of the bar minimum; a full charge costs the lot.
             energy_cost: Some(0.33),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: slime_rocket,
             ..AbilitySpec::DEFAULT
         })
@@ -68,6 +69,14 @@ impl Module for Slime {
             slot: 1,
             description: "Throw yourself at someone. You take a quarter of it back.",
             cooldown: 6.0,
+            // The recoil is a real launch on the caster, not a rounding
+            // artefact: a quarter of the hit comes back the other way, which is
+            // what makes the ability a commitment.
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: slime_slam,
             ..AbilitySpec::DEFAULT
         })
@@ -77,6 +86,7 @@ impl Module for Slime {
             slot: 8,
             description: "Become enormous and untouchable. Everything near you dies.",
             cooldown: 19.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: giga_slime,
             ..AbilitySpec::DEFAULT
         })

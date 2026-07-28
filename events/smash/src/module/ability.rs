@@ -51,6 +51,69 @@ pub struct Named(pub &'static str);
 #[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Description(pub &'static str);
 
+/// One thing a client can see when an ability fires.
+///
+/// This is the half of an ability declaration that the gates read. A kit says
+/// what its ability does in terms a player could point at, and both
+/// `tests/abilities.rs` and the scripted-client gate `nix run .#smash-e2e`
+/// enumerate [`manifest`] and hold every ability to what it declared. An
+/// ability that declares nothing fails the first test in `tests/abilities.rs`;
+/// an ability that declares something it does not do fails both gates.
+///
+/// The list is deliberately short and stated in wire terms, because an
+/// observation nothing on the far side of the seam can see is not a proof. Each
+/// variant names the packet that carries it:
+///
+/// - [`Self::HurtsTarget`] and [`Self::HealsCaster`] are `ClientboundSetHealth`
+/// - [`Self::LaunchesTarget`] and [`Self::LaunchesCaster`] are
+///   `ClientboundSetEntityMotion`
+/// - [`Self::TeleportsCaster`] is `ClientboundPlayerPosition`
+/// - [`Self::BuffsMelee`] is the same melee swing hurting more than it did
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Observable {
+    /// A player in front of the caster loses health.
+    HurtsTarget,
+    /// A player in front of the caster gains velocity.
+    LaunchesTarget,
+    /// The caster gains velocity.
+    LaunchesCaster,
+    /// The caster ends up somewhere they were not.
+    TeleportsCaster,
+    /// The caster's own health bar goes up.
+    HealsCaster,
+    /// The caster's melee swing hurts more than it did before.
+    BuffsMelee,
+}
+
+impl Observable {
+    /// The name this observation goes over the wire under, in `/abilities`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::HurtsTarget => "hurts_target",
+            Self::LaunchesTarget => "launches_target",
+            Self::LaunchesCaster => "launches_caster",
+            Self::TeleportsCaster => "teleports_caster",
+            Self::HealsCaster => "heals_caster",
+            Self::BuffsMelee => "buffs_melee",
+        }
+    }
+}
+
+/// What an ability promises a client will see. Declared by the kit.
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Proves(pub &'static [Observable]);
+
+/// Seconds left on a grant that expires on its own.
+///
+/// The Smash Crystal is the only thing that makes one: an ultimate is granted
+/// for a fixed time and taken back, and the ability entity carrying the
+/// countdown is the whole of that bookkeeping.
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
+pub struct GrantedFor {
+    pub remaining: f32,
+}
+
 /// How long after use before the ability is available again, in seconds.
 #[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct CooldownSpec(pub f32);
@@ -69,6 +132,15 @@ pub struct EnergyCost(pub f32);
 /// and Seismic Slam.
 #[derive(Component, Debug)]
 pub struct RequiresGround;
+
+/// This ability's cooldown is cleared by landing a hit rather than by waiting.
+///
+/// A tag on the ability, not a behaviour: clearing the cooldown is the kit's own
+/// `on_hit` payload. What this says is that the ability is *allowed* to come
+/// back early, which is what stops the shared cooldown check in
+/// `tests/abilities.rs` from reading a deliberate refund as a broken cooldown.
+#[derive(Component, Debug)]
+pub struct RefundsOnHit;
 
 /// Everything an ability gets to see and touch when it fires.
 pub struct Cast<'a> {
@@ -225,6 +297,111 @@ pub fn activate(player: EntityView<'_>, slot: u8, charge: f32) -> Result<(), Ref
     Ok(())
 }
 
+/// Seconds a Smash Crystal's ultimate lasts before it is taken back.
+///
+/// Mineplex's crystal spawned in the arena, was picked up, and gave the holder
+/// their kit's ultimate for a fixed window. The window is the ability layer's
+/// business and lives here; spawning the crystal is the arena's, and until it
+/// does, [`crate::module::kit::grant_ultimate`] is how one is handed out.
+pub const ULTIMATE_SECONDS: f32 = 20.0;
+
+/// One ability, exactly as its kit declared it.
+///
+/// The registry is the ability entities themselves; this is a flat read of them
+/// for anything that wants the whole roster at once. `/abilities` serialises it
+/// for the end to end gate, and `tests/abilities.rs` walks it to drive every
+/// ability in the game through the mock seam.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Declared {
+    pub kit: &'static str,
+    pub name: &'static str,
+    pub slot: u8,
+    pub item: &'static str,
+    pub description: &'static str,
+    pub cooldown: f32,
+    /// `Some` for a hold-and-release ability, in seconds to full charge.
+    pub charge_time: Option<f32>,
+    pub energy_cost: Option<f32>,
+    pub requires_ground: bool,
+    /// A hit clears the cooldown, so a second use may legitimately be allowed
+    /// straight away.
+    pub refunds_on_hit: bool,
+    /// Granted by the Smash Crystal rather than at spawn.
+    pub ultimate: bool,
+    pub proves: &'static [Observable],
+}
+
+/// Every ability every registered kit declares, kit registration order first
+/// and hotbar slot order within a kit.
+///
+/// A query over the world, not a list anybody maintains: a kit imported from
+/// outside the crate appears here the moment its module runs, which is what
+/// makes this the single source of truth the gates enumerate.
+#[must_use]
+pub fn manifest(world: &World) -> Vec<Declared> {
+    use crate::module::kit::{KitName, Ultimate, registry};
+
+    let mut out = Vec::new();
+    for kit in registry(world) {
+        let kit = world.entity_from_id(kit);
+        let Some(kit_name) = kit.try_get::<&KitName>(|name| name.0) else {
+            continue;
+        };
+        let mut abilities = Vec::new();
+        kit.each_target_view(Grants, |ability| {
+            let (Some(name), Some(slot)) = (
+                ability.try_get::<&Named>(|n| n.0),
+                ability.try_get::<&Slot>(|s| s.0),
+            ) else {
+                return;
+            };
+            abilities.push(Declared {
+                kit: kit_name,
+                name,
+                slot,
+                item: ability.try_get::<&Item>(|i| i.0).unwrap_or(""),
+                description: ability.try_get::<&Description>(|d| d.0).unwrap_or(""),
+                cooldown: ability.try_get::<&CooldownSpec>(|c| c.0).unwrap_or(0.0),
+                charge_time: ability.try_get::<&ChargeTime>(|c| c.0),
+                energy_cost: ability.try_get::<&EnergyCost>(|c| c.0),
+                requires_ground: ability.has(RequiresGround::id()),
+                refunds_on_hit: ability.has(RefundsOnHit::id()),
+                ultimate: ability.has(Ultimate::id()),
+                proves: ability.try_get::<&Proves>(|p| p.0).unwrap_or(&[]),
+            });
+        });
+        abilities.sort_by_key(|ability| ability.slot);
+        out.append(&mut abilities);
+    }
+    out
+}
+
+/// Take back a grant that has run out: unlink it from whoever holds it and
+/// destroy the instance.
+fn expire(world: WorldRef<'_>, expired: &[Entity]) {
+    let mut edges = Vec::new();
+    world
+        .query::<()>()
+        .with(Player::id())
+        .build()
+        .each_entity(|player, ()| {
+            player.each_target_view(Grants, |ability| {
+                if expired.contains(&ability.id()) {
+                    edges.push((player.id(), ability.id()));
+                }
+            });
+        });
+    for (player, ability) in edges {
+        world.entity_at(player).remove((Grants, ability));
+    }
+    for ability in expired {
+        let ability = world.entity_at(*ability);
+        if ability.is_alive() {
+            ability.destruct();
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct AbilityModule;
 
@@ -241,6 +418,7 @@ impl Module for AbilityModule {
         world.component::<Cooldown>();
         world.component::<EnergyCost>();
         world.component::<RequiresGround>();
+        world.component::<RefundsOnHit>();
         world.component::<OnActivate>();
         world.component::<OnRelease>();
         world.component::<ChargeTime>();
@@ -248,6 +426,8 @@ impl Module for AbilityModule {
         world.component::<UseSlot>();
         world.component::<ReleaseSlot>();
         world.component::<Grants>();
+        world.component::<Proves>();
+        world.component::<GrantedFor>();
 
         world
             .system_named::<&mut Cooldown>("smash::tick_cooldowns")
@@ -261,6 +441,31 @@ impl Module for AbilityModule {
             .system_named::<&mut Charging>("smash::tick_charge")
             .each_iter(|it, _, charging| {
                 charging.held += it.delta_time();
+            });
+
+        // Grants that expire. Written as one `run` rather than as a per-entity
+        // system because taking the grant back edits the holder's type, and
+        // flecs refuses that from inside the query that found it.
+        world
+            .system_named::<()>("smash::expire_grants")
+            .run(|mut it| {
+                while it.next() {
+                    let world = it.world();
+                    let dt = it.delta_time();
+                    let mut expired = Vec::new();
+                    world
+                        .query::<&mut GrantedFor>()
+                        .build()
+                        .each_entity(|ability, granted| {
+                            granted.remaining -= dt;
+                            if granted.remaining <= 0.0 {
+                                expired.push(ability.id());
+                            }
+                        });
+                    if !expired.is_empty() {
+                        expire(world, &expired);
+                    }
+                }
             });
 
         // A single dispatcher for every ability in the game. Adding a kit
@@ -279,6 +484,15 @@ impl Module for AbilityModule {
                 if let Some(ability) = granted_in_slot(player, slot)
                     && ability.has(ChargeTime::id())
                 {
+                    // Checked here and not only on release: a charge that is
+                    // going to be refused should be refused while the player
+                    // can still do something else, and a hold that silently
+                    // banked a use is how a cooldown looks like it does not
+                    // exist from a client's point of view.
+                    if let Err(refusal) = check(ability, player) {
+                        report(player, Err(refusal));
+                        return;
+                    }
                     ability.set(Charging { held: 0.0 });
                     return;
                 }
@@ -320,12 +534,27 @@ fn report(player: EntityView<'_>, outcome: Result<(), Refusal>) {
     });
 }
 
-/// Hurt everything within `radius` of `at`, except the caster.
+/// Hurt everything within `radius` of `at`, except the caster, launching it away
+/// from `origin`.
 ///
 /// The one geometric primitive the kits share. Collecting the victims before
 /// hurting any of them is deliberate: the damage observers mutate components
 /// the query is reading, and flecs will catch that at runtime if you nest them.
-pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier: f32) {
+///
+/// `origin` is separate from `at` because knockback is horizontal-only and a
+/// launch away from a point a victim is standing on has no direction: it
+/// normalises to zero and the victim does not move. An ability centred on its
+/// own victims -- Storm Squid calls down a bolt on each player where they stand
+/// -- has to name the caster as the origin or it silently deals damage and no
+/// knockback at all.
+pub fn splash_from(
+    cast: &Cast<'_>,
+    origin: Vec3,
+    at: Vec3,
+    radius: f32,
+    damage: f32,
+    multiplier: f32,
+) {
     use crate::module::{
         damage::{DamageKind, Damaged},
         knockback::Knockback,
@@ -335,6 +564,7 @@ pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier
     let mut victims = Vec::new();
     cast.world
         .query::<(&Position, &Health)>()
+        .with(Player::id())
         .build()
         .each_entity(|entity, (position, health)| {
             if entity.id() != caster && !health.is_dead() && position.0.distance(at) <= radius {
@@ -346,10 +576,16 @@ pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier
         crate::module::damage::hurt(cast.world.entity_at(victim), Damaged {
             attacker: Some(caster),
             amount: damage,
-            knockback: Knockback::from(at).times(multiplier),
+            knockback: Knockback::from(origin).times(multiplier),
             kind: DamageKind::Ability,
         });
     }
+}
+
+/// [`splash_from`] with the blast's own centre as the origin, which is what an
+/// explosion somewhere other than on top of a victim wants.
+pub fn splash_at(cast: &Cast<'_>, at: Vec3, radius: f32, damage: f32, multiplier: f32) {
+    splash_from(cast, at, at, radius, damage, multiplier);
 }
 
 /// Turn a 0..=1 charge fraction into a whole number of steps.

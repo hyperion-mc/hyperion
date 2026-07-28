@@ -133,6 +133,30 @@ impl Module for InputModule {
                 player.add(HotbarStale::id());
             });
 
+        // The same deferral applies to abilities arriving and leaving one at a
+        // time rather than a whole kit at once, which is what the Smash Crystal
+        // does: without this a granted ultimate never reaches slot 8 and an
+        // expired one stays there forever.
+        //
+        // One term, and the `Player` check moved into the body. A second filter
+        // term turns this into a query-match observer, which fires on any table
+        // transition that keeps the query satisfied -- so every ability use,
+        // which adds and removes an invulnerability marker, rewrote the whole
+        // inventory in the same tick.
+        let mark_stale = |entity: EntityView<'_>, ()| {
+            if entity.has(Player::id()) {
+                entity.add(HotbarStale::id());
+            }
+        };
+        world
+            .observer::<flecs::OnAdd, ()>()
+            .with((ability::Grants, id::<flecs::Wildcard>()))
+            .each_entity(mark_stale);
+        world
+            .observer::<flecs::OnRemove, ()>()
+            .with((ability::Grants, id::<flecs::Wildcard>()))
+            .each_entity(mark_stale);
+
         world
             .system_named::<&PlayerId>("smash::push_stale_hotbars")
             .kind(id::<flecs::pipeline::PostUpdate>())
@@ -144,6 +168,9 @@ impl Module for InputModule {
                     return;
                 }
                 let id = *id;
+                // Deliberately a full replace and not a diff: the seam's only
+                // hotbar verb is "here is the whole bar", and a kit change, a
+                // respawn and a crystal expiring all want the same answer.
                 player
                     .world()
                     .get::<&crate::server::ServerHandle>(|server| server.set_hotbar(id, &hotbar));

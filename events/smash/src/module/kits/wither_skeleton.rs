@@ -14,7 +14,7 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, splash_at},
+        ability::{Cast, Observable, splash_at},
         damage::MatchClock,
         kit::{self, AbilitySpec, KitStats},
         projectile::{Flight, Impact, Payload, fire},
@@ -56,6 +56,7 @@ impl Module for WitherSkeleton {
             description: "A skull with a wide blast. Hold to steer it.",
             cooldown: 7.0,
             charge_time: Some(0.6),
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: guided_wither_skull,
             ..AbilitySpec::DEFAULT
         })
@@ -65,6 +66,7 @@ impl Module for WitherSkeleton {
             slot: 2,
             description: "Drop a copy of yourself. Use it again to swap places with it.",
             cooldown: 10.0,
+            proves: &[Observable::TeleportsCaster],
             activate: wither_image,
             ..AbilitySpec::DEFAULT
         })
@@ -74,6 +76,7 @@ impl Module for WitherSkeleton {
             slot: 8,
             description: "Every image at once.",
             cooldown: 20.0,
+            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
             activate: wither_swap,
             ..AbilitySpec::DEFAULT
         })

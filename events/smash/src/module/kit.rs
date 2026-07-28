@@ -15,8 +15,9 @@ use crate::{
     flecs_ext::EntityViewExt,
     module::{
         ability::{
-            Ability, Cast, ChargeTime, Cooldown, CooldownSpec, Description, EnergyCost, Grants,
-            Item, Named, OnActivate, OnRelease, RequiresGround, Slot,
+            Ability, Cast, ChargeTime, Cooldown, CooldownSpec, Description, EnergyCost, GrantedFor,
+            Grants, Item, Named, Observable, OnActivate, OnRelease, Proves, RefundsOnHit,
+            RequiresGround, Slot,
         },
         damage::Armor,
         knockback::KnockbackTaken,
@@ -112,10 +113,17 @@ const fn noop(_: &Cast<'_>) {}
 ///     item: "minecraft:iron_axe",
 ///     slot: 1,
 ///     cooldown: 7.0,
+///     proves: &[Observable::TeleportsCaster],
 ///     activate: blink,
 ///     ..AbilitySpec::DEFAULT
 /// }
 /// ```
+///
+/// `proves` is the one field with no sensible default. Everything else
+/// describes the ability; that field is the ability's own claim about what a
+/// player will see, and it is what the two gates enumerate. Leaving it empty is
+/// caught by `tests/abilities.rs`, so a kit cannot be added without saying what
+/// its abilities do.
 #[derive(Debug, Copy, Clone)]
 pub struct AbilitySpec {
     pub name: &'static str,
@@ -129,6 +137,16 @@ pub struct AbilitySpec {
     pub charge_time: Option<f32>,
     pub energy_cost: Option<f32>,
     pub requires_ground: bool,
+    /// Landing a hit clears the cooldown instead of the clock doing it.
+    ///
+    /// Chicken Missile is the only ability in the roster built this way, and the
+    /// wiki calls it the kit's strongest point. It is declared rather than left
+    /// implicit because "a cooldown refuses the next use" is otherwise a rule
+    /// every ability is held to, and one that is meant to be broken has to say
+    /// so where the gates can read it.
+    pub refunds_on_hit: bool,
+    /// What a client sees when this fires. Must not be empty.
+    pub proves: &'static [Observable],
     pub activate: fn(&Cast<'_>),
 }
 
@@ -142,6 +160,8 @@ impl AbilitySpec {
         charge_time: None,
         energy_cost: None,
         requires_ground: false,
+        refunds_on_hit: false,
+        proves: &[],
         activate: noop,
     };
 }
@@ -193,8 +213,7 @@ impl<'w> KitBuilder<'w> {
     /// it and its expiry takes it back.
     #[must_use]
     pub fn ultimate(self, spec: AbilitySpec) -> Self {
-        let ability = self.build_ability(spec, true);
-        ability.add(Ultimate::id());
+        self.build_ability(spec, true);
         self
     }
 
@@ -217,6 +236,7 @@ impl<'w> KitBuilder<'w> {
             .set(Slot(spec.slot))
             .set(Description(spec.description))
             .set(CooldownSpec(spec.cooldown))
+            .set(Proves(spec.proves))
             .set(Cooldown::default());
 
         if let Some(charge) = spec.charge_time {
@@ -231,9 +251,18 @@ impl<'w> KitBuilder<'w> {
         if spec.requires_ground {
             ability.add(RequiresGround::id());
         }
-        if !ultimate {
-            self.kit.add((Grants, ability));
+        if spec.refunds_on_hit {
+            ability.add(RefundsOnHit::id());
         }
+        if ultimate {
+            ability.add(Ultimate::id());
+        }
+        // Every ability the kit has, ultimate included, hangs off the same
+        // relationship, so one traversal enumerates the whole kit. What
+        // separates them is the `Ultimate` tag, which `apply` filters on: an
+        // ultimate that was reachable only through its flecs scope path was an
+        // ability no registry could see and therefore no gate could test.
+        self.kit.add((Grants, ability));
         ability
     }
 }
@@ -265,11 +294,58 @@ pub fn apply(world: &World, player: EntityView<'_>, kit: EntityView<'_>) {
     }
 
     let mut prefabs = Vec::new();
-    kit.each_target_view(Grants, |ability| prefabs.push(ability.id()));
+    kit.each_target_view(Grants, |ability| {
+        // The ultimate is the Smash Crystal's to hand out, so it is on the kit
+        // and not on the player until one is picked up.
+        if !ability.has(Ultimate::id()) {
+            prefabs.push(ability.id());
+        }
+    });
     for prefab in prefabs {
         let instance = world.entity().is_a(prefab).child_of(player);
         player.add((Grants, instance));
     }
+}
+
+/// Hand `player` their kit's Smash Crystal ability for `seconds`.
+///
+/// The window is the ability layer's ([`crate::module::ability::GrantedFor`]
+/// counts it down and takes the ability back); what spawns a crystal in the
+/// arena for somebody to walk into is the arena's, and does not exist yet. Until
+/// it does this is the whole of the mechanic, and `/crystal` is the way a player
+/// or a test reaches it.
+///
+/// Returns `false` when the player has no kit, the kit declares no ultimate, or
+/// they are already holding one.
+#[must_use]
+pub fn grant_ultimate(world: &World, player: EntityView<'_>, seconds: f32) -> bool {
+    let Some(kit) = player.find_target(Playing, |_| true) else {
+        return false;
+    };
+    let Some(prefab) = kit.find_target(Grants, |ability| ability.has(Ultimate::id())) else {
+        return false;
+    };
+    if player
+        .find_target(Grants, |ability| ability.has(Ultimate::id()))
+        .is_some()
+    {
+        return false;
+    }
+
+    let instance = world.entity().is_a(prefab).child_of(player);
+    instance.set(GrantedFor { remaining: seconds });
+    player.add((Grants, instance));
+    true
+}
+
+/// The name of the ultimate `player`'s kit declares, whether or not they hold
+/// it. `None` for a player with no kit.
+#[must_use]
+pub fn ultimate_name(player: EntityView<'_>) -> Option<&'static str> {
+    player
+        .find_target(Playing, |_| true)?
+        .find_target(Grants, |ability| ability.has(Ultimate::id()))?
+        .try_get::<&Named>(|name| name.0)
 }
 
 /// Strip whatever kit a player is currently carrying.

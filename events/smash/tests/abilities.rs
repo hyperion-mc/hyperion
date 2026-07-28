@@ -1,0 +1,535 @@
+//! Every ability in the game, driven through the mock seam and held to what its
+//! kit declared it does.
+//!
+//! This file names no kit and no ability. It walks [`ability::manifest`], which
+//! is a query over the world rather than a list, so a kit imported from outside
+//! the crate is covered the moment its module runs and a kit added tomorrow
+//! fails here rather than passing quietly.
+//!
+//! What this proves and what it does not: this is the game half, so what it
+//! reads is the call log of a [`MockServer`] -- the same calls the adapter turns
+//! into packets. It says an ability computed the effect it promised. It does not
+//! say the packet carrying that effect reaches a client, which is what
+//! `nix run .#smash-e2e` is for, and which drives the same manifest.
+
+mod harness;
+
+use flecs_ecs::prelude::*;
+use glam::Vec3;
+use harness::Game;
+use smash::{
+    module::{
+        ability::{self, Declared, Observable},
+        damage::{DamageKind, Damaged, MatchClock, hurt},
+        kit::{self, Playing},
+        knockback::Knockback,
+        player::{Energy, Health, OnGround, Position},
+    },
+    server::{PlayerId, mock::Call},
+};
+
+/// How far in front of the caster the near victim stands.
+///
+/// Not a whole number, and not the distance any ability centres its blast on.
+/// A victim standing exactly on a splash centre is launched away from the point
+/// they occupy, which normalises to no direction and no launch, so a round
+/// number would make several abilities look like they deal no knockback when
+/// the arrangement is what has no answer.
+const NEAR: f32 = 3.5;
+
+/// The far victim, for the projectiles that need room to arm.
+const FAR: f32 = 8.5;
+
+struct Bench {
+    game: Game,
+    caster: Entity,
+    near: Entity,
+    far: Entity,
+}
+
+impl Bench {
+    fn new() -> Self {
+        let mut game = Game::new();
+        let caster = game.player("caster", Vec3::ZERO);
+        let near = game.player("near", Vec3::new(NEAR, 0.0, 0.0));
+        let far = game.player("far", Vec3::new(FAR, 0.0, 0.0));
+        Self {
+            game,
+            caster,
+            near,
+            far,
+        }
+    }
+
+    fn caster(&self) -> EntityView<'_> {
+        self.game.world.entity_from_id(self.caster)
+    }
+
+    /// Put the caster on `kit`, stand everybody back up and clear the log.
+    fn reset(&self, kit_name: &str) {
+        let world = &self.game.world;
+        let chosen =
+            kit::by_name(world, kit_name).unwrap_or_else(|| panic!("the registry lost {kit_name}"));
+
+        for entity in [self.caster, self.near, self.far] {
+            kit::apply(world, world.entity_from_id(entity), chosen);
+        }
+        self.place(Vec3::ZERO);
+        self.game.world.set(MatchClock(1.0));
+        self.game.server.take();
+    }
+
+    /// Give the caster the Smash Crystal ability, if this entry needs one.
+    fn arm(&self, entry: &Declared) {
+        if !entry.ultimate || ability::granted_in_slot(self.caster(), entry.slot).is_some() {
+            return;
+        }
+        assert!(
+            kit::grant_ultimate(&self.game.world, self.caster(), 600.0),
+            "{} / {}: the Smash Crystal granted nothing",
+            entry.kit,
+            entry.name
+        );
+    }
+
+    /// Fire `entry` the way a player would: hold a charge ability for its full
+    /// charge time, tap everything else. Does not wait afterwards.
+    fn press(&self, entry: &Declared) {
+        match entry.charge_time {
+            Some(seconds) => {
+                ability::use_slot(self.caster(), entry.slot);
+                self.game.advance(seconds, 8);
+                ability::release_slot(self.caster(), entry.slot);
+            }
+            None => ability::use_slot(self.caster(), entry.slot),
+        }
+    }
+
+    /// Long enough for the slowest projectile in the game to cross the far
+    /// victim.
+    fn settle(&self) {
+        self.game.advance(1.5, 30);
+    }
+
+    /// Wait out `entry`'s cooldown and set the three of them up again, `attempt`
+    /// steps further along the aim axis.
+    ///
+    /// The whole arrangement moves rather than the caster alone, so every
+    /// distance and direction an ability cares about is identical to the first
+    /// press and only the absolute position differs. That difference is what
+    /// Wither Image needs: it drops a decoy on one press and swaps you to it on
+    /// the next, and a swap back to the spot you never left is not a teleport
+    /// anybody could see.
+    fn recover(&self, entry: &Declared, attempt: u32) {
+        self.game.advance(entry.cooldown + 0.5, 30);
+        self.place(Vec3::new(
+            f32::from(u16::try_from(attempt).unwrap_or(0)) * -4.0,
+            0.0,
+            0.0,
+        ));
+    }
+
+    /// Stand all three up, healthy and grounded, `base` blocks from the origin.
+    fn place(&self, base: Vec3) {
+        let world = &self.game.world;
+        for (entity, offset) in [
+            (self.caster, Vec3::ZERO),
+            (self.near, Vec3::new(NEAR, 0.0, 0.0)),
+            (self.far, Vec3::new(FAR, 0.0, 0.0)),
+        ] {
+            let player = world.entity_from_id(entity);
+            player.set(Position(base + offset));
+            player.set(OnGround(true));
+            player.get::<&mut Health>(|health| health.current = health.max);
+        }
+        // Every ability that costs energy is used once, so a full bar is the
+        // condition under test rather than a coincidence of the previous one.
+        if let Some(mut energy) = self.caster().try_get::<&Energy>(|e| *e) {
+            energy.current = energy.max;
+            self.caster().set(energy);
+        }
+    }
+
+    fn health_of(&self, entity: Entity) -> Health {
+        self.game.world.entity_from_id(entity).cloned::<&Health>()
+    }
+
+    fn id_of(&self, entity: Entity) -> PlayerId {
+        self.game.world.entity_from_id(entity).cloned::<&PlayerId>()
+    }
+}
+
+/// Whether the log shows `observable` happening to the right party.
+fn observed(bench: &Bench, observable: Observable, before: &Snapshot) -> bool {
+    let calls = bench.game.server.calls();
+    match observable {
+        Observable::HurtsTarget => {
+            bench.health_of(bench.near).current < before.near_health
+                || bench.health_of(bench.far).current < before.far_health
+        }
+        Observable::LaunchesTarget => [bench.near, bench.far].iter().any(|victim| {
+            bench
+                .game
+                .server
+                .total_velocity(bench.id_of(*victim))
+                .length()
+                > 1e-4
+        }),
+        Observable::LaunchesCaster => {
+            bench
+                .game
+                .server
+                .total_velocity(bench.id_of(bench.caster))
+                .length()
+                > 1e-4
+        }
+        Observable::TeleportsCaster => {
+            let caster = bench.id_of(bench.caster);
+            calls.iter().any(|call| {
+                matches!(call, Call::Teleport(id, to) if *id == caster && to.distance(before.caster_at) > 1.0)
+            })
+        }
+        Observable::HealsCaster => bench.health_of(bench.caster).current > before.caster_health,
+        // Measured rather than read off a component: what a player experiences
+        // is the next swing hurting more, and a bonus that never reaches the
+        // melee path is a bonus that does not exist.
+        Observable::BuffsMelee => {
+            let clock = bench.game.world.cloned::<&MatchClock>().0;
+            let boosted = melee_damage(bench, clock);
+            boosted > before.baseline_melee + 1e-3
+        }
+    }
+}
+
+/// What one melee swing at the near victim takes off, right now.
+fn melee_damage(bench: &Bench, now: f32) -> f32 {
+    use smash::module::{damage::MeleeBonus, kit::KitStats};
+
+    let caster = bench.caster();
+    let base = caster
+        .target(Playing, 0)
+        .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.melee_damage))
+        .unwrap_or(1.0);
+    let bonus = caster
+        .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(bench.near, now))
+        .unwrap_or(0.0);
+
+    let victim = bench.game.world.entity_from_id(bench.near);
+    let before = victim.cloned::<&Health>().current;
+    hurt(victim, Damaged {
+        attacker: Some(bench.caster),
+        amount: base + bonus,
+        knockback: Knockback::from(Vec3::ZERO),
+        kind: DamageKind::Melee,
+    });
+    before - victim.cloned::<&Health>().current
+}
+
+struct Snapshot {
+    near_health: f32,
+    far_health: f32,
+    caster_health: f32,
+    caster_at: Vec3,
+    baseline_melee: f32,
+}
+
+/// Everything the checks below compare against, taken immediately before a
+/// press.
+///
+/// The caster is deliberately left short of full health. `SetHealth` is scaled
+/// to twenty on the wire, so a heal that also raises the maximum -- which is
+/// what Mooshroom Madness is -- lands on exactly the same number a full-health
+/// player was already showing, and would read as nothing happening at all.
+fn snapshot(bench: &Bench) -> Snapshot {
+    bench
+        .game
+        .world
+        .entity_from_id(bench.caster)
+        .get::<&mut Health>(|health| health.current = health.max * 0.5);
+
+    let clock = bench.game.world.cloned::<&MatchClock>().0;
+    let baseline_melee = melee_damage(bench, clock);
+    // Undo the probe swing so the ability under test sees a full-health victim.
+    let victim = bench.game.world.entity_from_id(bench.near);
+    victim.get::<&mut Health>(|health| health.current = health.max);
+    bench.game.server.take();
+
+    Snapshot {
+        near_health: bench.health_of(bench.near).current,
+        far_health: bench.health_of(bench.far).current,
+        caster_health: bench.health_of(bench.caster).current,
+        caster_at: bench
+            .game
+            .world
+            .entity_from_id(bench.caster)
+            .cloned::<&Position>()
+            .0,
+        baseline_melee,
+    }
+}
+
+/// The guard that makes the rest of this file mandatory rather than optional.
+///
+/// An ability with an empty declaration would sail through every check below,
+/// because there would be nothing to check. Refusing it here is what turns
+/// "adding a kit means adding data" into "adding a kit means saying what the
+/// data does".
+#[test]
+fn every_ability_declares_what_a_client_would_see() {
+    let game = Game::new();
+    let manifest = ability::manifest(&game.world);
+
+    assert!(
+        manifest.len() >= 50,
+        "the registry only found {} abilities, which is fewer than the roster has; something is \
+         not being discovered",
+        manifest.len()
+    );
+
+    let silent: Vec<_> = manifest
+        .iter()
+        .filter(|entry| entry.proves.is_empty())
+        .map(|entry| format!("{} / {}", entry.kit, entry.name))
+        .collect();
+    assert!(
+        silent.is_empty(),
+        "these abilities declare no observable effect, so no gate can test them: {silent:?}"
+    );
+}
+
+/// Two kits must not put two abilities on one hotbar slot, or one of them is
+/// unreachable and the gate below would silently fire the other.
+#[test]
+fn no_kit_binds_two_abilities_to_one_slot() {
+    let game = Game::new();
+    let mut clashes = Vec::new();
+    for kit_name in kit_names(&game) {
+        let mut slots = Vec::new();
+        for entry in ability::manifest(&game.world) {
+            if entry.kit == kit_name {
+                if slots.contains(&entry.slot) {
+                    clashes.push(format!("{kit_name} slot {}", entry.slot));
+                }
+                slots.push(entry.slot);
+            }
+        }
+    }
+    assert!(
+        clashes.is_empty(),
+        "abilities share a hotbar slot: {clashes:?}"
+    );
+}
+
+fn kit_names(game: &Game) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = ability::manifest(&game.world)
+        .into_iter()
+        .map(|entry| entry.kit)
+        .collect();
+    names.dedup();
+    names
+}
+
+/// How many times an ability may be pressed before it has to have done what it
+/// said.
+///
+/// More than one because two abilities in the roster are stateful across uses:
+/// Wither Image drops a decoy on the first press and swaps you to it on the
+/// second, and that is the ability, not a workaround. A press that never
+/// achieves anything still fails, however many it gets.
+const ATTEMPTS: u32 = 3;
+
+/// The sweep: every declared ability, fired, and every observation it declared,
+/// checked.
+#[test]
+fn every_declared_effect_actually_happens() {
+    let manifest = ability::manifest(&Game::new().world);
+    let mut failures = Vec::new();
+
+    for entry in manifest {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        let mut outstanding: Vec<Observable> = entry.proves.to_vec();
+
+        for attempt in 0..ATTEMPTS {
+            if outstanding.is_empty() {
+                break;
+            }
+            if attempt > 0 {
+                // Wait the cooldown out and stand everybody back up, so the
+                // next press starts from the same conditions as the first.
+                bench.recover(&entry, attempt);
+            }
+            bench.arm(&entry);
+            let before = snapshot(&bench);
+            bench.press(&entry);
+            bench.settle();
+            outstanding.retain(|observable| !observed(&bench, *observable, &before));
+        }
+
+        for observable in outstanding {
+            failures.push(format!(
+                "{} / {} declares {} and did not do it",
+                entry.kit,
+                entry.name,
+                observable.as_str()
+            ));
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The declaration is exhaustive for movement, not just a lower bound.
+///
+/// An ability that launches somebody without saying so is the same defect as one
+/// that says it launches and does not: the registry stops describing the game.
+/// It is also where the quiet bugs live. Blaze's Inferno is documented as having
+/// no knockback and was moving everyone it touched a fifth of a block a tick,
+/// because the horizontal floor in the knockback model applied even to a hit
+/// whose multiplier was zero.
+///
+/// Damage is deliberately not checked this way: several abilities cost the
+/// caster health on purpose, and "hurts somebody" has no single subject.
+#[test]
+fn nothing_moves_that_did_not_say_it_would() {
+    let manifest = ability::manifest(&Game::new().world);
+    let mut failures = Vec::new();
+
+    for entry in manifest {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(&entry);
+        let before = snapshot(&bench);
+        bench.press(&entry);
+        bench.settle();
+
+        for observable in [
+            Observable::LaunchesTarget,
+            Observable::LaunchesCaster,
+            Observable::TeleportsCaster,
+        ] {
+            if !entry.proves.contains(&observable) && observed(&bench, observable, &before) {
+                failures.push(format!(
+                    "{} / {} does not declare {} and did it anyway",
+                    entry.kit,
+                    entry.name,
+                    observable.as_str()
+                ));
+            }
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A cooldown that does not refuse the next use is a cooldown a player cannot
+/// feel, and an ability that says it refunds on a hit and does not is a kit
+/// whose whole selling point is missing. Both come from the registry.
+#[test]
+fn a_cooldown_does_what_the_registry_says_it_does() {
+    let manifest = ability::manifest(&Game::new().world);
+    let mut failures = Vec::new();
+
+    for entry in manifest {
+        // Barrage deliberately has none at all.
+        if entry.cooldown <= 0.0 {
+            continue;
+        }
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(&entry);
+        bench.press(&entry);
+
+        let immediately = ability::activate(bench.caster(), entry.slot, 1.0);
+        if immediately != Err(ability::Refusal::OnCooldown) {
+            failures.push(format!(
+                "{} / {} has a {}s cooldown and answered {immediately:?} to a second use in the \
+                 same tick",
+                entry.kit, entry.name, entry.cooldown
+            ));
+            continue;
+        }
+
+        // The refund is a claim in the registry, so it is checked rather than
+        // excused: fly the projectile into the victim and the cooldown should
+        // be gone.
+        if entry.refunds_on_hit {
+            bench.settle();
+            let after_hit = ability::activate(bench.caster(), entry.slot, 1.0);
+            if after_hit != Ok(()) {
+                failures.push(format!(
+                    "{} / {} says it refunds on a hit; after one landed it answered {after_hit:?}",
+                    entry.kit, entry.name
+                ));
+            }
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Changing kit while holding a crystal must not cost you the new kit's
+/// abilities.
+///
+/// The expiry sweep takes a grant back by unlinking it from whoever holds it. A
+/// kit change destroys the granted instance first, and flecs recycles entity
+/// ids, so an expiry that fires afterwards and trusts a stale id can unlink an
+/// ability that merely inherited the number. The symptom is the worst kind:
+/// right-clicking the slot does nothing at all and says nothing at all, because
+/// an empty slot is not an error.
+#[test]
+fn a_crystal_left_over_from_a_previous_kit_does_not_eat_the_next_one() {
+    let bench = Bench::new();
+    bench.reset("Guardian");
+    assert!(kit::grant_ultimate(&bench.game.world, bench.caster(), 5.0));
+
+    bench.reset("Iron Golem");
+    // Past when the old grant would have lapsed.
+    bench.game.advance(8.0, 80);
+
+    let slots: Vec<u8> = ability::manifest(&bench.game.world)
+        .into_iter()
+        .filter(|entry| entry.kit == "Iron Golem" && !entry.ultimate)
+        .map(|entry| entry.slot)
+        .collect();
+    for slot in slots {
+        assert!(
+            ability::granted_in_slot(bench.caster(), slot).is_some(),
+            "slot {slot} lost its ability when a previous kit's crystal lapsed"
+        );
+    }
+}
+
+/// The Smash Crystal's window, from the outside: granted, in the hotbar, gone
+/// again when it lapses.
+#[test]
+fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
+    let bench = Bench::new();
+    bench.reset("Iron Golem");
+
+    let ultimate = kit::ultimate_name(bench.caster()).expect("Iron Golem declares an ultimate");
+    assert!(kit::grant_ultimate(&bench.game.world, bench.caster(), 5.0));
+    assert!(
+        kit::hotbar(bench.caster())
+            .iter()
+            .any(|item| item.name == ultimate),
+        "the granted ultimate never reached the hotbar"
+    );
+    assert!(
+        !kit::grant_ultimate(&bench.game.world, bench.caster(), 5.0),
+        "a second crystal should not stack"
+    );
+
+    bench.game.advance(6.0, 60);
+    assert!(
+        !kit::hotbar(bench.caster())
+            .iter()
+            .any(|item| item.name == ultimate),
+        "the ultimate outlived its window"
+    );
+    assert_eq!(
+        ability::activate(bench.caster(), 8, 1.0),
+        Ok(()),
+        "an expired ultimate should be nothing at all in that slot, not a refusal"
+    );
+}
