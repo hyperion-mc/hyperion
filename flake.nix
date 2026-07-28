@@ -147,6 +147,113 @@
               text = ''cargo nextest run "$@"'';
             };
 
+            # How much of the game the tests actually check, as a number.
+            #
+            # A mutant is a deliberate change to the source: a `<` flipped to
+            # `<=`, a function body replaced with a constant. A mutant the suite
+            # still passes with is a line the tests execute without checking, so
+            # the surviving count measures verification rather than coverage --
+            # `nix run .#test` staying green while a mutant lives is exactly
+            # what this catches and what a coverage percentage cannot.
+            #
+            # Scope and exclusions live in `.cargo/mutants.toml`, next to the
+            # reasons for them. The budget is here because it is a policy
+            # question rather than a configuration one.
+            #
+            # Raising MUTANT_BUDGET is a change to how much of the game is
+            # checked, so it needs the same argument in a pull request that
+            # deleting a test would. A mutant genuinely not worth killing gets
+            # an exclusion in `mutants.toml` with a reason beside it instead.
+            #
+            # Roughly fifteen minutes on four cores; not part of `nix flake
+            # check`, which only builds this script.
+            mutants = {
+              deps = [
+                pkgs.cargo-mutants
+                pkgs.cargo-nextest
+                pkgs.coreutils
+                pkgs.git
+              ];
+              text = ''
+                budget="''${MUTANT_BUDGET:-0}"
+                root="$(git rev-parse --show-toplevel)"
+                cd "$root"
+
+                out="''${MUTANT_OUTPUT:-$root/target/mutants}"
+                rc=0
+                cargo mutants --test-tool nextest -j "$(nproc)" --output "$out" "$@" || rc=$?
+                # 0 is a clean sweep and 2 is "some survived", which is the
+                # normal case and is judged against the budget below. Anything
+                # else is cargo-mutants itself failing, and that is not a
+                # verdict on the tests.
+                case "$rc" in
+                  0 | 2) ;;
+                  *)
+                    echo "cargo-mutants exited $rc, which is a tool failure rather than a result" >&2
+                    exit "$rc"
+                    ;;
+                esac
+
+                missed="$(wc -l < "$out/mutants.out/missed.txt" | tr -d ' ')"
+                caught="$(wc -l < "$out/mutants.out/caught.txt" | tr -d ' ')"
+                echo "mutants: $caught killed, $missed survived (budget $budget)"
+
+                if [ "$missed" -gt "$budget" ]; then
+                  echo "" >&2
+                  echo "FAIL: $missed mutants survived, which is more than the budget of $budget." >&2
+                  echo "Each line below is a change to the source that every test still passes with." >&2
+                  echo "" >&2
+                  cat "$out/mutants.out/missed.txt" >&2
+                  exit 1
+                fi
+
+                if [ "$missed" -lt "$budget" ]; then
+                  echo "The budget is now loose by $((budget - missed)). Lower MUTANT_BUDGET in flake.nix to hold the ground."
+                fi
+              '';
+            };
+
+            # The unbounded version of the decoder fuzz that `nix run .#test`
+            # runs a fixed slice of.
+            #
+            # The gate runs four thousand cases from seed zero, the same four
+            # thousand every time, because a check that fuzzes differently on
+            # every run fails for somebody else on a case they cannot get back.
+            # This walks the seed base forward instead and does not stop, which
+            # is the same generator searching rather than checking. Leave it
+            # running; a failure prints the seed, and the seed is enough to
+            # reproduce the case in the one-second version.
+            fuzz = {
+              deps = [
+                pkgs.cargo-nextest
+                pkgs.git
+              ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                cd "$root"
+
+                export HYPERION_FUZZ_SEEDS="''${HYPERION_FUZZ_SEEDS:-4096}"
+                export HYPERION_FUZZ_CASES="''${HYPERION_FUZZ_CASES:-256}"
+                base="''${HYPERION_FUZZ_SEED_BASE:-0}"
+                batch=$(( HYPERION_FUZZ_SEEDS ))
+
+                echo "fuzzing the packet decoder from seed $base, $batch seeds a round; ctrl-c to stop"
+                while :; do
+                  export HYPERION_FUZZ_SEED_BASE="$base"
+                  # One line: a backslash continuation is literal inside a Nix
+                  # indented string and reaches the shell as a stray argument.
+                  if ! cargo nextest run -p hyperion-minecraft-proto --no-capture -E 'binary(decode_fuzz)' "$@"; then
+                    echo "" >&2
+                    echo "a case in seeds $base..$(( base + batch )) broke the decoder." >&2
+                    echo "reproduce it with the gate-sized run:" >&2
+                    echo "  HYPERION_FUZZ_SEED_BASE=$base HYPERION_FUZZ_SEEDS=$batch HYPERION_FUZZ_CASES=$HYPERION_FUZZ_CASES nix run .#test -- -p hyperion-minecraft-proto" >&2
+                    exit 1
+                  fi
+                  base=$(( base + batch ))
+                done
+              '';
+            };
+
             # Only tests whose name contains "miri" run under it; the rest are
             # far too slow to interpret.
             miri = {

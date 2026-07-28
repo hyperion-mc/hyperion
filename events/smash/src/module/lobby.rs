@@ -18,7 +18,7 @@ use crate::{
         arena::Arena,
         damage::MatchClock,
         kit,
-        lives::{Eliminated, Lives},
+        lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
     },
     server::{Channel, PlayerId, ServerHandle},
@@ -321,6 +321,21 @@ fn scatter(world: &WorldRef<'_>) {
 }
 
 /// Clear the match state so the same world can host the next game.
+///
+/// Everything a match writes onto a player has to come off here, not just the
+/// two things a player can see. The three removals below are each a real bug if
+/// they are missing, and none of them shows up until the second match:
+///
+/// * A stale [`Placement`] is a finishing position from the last game sitting
+///   on somebody who has not finished this one, which is what a results screen
+///   reads.
+/// * A stale [`RespawnAt`] is measured against a clock this function has just
+///   set back to zero, so a player who died in the closing seconds of one match
+///   spends the opening of the next one dead and spectating, for however long
+///   the old clock said.
+/// * A stale [`InvulnerableUntil`] is the same arithmetic the other way: it
+///   makes them untouchable, and immune to the kill plane, for that long
+///   instead.
 fn reset(world: &WorldRef<'_>) {
     world.get::<&mut MatchClock>(|clock| clock.0 = 0.0);
     world
@@ -331,5 +346,8 @@ fn reset(world: &WorldRef<'_>) {
             *lives = Lives::default();
             health.current = health.max;
             player.remove(Eliminated::id());
+            player.remove(Placement::id());
+            player.remove(RespawnAt::id());
+            player.remove(InvulnerableUntil::id());
         });
 }

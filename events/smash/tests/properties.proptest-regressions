@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 438bb21a773fd2487ba50ea2d011a018b8a38917dc4b35f877c1d9f8178c91f6 # shrinks to players = 4, dt = 0.01
+cc b834402bad50d873a84344b0af6e905a26eb01b0210aed3527f763a90d15f8c9 # shrinks to kit_index = 11, ticks = 1
+cc 101ea0d6c128c005f4ef3d7c8a7ed8e08d827f4c2d759fa041a23e52d9d217ed # shrinks to kit_index = 3, slot = 1, offsets = [Vec3(0.0, 0.0, 0.0)]
