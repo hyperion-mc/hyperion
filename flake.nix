@@ -738,60 +738,10 @@
             hyperion-proxy = named "hyperion-proxy" workspace.binaries.hyperion-proxy;
           };
 
-        in
-        {
-          devShells.default = pkgs.mkShell {
-            nativeBuildInputs = nativeBuildInputs ++ cargoTools ++ [ rustToolchain ];
-            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
-          };
-
-          apps = lib.mapAttrs
-            (_: script: {
-              type = "app";
-              program = lib.getExe script;
-            })
-            (scripts // {
-              default = scripts.dev;
-              update-minecraft-data = minecraft.updateScript;
-              sync-minecraft-proto = minecraft.syncScript;
-              sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
-              sync-minecraft-tag-data = minecraft.syncTagDataScript;
-              sync-minecraft-block-states = minecraft.syncBlockStatesScript;
-              sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
-              # Re-records the golden traces `crates/hyperion/tests/differential.rs`
-              # compares against. See docs/differential-testing.md.
-              record-differential-traces = differential.syncScript;
-              extract-minecraft-protocol = minecraft.extractor;
-              # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
-              # from the server's own codecs, so a new codec can be checked
-              # against Mojang rather than against a reading of Mojang.
-              minecraft-encode = minecraft.vanillaEncoder;
-            });
-
-          packages = {
-            default = gameBinaries.bedwars;
-            inherit (gameBinaries) bedwars smash hyperion-proxy;
-            rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
-
-            minecraft-server-jar = minecraft.serverJar;
-            minecraft-data = minecraft.generatedData;
-            minecraft-decompiled = minecraft.decompiledSources;
-            minecraft-protocol = minecraft.protocolJson;
-            minecraft-proto-rust = minecraft.generatedRust;
-            minecraft-encoder-fixtures = minecraft.encoderFixtures;
-            minecraft-registry-contents = minecraft.registryContents;
-            minecraft-tag-contents = minecraft.tagContents;
-            minecraft-registry-data-rust = minecraft.generatedRegistryData;
-            minecraft-tag-data-rust = minecraft.generatedTagData;
-            differential-recorder = differential.recorder;
-            differential-traces = differential.recordedTraces;
-            minecraft-block-states-rust = minecraft.generatedBlockStates;
-            minecraft-entity-types-rust = minecraft.generatedEntityTypes;
-          };
-
           # `nix flake check` builds every app, which is what proves each one
-          # passes shellcheck and that its tools resolve.
-          checks = scripts // {
+          # passes shellcheck and that its tools resolve. What CI enforces of
+          # this set, and the named exceptions, live in nix/ci/flake-gate.nix.
+          baseChecks = scripts // {
             # The two gates that read the wire the way a player does, as
             # derivations: nix builds the binaries, the sandbox boots them on
             # loopback, and the scripted client's verdict is the build result.
@@ -900,7 +850,113 @@
             # committed traces behind, or the Rust test passes against a
             # recording of a server nobody runs any more.
             differential-traces = differential.tracesUpToDate;
+
+            # Pins the command line the two modules build, so a renamed option
+            # or a reordered argument is caught here rather than on a host.
+            #
+            # The store paths are context-stripped on purpose. Keeping the
+            # context would make this check depend on the binaries, and a
+            # module check should run everywhere in seconds rather than
+            # compile a server. What a module gets wrong is the spelling of a
+            # flag or the order of the arguments, and that is what this reads.
+            nixos-modules =
+              let
+                units = self.nixosConfigurations.module-smoke-test.config.systemd.services;
+                argv = unit: builtins.unsafeDiscardStringContext units.${unit}.serviceConfig.ExecStart;
+              in
+              pkgs.runCommand "hyperion-nixos-modules" { } ''
+                cat > argv <<'ARGV'
+                ${argv "hyperion-game-server"}
+                ${argv "hyperion-proxy"}
+                ARGV
+
+                expect() {
+                  grep -qF -- "$1" argv || {
+                    echo "hyperion NixOS module argv lost: $1" >&2
+                    echo "what the modules built:" >&2
+                    cat argv >&2
+                    exit 1
+                  }
+                }
+
+                expect "/bin/bedwars --ip :: --port 35565"
+                expect "/bin/hyperion-proxy '[::]:25565' --server hyperion-game.internal:35565"
+                expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/game.crt --private-key /var/lib/hyperion-pki/game_private_key.pem"
+                expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/proxy.crt --private-key /var/lib/hyperion-pki/proxy_private_key.pem"
+
+                touch $out
+              '';
           };
+
+          # Self-referential on purpose: the gate is told every name in
+          # `checks`, including its own, so a check added later is enforced
+          # without anyone editing a list. `builtins.attrNames` reads the keys
+          # of an attrset without forcing its values, which is what keeps this
+          # from looping.
+          checks = baseChecks // {
+            flake-gate = import ./nix/ci/flake-gate.nix {
+              inherit lib system;
+              inherit (pkgs) writeShellApplication;
+              names = builtins.attrNames checks;
+            };
+          };
+
+        in
+        {
+          devShells.default = pkgs.mkShell {
+            nativeBuildInputs = nativeBuildInputs ++ cargoTools ++ [ rustToolchain ];
+            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+          };
+
+          apps = lib.mapAttrs
+            (_: script: {
+              type = "app";
+              program = lib.getExe script;
+            })
+            (scripts // {
+              default = scripts.dev;
+              # What CI runs. A contributor can run the same one command and
+              # see the same verdict, which is what stops the two drifting.
+              inherit (checks) flake-gate;
+              update-minecraft-data = minecraft.updateScript;
+              sync-minecraft-proto = minecraft.syncScript;
+              sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
+              sync-minecraft-tag-data = minecraft.syncTagDataScript;
+              sync-minecraft-block-states = minecraft.syncBlockStatesScript;
+              sync-minecraft-entity-types = minecraft.syncEntityTypesScript;
+              # Re-records the golden traces `crates/hyperion/tests/differential.rs`
+              # compares against. See docs/differential-testing.md.
+              record-differential-traces = differential.syncScript;
+              extract-minecraft-protocol = minecraft.extractor;
+              # `nix run .#minecraft-encode -- fixtures out.json` prints bytes
+              # from the server's own codecs, so a new codec can be checked
+              # against Mojang rather than against a reading of Mojang.
+              minecraft-encode = minecraft.vanillaEncoder;
+            });
+
+          packages = {
+            default = gameBinaries.bedwars;
+            inherit (gameBinaries) bedwars smash hyperion-proxy;
+            rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
+
+            minecraft-server-jar = minecraft.serverJar;
+            minecraft-data = minecraft.generatedData;
+            minecraft-decompiled = minecraft.decompiledSources;
+            minecraft-protocol = minecraft.protocolJson;
+            minecraft-proto-rust = minecraft.generatedRust;
+            minecraft-encoder-fixtures = minecraft.encoderFixtures;
+            minecraft-registry-contents = minecraft.registryContents;
+            minecraft-tag-contents = minecraft.tagContents;
+            minecraft-registry-data-rust = minecraft.generatedRegistryData;
+            minecraft-tag-data-rust = minecraft.generatedTagData;
+            differential-recorder = differential.recorder;
+            differential-traces = differential.recordedTraces;
+            minecraft-block-states-rust = minecraft.generatedBlockStates;
+            minecraft-entity-types-rust = minecraft.generatedEntityTypes;
+          };
+
+          # What CI enforces of this set is nix/ci/flake-gate.nix.
+          inherit checks;
 
         };
     in
@@ -965,50 +1021,7 @@
       };
 
       apps = forAllSystems (system: (mkSystem system).apps);
-      checks = forAllSystems (
-        system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-        in
-        (mkSystem system).checks
-        // {
-          # Pins the command line the two modules build, so a renamed option
-          # or a reordered argument is caught here rather than on a host.
-          #
-          # The store paths are context-stripped on purpose. Keeping the
-          # context would make this check depend on the binaries, and a module
-          # check should run everywhere in seconds rather than compile a
-          # server. What a module gets wrong is the spelling of a flag or the
-          # order of the arguments, and that is what this reads.
-          nixos-modules =
-            let
-              units = self.nixosConfigurations.module-smoke-test.config.systemd.services;
-              argv = unit: builtins.unsafeDiscardStringContext units.${unit}.serviceConfig.ExecStart;
-            in
-            pkgs.runCommand "hyperion-nixos-modules" { } ''
-              cat > argv <<'ARGV'
-              ${argv "hyperion-game-server"}
-              ${argv "hyperion-proxy"}
-              ARGV
-
-              expect() {
-                grep -qF -- "$1" argv || {
-                  echo "hyperion NixOS module argv lost: $1" >&2
-                  echo "what the modules built:" >&2
-                  cat argv >&2
-                  exit 1
-                }
-              }
-
-              expect "/bin/bedwars --ip :: --port 35565"
-              expect "/bin/hyperion-proxy '[::]:25565' --server hyperion-game.internal:35565"
-              expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/game.crt --private-key /var/lib/hyperion-pki/game_private_key.pem"
-              expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/proxy.crt --private-key /var/lib/hyperion-pki/proxy_private_key.pem"
-
-              touch $out
-            '';
-        }
-      );
+      checks = forAllSystems (system: (mkSystem system).checks);
       devShells = forAllSystems (system: (mkSystem system).devShells);
       packages = forAllSystems (system: (mkSystem system).packages);
     };
