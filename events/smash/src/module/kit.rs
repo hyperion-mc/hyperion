@@ -708,6 +708,9 @@ impl Module for KitModule {
         world.component::<KitMob>();
         world.component::<KitSkin>();
         world.component::<Ultimate>();
-        world.component::<Playing>().add(flecs::Exclusive);
+        world
+            .component::<Playing>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive);
     }
 }
