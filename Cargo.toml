@@ -39,11 +39,8 @@ members = [
     'crates/hyperion-permission',
     'crates/hyperion-proto',
     'crates/hyperion-proxy',
-    'crates/hyperion-scheduled',
-    'crates/hyperion-stats',
     'crates/hyperion-utils',
     'crates/packet-channel',
-    'crates/simd-utils',
     'events/bedwars',
     'events/smash',
     'tools/rust-mc-bot',
@@ -249,9 +246,6 @@ path = 'crates/hyperion-permission'
 [workspace.dependencies.hyperion-proto]
 path = 'crates/hyperion-proto'
 
-[workspace.dependencies.hyperion-scheduled]
-path = 'crates/hyperion-scheduled'
-
 [workspace.dependencies.hyperion-utils]
 path = 'crates/hyperion-utils'
 
@@ -275,9 +269,6 @@ version = "0.3.7"
 features = ['rustls', 'stream']
 version = '0.13.4'
 
-[workspace.dependencies.hyperion-respawn]
-path = 'crates/hyperion-respawn'
-
 [workspace.dependencies.roaring]
 features = ["simd"]
 version = "0.11.4"
@@ -285,9 +276,6 @@ version = "0.11.4"
 [workspace.dependencies.rustc-hash]
 features = ['nightly']
 version = "2.1.3"
-
-[workspace.dependencies.simd-utils]
-path = 'crates/simd-utils'
 
 [workspace.dependencies.syntect]
 default-features = false
