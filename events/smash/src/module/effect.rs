@@ -562,12 +562,31 @@ impl Module for EffectModule {
         world.component::<Shields>();
         world.component::<Repeats>();
         world.component::<Ends>();
-        // Exclusive: an effect afflicts exactly one player, comes from one
-        // place and is owed to one attacker. A second target would silently
-        // double every tick it deals.
-        world.component::<Upon>().add(flecs::Exclusive);
-        world.component::<InflictedBy>().add(flecs::Exclusive);
-        world.component::<Source>().add(flecs::Exclusive);
+        // All three are relationships and all three are exclusive: an effect
+        // afflicts exactly one player, comes from one place and is owed to one
+        // attacker, and none may be added as a bare tag. `Upon` carries two
+        // more traits its siblings do not. `DontFragment`: its target is a
+        // player, so a fragmenting relationship makes flecs mint an archetype
+        // per victim, and Arrow Storm alone spawns a fresh effect every 0.3s
+        // for eight seconds -- the churn a sparse pair avoids. `(OnDeleteTarget,
+        // Delete)`: an effect dies with the player it is on, so a disconnect
+        // takes its burns with it and the `tick_effects` loop below no longer
+        // needs a branch that finds a victimless effect and cleans it up. That
+        // is the same teardown-by-policy egress::boss_bar is built on.
+        world
+            .component::<Upon>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive)
+            .add_trait::<flecs::DontFragment>()
+            .add_trait::<(flecs::OnDeleteTarget, flecs::Delete)>();
+        world
+            .component::<InflictedBy>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive);
+        world
+            .component::<Source>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive);
 
         // Applying and expiring are one `run` rather than two per-entity
         // systems, for the reason `smash::expire_grants` is: hurting a victim
@@ -588,16 +607,18 @@ impl Module for EffectModule {
                     .with(Effect::id())
                     .build()
                     .each_entity(|effect, expires| {
-                        let Some(victim) = effect.target(Upon, 0) else {
-                            // The player it was put on has gone. Collected
-                            // so the entity does not leak for the rest of
-                            // the match.
-                            finished.push(effect.id());
-                            return;
-                        };
+                        // `(Upon, OnDeleteTarget, Delete)` deletes an effect
+                        // with the player it is on, so a live effect has a live
+                        // victim -- a disconnect took its burns with it before
+                        // this system ran. There is no victimless-effect branch
+                        // any more; flecs owns that teardown, the way it owns
+                        // egress::boss_bar's.
+                        let victim = effect
+                            .target(Upon, 0)
+                            .expect("an effect outlived its victim; (Upon, Delete) forbids it");
 
                         expires.remaining -= dt;
-                        if expires.remaining <= 0.0 || !victim.is_alive() {
+                        if expires.remaining <= 0.0 {
                             finished.push(effect.id());
                             return;
                         }
