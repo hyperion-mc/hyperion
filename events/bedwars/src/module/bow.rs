@@ -11,13 +11,50 @@ use hyperion::{
     simulation::{
         Owner, Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw,
         entity_kind::EntityKind,
-        event, get_direction_from_rotation,
+        event::{self, ClientStatusCommand, ClientStatusEvent},
+        get_direction_from_rotation,
+        handlers::PacketSwitchQuery,
         metadata::living_entity::{ArrowsInEntity, HandStates},
+        packet::HandlerRegistry,
     },
     storage::{EventQueue, Events},
 };
 use hyperion_inventory::PlayerInventory;
 use tracing::debug;
+
+// The three numbers below and the curve in `BowCharging::get_charge` are all
+// transcribed from one place:
+//
+//   net.minecraft.world.item.BowItem#getPowerForTime(int)
+//   net.minecraft.world.item.BowItem#releaseUsing(ItemStack, Level, LivingEntity, int)
+//
+// Written down here rather than generated, because unlike a registry or a
+// packet layout this is a method *body* and nothing in the toolchain reads
+// those yet. That makes the citation the only thing standing between this and
+// a silent drift on the next version bump, so it names the class and the exact
+// signature: the point is that a reader can open the decompiled source and
+// check the transcription rather than trust it.
+
+/// Ticks in a second, for turning an elapsed `Duration` into vanilla's unit.
+const TICKS_PER_SECOND: f32 = 20.0;
+
+/// Ticks of holding that count as a full draw.
+///
+/// `getPowerForTime` divides the charge by 20 and caps the result at 1.0, so a
+/// bow reaches full power one second after it is nocked. The same number as
+/// [`TICKS_PER_SECOND`] and a different quantity: one is how fast the clock
+/// runs, the other is how long the bow takes, and vanilla is free to change
+/// either without the other.
+const FULL_DRAW_TICKS: f32 = 20.0;
+
+/// Blocks per tick a fully drawn bow gives its arrow.
+///
+/// `releaseUsing` passes `f * 3.0` to `AbstractArrow#shootFromRotation`, where
+/// `f` is the fraction [`BowCharging::get_charge`] returns. This is the 3.0,
+/// and it is the same number
+/// `crates/hyperion/tests/differential/scenarios/arrow-level-shot.json` records
+/// a vanilla shot at.
+const MAX_ARROW_SPEED: f32 = 3.0;
 
 #[derive(Component)]
 pub struct BowModule;
@@ -57,8 +94,8 @@ pub struct BowCharging {
 }
 
 // Same reason as LastFireTime: it is a (flecs::With, _) target. Unlike
-// LastFireTime the epoch is the wrong default here -- `get_charge` clamps
-// elapsed time to 1.2s, so a player who never drew the bow would release a
+// LastFireTime the epoch is the wrong default here -- `get_charge` saturates a
+// second after the bow is nocked, so a player who never drew it would release a
 // full-power shot. "Started charging now" is the minimum charge.
 impl Default for BowCharging {
     fn default() -> Self {
@@ -74,15 +111,30 @@ impl BowCharging {
         }
     }
 
+    /// How far the bow is drawn, as a fraction of a full draw.
+    ///
+    /// This is `getPowerForTime` and nothing else: the draw is counted in
+    /// ticks, the curve is quadratic, and it saturates at 20 of them. So a full
+    /// draw is one second, not the 1.2 this clamped to before, and because the
+    /// result is a fraction the caller's `* 3.0` lands on exactly vanilla's
+    /// maximum arrow speed.
+    ///
+    /// What it used to return was *seconds*, clamped to 1.2, which that same
+    /// multiply turned into 3.6 blocks a tick -- a fifth faster than a real bow
+    /// can shoot -- under a comment claiming 3.0 was the maximum.
     #[must_use]
+    #[expect(
+        clippy::suboptimal_flops,
+        reason = "mul_add is a fused multiply-add: one rounding where Java does \
+                  two. getPowerForTime evaluates `(f * f + f * 2.0F) / 3.0F` as \
+                  separate float operations, and this file exists to give the \
+                  same answer it does, so the two roundings are the behaviour \
+                  rather than an oversight"
+    )]
     pub fn get_charge(&self) -> f32 {
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
-        let secs = elapsed.as_secs_f32();
-        // Minecraft bow charge mechanics:
-        // - Takes 1.2 second to fully charge
-        // - Minimum charge is 0.000001
-        // - Maximum charge is 1.0
-        secs.clamp(0.01, 1.2)
+        let f = elapsed.as_secs_f32() * TICKS_PER_SECOND / FULL_DRAW_TICKS;
+        ((f * f + f * 2.0) / 3.0).min(1.0)
     }
 }
 
@@ -110,8 +162,7 @@ impl Module for BowModule {
                     .entity
                     .entity_view(world)
                     .get::<&PlayerInventory>(|inventory| {
-                        let cursor = inventory.get_cursor();
-                        if cursor.stack.item != ItemKind::Bow {
+                        if inventory.held().stack.item != ItemKind::Bow {
                             return;
                         }
 
@@ -187,8 +238,7 @@ impl Module for BowModule {
 
                         // Calculate the direction vector from the player's rotation
                         let direction = get_direction_from_rotation(**yaw, **pitch);
-                        // Calculate the velocity of the arrow based on the charge (3.0 is max velocity)
-                        let velocity = direction * (charge * 3.0);
+                        let velocity = direction * (charge * MAX_ARROW_SPEED);
 
                         let spawn_pos =
                             Vec3::new(position.x, position.y + 1.62, position.z) + direction * 0.5;
@@ -228,7 +278,24 @@ impl Module for BowModule {
                         (velocity.0.length() * 2.0, owner.entity)
                     });
 
-                if damage == 0.0 && owner == event.client {
+                // Two separate refusals, and they were one `&&` before, which
+                // meant an arrow was only ever ignored when it was both
+                // stationary *and* the victim's own -- so a player's own moving
+                // arrow damaged them, and any arrow at rest still counted as a
+                // hit against everybody else.
+                //
+                // An arrow that has stopped has already been pinned into a
+                // block by `arrow_block_hit`, and a stuck arrow is scenery.
+                if damage == 0.0 {
+                    continue;
+                }
+
+                // Vanilla gives an arrow a few ticks of immunity to its own
+                // shooter, because it spawns 0.5 blocks in front of the eyes and
+                // would otherwise clip the hitbox it came out of on tick one.
+                // Nothing here integrates that grace period, so the owner is
+                // simply never a valid target.
+                if owner == event.client {
                     continue;
                 }
 
@@ -274,6 +341,38 @@ impl Module for BowModule {
                         **position = event.collision.point;
                     });
             }
+        });
+
+        // Arrows stuck in a player are cosmetic, and until now they were
+        // permanent: `arrow_entity_hit` only ever incremented this, so a player
+        // who took six arrows over a match wore all six for the rest of it and
+        // through every respawn after. Vanilla bleeds them off over time and
+        // clears them outright on respawn; this does the clearing, which is the
+        // half that stops the count growing without bound.
+        //
+        // A `HandlerRegistry` handler and not a system on
+        // `EventQueue<ClientStatusEvent>`, because `EventQueue::drain` is
+        // destructive and single-consumer: a second drain of that queue would
+        // race `attack.rs` for the same events and one of the two would
+        // silently stop seeing respawns. The registry fans every handler out
+        // over the same value instead.
+        world.get::<&mut HandlerRegistry>(|registry| {
+            registry.add_handler(Box::new(
+                |status: &ClientStatusEvent, query: &mut PacketSwitchQuery<'_>| {
+                    if status.status == ClientStatusCommand::RequestStats {
+                        return Ok(());
+                    }
+
+                    status
+                        .client
+                        .entity_view(query.world)
+                        .get::<&mut ArrowsInEntity>(|arrows| {
+                            arrows.0 = 0;
+                        });
+
+                    Ok(())
+                },
+            ));
         });
     }
 }
