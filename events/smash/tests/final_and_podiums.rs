@@ -94,27 +94,40 @@ fn violation_child() {
     std::process::exit(0);
 }
 
+/// The child imports a full smash world, whose `ecs_init` segfaults on the
+/// order of 1 in 100 runs -- ENG-10852, a pre-existing flake unrelated to the
+/// trait under test. Such a crash kills the child before it reaches the illegal
+/// operation, producing neither `CONSTRAINT_VIOLATED` nor `NO_ABORT`: a silent
+/// non-zero death. Only that no-verdict shape is retried. `NO_ABORT` (the add
+/// was accepted -- guard broken) fails at once and `CONSTRAINT_VIOLATED` (the
+/// guard held) passes, so the retry masks neither verdict; and if every attempt
+/// crashes with no verdict the assertion still fails.
+const CONSTRAINT_ATTEMPTS: usize = 8;
+
 fn assert_aborts_on_constraint(case: &str) {
     let exe = std::env::current_exe().expect("test binary path");
-    let output = Command::new(exe)
-        .args(["--exact", "violation_child", "--nocapture"])
-        .env("SMASH_FINAL_VIOLATION", case)
-        .env("RUST_BACKTRACE", "0")
-        .output()
-        .expect("spawn the violation child");
-    let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
-    log.push_str(&String::from_utf8_lossy(&output.stderr));
-    assert!(
-        !output.status.success(),
-        "{case}: inheriting from a Final kind was accepted, not aborted.\noutput:\n{log}"
-    );
-    assert!(
-        !log.contains("NO_ABORT"),
-        "{case}: flecs accepted the illegal is_a.\noutput:\n{log}"
-    );
-    assert!(
-        log.contains("CONSTRAINT_VIOLATED"),
-        "{case}: the child died, but not on a flecs constraint.\noutput:\n{log}"
+    for _ in 0..CONSTRAINT_ATTEMPTS {
+        let output = Command::new(&exe)
+            .args(["--exact", "violation_child", "--nocapture"])
+            .env("SMASH_FINAL_VIOLATION", case)
+            .env("RUST_BACKTRACE", "0")
+            .output()
+            .expect("spawn the violation child");
+        let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+        log.push_str(&String::from_utf8_lossy(&output.stderr));
+        assert!(
+            !log.contains("NO_ABORT") && !output.status.success(),
+            "{case}: inheriting from a Final kind was accepted, not aborted.\noutput:\n{log}"
+        );
+        if log.contains("CONSTRAINT_VIOLATED") {
+            return;
+        }
+        // No verdict: the child died in ecs_init (ENG-10852), not on the is_a. Retry.
+    }
+    panic!(
+        "{case}: the violation child crashed before reaching the constraint on all \
+         {CONSTRAINT_ATTEMPTS} attempts -- ecs_init failing every time, or the trait no longer \
+         aborts."
     );
 }
 

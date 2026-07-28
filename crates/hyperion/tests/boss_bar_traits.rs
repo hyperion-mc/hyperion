@@ -55,28 +55,51 @@ fn violation_child() {
     std::process::exit(0);
 }
 
+/// The child imports a full hyperion world, whose `ecs_init` segfaults on the
+/// order of 1 in 100 runs -- a pre-existing flake, ENG-10852, unrelated to the
+/// trait under test. A segfault kills the child before it reaches the bare-tag
+/// add, so it produces neither the flecs `CONSTRAINT_VIOLATED` diagnostic nor
+/// the `NO_ABORT` marker: a silent non-zero death with empty output. That is
+/// exactly the shape we retry, and only that shape.
+///
+/// The two verdicts that end the loop are both decisive and neither is masked
+/// by the retry: `NO_ABORT` means flecs *accepted* the illegal add (the guard
+/// is broken) and fails at once; `CONSTRAINT_VIOLATED` means it aborted on the
+/// constraint (the guard holds) and passes. Only a no-verdict crash is retried,
+/// and if every attempt crashes without a verdict the assertion still fails --
+/// so a child that could never initialise surfaces as a failure, it is not
+/// swept under the retry.
+const CONSTRAINT_ATTEMPTS: usize = 8;
+
 fn assert_aborts_on_constraint(case: &str) {
     let exe = std::env::current_exe().expect("test binary path");
-    let output = Command::new(exe)
-        .args(["--exact", "violation_child", "--nocapture"])
-        .env("HYPERION_VIOLATION", case)
-        .env("RUST_BACKTRACE", "0")
-        .output()
-        .expect("spawn the violation child");
-    // flecs writes its abort diagnostic to stdout; NO_ABORT goes to stderr.
-    let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
-    log.push_str(&String::from_utf8_lossy(&output.stderr));
-    assert!(
-        !output.status.success(),
-        "{case}: the bare-tag add was accepted, not aborted.\noutput:\n{log}"
-    );
-    assert!(
-        !log.contains("NO_ABORT"),
-        "{case}: flecs accepted the illegal state.\noutput:\n{log}"
-    );
-    assert!(
-        log.contains("CONSTRAINT_VIOLATED"),
-        "{case}: the child died, but not on a flecs constraint.\noutput:\n{log}"
+    let mut crashes = 0usize;
+    for _ in 0..CONSTRAINT_ATTEMPTS {
+        let output = Command::new(&exe)
+            .args(["--exact", "violation_child", "--nocapture"])
+            .env("HYPERION_VIOLATION", case)
+            .env("RUST_BACKTRACE", "0")
+            .output()
+            .expect("spawn the violation child");
+        // flecs writes its abort diagnostic to stdout; NO_ABORT goes to stderr.
+        let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+        log.push_str(&String::from_utf8_lossy(&output.stderr));
+
+        assert!(
+            !log.contains("NO_ABORT") && !output.status.success(),
+            "{case}: the bare-tag add was accepted, not aborted.\noutput:\n{log}"
+        );
+        if log.contains("CONSTRAINT_VIOLATED") {
+            return;
+        }
+        // No verdict either way: the child died before reaching the add, which
+        // is the ENG-10852 `ecs_init` segfault, not the trait. Retry.
+        crashes += 1;
+    }
+    panic!(
+        "{case}: the violation child crashed before reaching the constraint on all \
+         {CONSTRAINT_ATTEMPTS} attempts ({crashes} no-verdict deaths). Either ecs_init is failing \
+         every time (not the ~1/100 ENG-10852 flake) or the trait no longer aborts."
     );
 }
 
