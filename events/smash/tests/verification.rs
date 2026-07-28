@@ -786,6 +786,99 @@ fn an_ability_costing_the_whole_bar_is_allowed_at_a_full_bar() {
     );
 }
 
+/// The Smash Crystal's grant lasts exactly as long as it was given for.
+///
+/// `grant_ultimate` puts a countdown on the ability entity and the tick takes
+/// the grant back at zero. Both ends matter: taken back early and the crystal
+/// is worthless, taken back late and an ultimate outlives the window it was
+/// bought for. The comparison is one `<=`, and only the tick that lands exactly
+/// on the deadline tells it from `>`.
+#[test]
+fn a_temporary_ultimate_lasts_exactly_as_long_as_it_was_granted_for() {
+    use smash::{flecs_ext::EntityViewExt, module::kit::Ultimate};
+
+    let mut game = Game::new();
+    let player = game.player("p", Vec3::ZERO);
+    let player = game.world.entity_from_id(player);
+    kit::apply(
+        &game.world,
+        player,
+        kit::by_name(&game.world, "Skeleton").expect("Skeleton is a stock kit"),
+    );
+
+    let holds_ultimate = || {
+        player
+            .find_target(smash::module::ability::Grants, |ability| {
+                ability.has(Ultimate::id())
+            })
+            .is_some()
+    };
+    assert!(!holds_ultimate(), "the ultimate is not granted at spawn");
+
+    // One second, in twenty ticks of the game's own length.
+    assert!(smash::module::kit::grant_ultimate(&game.world, player, 1.0));
+    assert!(holds_ultimate(), "the grant did not take");
+
+    // Nineteen ticks in, it is still there.
+    game.advance(0.95, 19);
+    assert!(
+        holds_ultimate(),
+        "the ultimate was taken back before its second was up"
+    );
+
+    // The twentieth is the one that lands on zero.
+    game.advance(0.05, 1);
+    assert!(
+        !holds_ultimate(),
+        "the ultimate outlived the grant it was given"
+    );
+
+    // And it can be granted again afterwards, rather than the expiry leaving
+    // something behind that refuses the next one.
+    assert!(smash::module::kit::grant_ultimate(&game.world, player, 1.0));
+    assert!(holds_ultimate());
+    assert!(
+        !smash::module::kit::grant_ultimate(&game.world, player, 1.0),
+        "a second crystal stacked a second ultimate"
+    );
+}
+
+/// Every observation has the name the `/abilities` wire format uses.
+///
+/// These strings are a protocol between the server and the harness that reads
+/// them, so a typo is a check that silently never matches rather than an error
+/// anybody sees.
+#[test]
+fn every_observation_has_its_wire_name() {
+    use smash::module::ability::Observable;
+
+    for (observable, name) in [
+        (Observable::HurtsTarget, "hurts_target"),
+        (Observable::LaunchesTarget, "launches_target"),
+        (Observable::LaunchesCaster, "launches_caster"),
+        (Observable::TeleportsCaster, "teleports_caster"),
+        (Observable::HealsCaster, "heals_caster"),
+        (Observable::BuffsMelee, "buffs_melee"),
+    ] {
+        assert_eq!(observable.as_str(), name, "{observable:?}");
+    }
+
+    // All distinct, so no two observations collapse into one on the wire.
+    let names = [
+        Observable::HurtsTarget,
+        Observable::LaunchesTarget,
+        Observable::LaunchesCaster,
+        Observable::TeleportsCaster,
+        Observable::HealsCaster,
+        Observable::BuffsMelee,
+    ]
+    .map(Observable::as_str);
+    let mut sorted = names.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), names.len(), "two observations share a name");
+}
+
 /// A refusal reaches the player, with the reason on it.
 ///
 /// The refusal text and the code that sends it were both dead as far as the
