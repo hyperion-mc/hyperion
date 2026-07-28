@@ -248,7 +248,7 @@ impl Module for BossBarModule {
         // a query-match observer, which fires on any table transition that
         // still satisfies the query rather than on the removal itself.
         world
-            .observer::<flecs::OnRemove, ()>()
+            .observer_named::<flecs::OnRemove, ()>("boss_bar_teardown")
             .with((id::<Sent>(), id::<flecs::Wildcard>()))
             .each_iter(|it, row, ()| {
                 let world = it.world();

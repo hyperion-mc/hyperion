@@ -549,7 +549,7 @@ impl Module for EffectModule {
         // that from inside the query that found the effect. Everything is
         // decided first and applied afterwards.
         world
-            .system_named::<()>("smash::tick_effects")
+            .system_named::<()>("tick_effects")
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();

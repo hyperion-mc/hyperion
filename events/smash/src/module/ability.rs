@@ -504,7 +504,7 @@ impl Module for AbilityModule {
         world.component::<GrantedFor>();
 
         world
-            .system_named::<&mut Cooldown>("smash::tick_cooldowns")
+            .system_named::<&mut Cooldown>("tick_cooldowns")
             .each_iter(|it, _, cooldown| {
                 if cooldown.remaining > 0.0 {
                     cooldown.remaining = (cooldown.remaining - it.delta_time()).max(0.0);
@@ -512,7 +512,7 @@ impl Module for AbilityModule {
             });
 
         world
-            .system_named::<&mut Charging>("smash::tick_charge")
+            .system_named::<&mut Charging>("tick_charge")
             .each_iter(|it, _, charging| {
                 charging.held += it.delta_time();
             });
@@ -521,7 +521,7 @@ impl Module for AbilityModule {
         // system because taking the grant back edits the holder's type, and
         // flecs refuses that from inside the query that found it.
         world
-            .system_named::<()>("smash::expire_grants")
+            .system_named::<()>("expire_grants")
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();
@@ -548,7 +548,7 @@ impl Module for AbilityModule {
             // `Player` is a tag, so it is named as a filter term rather than a
             // data term: asking for `&Player` fails a const assertion deep in
             // flecs with no mention of the tag. See the API notes.
-            .observer_named::<UseSlot, ()>("smash::on_use_slot")
+            .observer_named::<UseSlot, ()>("on_use_slot")
             .with(Player::id())
             .each_iter(|it, index, ()| {
                 let slot = it.param().0;
@@ -575,7 +575,7 @@ impl Module for AbilityModule {
             });
 
         world
-            .observer_named::<ReleaseSlot, ()>("smash::on_release_slot")
+            .observer_named::<ReleaseSlot, ()>("on_release_slot")
             .with(Player::id())
             .each_iter(|it, index, ()| {
                 let slot = it.param().0;

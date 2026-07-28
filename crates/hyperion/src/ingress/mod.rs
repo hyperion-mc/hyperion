@@ -42,7 +42,7 @@ impl Default for ServerPingResponse {
 
 fn remove_player_from_visibility(world: &World) {
     world
-        .observer::<flecs::OnRemove, ()>()
+        .observer_named::<flecs::OnRemove, ()>("remove_player_from_visibility")
         .with_enum(PacketState::Play)
         .each_entity(|entity, ()| {
             let world = entity.world();

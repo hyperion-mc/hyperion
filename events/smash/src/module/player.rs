@@ -167,7 +167,7 @@ impl Module for PlayerModule {
             .add_trait::<(flecs::With, SelectedSlot)>();
 
         world
-            .system_named::<(&OnGround, &mut JumpsLeft)>("smash::restore_double_jump")
+            .system_named::<(&OnGround, &mut JumpsLeft)>("restore_double_jump")
             .each(|(ground, jumps)| {
                 if ground.0 {
                     jumps.0 = 1;
@@ -175,7 +175,7 @@ impl Module for PlayerModule {
             });
 
         world
-            .system_named::<&mut Energy>("smash::regen_energy")
+            .system_named::<&mut Energy>("regen_energy")
             .each_iter(|it, _, energy| {
                 energy.current =
                     (energy.regen.mul_add(it.delta_time(), energy.current)).min(energy.max);

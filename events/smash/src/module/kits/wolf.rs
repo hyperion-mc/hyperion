@@ -109,7 +109,7 @@ impl Module for Wolf {
         // Ravage. A melee hit by a Wolf adds a stack; the stack decays rather
         // than being cleared, so a Wolf who keeps pressure on keeps the bonus.
         world
-            .observer_named::<Damaged, ()>("smash::kits::wolf::ravage")
+            .observer_named::<Damaged, ()>("ravage")
             .with(Player::id())
             .each_iter(|it, _index, ()| {
                 let event = *it.param();

@@ -47,7 +47,7 @@ impl Module for InputModule {
         // where a real 26.2 client reads the id against the configuration
         // table and drops the connection.
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("promote_to_smash_player")
             .with_enum(hyperion::simulation::PacketState::Play)
             .each_entity(|entity, ()| {
                 entity.set(player_id(entity.id())).add(Player::id());
@@ -58,14 +58,14 @@ impl Module for InputModule {
         // reads as bare life counts. hyperion learns the username during login;
         // copying it onto the flecs name is what makes those lines legible.
         world
-            .observer::<flecs::OnSet, &Name>()
+            .observer_named::<flecs::OnSet, &Name>("copy_player_name")
             .with(Player::id())
             .each_entity(|entity, name| {
                 entity.set_name(name);
             });
 
         world
-            .system_named::<&mut EventQueue<event::ItemInteract>>("smash::on_item_interact")
+            .system_named::<&mut EventQueue<event::ItemInteract>>("on_item_interact")
             .each_iter(|it, _, queue| {
                 let world = it.world();
                 for event in queue.drain() {
@@ -80,7 +80,7 @@ impl Module for InputModule {
         // Every entity in the world reaches this and `selector::click_mob`
         // answers for the fifteen that are standing on podiums.
         world
-            .system_named::<&mut EventQueue<event::EntityInteract>>("smash::on_entity_interact")
+            .system_named::<&mut EventQueue<event::EntityInteract>>("on_entity_interact")
             .each_iter(|it, _, queue| {
                 let world = it.world();
                 for event in queue.drain() {
@@ -95,7 +95,7 @@ impl Module for InputModule {
         // thing. Every block in the world reaches this, and `selector::click`
         // answers for the handful that are podiums.
         world
-            .system_named::<&mut EventQueue<event::BlockInteract>>("smash::on_block_interact")
+            .system_named::<&mut EventQueue<event::BlockInteract>>("on_block_interact")
             .each_iter(|it, _, queue| {
                 let world = it.world();
                 for event in queue.drain() {
@@ -107,7 +107,7 @@ impl Module for InputModule {
             });
 
         world
-            .system_named::<&mut EventQueue<event::ReleaseUseItem>>("smash::on_release_use_item")
+            .system_named::<&mut EventQueue<event::ReleaseUseItem>>("on_release_use_item")
             .each_iter(|it, _, queue| {
                 let world = it.world();
                 for event in queue.drain() {
@@ -122,7 +122,7 @@ impl Module for InputModule {
         // the attacker is holding never enters into it -- which is also why
         // hyperion's own `damage` field on the event is ignored here.
         world
-            .system_named::<&mut EventQueue<event::AttackEntity>>("smash::on_attack")
+            .system_named::<&mut EventQueue<event::AttackEntity>>("on_attack")
             .each_iter(|it, _, queue| {
                 let world = it.world();
                 for event in queue.drain() {
@@ -157,7 +157,7 @@ impl Module for InputModule {
         // every one of those deferred operations has been committed.
         world.component::<HotbarStale>();
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("on_kit_change_mark_hotbar")
             .with((Playing, id::<flecs::Wildcard>()))
             .with(Player::id())
             .each_entity(|player, ()| {
@@ -180,16 +180,16 @@ impl Module for InputModule {
             }
         };
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("on_grant_mark_hotbar")
             .with((ability::Grants, id::<flecs::Wildcard>()))
             .each_entity(mark_stale);
         world
-            .observer::<flecs::OnRemove, ()>()
+            .observer_named::<flecs::OnRemove, ()>("on_revoke_mark_hotbar")
             .with((ability::Grants, id::<flecs::Wildcard>()))
             .each_entity(mark_stale);
 
         world
-            .system_named::<&PlayerId>("smash::push_stale_hotbars")
+            .system_named::<&PlayerId>("push_stale_hotbars")
             .kind(id::<flecs::pipeline::PostUpdate>())
             .with(Player::id())
             .with(HotbarStale::id())
@@ -212,7 +212,7 @@ impl Module for InputModule {
         // game's number rather than hyperion's. Pushing it on change instead of
         // every tick keeps this off the hot path.
         world
-            .observer::<flecs::OnSet, &crate::module::player::Health>()
+            .observer_named::<flecs::OnSet, &crate::module::player::Health>("mirror_health_to_host")
             .with(Player::id())
             .each_entity(|entity, health| {
                 let Some(id) = entity.try_get::<&PlayerId>(|id| *id) else {

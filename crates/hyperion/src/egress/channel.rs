@@ -29,7 +29,7 @@ pub struct ChannelModule;
 impl Module for ChannelModule {
     fn module(world: &World) {
         world
-            .observer::<flecs::OnAdd, ()>()
+            .observer_named::<flecs::OnAdd, ()>("channel_added")
             .with(id::<Channel>())
             .each_entity(|entity, ()| {
                 let packet = RemoveEntities(vec![entity.minecraft_id()]);
@@ -50,7 +50,7 @@ impl Module for ChannelModule {
             });
 
         world
-            .observer::<flecs::OnRemove, ()>()
+            .observer_named::<flecs::OnRemove, ()>("channel_removed")
             .with(id::<Channel>())
             .each_entity(|entity, ()| {
                 entity.world().get::<&Compose>(|compose| {

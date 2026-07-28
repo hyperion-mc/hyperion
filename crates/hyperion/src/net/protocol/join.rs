@@ -257,7 +257,7 @@ impl Module for JoinModule {
             });
 
         world
-            .observer::<flecs::OnRemove, ()>()
+            .observer_named::<flecs::OnRemove, ()>("log_leave_without_uuid")
             .with_enum(crate::simulation::PacketState::Play)
             .each_entity(|entity, ()| {
                 if entity.try_get::<&crate::simulation::Uuid>(|_| ()).is_none() {

@@ -136,7 +136,7 @@ impl Module for SpawnModule {
         world.component::<Lifetime>();
 
         world
-            .system_named::<&mut Lifetime>("hyperion::expire_temporary_entities")
+            .system_named::<&mut Lifetime>("expire_temporary_entities")
             .each_iter(|it, index, lifetime| {
                 lifetime.seconds -= it.delta_time();
                 if lifetime.seconds <= 0.0 {
@@ -156,7 +156,7 @@ impl Module for SpawnModule {
         // was never unspawned: the server forgot it and every client kept
         // drawing it where it died, forever.
         world
-            .observer::<flecs::OnRemove, ()>()
+            .observer_named::<flecs::OnRemove, ()>("despawn_removed_entity")
             .with_enum_wildcard::<EntityKind>()
             .without(id::<ConnectionId>())
             .each_entity(|entity, ()| {

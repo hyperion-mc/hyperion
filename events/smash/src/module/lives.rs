@@ -305,7 +305,7 @@ impl Module for LivesModule {
         world.component::<EliminatedEvent>();
 
         world
-            .system_named::<()>("smash::assign_life_tier")
+            .system_named::<()>("assign_life_tier")
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();
@@ -331,7 +331,7 @@ impl Module for LivesModule {
             });
 
         world
-            .observer_named::<Died, (&mut Lives, &PlayerId, &mut Health)>("smash::on_death")
+            .observer_named::<Died, (&mut Lives, &PlayerId, &mut Health)>("on_death")
             .with(Player::id())
             .each_iter(|it, index, (lives, player, health)| {
                 let cause = it.param().cause;
@@ -402,7 +402,7 @@ impl Module for LivesModule {
 
         world
             .system_named::<(&RespawnAt, &mut Health, &mut Position, &PlayerId, &Arena)>(
-                "smash::respawn",
+                "respawn",
             )
             .each_entity(|player, (respawn, health, position, id, arena)| {
                 let world = player.world();

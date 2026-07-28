@@ -88,7 +88,7 @@ impl Module for ArenaModule {
         // Health reaching zero is the rarer path but a real one: hunger and
         // lava both get there.
         world
-            .system_named::<()>("smash::death_checks")
+            .system_named::<()>("death_checks")
             .run(|mut it| {
                 while it.next() {
                     let world = it.world();

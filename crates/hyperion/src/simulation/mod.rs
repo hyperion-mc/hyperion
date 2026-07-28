@@ -432,7 +432,7 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
     // behind the login handler's and lands last. The player ended up
     // wearing an id their own client had never been told. See ENG-10813.
     world
-        .observer::<flecs::OnAdd, ()>()
+        .observer_named::<flecs::OnAdd, ()>("assign_entity_uuid")
         .with_enum_wildcard::<EntityKind>()
         .without(id::<Uuid>())
         .without(id::<crate::net::ConnectionId>())
@@ -442,7 +442,7 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
         });
 
     world
-        .observer::<flecs::OnSet, ()>()
+        .observer_named::<flecs::OnSet, ()>("apply_entity_prefab")
         .with_enum_wildcard::<EntityKind>()
         .each_entity(move |entity, ()| {
             entity.get::<&EntityKind>(|kind| match kind {

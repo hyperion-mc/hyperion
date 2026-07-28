@@ -197,7 +197,7 @@ impl Module for MapModule {
         // at all, and putting it in the hub rather than on an arena is what
         // stops a joiner from landing in the middle of a running match.
         world
-            .observer::<flecs::OnSet, &Hub>()
+            .observer_named::<flecs::OnSet, &Hub>("place_joiner_at_hub")
             .with(id::<Uuid>())
             .without(id::<hyperion::simulation::Position>())
             .each_entity(|entity, hub| {

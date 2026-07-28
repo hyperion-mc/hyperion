@@ -285,7 +285,7 @@ impl Module for ParticleModule {
         world.component::<ParticleEmitter>();
 
         world
-            .system_named::<&mut ParticleEmitter>("hyperion::draw_particle_emitters")
+            .system_named::<&mut ParticleEmitter>("draw_particle_emitters")
             .each_iter(|it, index, emitter| {
                 let entity = it.entity(index);
                 emitter.current().emit(it.world());

@@ -93,7 +93,7 @@ impl Module for Creeper {
         // or a contact skill and not on a melee hit, which is why `DamageKind`
         // travels with every hit rather than being reconstructed at the far end.
         world
-            .observer_named::<crate::module::damage::Damaged, ()>("smash::kits::creeper::arm")
+            .observer_named::<crate::module::damage::Damaged, ()>("arm")
             .with(Player::id())
             .each_iter(|it, index, ()| {
                 let event = *it.param();
