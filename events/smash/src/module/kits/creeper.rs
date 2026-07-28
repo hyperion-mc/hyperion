@@ -44,6 +44,11 @@ impl Module for Creeper {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            // A creeper has exactly three sounds and no ambient one, so the
+            // hiss is the only thing it can say that is not being hurt or
+            // dying. Sulphur Bomb below plays the same hiss on purpose: it is
+            // what a creeper sounds like, and there is not a second one.
+            select: "minecraft:entity.creeper.primed",
             hurt: "minecraft:entity.creeper.hurt",
             death: "minecraft:entity.creeper.death",
         })

@@ -45,6 +45,7 @@ impl Module for Skeleton {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.skeleton.ambient",
             hurt: "minecraft:entity.skeleton.hurt",
             death: "minecraft:entity.skeleton.death",
         })

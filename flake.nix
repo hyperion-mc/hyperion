@@ -360,6 +360,61 @@
           gameServerPort = 35565;
           proxyPort = 25565;
 
+          # How far each end to end gate's default ports sit above those two.
+          #
+          # One attribute set rather than a number written into each gate's
+          # script, because two gates claiming one offset is invisible where the
+          # numbers are apart: `completions-e2e` and `smash-selector-e2e` both
+          # said 4000 for weeks (ENG-10834), and on darwin, where a build shares
+          # the host's loopback, the loser of that race fails with "address
+          # already in use" from a gate it has nothing to do with. Collected
+          # here, `e2ePortsDistinct` below can say so at eval time.
+          e2eOffsets = {
+            e2e = 1000;
+            smash-e2e = 2000;
+            smash-map-e2e = 3000;
+            smash-selector-e2e = 4000;
+            smash-identity-e2e = 5000;
+            completions-e2e = 6000;
+          };
+
+          # Two gates on one offset, as a build failure rather than as a race.
+          #
+          # An eval-time check and not a runtime one: the failure it catches is a
+          # number, it costs nothing to look at, and the alternative is finding
+          # out from whichever unlucky gate lost the port. The names are reported
+          # rather than only the count, because "two gates collide" is not
+          # actionable and "these two gates collide" is.
+          e2ePortsDistinct =
+            let
+              offsets = lib.attrValues e2eOffsets;
+              duplicated = lib.filter (
+                offset: lib.length (lib.filter (other: other == offset) offsets) > 1
+              ) offsets;
+              colliding = lib.filter (name: lib.elem e2eOffsets.${name} duplicated) (
+                lib.attrNames e2eOffsets
+              );
+            in
+            pkgs.runCommand "hyperion-e2e-ports-distinct" { } (
+              if duplicated == [ ] then
+                ''
+                  echo "ok: ${toString (lib.length offsets)} end to end gates, ${
+                    toString (lib.length offsets)
+                  } distinct port offsets"
+                  touch "$out"
+                ''
+              else
+                ''
+                  echo "FAIL: these gates claim the same port offset: ${
+                    lib.concatStringsSep ", " colliding
+                  }" >&2
+                  echo "Every gate in e2eOffsets needs its own number, or two of" >&2
+                  echo "them running at once fight over one port and the loser" >&2
+                  echo "fails with address already in use." >&2
+                  exit 1
+                ''
+            );
+
           # Generated rather than committed as YAML: the ports and cert paths
           # then have one source of truth shared with the standalone apps above.
           # Commands are single-line: a backslash continuation is literal in a
@@ -562,8 +617,8 @@
                 # a fresh clone runs this without a setup step first.
                 export HYPERION_E2E_CERTS="${e2e.certs}"
 
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 1000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 1000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.e2e)}}"
 
                 exec hyperion-e2e-driver "$@"
               '';
@@ -581,8 +636,8 @@
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/smash-match.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 2000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 2000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -601,8 +656,8 @@
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/smash-selector.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 4000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 4000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-selector-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-selector-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -626,8 +681,8 @@
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/smash-map-check.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 3000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 3000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-map-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-map-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -638,15 +693,22 @@
             # `smash-e2e` and `smash-map-e2e` both prove things about a world.
             # This one never leaves the hub: it reads the command graph the
             # server sends on join and then presses tab, which is the whole of
-            # the completion path and touches nothing else. Its ports default
-            # off `smash-map-e2e`'s so all four gates can run at once.
+            # the completion path and touches nothing else.
+            #
+            # +6000 and not +4000, which is what it claimed until ENG-10834:
+            # `smash-selector-e2e` claims that offset too, so running the two
+            # side by side had one of them lose the port to the other. On darwin
+            # a build shares the host's loopback, so the loser fails with
+            # "address already in use" from a gate it has nothing to do with.
+            # Every offset in this file is now distinct, which the check below
+            # is what says.
             completions-e2e = {
               deps = [ pkgs.git ];
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/completions-check.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 4000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 4000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.completions-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.completions-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -664,8 +726,8 @@
               text = ''
                 export HYPERION_EVENT=smash
                 export HYPERION_E2E_CLIENT=tools/identity-check.py
-                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 5000)}}"
-                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 5000)}}"
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-identity-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-identity-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
               '';
             };
@@ -881,6 +943,9 @@
 
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;
+
+            # No two end to end gates may claim one port. See `e2eOffsets`.
+            e2e-ports-distinct = e2ePortsDistinct;
 
             # A colour reaches a client as a component field or not at all.
             smash-text-no-legacy-formatting = textGate;

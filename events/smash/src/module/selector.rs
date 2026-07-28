@@ -58,9 +58,9 @@ use crate::{
     flecs_ext::EntityViewExt,
     module::{
         kit::{self, KitMob, KitName},
-        lobby,
+        lobby, sound,
     },
-    server::{Channel, NamedColor, PlayerId, ServerHandle, Text},
+    server::{Channel, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 /// Tag on a selector podium.
@@ -133,6 +133,17 @@ pub const FREE_BLOCK: &str = "minecraft:lime_wool";
 
 /// The wool a taken podium stands on. See [`FREE_BLOCK`].
 pub const TAKEN_BLOCK: &str = "minecraft:red_wool";
+
+/// The colour a free mob's nameplate is drawn in, and a taken one's.
+///
+/// The same pair as [`FREE_BLOCK`] and [`TAKEN_BLOCK`], on purpose: the wool
+/// and the nameplate are one signal drawn at two heights rather than two facts
+/// that can drift, and both are computed from [`kit::claims`] by the two
+/// functions below. What the second height buys is reach. Wool is at a
+/// player's feet in the middle of a lobby people are standing around in, and a
+/// nameplate renders over whatever is in front of it from anywhere in the hub.
+pub const FREE_COLOR: NamedColor = NamedColor::Green;
+pub const TAKEN_COLOR: NamedColor = NamedColor::Red;
 
 /// The y of a podium's wool, in the hub's local coordinates.
 ///
@@ -278,6 +289,41 @@ pub fn plinths(world: &World) -> Vec<(IVec3, &'static str)> {
         .collect()
 }
 
+/// What one podium's mob is called, and in what colour. Pure.
+///
+/// The kit's name and nothing else. Not the holder's, though the holder is
+/// known here and `taken_message` already formats one: fifteen mobs each
+/// captioned with somebody's IGN is a paragraph strung across the middle of
+/// the hub, and it answers a question a player only asks after they have been
+/// refused. The colour carries the claim in no characters at all, which is
+/// what keeps a ring of fifteen readable. Whose it is stays where it was, on
+/// the action bar of the click that was refused.
+#[must_use]
+pub fn nameplate(kit: &str, taken: bool) -> Text {
+    Text::text(kit.to_owned()).color(if taken { TAKEN_COLOR } else { FREE_COLOR })
+}
+
+/// What the mob on each podium should currently be called.
+///
+/// Derived from the live claims on every call and returned rather than
+/// written, exactly as [`plinths`] is and for the same reason: the rule is
+/// then testable with no Minecraft world anywhere near it, and the host is
+/// what compares this against the names the mobs are wearing.
+#[must_use]
+pub fn nameplates(world: &World) -> Vec<(Entity, Text)> {
+    let claims = kit::claims(world);
+    podiums(world)
+        .into_iter()
+        .filter_map(|(podium, _, kit)| {
+            let name = world
+                .entity_from_id(kit)
+                .try_get::<&KitName>(|name| name.0)?;
+            let taken = claims.iter().any(|claim| claim.kit == kit);
+            Some((podium, nameplate(name, taken)))
+        })
+        .collect()
+}
+
 /// Which mob stands on each podium, and where.
 ///
 /// Names rather than anything typed, because the game half must not know what
@@ -315,6 +361,21 @@ pub struct Offer {
     pub wool: &'static str,
     /// The mob standing on it, by vanilla entity id.
     pub mob: &'static str,
+    /// The name the mob is wearing over its head, as plain text.
+    ///
+    /// The rendered string and not the component, because what a gate can
+    /// read off the wire is a name and a colour, and the colour is
+    /// [`wool`](Self::wool)'s question already. A client checks this against
+    /// the `custom_name` in the mob's entity metadata.
+    pub label: String,
+    /// The vanilla sound event picking this mob plays, read off the kit's own
+    /// `(PlaysOnSelect, sound)` edge.
+    ///
+    /// Published so that a gate can hold the sound it hears against the
+    /// server's own declaration rather than against a table of fifteen strings
+    /// copied into Python, which would be a second registry and would go on
+    /// passing after the first one changed.
+    pub select_sound: Option<&'static str>,
     /// Whoever is playing this mob, by name. Derived from `(Playing, kit)`.
     pub held_by: Option<String>,
 }
@@ -343,6 +404,9 @@ pub fn manifest(world: &World) -> Vec<Offer> {
                 mob: entry
                     .try_get::<&KitMob>(|mob| mob.0)
                     .unwrap_or(kit::DEFAULT_MOB),
+                label: nameplate(name, taken).plain(),
+                select_sound: sound::declared(entry, sound::PlaysOnSelect)
+                    .map(|declared| declared.id),
                 held_by: claims
                     .iter()
                     .find(|claim| claim.kit == kit)
@@ -417,13 +481,18 @@ fn take(world: &World, player: EntityView<'_>, kit: Entity) {
 /// under the mob was already red before the click, so this explains a refusal
 /// rather than delivering the news.
 ///
-/// No sound. A refusal cue would be a real improvement and it belongs with the
-/// rest of the audio work rather than bolted on here.
+/// And a sound, which is the first-line answer: a player whose click did
+/// nothing learns that from their ears before they have read anything. It is
+/// [`sound::SELECTION_REFUSED`] and not the mob's own voice, because hearing
+/// the Wolf when you failed to become the Wolf is the wrong answer said
+/// confidently. To the clicker alone, for the same reason the selection sound
+/// is.
 fn refuse(world: &World, player: EntityView<'_>, reason: &str) {
     let Some(id) = player.try_get::<&PlayerId>(|id| *id) else {
         return;
     };
     world.get::<&ServerHandle>(|server| {
+        server.play_sound_to(id, Sound::new(sound::SELECTION_REFUSED, SoundCategory::Ui));
         server.send_message(
             id,
             Channel::ActionBar,

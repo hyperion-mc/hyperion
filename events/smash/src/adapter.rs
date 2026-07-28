@@ -46,9 +46,7 @@ use valence_nbt::{Compound, List, Value};
 
 use crate::{
     module::kit::{self, Playing},
-    server::{
-        Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text,
-    },
+    server::{Channel, Cue, HotbarItem, PlayerId, Server, SidebarLine, Sound, SoundCategory, Text},
 };
 
 /// One deferred write.

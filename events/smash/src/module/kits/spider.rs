@@ -37,6 +37,7 @@ impl Module for Spider {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.spider.ambient",
             hurt: "minecraft:entity.spider.hurt",
             death: "minecraft:entity.spider.death",
         })

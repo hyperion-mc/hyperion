@@ -35,6 +35,7 @@ impl Module for Snowman {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.snow_golem.ambient",
             hurt: "minecraft:entity.snow_golem.hurt",
             death: "minecraft:entity.snow_golem.death",
         })

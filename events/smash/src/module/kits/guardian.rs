@@ -54,6 +54,7 @@ impl Module for Guardian {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.guardian.ambient",
             hurt: "minecraft:entity.guardian.hurt",
             death: "minecraft:entity.guardian.death",
         })

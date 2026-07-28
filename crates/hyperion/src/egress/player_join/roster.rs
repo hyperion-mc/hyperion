@@ -66,10 +66,7 @@ use crate::{
         metadata::show_all,
         player_join::{PlayerInfoActions, PlayerList, PlayerListEntry, SkinProperty},
     },
-    net::{
-        Channel, Compose, ConnectionId, DataBundle,
-        protocol::Clientbound,
-    },
+    net::{Channel, Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
         Name, Pitch, Position, Uuid, Velocity, Yaw, add_entity,
         entity_kind::EntityKind,

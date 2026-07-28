@@ -43,6 +43,7 @@ impl Module for Chicken {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.chicken.ambient",
             hurt: "minecraft:entity.chicken.hurt",
             death: "minecraft:entity.chicken.death",
         })

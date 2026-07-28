@@ -246,7 +246,7 @@ fn podium(offer: &selector::Offer) -> String {
     let mut out = String::new();
     let _unused = write!(
         out,
-        r#"{{"kit":"{}","x":{},"y":{},"z":{},"base_y":{},"wool":"{}","mob":"{}","held_by":"#,
+        r#"{{"kit":"{}","x":{},"y":{},"z":{},"base_y":{},"wool":"{}","mob":"{}","label":"{}","select_sound":{},"held_by":"#,
         escape(offer.name),
         offer.click.x,
         offer.click.y,
@@ -254,6 +254,11 @@ fn podium(offer: &selector::Offer) -> String {
         offer.base.y,
         escape(offer.wool),
         escape(offer.mob),
+        escape(&offer.label),
+        offer.select_sound.map_or_else(
+            || "null".to_owned(),
+            |sound| format!(r#""{}""#, escape(sound)),
+        ),
     );
     match &offer.held_by {
         Some(who) => {

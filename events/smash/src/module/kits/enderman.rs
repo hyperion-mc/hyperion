@@ -45,6 +45,7 @@ impl Module for Enderman {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.enderman.ambient",
             hurt: "minecraft:entity.enderman.hurt",
             death: "minecraft:entity.enderman.death",
         })

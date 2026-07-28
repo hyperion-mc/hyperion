@@ -7,14 +7,16 @@
 //! itself, reached the same way everything else about an ability is reached, so
 //! there is one registry and it is the world.
 //!
-//! Three relationships, named for the occasion rather than for the sound:
+//! Four relationships, named for the occasion rather than for the sound:
 //!
 //! * `(PlaysOnCast, sound)` on an ability -- what firing it sounds like.
+//! * `(PlaysOnSelect, sound)` on a kit -- what the mob says when you pick it
+//!   off its podium.
 //! * `(PlaysOnHurt, sound)` on a kit -- what the mob you are playing says when
 //!   it is hit.
 //! * `(PlaysOnDeath, sound)` on a kit -- and when it dies.
 //!
-//! All three are `Exclusive`, because an occasion has one sound and a second
+//! All four are `Exclusive`, because an occasion has one sound and a second
 //! declaration is a correction rather than an addition. Without it a kit that
 //! redeclares gets both edges and [`declared`] answers with whichever was added
 //! first, which is a silently stale sound and no error anywhere.
@@ -80,6 +82,20 @@ impl Default for Levels {
 #[derive(Component, Debug)]
 pub struct PlaysOnCast;
 
+/// Relationship: `(PlaysOnSelect, sound)` on a kit.
+///
+/// The mob answering a right-click on its podium. Heard by the player who
+/// clicked and by nobody else, which is [`play_declared_to`] rather than
+/// [`play_kit_voice`], and the reason is the ring: fifteen podiums fit inside
+/// a radius of eight blocks and a sound at volume 1.0 carries sixteen, so a
+/// positioned selection sound is audible at every other podium in the hub. A
+/// filling lobby of eight people browsing mobs would be a wall of noise in
+/// which nobody could tell their own click from anybody else's. It is feedback
+/// about a click and not an event in the world, which is the same reading that
+/// makes [`RANGED_HITMARKER`] a unicast.
+#[derive(Component, Debug)]
+pub struct PlaysOnSelect;
+
 /// Relationship: `(PlaysOnHurt, sound)` on a kit.
 #[derive(Component, Debug)]
 pub struct PlaysOnHurt;
@@ -115,6 +131,21 @@ pub const PROJECTILE_HIT: &str = "minecraft:entity.arrow.hit";
 /// can connect forty blocks away, where a positioned sound is inaudible and the
 /// shooter learns nothing.
 pub const RANGED_HITMARKER: &str = "minecraft:entity.arrow.hit_player";
+
+/// The answer to a click on a mob somebody else is already playing.
+///
+/// A constant and not a relationship, which is the distinction this module
+/// draws everywhere else: a kit's voice belongs to the kit, but a refusal
+/// belongs to the *rule*, and the rule is the lobby's one-player-per-mob
+/// claim. Giving each kit its own refusal sound would say the Creeper refuses
+/// differently from the Wolf, which is not true and is not what a player needs
+/// to hear. What they need is the one noise vanilla already means "no" with,
+/// so that it reads as a refusal the first time rather than as a mob they
+/// might have selected.
+///
+/// This closes the thread `crate::module::selector::refuse` left open when it
+/// dropped `Cue::Denied`.
+pub const SELECTION_REFUSED: &str = "minecraft:entity.villager.no";
 
 /// One second closer to the start of the match.
 pub const COUNTDOWN_TICK: &str = "minecraft:block.note_block.hat";
@@ -345,6 +376,44 @@ pub fn play_kit_voice(
     play_declared(world, kit, occasion, at);
 }
 
+/// Play whatever `subject` declares for `occasion`, to `player` alone, at their
+/// own ears.
+///
+/// `subject` is passed in rather than found through the player's
+/// `(Playing, kit)` edge, and that is not a style choice. Every caller of this
+/// reaches it from inside a flecs system or observer, where the world is
+/// deferred: an `add` made a line earlier has been *queued* and not applied, so
+/// `player.target(Playing, 0)` answers with the kit the player had before. On a
+/// first selection that is nothing and the mob is silent; on a later one it is
+/// the previous mob's voice, which is worse. The mock-seam tests could not see
+/// either, because a test calls `choose` directly and nothing is deferred;
+/// `tools/smash-selector.py` is what found it, and
+/// `choosing_a_kit_plays_that_kit_s_voice_to_the_chooser_alone` now runs inside
+/// `World::defer` so a Rust test would too.
+///
+/// The sound is still declared as a relationship on the kit and still reached by
+/// following it. What is dropped is only the hop from the player to the kit, in
+/// the one case where the caller is holding the kit already.
+pub fn play_declared_to(
+    world: WorldRef<'_>,
+    subject: EntityView<'_>,
+    occasion: impl IntoEntity,
+    player: EntityView<'_>,
+) {
+    let Some(sound) = declared(subject, occasion) else {
+        return;
+    };
+    play_to(world, player, sound);
+}
+
+/// Play `sound` to `player` alone, at their own ears.
+pub fn play_to(world: WorldRef<'_>, player: EntityView<'_>, sound: Sound) {
+    let Some(id) = player.try_get::<&PlayerId>(|id| *id) else {
+        return;
+    };
+    world.get::<&ServerHandle>(|server| server.play_sound_to(id, sound));
+}
+
 /// Play `sound` at `at`, for everyone close enough to hear it.
 pub fn play_at(world: WorldRef<'_>, at: Vec3, sound: Sound) {
     world.get::<&ServerHandle>(|server| server.play_sound(at, sound));
@@ -364,6 +433,7 @@ impl Module for SoundModule {
         // and, for one of them, what it does not.
         for relationship in [
             world.component::<PlaysOnCast>().id(),
+            world.component::<PlaysOnSelect>().id(),
             world.component::<PlaysOnHurt>().id(),
             world.component::<PlaysOnDeath>().id(),
         ] {

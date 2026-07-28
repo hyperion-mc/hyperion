@@ -17,7 +17,7 @@ mod harness;
 use std::collections::BTreeMap;
 
 use flecs_ecs::prelude::*;
-use glam::Vec3;
+use glam::{IVec3, Vec3};
 use harness::Game;
 use hyperion::hyperion_minecraft_proto::generated::registry::SOUND_EVENT;
 use smash::{
@@ -27,9 +27,10 @@ use smash::{
         kit::{self, KitName},
         knockback::Knockback,
         lives::{self, DeathCause, Eliminated, Lives},
-        lobby::{Lobby, LobbyConfig, Phase},
+        lobby::{self, Lobby, LobbyConfig, Phase},
         player::{Energy, Health, OnGround, Position},
-        sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt},
+        selector,
+        sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt, PlaysOnSelect},
     },
     server::{PlayerId, Sound},
 };
@@ -119,6 +120,7 @@ fn every_sound_id_is_one_a_vanilla_client_owns() {
         let kit = game.world.entity_from_id(kit);
         let name = kit.try_get::<&KitName>(|n| n.0).unwrap_or("<unnamed>");
         for (occasion, declared) in [
+            ("select", sound::declared(kit, PlaysOnSelect)),
             ("hurt", sound::declared(kit, PlaysOnHurt)),
             ("death", sound::declared(kit, PlaysOnDeath)),
         ] {
@@ -134,6 +136,7 @@ fn every_sound_id_is_one_a_vanilla_client_owns() {
     }
 
     for (what, id) in [
+        ("selection refused", sound::SELECTION_REFUSED),
         ("impact", sound::IMPACT),
         ("projectile hit", sound::PROJECTILE_HIT),
         ("ranged hitmarker", sound::RANGED_HITMARKER),
@@ -169,6 +172,7 @@ fn every_kit_declares_a_voice() {
         let kit = game.world.entity_from_id(kit);
         let name = kit.try_get::<&KitName>(|n| n.0).unwrap_or("<unnamed>");
         for (occasion, declared) in [
+            ("select", sound::declared(kit, PlaysOnSelect)),
             ("hurt", sound::declared(kit, PlaysOnHurt)),
             ("death", sound::declared(kit, PlaysOnDeath)),
         ] {
@@ -178,6 +182,171 @@ fn every_kit_declares_a_voice() {
         }
     }
     assert!(mute.is_empty(), "{}", mute.join("\n"));
+}
+
+/// Fifteen mobs that all answer alike are one mob as far as a player's ears go.
+///
+/// The failure this exists for is a kit added by copying its neighbour's file:
+/// the sound is present, `is_vanilla` passes, the declaration sweep passes, and
+/// the new mob greets you in somebody else's voice. Only comparing them to each
+/// other finds that.
+#[test]
+fn no_two_kits_answer_a_click_alike() {
+    let game = Game::new();
+    let mut by_sound: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for kit in kit::registry(&game.world) {
+        let kit = game.world.entity_from_id(kit);
+        let name = kit.try_get::<&KitName>(|n| n.0).unwrap_or("<unnamed>");
+        let Some(declared) = sound::declared(kit, PlaysOnSelect) else {
+            continue;
+        };
+        by_sound.entry(declared.id).or_default().push(name);
+    }
+
+    let shared: Vec<_> = by_sound
+        .iter()
+        .filter(|(_, kits)| kits.len() > 1)
+        .map(|(sound, kits)| format!("{sound} is the voice of {kits:?}"))
+        .collect();
+    assert!(
+        shared.is_empty(),
+        "these kits answer a click with the same sound: {}",
+        shared.join("; ")
+    );
+}
+
+/// Picking a kit plays that kit's voice, to the player who picked and to
+/// nobody else.
+///
+/// The sweep that a declaration cannot pass, and the one that pins the
+/// relationship rather than the data: `choose` never names a kit or a sound, so
+/// the only thing that carries the right noise to the right player is the
+/// `(Playing, kit)` edge followed to `(PlaysOnSelect, sound)`. A wrong
+/// traversal here is silence with nothing failing anywhere else.
+///
+/// Every kit in the registry, because the failure mode the charter names is one
+/// kit quietly having none.
+#[test]
+fn choosing_a_kit_plays_that_kit_s_voice_to_the_chooser_alone() {
+    let mut game = Game::new();
+    let chooser = game.player("Chooser", Vec3::ZERO);
+    let bystander = game.player("Bystander", Vec3::new(1.0, 0.0, 0.0));
+    let chooser_id = game
+        .world
+        .entity_from_id(chooser)
+        .try_get::<&PlayerId>(|id| *id)
+        .expect("a player has an id");
+    let bystander_id = game
+        .world
+        .entity_from_id(bystander)
+        .try_get::<&PlayerId>(|id| *id)
+        .expect("a player has an id");
+
+    let kits = kit::registry(&game.world);
+    assert!(
+        kits.len() >= 15,
+        "the registry only found {} kits",
+        kits.len()
+    );
+
+    let mut failures = Vec::new();
+    for kit in kits {
+        let kit = game.world.entity_from_id(kit);
+        let name = kit.try_get::<&KitName>(|n| n.0).unwrap_or("<unnamed>");
+        let declared = sound::declared(kit, PlaysOnSelect)
+            .unwrap_or_else(|| panic!("{name} declares no selection sound"));
+
+        let _discarded = game.server.take();
+        // Inside `defer`, which is the condition the real caller runs under and
+        // the one this test used to miss. `selector::click_mob` is reached from
+        // a flecs system, so `kit::apply`'s `(Playing, kit)` edge is queued
+        // rather than applied while `choose` is still running. A `choose` that
+        // asked the player what they were playing in order to find the sound
+        // answered with the previous kit, which is silence on a first selection
+        // and the wrong mob's voice on every one after. Called directly, as this
+        // test did before, nothing is deferred and the bug is invisible; it took
+        // `tools/smash-selector.py` and a real client to find it.
+        game.world.defer(|| {
+            lobby::choose(&game.world, game.world.entity_from_id(chooser), kit)
+                .unwrap_or_else(|reason| panic!("{name} was refused in an empty lobby: {reason}"));
+        });
+
+        let heard = game.server.sounds_to(chooser_id);
+        if !heard.iter().any(|sound| sound.id == declared.id) {
+            failures.push(format!(
+                "{name} declares {} and choosing it played {heard:?}",
+                declared.id
+            ));
+        }
+        let overheard = game.server.sounds_to(bystander_id);
+        if !overheard.is_empty() {
+            failures.push(format!(
+                "choosing {name} was audible to somebody who did not choose it: {overheard:?}"
+            ));
+        }
+        let positioned = game.server.sounds();
+        if !positioned.is_empty() {
+            failures.push(format!(
+                "choosing {name} put a sound in the world rather than at the chooser's ears: \
+                 {positioned:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A click on a mob somebody else has says no, out loud, and not in that mob's
+/// voice.
+///
+/// The second half matters as much as the first: hearing the Wolf when the Wolf
+/// is exactly what you failed to get is a confident wrong answer, and it is the
+/// shape this would take if the refusal reached for the kit's own relationship.
+#[test]
+fn a_refused_click_says_no_and_does_not_answer_in_the_mob_s_voice() {
+    let mut game = Game::new();
+    let holder = game.player("Holder", Vec3::ZERO);
+    let latecomer = game.player("Latecomer", Vec3::new(1.0, 0.0, 0.0));
+    let latecomer_id = game
+        .world
+        .entity_from_id(latecomer)
+        .try_get::<&PlayerId>(|id| *id)
+        .expect("a player has an id");
+
+    // The ring is stood up by the host at boot, which no test has; `build` is
+    // the same call `terrain.rs` makes and is what gives `click` a podium to
+    // resolve.
+    selector::build(&game.world, IVec3::ZERO);
+
+    let wolf = kit::by_name(&game.world, "Wolf").expect("the registry lost Wolf");
+    lobby::choose(&game.world, game.world.entity_from_id(holder), wolf)
+        .expect("an empty lobby refuses nothing");
+    let voice = sound::declared(wolf, PlaysOnSelect).expect("Wolf declares a selection sound");
+
+    let _discarded = game.server.take();
+    let refused = lobby::choose(&game.world, game.world.entity_from_id(latecomer), wolf);
+    assert!(refused.is_err(), "a taken mob was handed out twice");
+    selector::click(
+        &game.world,
+        game.world.entity_from_id(latecomer),
+        selector::podiums(&game.world)
+            .into_iter()
+            .find(|(_, _, kit)| *kit == wolf.id())
+            .expect("Wolf has a podium")
+            .1
+            .base,
+    );
+
+    let heard = game.server.sounds_to(latecomer_id);
+    assert!(
+        heard
+            .iter()
+            .any(|sound| sound.id == sound::SELECTION_REFUSED),
+        "a refused click made no noise; the log is {heard:?}"
+    );
+    assert!(
+        !heard.iter().any(|sound| sound.id == voice.id),
+        "a refused click answered in the mob's own voice: {heard:?}"
+    );
 }
 
 /// The sweep that a declaration alone cannot pass: fire every ability in the
