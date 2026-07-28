@@ -469,6 +469,16 @@ pub fn winner(world: WorldRef<'_>) -> Option<String> {
 /// until something adds one. So the first tick compares against the truth
 /// rather than against a guess, and a player who joins gets exactly one push
 /// of each rather than none or two.
+///
+/// Since the boss bar became `hyperion::egress::boss_bar`, which diffs per
+/// viewer against what actually went on the wire, this half of `Shown` no
+/// longer decides whether a packet is sent. It is not therefore redundant, and
+/// the two are not the same rule written twice: this one decides whether a
+/// *text component is cloned and queued*, twenty times a second per player, on
+/// a value that is usually the same as last tick. The wire diff cannot help
+/// with that, because by the time it runs the allocation has happened. The
+/// experience bar has no wire diff at all and needs this one for both jobs,
+/// which is the other reason the two fields stay in one struct.
 #[derive(Component, Debug, Clone, PartialEq, Default)]
 struct Shown {
     experience: Experience,
