@@ -14,7 +14,11 @@ use glam::IVec3;
 use smash::{
     SmashModule,
     module::{
+        ability::Ability,
+        effect::Effect,
+        kit::Kit,
         player::Player,
+        projectile::Projectile,
         selector::{self, Podium},
     },
 };
@@ -39,6 +43,19 @@ fn leaf_kinds_are_final() {
             "Podium",
             world.component::<Podium>().has(id::<flecs::Final>()),
         ),
+        ("Kit", world.component::<Kit>().has(id::<flecs::Final>())),
+        (
+            "Ability",
+            world.component::<Ability>().has(id::<flecs::Final>()),
+        ),
+        (
+            "Effect",
+            world.component::<Effect>().has(id::<flecs::Final>()),
+        ),
+        (
+            "Projectile",
+            world.component::<Projectile>().has(id::<flecs::Final>()),
+        ),
     ] {
         assert!(present, "{name} lost its `flecs::Final` trait");
     }
@@ -58,6 +75,18 @@ fn violation_child() {
         }
         "isa_podium" => {
             world.entity().is_a(id::<Podium>());
+        }
+        "isa_kit" => {
+            world.entity().is_a(id::<Kit>());
+        }
+        "isa_ability" => {
+            world.entity().is_a(id::<Ability>());
+        }
+        "isa_effect" => {
+            world.entity().is_a(id::<Effect>());
+        }
+        "isa_projectile" => {
+            world.entity().is_a(id::<Projectile>());
         }
         other => panic!("unknown violation case: {other}"),
     }
@@ -91,8 +120,16 @@ fn assert_aborts_on_constraint(case: &str) {
 
 #[test]
 fn inheriting_from_a_leaf_kind_aborts() {
-    assert_aborts_on_constraint("isa_player");
-    assert_aborts_on_constraint("isa_podium");
+    for case in [
+        "isa_player",
+        "isa_podium",
+        "isa_kit",
+        "isa_ability",
+        "isa_effect",
+        "isa_projectile",
+    ] {
+        assert_aborts_on_constraint(case);
+    }
 }
 
 // --- Podiums: a named ring -------------------------------------------------

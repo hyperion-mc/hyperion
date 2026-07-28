@@ -555,7 +555,8 @@ impl Module for EffectModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Effect");
 
-        world.component::<Effect>();
+        // Final: an effect is a leaf, never an inheritance base.
+        world.component::<Effect>().add_trait::<flecs::Final>();
         world.component::<Expires>();
         world.component::<Ticks>();
         world.component::<Shows>();
