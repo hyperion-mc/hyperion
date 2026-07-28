@@ -866,3 +866,47 @@ mod charge {
         );
     }
 }
+
+/// Two of the same effect on one victim are two entities, not one.
+///
+/// Naming an entity in flecs is find-or-create: `ecs_entity_init` with a name
+/// set looks the name up first and hands back whatever it finds. So the moment
+/// effects name themselves for the explorer -- which was tried, and undone --
+/// two Blazes burning one player become one burn wearing both their credit,
+/// which is the exact property `module/effect.rs` claims it gets for free from
+/// two entities pointing at one victim.
+///
+/// Written against that claim rather than against the naming scheme, so it goes
+/// on holding whatever the next attempt at readable entities looks like. The
+/// comment under `effect::afflict` is the finding; this is the part that fails.
+#[test]
+fn two_attackers_afflicting_one_victim_are_two_effects() {
+    use smash::module::effect;
+
+    let mut game = Game::new();
+    let first = game.player("first", Vec3::ZERO);
+    let second = game.player("second", Vec3::new(1.0, 0.0, 0.0));
+    let victim = game.player("victim", Vec3::new(2.0, 0.0, 0.0));
+
+    let blaze = kit::by_name(&game.world, "Blaze").expect("the registry has Blaze");
+    for caster in [first, second] {
+        kit::apply(&game.world, game.world.entity_from_id(caster), blaze);
+    }
+
+    // Both Blazes spray Inferno over the victim, who stands inside its reach.
+    for caster in [first, second] {
+        let caster = game.world.entity_from_id(caster);
+        caster.set(Position(Vec3::ZERO));
+        game.world
+            .entity_from_id(victim)
+            .set(Position(Vec3::new(1.0, 0.0, 0.0)));
+        ability::use_slot(caster, 0);
+    }
+
+    assert_eq!(
+        effect::on((&game.world).into(), victim).len(),
+        2,
+        "two Blazes burning one player collapsed into one effect, so one of them is burning \
+         somebody else's victim and only one of them can be credited for the kill"
+    );
+}

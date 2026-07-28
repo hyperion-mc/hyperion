@@ -354,6 +354,7 @@ pub fn afflict(world: WorldRef<'_>, victim: EntityView<'_>, blame: Blame, afflic
         }
     }
 
+    // Anonymous, deliberately. The comment below `afflict` is why.
     let effect = world
         .new_entity()
         .add(Effect::id())
@@ -381,6 +382,31 @@ pub fn afflict(world: WorldRef<'_>, victim: EntityView<'_>, blame: Blame, afflic
         arm_shield(world, victim);
     }
 }
+
+// Why effects are anonymous, when almost everything else here is named.
+//
+// An anonymous entity is a row of numbers in the flecs explorer, which is open
+// on the live server, and naming these "Inferno on Wolfsbane" was tried. It is
+// wrong twice over, and both reasons are properties of `entity_named` rather
+// than of the name chosen.
+//
+// `entity_named` is find-or-create: `ecs_entity_init` with a name set looks the
+// name up first and hands back whatever it finds. Two Blazes burning one player
+// therefore collapse into a single effect -- one burn wearing both their credit
+// -- which is the exact property this module claims it gets for free from two
+// entities pointing at one victim. `two_attackers_afflicting_one_victim_are_two_effects`
+// is that claim, and it failed with `left: 1, right: 2` before this was undone.
+//
+// The second reason is worse because it is silent. `afflict` destroys any
+// same-source effect before creating the replacement, and inside a system that
+// destruction is deferred. The create would then find the doomed entity, hand it
+// back, decorate it, and watch it be destroyed at the end of the frame. A
+// refreshed burn would simply stop, with nothing reporting anything.
+//
+// So the rule this settles: `entity_named` is for things created once whose
+// identity is stable -- kits, ability prefabs, the arena -- and not for
+// short-lived entities that can legitimately exist more than once at a time.
+// Effects and projectiles are both the second kind.
 
 /// Start refusing hits on `victim`, effective immediately.
 ///
@@ -548,146 +574,143 @@ impl Module for EffectModule {
         // writes `Health`, which the damage observers read, and flecs refuses
         // that from inside the query that found the effect. Everything is
         // decided first and applied afterwards.
-        world
-            .system_named::<()>("tick_effects")
-            .run(|mut it| {
-                while it.next() {
-                    let world = it.world();
-                    let dt = it.delta_time();
+        world.system_named::<()>("tick_effects").run(|mut it| {
+            while it.next() {
+                let world = it.world();
+                let dt = it.delta_time();
 
-                    let mut applications = Vec::new();
-                    let mut beats = Vec::new();
-                    let mut finished = Vec::new();
+                let mut applications = Vec::new();
+                let mut beats = Vec::new();
+                let mut finished = Vec::new();
 
-                    world
-                        .query::<&mut Expires>()
-                        .with(Effect::id())
-                        .build()
-                        .each_entity(|effect, expires| {
-                            let Some(victim) = effect.target(Upon, 0) else {
-                                // The player it was put on has gone. Collected
-                                // so the entity does not leak for the rest of
-                                // the match.
-                                finished.push(effect.id());
-                                return;
-                            };
-
-                            expires.remaining -= dt;
-                            if expires.remaining <= 0.0 || !victim.is_alive() {
-                                finished.push(effect.id());
-                                return;
-                            }
-
-                            // A dead player is not burned further: the death
-                            // path owns them until they respawn, and a tick
-                            // landing in that window re-kills somebody who is
-                            // already spectating.
-                            if victim.try_get::<&Health>(|health| health.is_dead()) != Some(false) {
-                                return;
-                            }
-
-                            let attacker = effect.target(InflictedBy, 0).map(|by| by.id());
-
-                            if let Some(mut repeats) = effect.try_get::<&Repeats>(|r| *r) {
-                                repeats.until_next -= dt;
-                                if repeats.until_next <= 0.0 {
-                                    // Advanced by adding rather than assigning,
-                                    // so a long frame does not push every later
-                                    // beat out by however far this one
-                                    // overshot. `max` because the first beat
-                                    // starts at zero and a slow frame could
-                                    // otherwise leave it permanently behind.
-                                    repeats.until_next =
-                                        (repeats.until_next + repeats.every).max(0.0);
-                                    beats.push(Beat {
-                                        holder: victim.id(),
-                                        ability: effect
-                                            .target(Source, 0)
-                                            .map_or_else(|| victim.id(), |from| from.id()),
-                                        pulse: repeats.pulse,
-                                    });
-                                }
-                                effect.set(repeats);
-                            }
-
-                            let Some(mut ticks) = effect.try_get::<&Ticks>(|ticks| *ticks) else {
-                                return;
-                            };
-                            ticks.until_next -= dt;
-                            if ticks.until_next > 0.0 {
-                                effect.set(ticks);
-                                return;
-                            }
-                            // Reset by adding an interval rather than by
-                            // assigning one, so a long frame does not push every
-                            // later tick out by however far this one overshot.
-                            ticks.until_next += ticks.interval;
-                            effect.set(ticks);
-
-                            applications.push(Application {
-                                victim: victim.id(),
-                                attacker,
-                                amount: ticks.amount,
-                                kind: ticks.kind,
-                                shows: effect.try_get::<&Shows>(|shows| *shows),
-                            });
-                        });
-
-                    for application in applications {
-                        let victim = world.entity_at(application.victim);
-                        let at = victim.try_get::<&Position>(|position| position.0);
-
-                        hurt(victim, Damaged {
-                            attacker: application.attacker,
-                            amount: application.amount,
-                            // No knockback. Mineplex's damage over time moved
-                            // nobody, and a burn nudging a player every second
-                            // would fight their own movement for the whole
-                            // duration and read as rubber-banding.
-                            knockback: Knockback::from(Vec3::ZERO).times(0.0),
-                            kind: application.kind,
-                        });
-
-                        // The picture and the damage are the same event, in one
-                        // loop iteration, so there is no arrangement of this
-                        // code in which a player is hurt by something invisible.
-                        let (Some(at), Some(shows)) = (at, application.shows) else {
-                            continue;
+                world
+                    .query::<&mut Expires>()
+                    .with(Effect::id())
+                    .build()
+                    .each_entity(|effect, expires| {
+                        let Some(victim) = effect.target(Upon, 0) else {
+                            // The player it was put on has gone. Collected
+                            // so the entity does not leak for the rest of
+                            // the match.
+                            finished.push(effect.id());
+                            return;
                         };
-                        world.get::<&ServerHandle>(|server| {
-                            server.particles((shows.effect)(at));
-                            server.play_sound(at, Sound::new(shows.sound, SoundCategory::Players));
-                        });
-                    }
 
-                    // Beats after the damage-over-time applications, so an
-                    // ultimate that pulses into a victim who is already burning
-                    // sees the burn's damage rather than racing it.
-                    for beat in beats {
-                        let holder = world.entity_at(beat.holder);
-                        let ability = world.entity_at(beat.ability);
-                        if !holder.is_alive() || !ability.is_alive() {
-                            continue;
+                        expires.remaining -= dt;
+                        if expires.remaining <= 0.0 || !victim.is_alive() {
+                            finished.push(effect.id());
+                            return;
                         }
-                        world.get::<&ServerHandle>(|server| {
-                            // A beat is cast at full charge. An ultimate that
-                            // scales off charge would otherwise fire at zero
-                            // for every beat but the one the player pressed.
-                            if let Some(cast) = crate::module::ability::cast_from(
-                                world, holder, ability, &**server, 1.0,
-                            ) {
-                                (beat.pulse)(&cast);
+
+                        // A dead player is not burned further: the death
+                        // path owns them until they respawn, and a tick
+                        // landing in that window re-kills somebody who is
+                        // already spectating.
+                        if victim.try_get::<&Health>(|health| health.is_dead()) != Some(false) {
+                            return;
+                        }
+
+                        let attacker = effect.target(InflictedBy, 0).map(|by| by.id());
+
+                        if let Some(mut repeats) = effect.try_get::<&Repeats>(|r| *r) {
+                            repeats.until_next -= dt;
+                            if repeats.until_next <= 0.0 {
+                                // Advanced by adding rather than assigning,
+                                // so a long frame does not push every later
+                                // beat out by however far this one
+                                // overshot. `max` because the first beat
+                                // starts at zero and a slow frame could
+                                // otherwise leave it permanently behind.
+                                repeats.until_next = (repeats.until_next + repeats.every).max(0.0);
+                                beats.push(Beat {
+                                    holder: victim.id(),
+                                    ability: effect
+                                        .target(Source, 0)
+                                        .map_or_else(|| victim.id(), |from| from.id()),
+                                    pulse: repeats.pulse,
+                                });
                             }
-                        });
-                    }
-
-                    for effect in finished {
-                        let effect = world.entity_at(effect);
-                        if effect.is_alive() {
-                            end(world, effect);
+                            effect.set(repeats);
                         }
+
+                        let Some(mut ticks) = effect.try_get::<&Ticks>(|ticks| *ticks) else {
+                            return;
+                        };
+                        ticks.until_next -= dt;
+                        if ticks.until_next > 0.0 {
+                            effect.set(ticks);
+                            return;
+                        }
+                        // Reset by adding an interval rather than by
+                        // assigning one, so a long frame does not push every
+                        // later tick out by however far this one overshot.
+                        ticks.until_next += ticks.interval;
+                        effect.set(ticks);
+
+                        applications.push(Application {
+                            victim: victim.id(),
+                            attacker,
+                            amount: ticks.amount,
+                            kind: ticks.kind,
+                            shows: effect.try_get::<&Shows>(|shows| *shows),
+                        });
+                    });
+
+                for application in applications {
+                    let victim = world.entity_at(application.victim);
+                    let at = victim.try_get::<&Position>(|position| position.0);
+
+                    hurt(victim, Damaged {
+                        attacker: application.attacker,
+                        amount: application.amount,
+                        // No knockback. Mineplex's damage over time moved
+                        // nobody, and a burn nudging a player every second
+                        // would fight their own movement for the whole
+                        // duration and read as rubber-banding.
+                        knockback: Knockback::from(Vec3::ZERO).times(0.0),
+                        kind: application.kind,
+                    });
+
+                    // The picture and the damage are the same event, in one
+                    // loop iteration, so there is no arrangement of this
+                    // code in which a player is hurt by something invisible.
+                    let (Some(at), Some(shows)) = (at, application.shows) else {
+                        continue;
+                    };
+                    world.get::<&ServerHandle>(|server| {
+                        server.particles((shows.effect)(at));
+                        server.play_sound(at, Sound::new(shows.sound, SoundCategory::Players));
+                    });
+                }
+
+                // Beats after the damage-over-time applications, so an
+                // ultimate that pulses into a victim who is already burning
+                // sees the burn's damage rather than racing it.
+                for beat in beats {
+                    let holder = world.entity_at(beat.holder);
+                    let ability = world.entity_at(beat.ability);
+                    if !holder.is_alive() || !ability.is_alive() {
+                        continue;
+                    }
+                    world.get::<&ServerHandle>(|server| {
+                        // A beat is cast at full charge. An ultimate that
+                        // scales off charge would otherwise fire at zero
+                        // for every beat but the one the player pressed.
+                        if let Some(cast) = crate::module::ability::cast_from(
+                            world, holder, ability, &**server, 1.0,
+                        ) {
+                            (beat.pulse)(&cast);
+                        }
+                    });
+                }
+
+                for effect in finished {
+                    let effect = world.entity_at(effect);
+                    if effect.is_alive() {
+                        end(world, effect);
                     }
                 }
-            });
+            }
+        });
     }
 }
