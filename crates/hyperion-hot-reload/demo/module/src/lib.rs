@@ -65,7 +65,7 @@ fn migrations() -> Vec<hyperion_hot_reload::Migration> {
 }
 
 #[cfg(not(feature = "migration"))]
-fn migrations() -> Vec<hyperion_hot_reload::Migration> {
+const fn migrations() -> Vec<hyperion_hot_reload::Migration> {
     Vec::new()
 }
 
