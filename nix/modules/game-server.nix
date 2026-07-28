@@ -65,8 +65,8 @@ in
         Type = "simple";
         ExecStart = escapeShellArgs ([
           "${cfg.package}/bin/${cfg.package.meta.mainProgram}"
-          "--ip" cfg.address
           "--port" (toString cfg.port)
+          "--ip" cfg.address
           "--root-ca-cert" (toString cfg.pki.rootCaCert)
           "--cert" (toString cfg.pki.cert)
           "--private-key" (toString cfg.pki.privateKey)
