@@ -60,10 +60,19 @@ pub struct LobbyConfig {
 }
 
 impl Default for LobbyConfig {
+    /// Mineplex ran Super Smash Mobs at 4 to start and 8 for a full lobby.
+    /// We start at 2 and call 4 full, because the people playing this server
+    /// are the two or three developing it, and a threshold nobody can reach
+    /// is a game nobody can test.
+    ///
+    /// The three countdown lengths stay distinct at these numbers: 2 players
+    /// takes `countdown_at_min`, 3 satisfies the three-quarters rule, and 4
+    /// is full. Lowering `full_players` below 4 would collapse two of those
+    /// bands into one.
     fn default() -> Self {
         Self {
-            min_players: 4,
-            full_players: 8,
+            min_players: 2,
+            full_players: 4,
             countdown_at_min: 60.0,
             countdown_at_three_quarters: 30.0,
             countdown_at_full: 10.0,
