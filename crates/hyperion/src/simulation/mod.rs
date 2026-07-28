@@ -741,6 +741,13 @@ impl Module for SimModule {
 
         world.component::<PlayerSkin>();
         world.component::<Command>();
+        // The completion vocabulary. `Suggests` is a relation, so it has to be
+        // a registered entity before an argument node can point at anything
+        // with it, and `flecs_manual_registration` means that will not happen
+        // on its own.
+        world.component::<command::Suggests>();
+        world.component::<command::SuggestionLabel>();
+        world.component::<command::FixedSuggestions>();
 
         component!(world, IgnMap);
 
@@ -748,6 +755,17 @@ impl Module for SimModule {
 
         world.component::<Name>();
         component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
+
+        // A command argument declared with `.completes("player", Player::id())`
+        // offers whoever is connected at the moment the player presses tab.
+        // Here rather than in a game module because both halves are hyperion's:
+        // it owns `Player` and it owns the `Name` that login puts on one, so
+        // every event wants the same answer and none of them should restate it.
+        world
+            .component::<Player>()
+            .set(command::SuggestionLabel(|player| {
+                player.try_get::<&Name>(std::string::ToString::to_string)
+            }));
 
         world.component::<AiTargetable>();
         world.component::<ImmuneStatus>().meta();

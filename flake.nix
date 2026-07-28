@@ -569,6 +569,25 @@
               '';
             };
 
+            # The same gate again, driving a client that types rather than
+            # walks.
+            #
+            # `smash-e2e` and `smash-map-e2e` both prove things about a world.
+            # This one never leaves the hub: it reads the command graph the
+            # server sends on join and then presses tab, which is the whole of
+            # the completion path and touches nothing else. Its ports default
+            # off `smash-map-e2e`'s so all four gates can run at once.
+            completions-e2e = {
+              deps = [ pkgs.git ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/completions-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 4000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 4000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # `nix run .#dev` runs bedwars; this runs the same stack on smash.
             smash-dev = {
               deps = [ pkgs.process-compose pkgs.git ];
@@ -721,10 +740,23 @@
               timeout = 480;
             };
 
+            # Whether a player who types a slash sees anything. Two protocol
+            # mechanisms answer that, the command graph and the suggestion
+            # request, and neither is visible to a Rust test: the graph is a
+            # packet nobody sends unless a client joins, and a suggestion is a
+            # reply to a packet only a client sends.
+            completions-e2e = e2e.mkCheck {
+              name = "hyperion-completions-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "completions-check.py";
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
             smash-e2e-app = scripts.smash-e2e;
+            completions-e2e-app = scripts.completions-e2e;
 
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;

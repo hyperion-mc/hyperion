@@ -1,8 +1,56 @@
-use std::iter::zip;
+//! Minecraft commands derived from clap.
+//!
+//! A command reaches a player through two protocol mechanisms, and this crate
+//! feeds both of them off the same clap definition:
+//!
+//! * the **command graph**, sent once when a player joins, which is what makes
+//!   a slash list the server's commands and tells the client how to parse each
+//!   argument. [`MinecraftCommand::register`] builds it out of the derive:
+//!   subcommands become literal nodes, positionals become argument nodes, and
+//!   an argument taking more than one value becomes a greedy string so a kit
+//!   name with a space in it is one value rather than two.
+//! * **command suggestions**, the request and response pair the client sends
+//!   when a player presses tab. [`completion::locate`] decides which node the
+//!   cursor is on, and [`hyperion::simulation::command::suggestions`] asks that
+//!   node what it may be completed to.
+//!
+//! # Declaring where an argument's completions come from
+//!
+//! An argument whose clap type already enumerates itself needs no declaration:
+//! a `ValueEnum` positional carries its possible values into the graph at
+//! registration. An argument completed from live game state names the flecs tag
+//! its candidates carry:
+//!
+//! ```ignore
+//! KitCommand::register(registry, world).completes("name", Kit::id());
+//! ```
+//!
+//! and the module that owns that tag says once how to render one of them:
+//!
+//! ```ignore
+//! world
+//!     .component::<Kit>()
+//!     .set(SuggestionLabel(|kit| kit.try_get::<&KitName>(|name| name.0.to_owned())));
+//! ```
+//!
+//! Nothing between those two lines is a list of kits. The completions are a
+//! query over whatever carries the tag when the player presses tab.
+//!
+//! `hyperion::simulation::Player` arrives with its label already set, so an
+//! argument naming a player is one line and no new vocabulary:
+//!
+//! ```ignore
+//! PermissionCommand::register(registry, world).completes("player", Player::id());
+//! ```
+
+pub mod completion;
 
 use clap::{Arg as ClapArg, Parser, ValueEnum, ValueHint, error::ErrorKind};
 use flecs_ecs::{
-    core::{Entity, EntityView, EntityViewGet, World, WorldGet, WorldProvider, id},
+    core::{
+        ComponentId, Entity, EntityView, EntityViewGet, IdOperations, IntoEntity, World, WorldGet,
+        WorldProvider, id,
+    },
     prelude::{Component, Module},
 };
 use hyperion::{
@@ -11,21 +59,183 @@ use hyperion::{
         packets::play::clientbound::{CommandSuggestions, command_suggestions},
     },
     net::{Compose, ConnectionId, DataBundle, agnostic, protocol::Clientbound},
-    simulation::{IgnMap, command::get_root_command_entity, handlers::PacketSwitchQuery},
+    simulation::{
+        IgnMap, Player,
+        command::{FixedSuggestions, Suggests, get_root_command_entity, suggestions},
+        handlers::PacketSwitchQuery,
+    },
     storage::CommandCompletionRequest,
 };
 pub use hyperion_clap_macros::CommandPermission;
 pub use hyperion_command;
 use hyperion_command::{CommandHandler, CommandRegistry};
 use hyperion_permission::Group;
-use valence_protocol::packets::play::command_tree_s2c::StringArg;
+use valence_protocol::packets::play::command_tree_s2c::{Parser as ValenceParser, StringArg};
+
+use crate::completion::Step;
+
+/// Whether a clap argument takes more than one value, which makes it one
+/// greedy Brigadier string rather than a run of single words.
+fn is_greedy(arg: &ClapArg) -> bool {
+    arg.get_num_args()
+        .is_some_and(|range| range.max_values() > 1)
+}
+
+/// Build the graph nodes under `parent` for one clap command, and return the
+/// shape the completion walk reads.
+///
+/// Positionals chain one after another because that is the order they are
+/// typed in; subcommands hang off the end of that chain as literals, which for
+/// every command here means directly off the command's own node.
+fn build(
+    world: &World,
+    parent: Entity,
+    cmd: &clap::Command,
+    has_permission: fn(&World, Entity) -> bool,
+) -> Vec<Step<Entity>> {
+    let mut on = parent;
+    let mut created = Vec::new();
+
+    for arg in cmd.get_positionals() {
+        let display = arg
+            .get_value_names()
+            .and_then(|names| names.first())
+            .map_or_else(
+                || arg.get_id().to_string(),
+                |name| name.to_ascii_lowercase(),
+            );
+
+        let kind = if is_greedy(arg) {
+            StringArg::GreedyPhrase
+        } else {
+            StringArg::SingleWord
+        };
+        let node = world
+            .entity()
+            .set(hyperion::simulation::command::Command::argument(
+                display,
+                ValenceParser::String(kind),
+            ))
+            .child_of(on);
+
+        // A clap `ValueEnum` has already written down every value it accepts,
+        // so an argument built from one completes with nothing else declared.
+        let possible: Vec<String> = arg
+            .get_possible_values()
+            .iter()
+            .map(|value| value.get_name().to_owned())
+            .collect();
+        if !possible.is_empty() {
+            node.set(FixedSuggestions(possible));
+        }
+
+        created.push((arg, node.id()));
+        on = node.id();
+    }
+
+    let mut steps: Vec<Step<Entity>> = cmd
+        .get_subcommands()
+        .map(|sub| {
+            let literal = world
+                .entity()
+                .set(hyperion::simulation::command::Command::literal(
+                    sub.get_name().to_owned(),
+                    has_permission,
+                ))
+                .child_of(on);
+            Step {
+                literal: Some(sub.get_name().to_owned()),
+                id: sub.get_name().to_owned(),
+                node: literal.id(),
+                greedy: false,
+                next: build(world, literal.id(), sub, has_permission),
+            }
+        })
+        .collect();
+
+    // Folded from the back so each positional owns what follows it.
+    for (arg, node) in created.into_iter().rev() {
+        steps = vec![Step {
+            literal: None,
+            id: arg.get_id().to_string(),
+            node,
+            greedy: is_greedy(arg),
+            next: steps,
+        }];
+    }
+
+    steps
+}
+
+/// Collect every value step in a shape, so a declaration can name one.
+fn value_steps(steps: &[Step<Entity>], out: &mut Vec<(String, Entity)>) {
+    for step in steps {
+        if step.literal.is_none() {
+            out.push((step.id.clone(), step.node));
+        }
+        value_steps(&step.next, out);
+    }
+}
+
+/// A registered command, for declaring where its arguments complete from.
+///
+/// Returned by [`MinecraftCommand::register`]. Ignoring it is fine: a command
+/// whose arguments all know their own values, or which has none, needs nothing
+/// further.
+pub struct Registered<'w> {
+    world: &'w World,
+    /// Every value step, by the clap id of the field that produced it.
+    values: Vec<(String, Entity)>,
+}
+
+impl Registered<'_> {
+    /// Complete the argument named `arg` from every entity carrying `tag`.
+    ///
+    /// `arg` is the clap id, which for a derived command is the struct field's
+    /// name. `tag` is a flecs component id, and the candidates are whatever
+    /// carries it when the player presses tab: this is an edge in the world,
+    /// not a snapshot of one.
+    ///
+    /// The tag needs a [`SuggestionLabel`] saying how to render one of its
+    /// entities, which the module owning the tag sets once.
+    ///
+    /// Every argument by that name, not the first: one clap id can reach more
+    /// than one node, because `/perms set <player>` and `/perms get <player>`
+    /// are two nodes of the same command and a player means the same thing in
+    /// both. Wiring only the first is the kind of half-working completion that
+    /// looks like a protocol bug from the client.
+    ///
+    /// # Panics
+    /// When the command has no argument by that name. A completion that
+    /// silently never fires is the failure this whole mechanism exists to
+    /// avoid, so a typo here stops the server at startup rather than at the
+    /// moment somebody presses tab.
+    ///
+    /// [`SuggestionLabel`]: hyperion::simulation::command::SuggestionLabel
+    pub fn completes(&self, arg: &str, tag: impl IntoEntity) -> &Self {
+        let tag = tag.into_entity(self.world);
+
+        let mut wired = 0;
+        for &(_, node) in self.values.iter().filter(|(id, _)| id == arg) {
+            self.world.entity_from_id(node).add((Suggests, tag));
+            wired += 1;
+        }
+
+        if wired == 0 {
+            let known: Vec<&str> = self.values.iter().map(|(id, _)| id.as_str()).collect();
+            panic!("no command argument named {arg}; this command has {known:?}");
+        }
+
+        self
+    }
+}
 
 pub trait MinecraftCommand: Parser + CommandPermission {
     fn execute(self, system: EntityView<'_>, caller: Entity);
 
     fn pre_register(_world: &World) {}
 
-    fn register(registry: &mut CommandRegistry, world: &World) {
+    fn register<'w>(registry: &mut CommandRegistry, world: &'w World) -> Registered<'w> {
         Self::pre_register(world);
 
         let cmd = Self::command();
@@ -40,22 +250,15 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         let node_to_register =
             hyperion::simulation::command::Command::literal(name.clone(), has_permissions);
 
-        let mut on = world
+        let root = world
             .entity()
             .set(node_to_register)
             .child_of(get_root_command_entity());
 
-        for arg in cmd.get_arguments() {
-            use valence_protocol::packets::play::command_tree_s2c::Parser as ValenceParser;
-            let name = arg.get_value_names().unwrap().first().unwrap();
-            let name = name.to_ascii_lowercase();
-            let node_to_register = hyperion::simulation::command::Command::argument(
-                name,
-                ValenceParser::String(StringArg::SingleWord),
-            );
+        let shape = build(world, root.id(), &cmd, has_permissions);
 
-            on = world.entity().set(node_to_register).child_of(on);
-        }
+        let mut values = Vec::new();
+        value_steps(&shape, &mut values);
 
         let on_execute = |input: &str, system: EntityView<'_>, caller: Entity| {
             let input = input.split_whitespace();
@@ -110,118 +313,55 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         };
 
         let on_tab_complete = Box::new(
-            |packet_switch_query: &mut PacketSwitchQuery<'_>,
-             completion: &CommandCompletionRequest| {
-                let full_query = completion.query.as_str();
-                let id = completion.id;
+            move |packet_switch_query: &mut PacketSwitchQuery<'_>,
+                  completion: &CommandCompletionRequest| {
+                let text = completion.query.as_str();
 
-                let Some(query) = full_query.strip_prefix('/') else {
-                    // todo: send error message to player
-                    tracing::warn!("could not parse command {full_query}");
-                    return;
+                // Every request is answered, including with nothing. A client
+                // that pressed tab is blocked on this reply: `ask_server` hands
+                // the client's own suggestion machinery a future that only this
+                // packet completes, so dropping the request stops the player
+                // seeing even the suggestions the client worked out for itself.
+                let (span, matched) = match completion::locate(&shape, text) {
+                    Some(cursor) => {
+                        let prefix = cursor.prefix.to_lowercase();
+                        let matched: Vec<String> =
+                            suggestions(packet_switch_query.world, cursor.node)
+                                .into_iter()
+                                .filter(|value| value.to_lowercase().starts_with(&prefix))
+                                .collect();
+                        ((cursor.start, cursor.prefix.len()), matched)
+                    }
+                    // The cursor is on the command's own name or past the last
+                    // argument. Nothing to offer, and an empty span at the end
+                    // of the line is the range vanilla replaces with nothing.
+                    None => ((text.len(), 0), Vec::new()),
                 };
 
-                let mut query = query.split_whitespace();
-                let _command_name = query.next().unwrap();
-
-                let command = Self::command();
-                let mut positionals = command.get_positionals();
-
-                'positionals: for (input_arg, cmd_arg) in zip(query, positionals.by_ref()) {
-                    // see if anything matches
-                    let possible_values = cmd_arg.get_possible_values();
-                    for possible in &possible_values {
-                        if possible.matches(input_arg, true) {
-                            continue 'positionals;
-                        }
-                    }
-
-                    // nothing matches! let's see if a substring matches
-                    let mut substring_matches = possible_values
-                        .iter()
-                        .filter(|possible| {
-                            // todo: this is inefficient
-                            possible
-                                .get_name()
-                                .to_lowercase()
-                                .starts_with(&input_arg.to_lowercase())
-                        })
-                        .peekable();
-
-                    if substring_matches.peek().is_none() {
-                        // no matches
-                        return;
-                    }
-
-                    let suggestions = substring_matches
-                        .map(clap::builder::PossibleValue::get_name)
-                        .map(|name| command_suggestions::Entry {
-                            text: name,
-                            tooltip: None,
-                        })
-                        .collect();
-
-                    let start = input_arg.as_ptr() as usize - full_query.as_ptr() as usize;
-                    let len = input_arg.len();
-
-                    let start = i32::try_from(start).unwrap();
-                    let len = i32::try_from(len).unwrap();
-
-                    let packet = CommandSuggestions {
-                        id,
-                        start,
-                        length: len,
-                        suggestions,
-                    };
-
-                    packet_switch_query
-                        .compose
-                        .unicast(
-                            Clientbound::new(PacketId::CommandSuggestions.to_raw(), &packet),
-                            packet_switch_query.io_ref,
-                        )
-                        .unwrap();
-
-                    // todo: send possible matches to player
-                    return;
-                }
-
-                let Some(remaining_positional) = positionals.next() else {
-                    // we are all done completing
+                let (Ok(start), Ok(length)) = (i32::try_from(span.0), i32::try_from(span.1)) else {
+                    tracing::warn!("a command longer than 2GB is not worth completing");
                     return;
                 };
-
-                let possible_values = remaining_positional.get_possible_values();
-
-                let names = possible_values
-                    .iter()
-                    .map(clap::builder::PossibleValue::get_name);
-
-                let suggestions = names
-                    .into_iter()
-                    .map(|name| command_suggestions::Entry {
-                        text: name,
-                        tooltip: None,
-                    })
-                    .collect();
-
-                let start = full_query.len();
-                let start = i32::try_from(start).unwrap();
 
                 let packet = CommandSuggestions {
-                    id,
+                    id: completion.id,
                     start,
-                    length: 0,
-                    suggestions,
+                    length,
+                    suggestions: matched
+                        .iter()
+                        .map(|text| command_suggestions::Entry {
+                            text,
+                            tooltip: None,
+                        })
+                        .collect(),
                 };
 
-                packet_switch_query
-                    .compose
-                    .unicast(
-                        Clientbound::new(PacketId::CommandSuggestions.to_raw(), &packet),
-                        packet_switch_query.io_ref,
-                    )
-                    .unwrap();
+                if let Err(error) = packet_switch_query.compose.unicast(
+                    Clientbound::new(PacketId::CommandSuggestions.to_raw(), &packet),
+                    packet_switch_query.io_ref,
+                ) {
+                    tracing::warn!("dropping a command suggestion response: {error}");
+                }
             },
         );
 
@@ -234,6 +374,8 @@ pub trait MinecraftCommand: Parser + CommandPermission {
         tracing::info!("registering command {name}");
 
         registry.register(name, handler);
+
+        Registered { world, values }
     }
 }
 
@@ -358,7 +500,11 @@ impl Module for ClapCommandModule {
         world.import::<hyperion_command::CommandModule>();
 
         world.get::<&mut CommandRegistry>(|registry| {
-            PermissionCommand::register(registry, world);
+            // Both spellings of the player argument, `set` and `get`, complete
+            // from whoever is connected. The group argument declares nothing:
+            // it is a clap `ValueEnum`, so registration already carried its
+            // four values into the graph.
+            PermissionCommand::register(registry, world).completes("player", Player::id());
         });
     }
 }
