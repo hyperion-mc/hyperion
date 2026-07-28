@@ -41,6 +41,7 @@ impl Module for Spider {
             death: "minecraft:entity.spider.death",
         })
         .cost(0)
+        .skin(crate::kit_skin!("spider"))
         .blurb("Fast, fragile and everywhere at once. Leap where you look.")
         .mob("minecraft:spider")
         .ability(AbilitySpec {

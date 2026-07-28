@@ -44,6 +44,7 @@ impl Module for IronGolem {
             hurt: "minecraft:entity.iron_golem.hurt",
             death: "minecraft:entity.iron_golem.death",
         })
+        .skin(crate::kit_skin!("iron_golem"))
         .blurb("Command space in the arena. Pull enemies in, then hit like a truck.")
         .mob("minecraft:iron_golem")
         .ability(AbilitySpec {

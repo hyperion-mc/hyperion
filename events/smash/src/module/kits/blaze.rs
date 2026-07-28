@@ -46,6 +46,7 @@ impl Module for Blaze {
             death: "minecraft:entity.blaze.death",
         })
         .cost(8000)
+        .skin(crate::kit_skin!("blaze"))
         .blurb("Set people on fire. Armour will not save them.")
         .mob("minecraft:blaze")
         .ability(AbilitySpec {

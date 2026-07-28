@@ -11,6 +11,8 @@ use flecs_ecs::prelude::*;
 
 mod list;
 pub use list::*;
+pub mod roster;
+pub use roster::{RosterModule, announce, entry_of};
 
 use crate::{
     simulation::command::{Command, ROOT_COMMAND},
@@ -37,6 +39,8 @@ impl Index<usize> for RayonWorldStages {
 
 impl Module for PlayerJoinModule {
     fn module(world: &World) {
+        world.import::<RosterModule>();
+
         let rayon_threads = rayon::current_num_threads();
 
         #[expect(

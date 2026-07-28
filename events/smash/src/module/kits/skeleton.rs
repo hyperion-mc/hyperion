@@ -48,6 +48,7 @@ impl Module for Skeleton {
             hurt: "minecraft:entity.skeleton.hurt",
             death: "minecraft:entity.skeleton.death",
         })
+        .skin(crate::kit_skin!("skeleton"))
         .blurb("Keep everyone at arm's length, then overcharge the bow and let go.")
         .mob("minecraft:skeleton")
         .ability(AbilitySpec {

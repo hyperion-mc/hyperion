@@ -52,7 +52,7 @@ use crate::{
         protocol::{decode_body, frame_body, send},
     },
     simulation::{
-        Pitch, Yaw, aabb, event,
+        Pitch, Yaw, aabb, event, gamemode,
         metadata::{
             entity::Pose,
             living_entity::HandStates,
@@ -435,10 +435,45 @@ fn player_abilities(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::R
 }
 
 // i.e., shooting a bow, digging a block, etc
+/// Tell the client the world did not change, and which of its guesses to drop.
+///
+/// A client predicts a break or a place locally and holds the prediction until
+/// the server answers for that sequence number. Say nothing and the block stays
+/// missing on their screen until something else resends the chunk, which looks
+/// exactly like a server that lost the packet.
+///
+/// The ack goes out here rather than through [`ConfirmBlockSequences`], which
+/// nothing drains, or through `Blocks::to_confirm`, which this query holds only
+/// a shared reference to. A refusal is decided and final at this point, so
+/// there is nothing for a queue to add.
+fn refuse_block_change(sequence: i32, query: &PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    send(
+        query.compose,
+        query.io_ref,
+        ClientboundPacketId::BlockChangedAck.to_raw(),
+        &hyperion_minecraft_proto::packets::play::clientbound::BlockChangedAck(sequence),
+    )
+}
+
 fn player_action(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
     let packet: c2s::PlayerAction = decode_body(body)?;
 
     let position = IVec3::new(packet.pos.x, packet.pos.y, packet.pos.z);
+
+    // Adventure and spectator do not build. A vanilla client in either mode
+    // never sends the dig at all, so reaching here means either a mode change
+    // the client has not applied yet or a client that is not vanilla; both are
+    // refused the same way.
+    if !gamemode::of(query.view).may_build()
+        && matches!(
+            packet.action,
+            player_action::Action::StartDestroyBlock
+                | player_action::Action::AbortDestroyBlock
+                | player_action::Action::StopDestroyBlock
+        )
+    {
+        return refuse_block_change(packet.sequence, query);
+    }
 
     match packet.action {
         player_action::Action::StartDestroyBlock => {
@@ -639,6 +674,14 @@ fn use_item_on(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result
         );
 
         return Ok(());
+    }
+
+    // Adventure and spectator do not place, for the same reason they do not
+    // dig. The door above is deliberately on the other side of this check:
+    // `mayBuild` gates building, and a vanilla adventure player can still open
+    // a door.
+    if !gamemode::of(query.view).may_build() {
+        return refuse_block_change(packet.sequence, query);
     }
 
     // Attempt to place a block

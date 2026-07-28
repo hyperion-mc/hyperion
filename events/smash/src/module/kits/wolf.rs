@@ -58,6 +58,7 @@ impl Module for Wolf {
             death: "minecraft:entity.wolf.death",
         })
         .cost(4000)
+        .skin(crate::kit_skin!("wolf"))
         .blurb("Stick to somebody and every hit lands harder than the last.")
         .mob("minecraft:wolf")
         .ability(AbilitySpec {

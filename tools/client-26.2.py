@@ -388,6 +388,10 @@ class Client:
         self.log = log
         self.entity_id = None
         self.joined = False
+        # The profile id the server minted, as hex. Offline mode makes this the
+        # only thing distinguishing two players who typed the same name, so a
+        # test about duplicate names has to be able to read it.
+        self.profile_id = None
         # {registry: {tag name: [network ids]}}, as the server sent it.
         self.tags = {}
 
@@ -464,6 +468,7 @@ class Client:
                 self.log("<- LoginCompression threshold=%d" % self.threshold)
             elif packet_id == S2C_LOGIN_FINISHED:
                 name, _ = take_string(payload, 16)
+                self.profile_id = payload[:16].hex()
                 self.log(
                     "<- LoginFinished profile=%s name=%s "
                     "(authenticated, NOT yet in the world)" % (payload[:16].hex(), name)

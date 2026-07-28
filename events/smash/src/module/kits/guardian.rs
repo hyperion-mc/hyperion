@@ -58,6 +58,7 @@ impl Module for Guardian {
             death: "minecraft:entity.guardian.death",
         })
         .cost(8000)
+        .skin(crate::kit_skin!("guardian"))
         .blurb("Pick somebody. They are now your problem and you are theirs.")
         .mob("minecraft:guardian")
         .ability(AbilitySpec {

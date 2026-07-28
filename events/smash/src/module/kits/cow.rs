@@ -39,6 +39,7 @@ impl Module for Cow {
             death: "minecraft:entity.cow.death",
         })
         .cost(6000)
+        .skin(crate::kit_skin!("cow"))
         .blurb("Hard to move and hard to stop once it is moving.")
         .mob("minecraft:cow")
         .ability(AbilitySpec {

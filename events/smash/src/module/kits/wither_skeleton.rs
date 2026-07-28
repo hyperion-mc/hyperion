@@ -52,6 +52,7 @@ impl Module for WitherSkeleton {
             death: "minecraft:entity.wither_skeleton.death",
         })
         .cost(6000)
+        .skin(crate::kit_skin!("wither_skeleton"))
         .blurb("Leave a copy of yourself somewhere useful, then be there instead.")
         .mob("minecraft:wither_skeleton")
         .ability(AbilitySpec {

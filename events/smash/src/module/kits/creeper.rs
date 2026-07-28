@@ -48,6 +48,7 @@ impl Module for Creeper {
             death: "minecraft:entity.creeper.death",
         })
         .cost(4000)
+        .skin(crate::kit_skin!("creeper"))
         .blurb("Hits harder than anything and dies to a stiff breeze.")
         .mob("minecraft:creeper")
         .ability(AbilitySpec {

@@ -61,7 +61,8 @@ use crate::{
     simulation::{
         AiTargetable, ChunkPosition, Comms, ConfirmBlockSequences, IgnMap, ImmuneStatus, Name,
         PacketState, Player, Uuid, Velocity, Xp, animation::ActiveAnimation,
-        entity_kind::EntityKind, metadata::MetadataPrefabs, skin::PlayerSkin,
+        entity_kind::EntityKind, gamemode::DefaultGamemode, metadata::MetadataPrefabs,
+        skin::PlayerSkin,
     },
     storage::SkinHandler,
     util::mojang::MojangClient,
@@ -310,11 +311,23 @@ fn login(world: &World) {
 
 /// Build the profile id for an offline-mode player.
 ///
-/// Kept identical to the 763 path so a player keeps the same id across the two
-/// protocols, which is what makes anything keyed on it -- permissions, stats --
-/// survive the switch.
-fn offline_uuid(username: &str) -> uuid::Uuid {
-    crate::ingress::offline_uuid(username)
+/// Random per connection, and deliberately not a function of the name. A name
+/// hash is what a single-account server wants, and it is what this used to do,
+/// but it makes the profile id a second copy of the username: two people who
+/// both call themselves `Steve` get one id, and one id is one player as far as
+/// the client is concerned. `ClientPacketListener.playerInfoMap` is keyed on
+/// the profile id and filled with `putIfAbsent`, so the second `Steve` is
+/// dropped from the tab list, renders with the first one's profile, and takes
+/// the first one's entry with them when they leave.
+///
+/// The cost is that an offline id no longer survives a reconnect. Nothing here
+/// depends on that: the only thing keyed on a profile id is the skin cache in
+/// [`crate::storage::SkinHandler`], which is consulted only for the real Mojang
+/// ids of online-mode profiles. When something does need a stable offline
+/// identity it should key on the username, which is the thing the player
+/// actually controls.
+fn offline_uuid() -> uuid::Uuid {
+    uuid::Uuid::new_v4()
 }
 
 #[expect(
@@ -349,9 +362,9 @@ fn login_hello(
     decoder.set_compression(threshold);
 
     // `Hello.profile_id` is what the launcher cached, not proof of anything:
-    // this server is offline-mode, so a zero id means derive one from the name.
+    // this server is offline-mode, so a zero id means mint one here.
     let uuid = if hello.profile_id.0 == 0 {
-        offline_uuid(&username)
+        offline_uuid()
     } else {
         uuid::Uuid::from_u128(hello.profile_id.0)
     };
@@ -409,13 +422,25 @@ fn login_hello(
 
     ign_map.insert(username.clone(), entity.id(), world);
 
+    // Read before the prefab is instantiated because `add_enum` below needs the
+    // value, and a nested `world.get` inside the `MetadataPrefabs` borrow would
+    // hold two singleton borrows at once.
+    let default_gamemode = world.get::<&DefaultGamemode>(|default| default.0);
+
+    // Before the prefab rather than inside the chain below, because this is the
+    // id already on the wire in `LoginFinished` and everything after it is
+    // decoration. What actually keeps it is the `ConnectionId` term on the
+    // auto-uuid observer in `SimModule`; ordering alone does not, because these
+    // commands are deferred and that observer's write is appended last. See
+    // ENG-10813.
+    entity.set(Uuid::from(uuid));
+
     world.get::<&MetadataPrefabs>(|prefabs| {
         entity
             .is_a(prefabs.player_base)
             .set(Name::from(username.clone()))
             .add(id::<AiTargetable>())
             .set(ImmuneStatus::default())
-            .set(Uuid::from(uuid))
             .add(id::<Xp>())
             .set_pair::<Prev, _>(Xp::default())
             .add(id::<ChunkSendQueue>())
@@ -424,6 +449,7 @@ fn login_hello(
             .set(ActiveAnimation::NONE)
             .set(hyperion_inventory::PlayerInventory::default())
             .set(ConfirmBlockSequences::default())
+            .add_enum(default_gamemode)
             .set(KnownPacksAccepted::default())
             .add_enum(EntityKind::Player)
             .add(id::<Player>());

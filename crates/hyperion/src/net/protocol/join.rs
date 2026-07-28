@@ -20,11 +20,12 @@ use tracing::{error, info};
 
 use crate::{
     config::Config,
+    egress::player_join::roster,
     net::{
         Channel, Compose, ConnectionId,
         protocol::{registries, send},
     },
-    simulation::{Comms, MovementTracking, Pitch, Position, Yaw},
+    simulation::{Comms, MovementTracking, Pitch, Position, Yaw, gamemode},
 };
 
 /// The level this server serves. Only one, so the dimension list in [`Login`]
@@ -44,7 +45,7 @@ const SEA_LEVEL: i32 = 63;
 /// # Errors
 /// Returns an error when the world has no `minecraft:overworld` dimension
 /// type, which would mean [`registries`] and [`LEVEL`] have drifted apart.
-pub fn spawn_info() -> anyhow::Result<CommonPlayerSpawnInfo<'static>> {
+pub fn spawn_info(game_type: GameType) -> anyhow::Result<CommonPlayerSpawnInfo<'static>> {
     let dimension_type = registries::DIMENSION_TYPE
         .id_of(LEVEL)
         .ok_or_else(|| anyhow::anyhow!("no dimension type named {LEVEL}"))?;
@@ -55,7 +56,7 @@ pub fn spawn_info() -> anyhow::Result<CommonPlayerSpawnInfo<'static>> {
         // The client only uses this to seed its own biome noise, and this
         // server sends biomes explicitly, so any value renders the same.
         seed: 0,
-        game_type: GameType::Survival,
+        game_type,
         previous_game_type: None,
         is_debug: false,
         is_flat: false,
@@ -63,6 +64,48 @@ pub fn spawn_info() -> anyhow::Result<CommonPlayerSpawnInfo<'static>> {
         portal_cooldown: 0,
         sea_level: SEA_LEVEL,
     })
+}
+
+/// Tell `entity`'s client where the server thinks it is.
+///
+/// Sent on join and again after any `Respawn`, which leaves the client at the
+/// dimension's default position rather than where it was.
+///
+/// # Errors
+/// Returns an error when the entity has no position, or when the packet fails
+/// to encode.
+pub fn send_position(
+    entity: EntityView<'_>,
+    compose: &Compose,
+    connection_id: ConnectionId,
+) -> anyhow::Result<()> {
+    let (position, yaw, pitch) = entity
+        .try_get::<(&Position, &Yaw, &Pitch)>(|(position, yaw, pitch)| (**position, **yaw, **pitch))
+        .ok_or_else(|| anyhow::anyhow!("cannot position a player that has none"))?;
+
+    send(
+        compose,
+        connection_id,
+        PacketId::PlayerPosition.to_raw(),
+        &PlayerPosition {
+            id: 1,
+            change: PositionMoveRotation {
+                position: Vec3 {
+                    x: f64::from(position.x),
+                    y: f64::from(position.y),
+                    z: f64::from(position.z),
+                },
+                delta_movement: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                y_rot: yaw,
+                x_rot: pitch,
+            },
+            relatives: Relative::NONE,
+        },
+    )
 }
 
 /// Send the join sequence and leave the client in play.
@@ -77,8 +120,8 @@ pub fn enter_world(
     compose: &Compose,
     connection_id: ConnectionId,
 ) -> anyhow::Result<()> {
-    let (position, yaw, pitch) = entity
-        .try_get::<(&Position, &Yaw, &Pitch)>(|(position, yaw, pitch)| (**position, **yaw, **pitch))
+    let position = entity
+        .try_get::<&Position>(|position| **position)
         .ok_or_else(|| anyhow::anyhow!("player finished configuration without a spawn position"))?;
 
     let (max_players, chunk_radius, simulation_distance) = world.get::<&Config>(|config| {
@@ -99,10 +142,15 @@ pub fn enter_world(
         reduced_debug_info: false,
         show_death_screen: false,
         do_limited_crafting: false,
-        spawn_info: spawn_info()?,
+        spawn_info: spawn_info(gamemode::of(entity).to_game_type())?,
         online_mode: false,
         enforces_secure_chat: false,
     })?;
+
+    // Before any `AddEntity`: a client refuses to build a player entity whose
+    // profile id it has not already seen in the tab list, and says so only in
+    // its own log.
+    roster::announce(world, entity, compose, connection_id)?;
 
     // The client discards chunks outside the cache centre, so this has to
     // precede any terrain rather than follow it.
@@ -136,29 +184,7 @@ pub fn enter_world(
         },
     )?;
 
-    send(
-        compose,
-        connection_id,
-        PacketId::PlayerPosition.to_raw(),
-        &PlayerPosition {
-            id: 1,
-            change: PositionMoveRotation {
-                position: Vec3 {
-                    x: f64::from(position.x),
-                    y: f64::from(position.y),
-                    z: f64::from(position.z),
-                },
-                delta_movement: Vec3 {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-                y_rot: yaw,
-                x_rot: pitch,
-            },
-            relatives: Relative::NONE,
-        },
-    )?;
+    send_position(entity, compose, connection_id)?;
 
     // Without this the client renders the terrain but never dismisses the
     // "Loading terrain..." screen, because `LEVEL_CHUNKS_LOAD_START` is what

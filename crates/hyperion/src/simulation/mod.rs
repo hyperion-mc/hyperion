@@ -45,6 +45,7 @@ pub mod blocks;
 pub mod command;
 pub mod entity_kind;
 pub mod event;
+pub mod gamemode;
 pub mod handlers;
 pub mod inventory;
 pub mod metadata;
@@ -314,6 +315,12 @@ pub const FULL_HEALTH: f32 = 20.0;
 
 #[derive(Component, Debug, Default, Deref, DerefMut)]
 pub struct ConfirmBlockSequences(pub Vec<i32>);
+// Nothing drains this and nothing turns it into a `BlockChangedAck`, so a
+// handler pushing here has acknowledged nothing. `Blocks::to_confirm` is the
+// queue the egress pass actually reads. Left in place rather than deleted
+// because removing it is wider than the change this comment came from, but it
+// has already misled one reader into shipping a refusal the client never heard
+// about. See ENG-10806.
 
 #[derive(Component, Debug, Eq, PartialEq, Default)]
 #[expect(missing_docs)]
@@ -740,6 +747,11 @@ impl Module for SimModule {
         world.component::<Xp>().meta();
 
         world.component::<PlayerSkin>();
+        world.component::<gamemode::Gamemode>();
+        world
+            .component::<gamemode::DefaultGamemode>()
+            .add_trait::<flecs::Singleton>();
+        world.set(gamemode::DefaultGamemode::default());
         world.component::<Command>();
         // The completion vocabulary. `Suggests` is a relation, so it has to be
         // a registered entity before an argument node can point at anything
@@ -820,15 +832,25 @@ impl Module for SimModule {
             });
         });
 
-        // for every new entity without a UUID, give it one
+        // Anything the server spawns needs an id invented for it.
+        //
+        // A player is the exception, and `ConnectionId` is what excludes them:
+        // their id was chosen and sent in `LoginFinished` before the entity had
+        // an `EntityKind` at all, and this observer would otherwise overwrite
+        // it. Not `without(Uuid)` alone, which looks like it covers this and
+        // does not: the login handler builds the player from inside a system,
+        // so its `set` is queued, this observer fires while an earlier queued
+        // command merges and sees no `Uuid` yet, and its own `set` is appended
+        // behind the login handler's and lands last. The player ended up
+        // wearing an id their own client had never been told. See ENG-10813.
         world
             .observer::<flecs::OnAdd, ()>()
             .with_enum_wildcard::<EntityKind>()
             .without(id::<Uuid>())
+            .without(id::<crate::net::ConnectionId>())
             .each_entity(|entity, ()| {
                 debug!("adding uuid to entity");
-                let uuid = uuid::Uuid::new_v4();
-                entity.set(Uuid::from(uuid));
+                entity.set(Uuid::new_v4());
             });
 
         world

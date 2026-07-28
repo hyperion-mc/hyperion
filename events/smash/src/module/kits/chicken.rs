@@ -47,6 +47,7 @@ impl Module for Chicken {
             death: "minecraft:entity.chicken.death",
         })
         .cost(8000)
+        .skin(crate::kit_skin!("chicken"))
         .blurb("Cannot take a hit, and does not have to.")
         .mob("minecraft:chicken")
         .ability(AbilitySpec {

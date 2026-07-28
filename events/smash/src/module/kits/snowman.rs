@@ -39,6 +39,7 @@ impl Module for Snowman {
             death: "minecraft:entity.snow_golem.death",
         })
         .cost(5000)
+        .skin(crate::kit_skin!("snowman"))
         .blurb("Own the ground you are standing on.")
         .mob("minecraft:snow_golem")
         .ability(AbilitySpec {

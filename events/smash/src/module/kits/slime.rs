@@ -53,6 +53,7 @@ impl Module for Slime {
             hurt: "minecraft:entity.slime.hurt",
             death: "minecraft:entity.slime.death",
         })
+        .skin(crate::kit_skin!("slime"))
         .blurb("Spend yourself to send enemies flying, and shrink while you do it.")
         .mob("minecraft:slime")
         .ability(AbilitySpec {

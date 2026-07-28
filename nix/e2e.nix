@@ -99,15 +99,17 @@ let
     rm -f root_ca.srl root_ca.pem
   '';
 
-  # The scripted clients read three things off disk: each other, the registry
-  # contents they check the server's tags against, and the generated item
-  # registry they name items from. All three are under one root because the
-  # clients reach for them by repository-relative path.
+  # The scripted clients read four things off disk: each other, the registry
+  # contents they check the server's tags against, the generated item registry
+  # they name items from, and the committed kit skins a profile has to match.
+  # All four are under one root because the clients reach for them by
+  # repository-relative path.
   clients = lib.fileset.toSource {
     root = sources.root;
     fileset = lib.fileset.unions [
       (lib.fileset.fileFilter (file: file.hasExt "py") sources.tools)
       sources.protoSource
+      sources.kitSkins
     ];
   };
 

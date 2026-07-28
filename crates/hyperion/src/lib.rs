@@ -7,7 +7,6 @@
 #![feature(sync_unsafe_cell)]
 #![feature(try_trait_v2)]
 #![feature(stmt_expr_attributes)]
-#![feature(split_array)]
 #![feature(never_type)]
 #![feature(trivial_bounds)]
 #![feature(thread_local)]
