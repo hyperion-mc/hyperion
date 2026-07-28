@@ -14,6 +14,16 @@ author hyperion (reconstruction of the SSM waiting lobby)
 # plane is a lobby where a bug leaves someone falling forever.
 kill_y 20
 
+# The box a player is kept inside. The platform is a radius-20 disc with a
+# three-high glass wall, so the double jump clears the wall and lets a player
+# drift off into the sky -- which is exactly what the operator asked not to be
+# possible. These corners sit a block outside the disc so standing on the very
+# edge is not "out", with a ceiling well above the pillars (y69) so an ordinary
+# jump is never touched and only a launch that would carry someone over the wall
+# is pushed back. The floor is a block under the quartz (y65), so a fall through
+# the world recovers upward here rather than dropping to the kill plane.
+bounds -21 64 -21 21 80 21
+
 # Eight standing spots around the centre, so a full lobby is not one pile.
 spawn 0 65 -6
 spawn 4 65 -4
