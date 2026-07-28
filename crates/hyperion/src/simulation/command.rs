@@ -13,15 +13,16 @@
 //! [`argument_type`] is the single place that vocabulary meets 776, and it is
 //! the piece to delete once callers name a
 //! [`hyperion_minecraft_proto::packets::play::player::ArgumentType`] directly.
-//! It resolves every id through `minecraft:command_argument_type` rather than
-//! writing numbers down, so a protocol bump moves the ids without touching
-//! this file. Two names did move between the two versions: 1.20.1's
-//! `minecraft:color` is 26.2's `minecraft:team_color`, and `minecraft:time`
-//! grew a minimum-duration property that 1.20.1 did not have.
+//! Every arm names a
+//! [`CommandArgumentType`] variant rather than a number or a string, so a
+//! protocol bump moves the ids without touching this file, and a bump that
+//! *renames* one stops this file compiling rather than sending an argument the
+//! client cannot parse. Two names did move between the two versions: 1.20.1's
+//! `color` is 26.2's `team_color`, and `time` grew a minimum-duration property
+//! that 1.20.1 did not have.
 
 use std::io::Write;
 
-use anyhow::Context as _;
 use flecs_ecs::{
     core::{
         Builder, Entity, EntityView, EntityViewGet, IdOperations, QueryAPI, QueryBuilderImpl,
@@ -30,8 +31,8 @@ use flecs_ecs::{
     macros::Component,
 };
 use hyperion_minecraft_proto::{
-    Identifier, RegistryId,
-    generated::{packet_id::play::clientbound::PacketId, registry},
+    Identifier,
+    generated::{packet_id::play::clientbound::PacketId, registry::CommandArgumentType},
     packets::play::player::{
         ArgumentType, CommandNode, CommandNodeStub, Commands, StringArgumentKind,
     },
@@ -186,26 +187,22 @@ impl Command {
 /// does not have, and every hyperion argument is server state.
 const ASK_SERVER: &str = "minecraft:ask_server";
 
-/// The `minecraft:command_argument_type` id of `name`.
-fn argument_type_id(name: &str) -> anyhow::Result<RegistryId> {
-    let id = registry::COMMAND_ARGUMENT_TYPE
-        .id_of(name)
-        .with_context(|| format!("no argument type named {name} in this protocol version"))?;
-    Ok(RegistryId(i32::try_from(id)?))
-}
-
-/// An argument type that writes no properties, by name.
-fn empty_argument(name: &str) -> anyhow::Result<ArgumentType<'static>> {
-    Ok(ArgumentType::Empty(argument_type_id(name)?))
+/// An argument type that writes no properties.
+///
+/// Infallible now that the type is a registry variant rather than a name to
+/// look up. It used to return `anyhow::Result` and every caller below carried
+/// a `?` for the possibility that `minecraft:block_pos` had stopped existing.
+const fn empty_argument(kind: CommandArgumentType) -> ArgumentType<'static> {
+    ArgumentType::Empty(kind)
 }
 
 /// A registry-scoped argument type, whose payload is the registry it scopes to.
-fn registry_argument<'a>(
-    name: &str,
-    scope: &'a valence_ident::Ident,
-) -> anyhow::Result<ArgumentType<'a>> {
+fn registry_argument(
+    kind: CommandArgumentType,
+    scope: &valence_ident::Ident,
+) -> anyhow::Result<ArgumentType<'_>> {
     Ok(ArgumentType::Registry {
-        id: argument_type_id(name)?,
+        id: kind,
         registry: Identifier::new(scope.as_str())?,
     })
 }
@@ -218,7 +215,7 @@ fn registry_argument<'a>(
 /// registry have drifted apart and the node cannot be sent at all.
 pub fn argument_type(parser: &Parser) -> anyhow::Result<ArgumentType<'_>> {
     Ok(match parser {
-        Parser::Bool => empty_argument("brigadier:bool")?,
+        Parser::Bool => empty_argument(CommandArgumentType::BrigadierBool),
         Parser::Float { min, max } => ArgumentType::Float {
             min: *min,
             max: *max,
@@ -255,51 +252,55 @@ pub fn argument_type(parser: &Parser) -> anyhow::Result<ArgumentType<'_>> {
         // `TimeArgument.time()` uses.
         Parser::Time => ArgumentType::Time { min: 0 },
         Parser::ResourceOrTag { registry } => {
-            registry_argument("minecraft:resource_or_tag", registry)?
+            registry_argument(CommandArgumentType::ResourceOrTag, registry)?
         }
         Parser::ResourceOrTagKey { registry } => {
-            registry_argument("minecraft:resource_or_tag_key", registry)?
+            registry_argument(CommandArgumentType::ResourceOrTagKey, registry)?
         }
-        Parser::Resource { registry } => registry_argument("minecraft:resource", registry)?,
-        Parser::ResourceKey { registry } => registry_argument("minecraft:resource_key", registry)?,
+        Parser::Resource { registry } => {
+            registry_argument(CommandArgumentType::Resource, registry)?
+        }
+        Parser::ResourceKey { registry } => {
+            registry_argument(CommandArgumentType::ResourceKey, registry)?
+        }
         // Everything below is a `SingletonArgumentInfo`, which writes its id
         // and stops.
-        Parser::GameProfile => empty_argument("minecraft:game_profile")?,
-        Parser::BlockPos => empty_argument("minecraft:block_pos")?,
-        Parser::ColumnPos => empty_argument("minecraft:column_pos")?,
-        Parser::Vec3 => empty_argument("minecraft:vec3")?,
-        Parser::Vec2 => empty_argument("minecraft:vec2")?,
-        Parser::BlockState => empty_argument("minecraft:block_state")?,
-        Parser::BlockPredicate => empty_argument("minecraft:block_predicate")?,
-        Parser::ItemStack => empty_argument("minecraft:item_stack")?,
-        Parser::ItemPredicate => empty_argument("minecraft:item_predicate")?,
+        Parser::GameProfile => empty_argument(CommandArgumentType::GameProfile),
+        Parser::BlockPos => empty_argument(CommandArgumentType::BlockPos),
+        Parser::ColumnPos => empty_argument(CommandArgumentType::ColumnPos),
+        Parser::Vec3 => empty_argument(CommandArgumentType::Vec3),
+        Parser::Vec2 => empty_argument(CommandArgumentType::Vec2),
+        Parser::BlockState => empty_argument(CommandArgumentType::BlockState),
+        Parser::BlockPredicate => empty_argument(CommandArgumentType::BlockPredicate),
+        Parser::ItemStack => empty_argument(CommandArgumentType::ItemStack),
+        Parser::ItemPredicate => empty_argument(CommandArgumentType::ItemPredicate),
         // Renamed in 1.20.5: what valence calls `Color` is a team colour.
-        Parser::Color => empty_argument("minecraft:team_color")?,
-        Parser::Component => empty_argument("minecraft:component")?,
-        Parser::Message => empty_argument("minecraft:message")?,
-        Parser::NbtCompoundTag => empty_argument("minecraft:nbt_compound_tag")?,
-        Parser::NbtTag => empty_argument("minecraft:nbt_tag")?,
-        Parser::NbtPath => empty_argument("minecraft:nbt_path")?,
-        Parser::Objective => empty_argument("minecraft:objective")?,
-        Parser::ObjectiveCriteria => empty_argument("minecraft:objective_criteria")?,
-        Parser::Operation => empty_argument("minecraft:operation")?,
-        Parser::Particle => empty_argument("minecraft:particle")?,
-        Parser::Angle => empty_argument("minecraft:angle")?,
-        Parser::Rotation => empty_argument("minecraft:rotation")?,
-        Parser::ScoreboardSlot => empty_argument("minecraft:scoreboard_slot")?,
-        Parser::Swizzle => empty_argument("minecraft:swizzle")?,
-        Parser::Team => empty_argument("minecraft:team")?,
-        Parser::ItemSlot => empty_argument("minecraft:item_slot")?,
-        Parser::ResourceLocation => empty_argument("minecraft:resource_location")?,
-        Parser::Function => empty_argument("minecraft:function")?,
-        Parser::EntityAnchor => empty_argument("minecraft:entity_anchor")?,
-        Parser::IntRange => empty_argument("minecraft:int_range")?,
-        Parser::FloatRange => empty_argument("minecraft:float_range")?,
-        Parser::Dimension => empty_argument("minecraft:dimension")?,
-        Parser::GameMode => empty_argument("minecraft:gamemode")?,
-        Parser::TemplateMirror => empty_argument("minecraft:template_mirror")?,
-        Parser::TemplateRotation => empty_argument("minecraft:template_rotation")?,
-        Parser::Uuid => empty_argument("minecraft:uuid")?,
+        Parser::Color => empty_argument(CommandArgumentType::TeamColor),
+        Parser::Component => empty_argument(CommandArgumentType::Component),
+        Parser::Message => empty_argument(CommandArgumentType::Message),
+        Parser::NbtCompoundTag => empty_argument(CommandArgumentType::NbtCompoundTag),
+        Parser::NbtTag => empty_argument(CommandArgumentType::NbtTag),
+        Parser::NbtPath => empty_argument(CommandArgumentType::NbtPath),
+        Parser::Objective => empty_argument(CommandArgumentType::Objective),
+        Parser::ObjectiveCriteria => empty_argument(CommandArgumentType::ObjectiveCriteria),
+        Parser::Operation => empty_argument(CommandArgumentType::Operation),
+        Parser::Particle => empty_argument(CommandArgumentType::Particle),
+        Parser::Angle => empty_argument(CommandArgumentType::Angle),
+        Parser::Rotation => empty_argument(CommandArgumentType::Rotation),
+        Parser::ScoreboardSlot => empty_argument(CommandArgumentType::ScoreboardSlot),
+        Parser::Swizzle => empty_argument(CommandArgumentType::Swizzle),
+        Parser::Team => empty_argument(CommandArgumentType::Team),
+        Parser::ItemSlot => empty_argument(CommandArgumentType::ItemSlot),
+        Parser::ResourceLocation => empty_argument(CommandArgumentType::ResourceLocation),
+        Parser::Function => empty_argument(CommandArgumentType::Function),
+        Parser::EntityAnchor => empty_argument(CommandArgumentType::EntityAnchor),
+        Parser::IntRange => empty_argument(CommandArgumentType::IntRange),
+        Parser::FloatRange => empty_argument(CommandArgumentType::FloatRange),
+        Parser::Dimension => empty_argument(CommandArgumentType::Dimension),
+        Parser::GameMode => empty_argument(CommandArgumentType::Gamemode),
+        Parser::TemplateMirror => empty_argument(CommandArgumentType::TemplateMirror),
+        Parser::TemplateRotation => empty_argument(CommandArgumentType::TemplateRotation),
+        Parser::Uuid => empty_argument(CommandArgumentType::Uuid),
     })
 }
 
@@ -703,15 +704,7 @@ mod tests {
         let CommandNodeStub::Argument { parser, .. } = decoded.nodes[2].stub else {
             panic!("third node should be the argument");
         };
-        assert_eq!(
-            parser.to_id().expect("argument type id"),
-            i32::try_from(
-                registry::COMMAND_ARGUMENT_TYPE
-                    .id_of("brigadier:string")
-                    .expect("brigadier:string is registered")
-            )
-            .expect("id fits an i32")
-        );
+        assert_eq!(parser.to_type(), CommandArgumentType::BrigadierString);
         assert!(decoded.nodes[2].executable);
     }
 }

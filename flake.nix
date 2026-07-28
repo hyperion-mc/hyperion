@@ -1031,6 +1031,7 @@
             minecraft-proto-generated = minecraft.generatedUpToDate;
             minecraft-proto-coverage = minecraft.coverageRatchet;
             tool-paths = minecraft.toolPaths;
+            minecraft-literals = minecraft.literalRatchet;
             minecraft-registry-data = minecraft.registryDataUpToDate;
             minecraft-tag-data = minecraft.tagDataUpToDate;
             minecraft-tags-load = minecraft.tagsLoadForClient;
@@ -1112,6 +1113,7 @@
               inherit (checks) flake-gate;
               update-minecraft-data = minecraft.updateScript;
               sync-minecraft-proto = minecraft.syncScript;
+              sync-minecraft-literals = minecraft.syncLiteralsScript;
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
               sync-minecraft-tag-data = minecraft.syncTagDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;

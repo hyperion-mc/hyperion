@@ -18,8 +18,8 @@
 //! Nothing is curated: every registry the extractor reports has an enum, so
 //! there is no subset to fall outside of. The single exception is
 //! `minecraft:particle_type`, whose entries carry payloads this file's input
-//! cannot describe; `nix/generate-particles.py` owns that one and the reason
-//! is written at the top of the `particle_type` module here.
+//! cannot describe; its enum is generated from the decompiled codecs instead,
+//! and the reason is written at the top of the `particle_type` module here.
 //!
 //! # What is free and what is not
 //!

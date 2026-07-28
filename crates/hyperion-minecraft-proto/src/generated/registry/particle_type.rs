@@ -3,7 +3,7 @@
 
 //! `minecraft:particle_type` -- names only. This registry deliberately has no enum here.
 //!
-//! Reason: its entries carry payloads that `protocol.json` cannot describe, so `nix/generate-particles.py` reads the decompiled codecs instead and owns the enum.
+//! Reason: 13 of its 125 entries carry payloads that `protocol.json` cannot describe, so the enum is generated from the decompiled codecs instead and lives outside this file.
 //!
 //! Every other registry in this module is an enum whether or not anything uses
 //! it, because a hand-picked subset is a gap waiting to be found. This one is
@@ -14,8 +14,8 @@
 //! never carry its block state, its colour or its flight time, while being the
 //! more discoverable of the two spellings.
 //!
-//! The table below stays, because it is what the real generator pins its ids
-//! against.
+//! The table below stays, because it is what the generator that does own the
+//! enum pins its ids against.
 
 /// Entry names in network-id order, so the index is the id.
 pub static NAMES_IN_ID_ORDER: [&str; 125] = [
