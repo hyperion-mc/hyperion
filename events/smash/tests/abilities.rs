@@ -578,3 +578,110 @@ fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
         "an expired ultimate should be nothing at all in that slot, not a refusal"
     );
 }
+
+/// What the charge accumulator hands a payload, against wall clock.
+///
+/// Seven abilities in the roster are hold-and-release, and every one of them
+/// scales off `Cast::charge`. If the accumulator under-counts, all seven fire
+/// weaker than they declare and the two that gate on a threshold -- Slime's
+/// rocket size and Skeleton's arrow count -- reach it late or never, which is
+/// a bug that presents as "this kit feels bad" and as nothing else.
+///
+/// Measured through the payload rather than by reading `Charging::held`,
+/// because what matters is the number the ability is given.
+mod charge {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use flecs_ecs::prelude::*;
+    use glam::Vec3;
+    use smash::module::{
+        ability::{self, Cast, Observable},
+        kit::{self, AbilitySpec, KitStats},
+        player::Position,
+    };
+
+    use super::harness::Game;
+
+    /// The last charge a payload was handed, as bits. An atomic because the
+    /// payload is a bare `fn` with nowhere to put a closure capture, which is
+    /// the same reason `OnActivate` is a `fn` in the first place.
+    static SEEN: AtomicU32 = AtomicU32::new(0);
+
+    fn record(cast: &Cast<'_>) {
+        SEEN.store(cast.charge.to_bits(), Ordering::SeqCst);
+    }
+
+    /// Seconds to full charge for the ability under test. Arbitrary, and
+    /// deliberately not any real kit's, so the test measures the accumulator
+    /// rather than a kit's tuning.
+    const FULL: f32 = 2.0;
+
+    fn charge_after(held_for: f32, steps: u32) -> f32 {
+        let mut game = Game::new();
+        kit::define(&game.world, "ChargeProbe", KitStats::default())
+            .ability(AbilitySpec {
+                name: "Probe",
+                sound: "minecraft:entity.arrow.shoot",
+                description: "Held for a known time, and reports what it was given.",
+                charge_time: Some(FULL),
+                proves: &[Observable::HurtsTarget],
+                activate: record,
+                ..AbilitySpec::DEFAULT
+            })
+            .register();
+
+        let player = game.player("holder", Vec3::ZERO);
+        let player = game.world.entity_from_id(player);
+        player.set(Position(Vec3::ZERO));
+        let probe = kit::by_name(&game.world, "ChargeProbe").expect("just defined");
+        kit::apply(&game.world, player, probe);
+
+        SEEN.store(0, Ordering::SeqCst);
+        ability::use_slot(player, 0);
+        game.advance(held_for, steps);
+        ability::release_slot(player, 0);
+        f32::from_bits(SEEN.load(Ordering::SeqCst))
+    }
+
+    /// Holding for the full charge time hands the payload 1.0, and holding for
+    /// half of it hands over a half.
+    ///
+    /// The tolerance is one tick's worth. `Charging` is created by the observer
+    /// that handles the press and first ticked by the system on the frame
+    /// after, so a hold measured in whole ticks is short by at most one of
+    /// them, and asserting exactness would be asserting an ordering the game
+    /// does not have.
+    #[test]
+    fn a_hold_is_worth_its_wall_clock() {
+        let tolerance = 1.0 / 20.0 / FULL + 1e-3;
+
+        let full = charge_after(FULL, 40);
+        assert!(
+            (full - 1.0).abs() <= tolerance,
+            "holding for the whole {FULL}s charge time was worth {full}, not 1.0"
+        );
+
+        let half = charge_after(FULL / 2.0, 20);
+        assert!(
+            (half - 0.5).abs() <= tolerance,
+            "holding for half the {FULL}s charge time was worth {half}, not 0.5"
+        );
+    }
+
+    /// And the step function the two threshold abilities use agrees with it.
+    ///
+    /// Barrage is `1 + charge_steps(charge, 4)`, so a full hold has to be five
+    /// arrows and not four or three. Checked here against the accumulator
+    /// rather than in isolation, because the two being individually defensible
+    /// and jointly wrong is exactly how a five-arrow ability fires three.
+    #[test]
+    fn a_full_hold_reaches_the_top_step() {
+        let full = charge_after(FULL, 40);
+        assert_eq!(
+            1 + ability::charge_steps(full, 4),
+            5,
+            "a full hold was worth {full}, which is {} arrows and not five",
+            1 + ability::charge_steps(full, 4)
+        );
+    }
+}
