@@ -46,7 +46,6 @@ impl Module for Cow {
             name: "Angry Herd",
             sound: "minecraft:entity.cow.ambient",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Five cows in a line. Each one can hit you.",
             // `[VERIFIED]` "(Cooldown: 13 seconds)".
             cooldown: 13.0,
@@ -58,7 +57,6 @@ impl Module for Cow {
             name: "Milk Spiral",
             sound: "minecraft:entity.cow.milk",
             item: "minecraft:iron_shovel",
-            slot: 2,
             description: "A helix of milk that carries you with it. Hits at most two people.",
             // `[VERIFIED]` "(Cooldown: 11 seconds)".
             cooldown: 11.0,
@@ -74,7 +72,6 @@ impl Module for Cow {
             name: "Mooshroom Madness",
             sound: "minecraft:entity.mooshroom.convert",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Become a mooshroom: more damage, five more hearts, faster abilities.",
             cooldown: 20.0,
             proves: &[Observable::HealsCaster],

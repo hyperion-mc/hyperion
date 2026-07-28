@@ -60,7 +60,6 @@ impl Module for Slime {
             name: "Slime Rocket",
             sound: "minecraft:entity.slime.squish",
             item: "minecraft:iron_sword",
-            slot: 0,
             description: "Hold to grow a rocket out of yourself. Release to launch it.",
             cooldown: 6.0,
             charge_time: Some(MAX_CHARGE_SECONDS),
@@ -74,7 +73,6 @@ impl Module for Slime {
             name: "Slime Slam",
             sound: "minecraft:entity.slime.attack",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Throw yourself at someone. You take a quarter of it back.",
             cooldown: 6.0,
             // The recoil is a real launch on the caster, not a rounding
@@ -92,7 +90,6 @@ impl Module for Slime {
             name: "Giga Slime",
             sound: "minecraft:entity.slime.jump",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Become enormous and untouchable. Everything near you dies.",
             cooldown: 19.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],

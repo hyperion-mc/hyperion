@@ -65,7 +65,6 @@ impl Module for Wolf {
             name: "Cub Tackle",
             sound: "minecraft:entity.baby_wolf.ambient",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Throw a cub. Whoever it lands on can barely move for five seconds.",
             cooldown: 8.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
@@ -76,7 +75,6 @@ impl Module for Wolf {
             name: "Wolf Strike",
             sound: "minecraft:entity.wolf.growl",
             item: "minecraft:iron_shovel",
-            slot: 2,
             description: "Launch at what you are looking at. Triple knockback on a tackled target.",
             cooldown: 7.0,
             proves: &[
@@ -91,7 +89,6 @@ impl Module for Wolf {
             name: "Frenzy",
             sound: "minecraft:entity.wolf_angry.growl",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Twenty seconds of everything at once.",
             cooldown: 20.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],

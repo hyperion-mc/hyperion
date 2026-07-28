@@ -651,6 +651,11 @@ class Match:
         # What the sweep found, one line per ability, for the report.
         self.sweep_results = []
         self.sweep_failures = []
+        # Failures found after the sweep has already reported, which is
+        # everything the match phase notices. `sweep_failures` is folded
+        # into a proof inside `sweep`, so anything appended to it later
+        # is read by nobody.
+        self.late_failures = []
         self.cooldown_results = []
         self.cooldown_failures = []
         # Abilities whose declared sound never arrived, and any sound that
@@ -1585,15 +1590,36 @@ class Match:
         What the registry is for here is checking the choice rather than making
         it: a slot holding something that does not launch is a slot this check
         cannot use, and saying so beats a silent miss.
+
+        A recorded failure and not a log line, because the miss it catches is
+        the quiet one. When every kit's layout shifted one slot to the left, an
+        `--ability-slot` left behind pointed at an empty key: the check pressed
+        nothing, saw no motion, and reported a broken knockback model. An empty
+        slot produced no message at all, because there was no registry entry to
+        disagree with.
         """
         slot = self.args.ability_slot
-        declared = [
-            entry
-            for entry in self.manifest
-            if entry["kit"] == kit and entry["slot"] == slot
-        ]
-        if declared and "launches_target" not in declared[0]["proves"]:
-            self.log(
+        for_kit = sorted(
+            (entry for entry in self.manifest if entry["kit"] == kit),
+            key=lambda entry: entry["slot"],
+        )
+        # `--no-abilities` skips the sweep and leaves the manifest empty, in
+        # which case there is nothing to check the choice against.
+        if not for_kit:
+            return slot
+        declared = [entry for entry in for_kit if entry["slot"] == slot]
+        if not declared:
+            self.late_failures.append(
+                "--ability-slot %d is empty on %s, so the knockback check "
+                "presses a key holding nothing; the registry gives that kit %s"
+                % (
+                    slot,
+                    kit,
+                    ", ".join("%d:%s" % (e["slot"], e["name"]) for e in for_kit),
+                )
+            )
+        elif "launches_target" not in declared[0]["proves"]:
+            self.late_failures.append(
                 "--ability-slot %d on %s is %s, which the registry says does "
                 "not launch anybody" % (slot, kit, declared[0]["name"])
             )
@@ -1800,6 +1826,14 @@ class Match:
                 self.log("              %s" % evidence)
 
         print("", flush=True)
+        if self.late_failures:
+            for line in self.late_failures:
+                self.log("FAILED %s" % line)
+            self.log(
+                "RESULT: %d check(s) were aimed at something the server's own "
+                "registry does not have" % len(self.late_failures)
+            )
+            return 1
         if unknown:
             self.log(
                 "RESULT: %d packet id(s) are not clientbound play ids in "
@@ -1829,8 +1863,8 @@ def main():
     parser.add_argument(
         "--ability-slot",
         type=int,
-        default=3,
-        help="hotbar slot the match's knockback check fires; 3 is Iron Golem's "
+        default=2,
+        help="hotbar slot the match's knockback check fires; 2 is Iron Golem's "
         "Seismic Slam, which lands one hit and so solves against the model",
     )
     parser.add_argument(

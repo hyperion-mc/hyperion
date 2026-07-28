@@ -53,7 +53,6 @@ impl Module for Blaze {
             name: "Inferno",
             sound: "minecraft:entity.blaze.shoot",
             item: "minecraft:iron_sword",
-            slot: 1,
             description: "Spew flame. No knockback, and armour does not reduce it.",
             cooldown: 0.5,
             energy_cost: Some(12.0),
@@ -65,7 +64,6 @@ impl Module for Blaze {
             name: "Firefly",
             sound: "minecraft:entity.blaze.ambient",
             item: "minecraft:iron_axe",
-            slot: 2,
             description: "Charge a second and a half, then ram. Four damage while charging \
                           cancels it.",
             cooldown: 9.0,
@@ -82,7 +80,6 @@ impl Module for Blaze {
             name: "Phoenix",
             sound: "minecraft:item.firecharge.use",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Twenty seconds of Firefly with no charge and free flight.",
             cooldown: 1.0,
             proves: &[

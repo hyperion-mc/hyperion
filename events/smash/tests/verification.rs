@@ -677,7 +677,6 @@ fn holding_a_slot_charges_it_and_releasing_fires_at_that_charge() {
                 .ability(AbilitySpec {
                     name: "Draw",
                     item: "minecraft:bow",
-                    slot: 1,
                     description: "Hold to draw.",
                     cooldown: 0.0,
                     charge_time: Some(2.0),
@@ -699,7 +698,7 @@ fn holding_a_slot_charges_it_and_releasing_fires_at_that_charge() {
     );
 
     // Pressing a charge ability starts the charge rather than firing it.
-    ability::use_slot(player, 1);
+    ability::use_slot(player, 0);
     assert_eq!(
         game.world.cloned::<&Fired>().0,
         0,
@@ -708,7 +707,7 @@ fn holding_a_slot_charges_it_and_releasing_fires_at_that_charge() {
 
     // Half of the two second charge time.
     game.advance(1.0, 20);
-    ability::release_slot(player, 1);
+    ability::release_slot(player, 0);
 
     assert_eq!(
         game.world.cloned::<&Fired>().0,
@@ -722,9 +721,9 @@ fn holding_a_slot_charges_it_and_releasing_fires_at_that_charge() {
     );
 
     // Held past full, the fraction clamps rather than running away.
-    ability::use_slot(player, 1);
+    ability::use_slot(player, 0);
     game.advance(10.0, 200);
-    ability::release_slot(player, 1);
+    ability::release_slot(player, 0);
     let charge = game.world.cloned::<&LastCharge>().0;
     assert!(
         (charge - 1.0).abs() < 1e-6,
@@ -732,8 +731,8 @@ fn holding_a_slot_charges_it_and_releasing_fires_at_that_charge() {
     );
 
     // Tapped, it fires at nothing.
-    ability::use_slot(player, 1);
-    ability::release_slot(player, 1);
+    ability::use_slot(player, 0);
+    ability::release_slot(player, 0);
     assert!(
         game.world.cloned::<&LastCharge>().0.abs() < 1e-6,
         "a tap fired at {} charge",
@@ -775,7 +774,6 @@ fn an_ability_costing_the_whole_bar_is_allowed_at_a_full_bar() {
             .ability(AbilitySpec {
                 name: "Everything",
                 item: "minecraft:stick",
-                slot: 1,
                 energy_cost: Some(1.0),
                 ..AbilitySpec::DEFAULT
             })
@@ -800,7 +798,7 @@ fn an_ability_costing_the_whole_bar_is_allowed_at_a_full_bar() {
         regen: 0.0,
     });
     assert_eq!(
-        ability::activate(player, 1, 1.0),
+        ability::activate(player, 0, 1.0),
         Ok(()),
         "a full bar could not pay a cost equal to it"
     );
@@ -808,7 +806,7 @@ fn an_ability_costing_the_whole_bar_is_allowed_at_a_full_bar() {
 
     // Empty, and it is refused.
     assert_eq!(
-        ability::activate(player, 1, 1.0),
+        ability::activate(player, 0, 1.0),
         Err(Refusal::NotEnoughEnergy)
     );
 
@@ -820,7 +818,7 @@ fn an_ability_costing_the_whole_bar_is_allowed_at_a_full_bar() {
         regen: 0.0,
     });
     assert_eq!(
-        ability::activate(player, 1, 1.0),
+        ability::activate(player, 0, 1.0),
         Err(Refusal::NotEnoughEnergy),
         "the energy gate is not a gate"
     );
@@ -941,6 +939,10 @@ fn a_refused_ability_tells_the_player_why() {
 
     // First use goes through; the second is on cooldown, and that is the one
     // the player must be told about.
+    //
+    // Slot 1 and not slot 0: Skeleton's first key is Barrage, which is drawn
+    // and released rather than tapped, so a bare `use_slot` on it starts a
+    // charge and never reaches the cooldown this is about.
     ability::use_slot(player, 1);
     game.server.take();
     ability::use_slot(player, 1);
@@ -995,14 +997,12 @@ fn an_ability_with_no_description_has_no_lore() {
                 .ability(AbilitySpec {
                     name: "Quiet",
                     item: "minecraft:stick",
-                    slot: 1,
                     description: "",
                     ..AbilitySpec::DEFAULT
                 })
                 .ability(AbilitySpec {
                     name: "Loud",
                     item: "minecraft:stone",
-                    slot: 2,
                     description: "It says something.",
                     ..AbilitySpec::DEFAULT
                 })
@@ -1022,7 +1022,7 @@ fn an_ability_with_no_description_has_no_lore() {
 
     let hotbar = kit::hotbar(player);
     assert_eq!(hotbar.len(), 2);
-    assert_eq!(hotbar[0].slot, 1);
+    assert_eq!(hotbar[0].slot, 0);
     assert!(
         hotbar[0].lore.is_empty(),
         "an empty description became a blank tooltip line: {:?}",
