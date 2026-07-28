@@ -640,12 +640,43 @@ NEVER_ON_JOIN = frozenset(
 )
 
 
+# The movement packets a crash test fires once it is in the world. Each is a
+# `MovePlayerPos` (play id 0x1E) the server must refuse without dying:
+#   - x = 2_000_000 is finite and sits far inside the Minecraft world border
+#     (29,999,984), yet its chunk key 2_000_000 >> 4 == 125_000 overflows the
+#     i16 this server keys chunks by. This is the confirmed ENG-10914 repro.
+#   - NaN and +inf are the non-finite vectors: `NaN as i32` is 0 (a silent
+#     teleport to origin) and `inf as i32` saturates and then wraps on >> 4.
+# The server's own reply proves survival: a refused move triggers a teleport
+# correction (PlayerPosition), so receiving one after the last hostile packet
+# means the server ticked past all of them and is still talking.
+OOB_MOVE_PACKETS = (
+    ("x=2_000_000 (finite, past the i16 chunk range; ENG-10914)",
+     struct.pack(">dddb", 2_000_000.0, 65.0, 4.0, 1)),
+    ("x=NaN (non-finite)",
+     struct.pack(">dddb", float("nan"), 65.0, 4.0, 1)),
+    ("x=+inf (non-finite)",
+     struct.pack(">dddb", float("inf"), 65.0, 4.0, 1)),
+)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=25565)
     parser.add_argument("--name", default="Prober")
     parser.add_argument("--seconds", type=float, default=15.0)
+    parser.add_argument(
+        "--oob-move",
+        action="store_true",
+        help=(
+            "after reaching play, send movement packets no client should ever "
+            "send -- a finite coordinate past the i16 chunk range and the "
+            "non-finite NaN/inf vectors -- and verify the server keeps ticking "
+            "rather than crashing (ENG-10914). The exit code becomes the answer "
+            "to that question alone."
+        ),
+    )
     parser.add_argument(
         "--status-only",
         action="store_true",
@@ -680,6 +711,10 @@ def main():
     seen = {}
     moved = False
     lost_after_move = False
+    oob_queue = list(OOB_MOVE_PACKETS) if args.oob_move else []
+    oob_total = len(oob_queue)
+    hostiles_sent = 0
+    survived_hostile = False
 
     while time.time() < deadline:
         try:
@@ -692,6 +727,11 @@ def main():
             break
 
         seen[packet_id] = seen.get(packet_id, 0) + 1
+
+        # Any packet that arrives once every hostile move has been sent proves
+        # the server ticked past all of them without crashing.
+        if args.oob_move and oob_total and hostiles_sent == oob_total:
+            survived_hostile = True
 
         if packet_id == S2C_PLAY_LOGIN:
             client.entity_id = struct.unpack(">i", payload[:4])[0]
@@ -721,6 +761,17 @@ def main():
             )
             moved = True
             log("-> MovePlayerPos (%.1f, %.1f, %.1f)" % (x + 0.2, y, z))
+
+            # In crash-test mode, follow the legitimate step with the packets
+            # no client should send. The first fires here; each refusal sends
+            # back a teleport correction (another PlayerPosition), on which the
+            # next one fires -- so the whole sequence drains through this branch.
+            if oob_queue:
+                desc, hostile = oob_queue.pop(0)
+                client.send(C2S_PLAY_MOVE_PLAYER_POS, hostile)
+                hostiles_sent += 1
+                log("-> hostile MovePlayerPos #%d/%d: %s"
+                    % (hostiles_sent, oob_total, desc))
         elif packet_id == S2C_PLAY_SET_DEFAULT_SPAWN:
             log("<- SetDefaultSpawnPosition")
         elif packet_id == S2C_PLAY_KEEP_ALIVE:
@@ -728,6 +779,41 @@ def main():
         elif packet_id == S2C_PLAY_DISCONNECT:
             log("<- Disconnect %s" % printable(payload))
             break
+
+    # In crash-test mode the exit code answers one question: did the server
+    # survive the hostile movement packets? Everything a bedwars world would
+    # also check (terrain, tags) is irrelevant here and would only couple this
+    # gate to a particular event, so it returns before any of that.
+    if args.oob_move:
+        if not client.joined:
+            log("RESULT: never reached play state; the crash test never ran")
+            return 1
+        if lost_after_move:
+            log(
+                "RESULT: the server dropped the connection after a movement "
+                "packet. A single malformed MovePlayerPos crashed it for every "
+                "connected player (ENG-10914)."
+            )
+            return 1
+        if hostiles_sent < oob_total:
+            log(
+                "RESULT: only %d of %d hostile moves were sent (the server may "
+                "have stopped responding mid-sequence); inconclusive"
+                % (hostiles_sent, oob_total)
+            )
+            return 1
+        if not survived_hostile:
+            log(
+                "RESULT: the server sent nothing after the hostile moves, so it "
+                "cannot be confirmed to have survived them"
+            )
+            return 1
+        log(
+            "RESULT: the server refused %d out-of-bounds / non-finite "
+            "MovePlayerPos packets and kept ticking (ENG-10914 fixed)"
+            % hostiles_sent
+        )
+        return 0
 
     log("packets received in play state, by id:")
     unknown = []

@@ -49,18 +49,29 @@ impl Position {
     }
 
     /// Get the chunk position of the center of the player's bounding box.
+    ///
+    /// Chunk coordinates are `i16` on the wire (`SetChunkCacheCenter` and
+    /// friends), so this is a narrowing conversion. It is total by clamping
+    /// rather than panicking: it runs every tick for every player on a
+    /// position ultimately derived from client input, and one out-of-range
+    /// coordinate used to abort the whole process here via
+    /// `try_from().unwrap()`. The move handler already rejects positions
+    /// outside the world border (see
+    /// `handlers::change_position_or_correct_client`); this clamp is
+    /// the belt-and-braces that keeps the conversion itself incapable of
+    /// crashing whoever calls it.
     #[must_use]
     #[expect(clippy::cast_possible_truncation)]
     pub fn to_chunk(&self) -> I16Vec2 {
-        let x = self.x as i32;
-        let z = self.z as i32;
-        let x = x >> 4;
-        let z = z >> 4;
+        // `as i32` on a float saturates (and maps NaN to 0), so a huge or
+        // infinite coordinate lands at i32::MIN/MAX rather than wrapping; the
+        // clamp then brings it into the representable i16 chunk range.
+        let to_chunk_axis = |coord: f32| -> i16 {
+            let block = (coord as i32) >> 4;
+            block.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
+        };
 
-        let x = i16::try_from(x).unwrap();
-        let z = i16::try_from(z).unwrap();
-
-        I16Vec2::new(x, z)
+        I16Vec2::new(to_chunk_axis(self.x), to_chunk_axis(self.z))
     }
 }
 
@@ -242,4 +253,33 @@ pub fn get_direction_from_rotation(yaw: f32, pitch: f32) -> Vec3 {
         -pitch_rad.sin(),                 // y = -sin(pitch)
         pitch_rad.cos() * yaw_rad.cos(),  // z = cos(pitch) * cos(yaw)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: a position past the i16 chunk range (|coord| > 32767 * 16)
+    // used to make `to_chunk`'s `i16::try_from(..).unwrap()` panic, and it runs
+    // every tick for every player from a client-supplied position, so one
+    // packet took down the whole process. It must now be total.
+    #[test]
+    fn to_chunk_is_total_for_out_of_border_positions() {
+        for coord in [
+            1.0e9_f32,
+            -1.0e9,
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            29_999_984.0,
+            -29_999_984.0,
+        ] {
+            let chunk = Position::new(coord, 100.0, coord).to_chunk();
+            // The whole point is that it returned rather than panicking; the
+            // clamped value is representable by construction.
+            let _ = chunk;
+        }
+    }
 }
