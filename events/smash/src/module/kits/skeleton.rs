@@ -55,7 +55,6 @@ impl Module for Skeleton {
             name: "Barrage",
             sound: "minecraft:entity.arrow.shoot",
             item: "minecraft:bow",
-            slot: 0,
             description: "Hold to load arrows, up to five. Release to fire them all.",
             cooldown: 0.0,
             // 1000 ms to the first arrow, 300 ms per arrow after: five arrows
@@ -69,7 +68,6 @@ impl Module for Skeleton {
             name: "Bone Explosion",
             sound: "minecraft:block.bone_block.break",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Scatter your bones. Little damage, enormous knockback.",
             cooldown: 10.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
@@ -80,7 +78,6 @@ impl Module for Skeleton {
             name: "Roped Arrow",
             sound: "minecraft:entity.fishing_bobber.throw",
             item: "minecraft:arrow",
-            slot: 2,
             description: "Fire an arrow and be dragged after it. Your way back onto the map.",
             cooldown: 5.0,
             proves: &[
@@ -95,7 +92,6 @@ impl Module for Skeleton {
             name: "Arrow Storm",
             sound: "minecraft:item.crossbow.shoot",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Fire without ever reloading.",
             cooldown: 8.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],

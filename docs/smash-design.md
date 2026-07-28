@@ -370,6 +370,22 @@ There is exactly one activation path in the game — `ability::activate` — and
 never names a kit, because behaviour is a component it reads rather than a
 branch it takes.
 
+**The hotbar layout belongs to the kit, not to each ability.** `AbilitySpec`
+used to carry a `slot: u8` and each kit file filled it in by hand. Nothing can
+check a slot number on its own: `slot: 1` is wrong only in relation to the rest
+of its kit, and twelve of the fifteen kits numbered from 1, which left slot 0
+empty on all of them. That is the key a vanilla client has selected when it
+spawns, so twelve kits handed a player a bar whose first ability could not be
+fired until they scrolled. Every other gate stayed green, because every ability
+really was present and reachable.
+
+`KitBuilder::ability` now hands out slots in declaration order from 0 and
+`KitBuilder::ultimate` always takes `ULTIMATE_SLOT`. The order a kit file
+declares its abilities in *is* the layout, so the empty first key is
+unreachable rather than merely absent today. `events/smash/tests/hotbar.rs`
+sweeps the registry for what is left, and `nix run .#smash-hotbar-e2e` reads
+the inventory packets a real client is sent for each of the fifteen kits.
+
 **Behaviour is a bare `fn` pointer, not a `Box<dyn Fn>`.** Activation is rare
 enough that one indirect call is free, and a boxed closure would put an
 allocation and a second pointer chase into a path a kit author will eventually

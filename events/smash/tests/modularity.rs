@@ -61,7 +61,6 @@ impl Module for Porcupine {
         .ability(AbilitySpec {
             name: "Quill Burst",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Everything nearby gets a face full of quills.",
             cooldown: 5.0,
             activate: quill_burst,
@@ -70,7 +69,6 @@ impl Module for Porcupine {
         .ability(AbilitySpec {
             name: "Bristle",
             item: "minecraft:iron_sword",
-            slot: 2,
             description: "Hold to bristle, release to launch.",
             cooldown: 3.0,
             charge_time: Some(2.0),
@@ -81,7 +79,6 @@ impl Module for Porcupine {
         .ability(AbilitySpec {
             name: "Burrow",
             item: "minecraft:iron_shovel",
-            slot: 3,
             description: "Only works with your feet on the floor.",
             cooldown: 9.0,
             requires_ground: true,
@@ -91,7 +88,6 @@ impl Module for Porcupine {
         .ultimate(AbilitySpec {
             name: "Quillstorm",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "All of the quills, all at once.",
             cooldown: 12.0,
             activate: |cast| splash(cast, 20.0, 18.0, 3.0),
@@ -188,7 +184,7 @@ fn selecting_it_applies_its_stats_and_grants_its_abilities() {
         }
     });
     slots.sort_unstable();
-    assert_eq!(slots, vec![1, 2, 3], "the ultimate is not granted at spawn");
+    assert_eq!(slots, vec![0, 1, 2], "the ultimate is not granted at spawn");
 
     let hotbar = kit::hotbar(player);
     assert_eq!(hotbar.len(), 3);
@@ -209,7 +205,7 @@ fn its_abilities_go_through_the_same_dispatcher_as_every_other_kit() {
         kit::by_name(&game.world, "Porcupine").unwrap(),
     );
 
-    ability::use_slot(attacker, 1);
+    ability::use_slot(attacker, 0);
 
     let health = game.world.entity_from_id(victim).cloned::<&Health>();
     assert!(health.current < health.max, "Quill Burst did nothing");
@@ -230,16 +226,16 @@ fn its_cooldowns_are_enforced_by_the_shared_gate() {
         kit::by_name(&game.world, "Porcupine").unwrap(),
     );
 
-    assert_eq!(ability::activate(player, 1, 1.0), Ok(()));
+    assert_eq!(ability::activate(player, 0, 1.0), Ok(()));
     assert_eq!(
-        ability::activate(player, 1, 1.0),
+        ability::activate(player, 0, 1.0),
         Err(Refusal::OnCooldown),
         "the second use should have been refused"
     );
 
     game.advance(6.0, 60);
     assert_eq!(
-        ability::activate(player, 1, 1.0),
+        ability::activate(player, 0, 1.0),
         Ok(()),
         "the cooldown never expired"
     );
@@ -259,10 +255,10 @@ fn its_ground_requirement_is_enforced_by_the_shared_gate() {
     );
 
     player.set(OnGround(false));
-    assert_eq!(ability::activate(player, 3, 1.0), Err(Refusal::NotGrounded));
+    assert_eq!(ability::activate(player, 2, 1.0), Err(Refusal::NotGrounded));
 
     player.set(OnGround(true));
-    assert_eq!(ability::activate(player, 3, 1.0), Ok(()));
+    assert_eq!(ability::activate(player, 2, 1.0), Ok(()));
 }
 
 #[test]
@@ -282,7 +278,7 @@ fn its_energy_cost_is_enforced_by_the_shared_gate() {
         regen: 0.2,
     });
     assert_eq!(
-        ability::activate(player, 2, 1.0),
+        ability::activate(player, 1, 1.0),
         Err(Refusal::NotEnoughEnergy)
     );
 
@@ -291,7 +287,7 @@ fn its_energy_cost_is_enforced_by_the_shared_gate() {
         max: 1.0,
         regen: 0.2,
     });
-    assert_eq!(ability::activate(player, 2, 1.0), Ok(()));
+    assert_eq!(ability::activate(player, 1, 1.0), Ok(()));
     assert!(
         player.cloned::<&Energy>().current < 1.0,
         "activation did not spend energy"
@@ -335,15 +331,15 @@ fn cooldowns_are_per_player_not_per_kit() {
     kit::apply(&game.world, one, porcupine);
     kit::apply(&game.world, two, porcupine);
 
-    assert_eq!(ability::activate(one, 1, 1.0), Ok(()));
+    assert_eq!(ability::activate(one, 0, 1.0), Ok(()));
     assert_eq!(
-        ability::activate(two, 1, 1.0),
+        ability::activate(two, 0, 1.0),
         Ok(()),
         "one player's cooldown must not gate another's"
     );
 
     let cooldown_of = |player: EntityView<'_>| {
-        ability::granted_in_slot(player, 1)
+        ability::granted_in_slot(player, 0)
             .and_then(|a| a.try_get::<&Cooldown>(|c| c.remaining))
             .unwrap_or(0.0)
     };

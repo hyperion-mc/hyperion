@@ -670,6 +670,30 @@
               '';
             };
 
+            # The same gate again, driving a client that reads its own
+            # inventory rather than the world.
+            #
+            # Separate from `smash-e2e` because it needs no match at all: one
+            # client stands in the hub, changes kit fifteen times and reads the
+            # bar it is handed each time. `smash-e2e` would eventually notice a
+            # kit whose abilities were unreachable, but only by failing to fire
+            # one; this fails on the layout itself and names the kit. Ports
+            # default off `smash-identity-e2e`'s so all six gates can run side
+            # by side.
+            smash-hotbar-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/hotbar-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + 6000)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + 6000)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # `nix run .#dev` runs bedwars; this runs the same stack on smash.
             smash-dev = {
               deps = [ pkgs.process-compose pkgs.git ];
@@ -808,6 +832,20 @@
               timeout = 300;
             };
 
+            # Which key each kit's abilities land on, read off the inventory
+            # packets a real client receives. The failure it catches is silent
+            # everywhere else: an ability bound one key to the right of where a
+            # hand rests is present, correct and unreachable.
+            smash-hotbar-e2e = e2e.mkCheck {
+              name = "hyperion-smash-hotbar-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "hotbar-check.py";
+              # Fifteen kit changes in a hub that never starts a match, so this
+              # is the shortest of the smash gates.
+              timeout = 300;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
@@ -815,6 +853,7 @@
             completions-e2e-app = scripts.completions-e2e;
             smash-selector-e2e-app = scripts.smash-selector-e2e;
             smash-identity-e2e-app = scripts.smash-identity-e2e;
+            smash-hotbar-e2e-app = scripts.smash-hotbar-e2e;
 
             # Every kit's skin, checked offline against Mojang's committed
             # public keys. A derivation rather than only an app, because the

@@ -167,6 +167,17 @@ pub const DEFAULT_MOB: &str = "minecraft:armor_stand";
 #[derive(Component, Debug)]
 pub struct Ultimate;
 
+/// How many keys a player has. The hotbar is nine slots and there is no tenth.
+pub const HOTBAR_SLOTS: u8 = 9;
+
+/// Where every kit's Smash Crystal ability goes: the far right of the bar.
+///
+/// Mineplex put the ultimate at the end and the kit's own weapon under the hand,
+/// and the whole roster agreed on this end of the bar before it agreed on the
+/// other. Named here rather than repeated as an `8` in fifteen kit files,
+/// because a constant is the thing a reader can look up.
+pub const ULTIMATE_SLOT: u8 = HOTBAR_SLOTS - 1;
+
 const fn noop(_: &Cast<'_>) {}
 
 /// One ability, as a kit file declares it.
@@ -179,7 +190,6 @@ const fn noop(_: &Cast<'_>) {}
 /// AbilitySpec {
 ///     name: "Blink",
 ///     item: "minecraft:iron_axe",
-///     slot: 1,
 ///     cooldown: 7.0,
 ///     proves: &[Observable::TeleportsCaster],
 ///     sound: "minecraft:entity.enderman.teleport",
@@ -197,7 +207,6 @@ const fn noop(_: &Cast<'_>) {}
 pub struct AbilitySpec {
     pub name: &'static str,
     pub item: &'static str,
-    pub slot: u8,
     pub description: &'static str,
     pub cooldown: f32,
     /// Seconds of holding to reach full charge. `Some` makes this a
@@ -230,7 +239,6 @@ impl AbilitySpec {
     pub const DEFAULT: Self = Self {
         name: "",
         item: "minecraft:stick",
-        slot: 0,
         description: "",
         cooldown: 0.0,
         charge_time: None,
@@ -269,6 +277,14 @@ pub struct KitSounds {
 pub struct KitBuilder<'w> {
     world: &'w World,
     kit: EntityView<'w>,
+    /// The slot the next [`KitBuilder::ability`] call takes.
+    ///
+    /// The layout is a property of the kit, so the kit is what owns it. A
+    /// per-ability `slot: u8` was the same fact written fifty-one times, and
+    /// twelve of the fifteen kits wrote it starting from 1: every one of them
+    /// left the slot a player's hand rests on at spawn empty, which is a kit
+    /// whose first ability cannot be fired without pressing a key first.
+    next_slot: u8,
 }
 
 /// Start a kit definition. Call from a kit module's [`Module::module`].
@@ -279,7 +295,11 @@ pub fn define<'w>(world: &'w World, name: &'static str, stats: KitStats) -> KitB
         .add(Kit::id())
         .set(KitName(name))
         .set(stats);
-    KitBuilder { world, kit }
+    KitBuilder {
+        world,
+        kit,
+        next_slot: 0,
+    }
 }
 
 impl<'w> KitBuilder<'w> {
@@ -325,18 +345,41 @@ impl<'w> KitBuilder<'w> {
         self
     }
 
-    /// Add one of the kit's starting abilities.
+    /// Add one of the kit's starting abilities, in the next slot along.
+    ///
+    /// The first goes in slot 0, which is where a player's hand rests when they
+    /// spawn, and each one after it takes the key to its right. The order a kit
+    /// file declares its abilities in *is* the layout, so there is no number to
+    /// get wrong and no way to leave a hole in the bar.
+    ///
+    /// # Panics
+    ///
+    /// If a kit declares more starting abilities than fit to the left of
+    /// [`ULTIMATE_SLOT`]. The next one would land on the ultimate's key and one
+    /// of the two would be unreachable, so this refuses at startup rather than
+    /// shipping a kit with an ability nobody can press.
     #[must_use]
-    pub fn ability(self, spec: AbilitySpec) -> Self {
-        self.build_ability(spec, false);
+    pub fn ability(mut self, spec: AbilitySpec) -> Self {
+        let slot = self.next_slot;
+        assert!(
+            slot < ULTIMATE_SLOT,
+            "{} declares more than {ULTIMATE_SLOT} starting abilities, so this one would land on \
+             the Smash Crystal's key",
+            spec.name,
+        );
+        self.build_ability(spec, slot, false);
+        self.next_slot = slot + 1;
         self
     }
 
     /// Add the Smash Crystal ability. Not granted at spawn; the crystal grants
     /// it and its expiry takes it back.
+    ///
+    /// Always [`ULTIMATE_SLOT`], whatever else the kit declares: it is the one
+    /// binding a player carries across every mob they play.
     #[must_use]
     pub fn ultimate(self, spec: AbilitySpec) -> Self {
-        self.build_ability(spec, true);
+        self.build_ability(spec, ULTIMATE_SLOT, true);
         self
     }
 
@@ -349,14 +392,14 @@ impl<'w> KitBuilder<'w> {
         self.kit
     }
 
-    fn build_ability(&self, spec: AbilitySpec, ultimate: bool) -> EntityView<'w> {
+    fn build_ability(&self, spec: AbilitySpec, slot: u8, ultimate: bool) -> EntityView<'w> {
         let ability = self
             .world
             .prefab_named(spec.name)
             .add(Ability::id())
             .set(Named(spec.name))
             .set(Item(spec.item))
-            .set(Slot(spec.slot))
+            .set(Slot(slot))
             .set(Description(spec.description))
             .set(CooldownSpec(spec.cooldown))
             .set(Proves(spec.proves))

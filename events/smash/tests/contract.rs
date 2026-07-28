@@ -198,7 +198,7 @@ fn contracts() -> Vec<Contract> {
             exercise: |world, player| {
                 // No kit, so no ability is granted and this is the empty path
                 // through the dispatcher. That it runs at all is the claim.
-                smash::module::ability::use_slot(player, 1);
+                smash::module::ability::use_slot(player, 0);
                 world.progress_time(0.05);
             },
         },

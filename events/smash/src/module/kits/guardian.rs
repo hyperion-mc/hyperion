@@ -65,7 +65,6 @@ impl Module for Guardian {
             name: "Whirlpool Axe",
             sound: "minecraft:entity.player.splash.high_speed",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "A shard that pulls, like a weaker hook on a shorter cooldown.",
             // `[VERIFIED]` "its low recharge time of 5 seconds".
             cooldown: 5.0,
@@ -77,7 +76,6 @@ impl Module for Guardian {
             name: "Water Splash",
             sound: "minecraft:entity.generic.splash",
             item: "minecraft:iron_sword",
-            slot: 2,
             description: "Bounce up, dragging everyone within five blocks with you.",
             // `[VERIFIED]` "Due to its cooldown of 12 seconds".
             cooldown: 12.0,
@@ -93,7 +91,6 @@ impl Module for Guardian {
             name: "Target Laser",
             sound: "minecraft:entity.guardian.attack",
             item: "minecraft:iron_pickaxe",
-            slot: 3,
             description: "Mark someone within ten blocks. Everything hurts them more for eight \
                           seconds.",
             cooldown: 15.0,
@@ -106,7 +103,6 @@ impl Module for Guardian {
             name: "Tidal Wave",
             sound: "minecraft:entity.elder_guardian.curse",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Everything in the water goes where the water goes.",
             cooldown: 20.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],

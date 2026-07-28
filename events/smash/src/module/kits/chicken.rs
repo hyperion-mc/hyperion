@@ -54,7 +54,6 @@ impl Module for Chicken {
             name: "Egg Blaster",
             sound: "minecraft:entity.egg.throw",
             item: "minecraft:iron_sword",
-            slot: 1,
             description: "A stream of eggs. No knockback, but it stops people moving.",
             // "The real strength in this relies in the extremely fast recharge
             // of 2 seconds."
@@ -68,7 +67,6 @@ impl Module for Chicken {
             name: "Chicken Missile",
             sound: "minecraft:entity.chicken.egg",
             item: "minecraft:iron_axe",
-            slot: 2,
             description: "A chick that explodes. Recharges the instant it hits something.",
             cooldown: 8.0,
             refunds_on_hit: true,
@@ -80,7 +78,6 @@ impl Module for Chicken {
             name: "Aerial Gunner",
             sound: "minecraft:entity.chicken.ambient",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "Unlimited flight and eggs, for twenty seconds.",
             cooldown: 1.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesCaster],

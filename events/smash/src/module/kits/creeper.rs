@@ -55,7 +55,6 @@ impl Module for Creeper {
             name: "Sulphur Bomb",
             sound: "minecraft:entity.creeper.primed",
             item: "minecraft:iron_axe",
-            slot: 1,
             description: "Throw coal. It goes off on whatever it touches.",
             cooldown: 6.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
@@ -66,7 +65,6 @@ impl Module for Creeper {
             name: "Explosion",
             sound: "minecraft:entity.generic.explode",
             item: "minecraft:iron_shovel",
-            slot: 2,
             // The wiki: "charge up for 1.5 seconds, then explode ... achieving
             // 18 damage, the highest that Creeper can inflict".
             description: "Charge for a second and a half, then take everything nearby with you.",
@@ -80,7 +78,6 @@ impl Module for Creeper {
             name: "Atomic Blast",
             sound: "minecraft:entity.wither.spawn",
             item: "minecraft:nether_star",
-            slot: 8,
             description: "The same idea, without the restraint.",
             cooldown: 20.0,
             proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],

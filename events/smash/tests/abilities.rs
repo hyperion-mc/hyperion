@@ -297,38 +297,6 @@ fn every_ability_declares_what_a_client_would_see() {
     );
 }
 
-/// Two kits must not put two abilities on one hotbar slot, or one of them is
-/// unreachable and the gate below would silently fire the other.
-#[test]
-fn no_kit_binds_two_abilities_to_one_slot() {
-    let game = Game::new();
-    let mut clashes = Vec::new();
-    for kit_name in kit_names(&game) {
-        let mut slots = Vec::new();
-        for entry in ability::manifest(&game.world) {
-            if entry.kit == kit_name {
-                if slots.contains(&entry.slot) {
-                    clashes.push(format!("{kit_name} slot {}", entry.slot));
-                }
-                slots.push(entry.slot);
-            }
-        }
-    }
-    assert!(
-        clashes.is_empty(),
-        "abilities share a hotbar slot: {clashes:?}"
-    );
-}
-
-fn kit_names(game: &Game) -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = ability::manifest(&game.world)
-        .into_iter()
-        .map(|entry| entry.kit)
-        .collect();
-    names.dedup();
-    names
-}
-
 /// How many times an ability may be pressed before it has to have done what it
 /// said.
 ///

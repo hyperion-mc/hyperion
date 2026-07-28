@@ -628,7 +628,7 @@ proptest! {
         let chosen = game.world.entity_from_id(kits[kit_index % kits.len()]);
         smash::module::kit::apply(&game.world, player, chosen);
 
-        let _ = activate(player, 1, 1.0);
+        let _ = activate(player, 0, 1.0);
         let mut previous = f32::INFINITY;
         for _ in 0..ticks {
             game.advance(TICK, 1);
@@ -649,7 +649,7 @@ proptest! {
         // a tick count is how this first ran for one second and reported that
         // no cooldown ever expires.
         game.advance(90.0, 90 * 20);
-        if let Some(ability) = granted_in_slot(player, 1) {
+        if let Some(ability) = granted_in_slot(player, 0) {
             let remaining = ability.try_get::<&Cooldown>(|c| c.remaining).unwrap_or(0.0);
             prop_assert!(remaining.abs() < 1e-5, "a cooldown never expired: {remaining}");
         }
