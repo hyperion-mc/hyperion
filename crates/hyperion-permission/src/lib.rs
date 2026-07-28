@@ -14,7 +14,10 @@ use num_derive::{FromPrimitive, ToPrimitive};
 #[derive(Component)]
 pub struct PermissionModule;
 
+pub mod seed;
 mod storage;
+
+pub use seed::SeededGroups;
 
 #[derive(
     Default,
@@ -37,7 +40,27 @@ pub enum Group {
     Admin,
 }
 
-// todo:
+impl Group {
+    /// Whether a player in this group may use something declared for
+    /// `required`.
+    ///
+    /// The groups are ordinal and a higher one subsumes a lower one, with one
+    /// exception: `Banned` is not the weakest group that everybody outranks,
+    /// it is a specific group, and a thing declared for it is for banned
+    /// players and nobody else.
+    ///
+    /// It lives here rather than in the code `CommandPermission` generates
+    /// because a comparison written into a macro's output is a comparison
+    /// nobody can put a test on.
+    #[must_use]
+    pub const fn allows(self, required: Self) -> bool {
+        if matches!(required, Self::Banned) {
+            matches!(self, Self::Banned)
+        } else {
+            self as u32 >= required as u32
+        }
+    }
+}
 
 impl Module for PermissionModule {
     fn module(world: &World) {
@@ -45,28 +68,62 @@ impl Module for PermissionModule {
         world
             .component::<storage::PermissionStorage>()
             .add_trait::<flecs::Singleton>();
+        world
+            .component::<SeededGroups>()
+            .add_trait::<flecs::Singleton>();
+
+        // Read once, at startup, and loudly. A server whose operator list is a
+        // typo has nobody in charge, and the only moment that is cheap to
+        // notice is before it is listening. See `seed`.
+        let seeded = SeededGroups::from_env()
+            .unwrap_or_else(|error| panic!("{:#}", error.context("reading the operator list")));
+        tracing::info!(
+            "{} account(s) hold a group from {}",
+            seeded.len(),
+            seed::ENV_VAR
+        );
+        world.set(seeded);
 
         world.get::<&LocalDb>(|db| {
             let storage = storage::PermissionStorage::new(db).unwrap();
             world.set(storage);
         });
 
-        observer!(world, flecs::OnSet, &Uuid, &storage::PermissionStorage)
-            .with(id::<Player>())
-            .each_entity(|entity, (uuid, permissions)| {
-                let group = permissions.get(**uuid);
-                entity.set(group);
-            });
+        observer!(
+            world,
+            flecs::OnSet,
+            &Uuid,
+            &storage::PermissionStorage,
+            &SeededGroups
+        )
+        .with(id::<Player>())
+        .each_entity(|entity, (uuid, permissions, seeded)| {
+            // Configuration outranks the database, so an operator joins in the
+            // group they are configured to hold whatever `/perms set` last did
+            // to them.
+            let group = seeded
+                .get(**uuid)
+                .unwrap_or_else(|| permissions.get(**uuid));
+            entity.set(group);
+        });
 
         observer!(
             world,
             flecs::OnRemove,
             &Uuid,
             &Group,
-            &storage::PermissionStorage
+            &storage::PermissionStorage,
+            &SeededGroups
         )
         .with(id::<Player>())
-        .each(|(uuid, group, permissions)| {
+        .each(|(uuid, group, permissions, seeded)| {
+            // And is authoritative in the other direction too: a group that
+            // came from configuration is never written to the database, so
+            // deleting the line takes the group away rather than leaving it
+            // behind in a file nobody remembers writing.
+            if seeded.contains(**uuid) {
+                return;
+            }
             permissions.set(**uuid, *group).unwrap();
         });
 

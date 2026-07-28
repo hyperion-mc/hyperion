@@ -37,6 +37,14 @@ import time
 
 TOOLS = pathlib.Path(__file__).resolve().parent
 
+# `§` followed by one character is a legacy colour code, which the server writes
+# into chat and a client renders rather than reads.
+COLOUR = re.compile("§.")
+
+
+def uncoloured(text):
+    return COLOUR.sub("", text)
+
 
 def _load(name, filename):
     """Import a sibling tool whose file name is not a Python identifier."""
@@ -102,8 +110,8 @@ COUNTDOWN_DIGITS = ["3", "2", "1"]
 class Screen(match.MatchClient):
     """A scripted player that remembers what was drawn on it."""
 
-    def __init__(self, host, port, name, started):
-        super().__init__(host, port, name, started)
+    def __init__(self, host, port, name, started, uuid=None):
+        super().__init__(host, port, name, started, uuid=uuid)
         # Every experience bar, boss bar and title in the order they arrived, so
         # a check can ask about the last one or about the whole sequence.
         self.experience = []
@@ -123,6 +131,9 @@ class Screen(match.MatchClient):
         self.titles = []
         self.subtitles = []
         self.animations = []
+        # Every system chat line, in order. `/perms get` answers in chat and
+        # nowhere else, so this is how the seeded group is read back.
+        self.chat = []
         # The three title packets in arrival order, which is the only place the
         # ordering they have to arrive in is observable at all.
         self.screen = []
@@ -143,6 +154,7 @@ class Screen(match.MatchClient):
         elif packet_id == match.S2C_SYSTEM_CHAT:
             text, _ = match.take_nbt_string(payload, 0)
             self.log("<- chat: %s" % text)
+            self.chat.append(text)
             if text.startswith("Kit set to "):
                 self.kit = text[len("Kit set to ") :].rstrip(".")
         elif packet_id == match.S2C_CONTAINER_SET_SLOT:
@@ -319,6 +331,11 @@ class Run:
         self.started = time.time()
         self.clients = []
         self.failures = []
+        # The profile ids the server was told hold `Admin`, before it started,
+        # through `HYPERION_PERMISSIONS`. See `hyperion_permission::seed`, and
+        # `flake.nix`'s `hudAdmins`, which is the one list both the server's
+        # configuration and this argument are built from.
+        self.admins = list(args.admin_uuid or [])
 
     def log(self, line):
         print("%s %-5s %s" % (match.stamp(self.started), "", line), flush=True)
@@ -332,10 +349,31 @@ class Run:
             self.failures.append(message)
         return ok
 
+    def admin_uuid(self, index):
+        """The profile id of the `index`-th account configured as `Admin`.
+
+        A client cannot promote itself. `/perms set` is an `Admin` command, and
+        it is reachable only by an account an operator named before the server
+        started; this gate used to reach it by promoting itself through a hole
+        in `/perms` (ENG-10871), which is closed.
+        """
+        if index >= len(self.admins):
+            raise SystemExit(
+                "this gate needs %d configured admin(s) and was given %d. Pass "
+                "--admin-uuid once per account named as Admin in "
+                "HYPERION_PERMISSIONS." % (index + 1, len(self.admins))
+            )
+        return self.admins[index]
+
     def connect(self, count):
         for _ in range(count):
             name = "H%d" % (len(self.clients) + 1)
-            client = Screen(self.args.host, self.args.port, name, self.started)
+            # The two clients the load bars need an `Admin` command from are
+            # the first two, so they log in under the two configured ids and
+            # the rest let the server mint one as any player would.
+            index = len(self.clients)
+            uuid = self.admin_uuid(index) if index < 2 else None
+            client = Screen(self.args.host, self.args.port, name, self.started, uuid=uuid)
             client.handshake(self.args.host, self.args.port, 2)
             client.login()
             client.configuration()
@@ -657,17 +695,49 @@ class Run:
         admin = self.clients[0]
         second = self.clients[1]
 
-        # `/serverload` is Admin, and there is no other way for a test client
-        # to reach an Admin command: no config default, no env override, and
-        # `PermissionStorage` starts empty and is keyed on UUID. So this gate
-        # promotes its own clients, which works only because `/perms` is itself
-        # gated at Normal. That is a real privilege escalation, filed as
-        # ENG-10871, and closing it has to land a way to seed a group at
-        # startup or this check goes with it.
+        # `/serverload` is Admin, and these two clients hold it because an
+        # operator said so before the server started: they logged in under
+        # profile ids named in `HYPERION_PERMISSIONS`, which is the ordinary
+        # way to run this server with administrators
+        # (`hyperion_permission::seed`).
+        #
+        # This gate used to promote itself with `/perms set`, which worked only
+        # because that command was gated at `Normal` -- a privilege escalation
+        # any player could use, ENG-10871. Reading the group back with the
+        # `Normal` half of the same command is what proves the seeding, rather
+        # than the bar appearing proving it by side effect.
         for client in (admin, second):
-            # `Group` is a clap `ValueEnum`, so its variants are lower case.
-            admin.command("perms set %s admin" % client.name)
+            client.chat.clear()
+            client.command("perms get %s" % client.name)
         self.pump(1.0)
+        seeded = [
+            client.name
+            for client in (admin, second)
+            if any("group is Admin" in uncoloured(line) for line in client.chat)
+        ]
+        if not self.check(
+            len(seeded) == 2,
+            "an account named in the server's configuration joins holding the "
+            "group it was given, with nothing asked for: %s" % seeded,
+        ):
+            return
+
+        # And the hole itself, from a client that has none of this: a `Normal`
+        # player asking for `Admin` is refused, and the group does not move.
+        plain = self.clients[2]
+        plain.chat.clear()
+        plain.command("perms set %s admin" % plain.name)
+        self.pump(1.0)
+        refused = any("do not have permission" in uncoloured(line) for line in plain.chat)
+        plain.chat.clear()
+        plain.command("perms get %s" % plain.name)
+        self.pump(1.0)
+        self.check(
+            refused
+            and any("group is Normal" in uncoloured(line) for line in plain.chat),
+            "and a player who was not named cannot name themselves: %s"
+            % [uncoloured(line) for line in plain.chat],
+        )
 
         admin.bar_ops.clear()
         admin.command("serverload")
@@ -808,15 +878,15 @@ class Run:
         # way a bar stops being shown, and the one with nothing to observe on
         # the wire: the packet that must *not* be written is one to a socket
         # that has gone. What is observable is that the server carries on.
-        leaver = Screen(self.args.host, self.args.port, "HX", self.started)
+        leaver = Screen(
+            self.args.host, self.args.port, "HX", self.started, uuid=self.admin_uuid(2)
+        )
         leaver.handshake(self.args.host, self.args.port, 2)
         leaver.login()
         leaver.configuration()
         leaver.enter_play()
         self.clients.append(leaver)
         self.until(lambda: leaver.joined, 60.0, "the disconnecting viewer to join")
-        admin.command("perms set %s admin" % leaver.name)
-        self.pump(1.0)
         leaver.command("serverload")
         self.until(lambda: cpu in leaver.bar_state, 20.0, "the leaver's own load bars")
         leaver.sock.close()
@@ -968,6 +1038,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=25565)
+    parser.add_argument(
+        "--admin-uuid",
+        action="append",
+        metavar="UUID",
+        help="a profile id the server was told holds Admin, through "
+        "HYPERION_PERMISSIONS. This gate needs three of them, because "
+        "/serverload is an Admin command and nothing lets a client give "
+        "itself the group (ENG-10871). flake.nix builds both this argument "
+        "and the server's configuration from one list",
+    )
     parser.add_argument(
         "--clients",
         type=int,

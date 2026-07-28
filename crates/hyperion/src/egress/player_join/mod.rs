@@ -60,7 +60,7 @@ impl Module for PlayerJoinModule {
             .add_trait::<flecs::Singleton>();
         world.set(RayonWorldStages { stages });
 
-        let root_command = world.entity().set(Command::ROOT);
+        let root_command = world.entity().set(Command::root());
 
         #[expect(
             clippy::unwrap_used,

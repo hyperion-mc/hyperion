@@ -454,8 +454,8 @@ class MatchClient(base.Client):
     cannot afford to block on any one of them.
     """
 
-    def __init__(self, host, port, name, started):
-        super().__init__(host, port, name, lambda line: None)
+    def __init__(self, host, port, name, started, uuid=None):
+        super().__init__(host, port, name, lambda line: None, uuid=uuid)
         self.started = started
         self.log = self._log
         self.host = host
