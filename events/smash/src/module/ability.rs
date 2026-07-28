@@ -522,27 +522,25 @@ impl Module for AbilityModule {
         // Grants that expire. Written as one `run` rather than as a per-entity
         // system because taking the grant back edits the holder's type, and
         // flecs refuses that from inside the query that found it.
-        world
-            .system_named::<()>("expire_grants")
-            .run(|mut it| {
-                while it.next() {
-                    let world = it.world();
-                    let dt = it.delta_time();
-                    let mut expired = Vec::new();
-                    world
-                        .query::<&mut GrantedFor>()
-                        .build()
-                        .each_entity(|ability, granted| {
-                            granted.remaining -= dt;
-                            if granted.remaining <= 0.0 {
-                                expired.push(ability.id());
-                            }
-                        });
-                    if !expired.is_empty() {
-                        expire(world, &expired);
-                    }
+        world.system_named::<()>("expire_grants").run(|mut it| {
+            while it.next() {
+                let world = it.world();
+                let dt = it.delta_time();
+                let mut expired = Vec::new();
+                world
+                    .query::<&mut GrantedFor>()
+                    .build()
+                    .each_entity(|ability, granted| {
+                        granted.remaining -= dt;
+                        if granted.remaining <= 0.0 {
+                            expired.push(ability.id());
+                        }
+                    });
+                if !expired.is_empty() {
+                    expire(world, &expired);
                 }
-            });
+            }
+        });
 
         // A single dispatcher for every ability in the game. Adding a kit
         // cannot require editing it, because it never names one.

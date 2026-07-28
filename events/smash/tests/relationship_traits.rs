@@ -44,15 +44,52 @@ fn game() -> World {
 fn relations_are_declared_relationships() {
     let world = game();
     for (name, present) in [
-        ("ShownAs", world.component::<ShownAs>().has(id::<flecs::Relationship>())),
-        ("Offers", world.component::<Offers>().has(id::<flecs::Relationship>())),
-        ("StandsOn", world.component::<StandsOn>().has(id::<flecs::Relationship>())),
-        ("Playing", world.component::<Playing>().has(id::<flecs::Relationship>())),
-        ("Grants", world.component::<Grants>().has(id::<flecs::Relationship>())),
-        ("Upon", world.component::<Upon>().has(id::<flecs::Relationship>())),
-        ("InflictedBy", world.component::<InflictedBy>().has(id::<flecs::Relationship>())),
-        ("Source", world.component::<Source>().has(id::<flecs::Relationship>())),
-        ("FiredBy", world.component::<FiredBy>().has(id::<flecs::Relationship>())),
+        (
+            "ShownAs",
+            world
+                .component::<ShownAs>()
+                .has(id::<flecs::Relationship>()),
+        ),
+        (
+            "Offers",
+            world.component::<Offers>().has(id::<flecs::Relationship>()),
+        ),
+        (
+            "StandsOn",
+            world
+                .component::<StandsOn>()
+                .has(id::<flecs::Relationship>()),
+        ),
+        (
+            "Playing",
+            world
+                .component::<Playing>()
+                .has(id::<flecs::Relationship>()),
+        ),
+        (
+            "Grants",
+            world.component::<Grants>().has(id::<flecs::Relationship>()),
+        ),
+        (
+            "Upon",
+            world.component::<Upon>().has(id::<flecs::Relationship>()),
+        ),
+        (
+            "InflictedBy",
+            world
+                .component::<InflictedBy>()
+                .has(id::<flecs::Relationship>()),
+        ),
+        (
+            "Source",
+            world.component::<Source>().has(id::<flecs::Relationship>()),
+        ),
+        (
+            "FiredBy",
+            world
+                .component::<FiredBy>()
+                .has(id::<flecs::Relationship>()),
+        ),
     ] {
         assert!(present, "{name} lost its `flecs::Relationship` trait");
     }
@@ -76,7 +113,9 @@ fn player_targeted_relations_are_sparse_and_cascade() {
         ),
         (
             "FiredBy",
-            world.component::<FiredBy>().has(id::<flecs::DontFragment>()),
+            world
+                .component::<FiredBy>()
+                .has(id::<flecs::DontFragment>()),
             world
                 .component::<FiredBy>()
                 .has((id::<flecs::OnDeleteTarget>(), id::<flecs::Delete>())),
@@ -242,7 +281,11 @@ fn a_projectile_dies_with_its_shooter() {
         },
         Payload::new(1.0, 0.0),
     );
-    assert_eq!(count::<Projectile>(&world), 1, "the projectile was not fired");
+    assert_eq!(
+        count::<Projectile>(&world),
+        1,
+        "the projectile was not fired"
+    );
 
     shooter.destruct();
     assert_eq!(

@@ -186,55 +186,53 @@ impl Module for ScoreboardModule {
         world.component::<Drawn>().add_trait::<flecs::Singleton>();
         world.set(Drawn::default());
 
-        world
-            .system_named::<()>("update_scoreboard")
-            .run(|mut it| {
-                while it.next() {
-                    let world = it.world();
-                    let phase = world.cloned::<&Lobby>().phase;
+        world.system_named::<()>("update_scoreboard").run(|mut it| {
+            while it.next() {
+                let world = it.world();
+                let phase = world.cloned::<&Lobby>().phase;
 
-                    // Once per tick, not once per player, and read from the
-                    // tier table rather than off each player's `(ShownAs,
-                    // tier)` edge. See `Bands`: that edge is written by a
-                    // deferred command, so on the tick a player joins it is
-                    // not there yet and this panel would leave them out of
-                    // both the rows and the viewers.
-                    let bands = lives::Bands::of(&world);
+                // Once per tick, not once per player, and read from the
+                // tier table rather than off each player's `(ShownAs,
+                // tier)` edge. See `Bands`: that edge is written by a
+                // deferred command, so on the tick a player joins it is
+                // not there yet and this panel would leave them out of
+                // both the rows and the viewers.
+                let bands = lives::Bands::of(&world);
 
-                    let mut rows = Vec::new();
-                    let mut viewers = Vec::new();
-                    world
-                        .query::<(&Lives, &PlayerId)>()
-                        .with(Player::id())
-                        .build()
-                        .each_entity(|player, (lives, id)| {
-                            let remaining = lives::remaining(player, *lives);
-                            rows.push(Row {
-                                name: player.name(),
-                                lives: remaining,
-                                colour: bands.tint(remaining).expect(
-                                    "LivesModule builds the tier table at import and \
-                                     ScoreboardModule declares it as a requirement",
-                                ),
-                            });
-                            viewers.push(*id);
+                let mut rows = Vec::new();
+                let mut viewers = Vec::new();
+                world
+                    .query::<(&Lives, &PlayerId)>()
+                    .with(Player::id())
+                    .build()
+                    .each_entity(|player, (lives, id)| {
+                        let remaining = lives::remaining(player, *lives);
+                        rows.push(Row {
+                            name: player.name(),
+                            lives: remaining,
+                            colour: bands.tint(remaining).expect(
+                                "LivesModule builds the tier table at import and ScoreboardModule \
+                                 declares it as a requirement",
+                            ),
                         });
-
-                    let lines = render(phase, rows);
-                    let unchanged = world
-                        .get::<&Drawn>(|drawn| drawn.lines == lines && drawn.viewers == viewers);
-                    if unchanged {
-                        continue;
-                    }
-
-                    world.get::<&ServerHandle>(|server| {
-                        for viewer in &viewers {
-                            server.set_sidebar(*viewer, Text::text(TITLE), &lines);
-                        }
+                        viewers.push(*id);
                     });
-                    world.set(Drawn { lines, viewers });
+
+                let lines = render(phase, rows);
+                let unchanged =
+                    world.get::<&Drawn>(|drawn| drawn.lines == lines && drawn.viewers == viewers);
+                if unchanged {
+                    continue;
                 }
-            });
+
+                world.get::<&ServerHandle>(|server| {
+                    for viewer in &viewers {
+                        server.set_sidebar(*viewer, Text::text(TITLE), &lines);
+                    }
+                });
+                world.set(Drawn { lines, viewers });
+            }
+        });
 
         // Elimination is the only thing that turns spectating permanently on;
         // respawning turns it back off. Keeping it as an observer rather than a

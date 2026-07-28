@@ -317,31 +317,29 @@ impl Module for LivesModule {
         world.component::<Died>();
         world.component::<EliminatedEvent>();
 
-        world
-            .system_named::<()>("assign_life_tier")
-            .run(|mut it| {
-                while it.next() {
-                    let world = it.world();
-                    let bands = Bands::of(&world);
+        world.system_named::<()>("assign_life_tier").run(|mut it| {
+            while it.next() {
+                let world = it.world();
+                let bands = Bands::of(&world);
 
-                    world
-                        .query::<&Lives>()
-                        .with(Player::id())
-                        .build()
-                        .each_entity(|player, lives| {
-                            let Some(tier) = bands.tier(remaining(player, *lives)) else {
-                                return;
-                            };
-                            // Exclusive, so this is the whole update. Skipping
-                            // the write when it would not change anything keeps
-                            // flecs from moving the player between archetypes
-                            // twenty times a second.
-                            if player.target(ShownAs, 0).map(|t| t.id()) != Some(tier) {
-                                player.add((ShownAs, tier));
-                            }
-                        });
-                }
-            });
+                world
+                    .query::<&Lives>()
+                    .with(Player::id())
+                    .build()
+                    .each_entity(|player, lives| {
+                        let Some(tier) = bands.tier(remaining(player, *lives)) else {
+                            return;
+                        };
+                        // Exclusive, so this is the whole update. Skipping
+                        // the write when it would not change anything keeps
+                        // flecs from moving the player between archetypes
+                        // twenty times a second.
+                        if player.target(ShownAs, 0).map(|t| t.id()) != Some(tier) {
+                            player.add((ShownAs, tier));
+                        }
+                    });
+            }
+        });
 
         world
             .observer_named::<Died, (&mut Lives, &PlayerId, &mut Health)>("on_death")
@@ -414,9 +412,7 @@ impl Module for LivesModule {
             });
 
         world
-            .system_named::<(&RespawnAt, &mut Health, &mut Position, &PlayerId, &Arena)>(
-                "respawn",
-            )
+            .system_named::<(&RespawnAt, &mut Health, &mut Position, &PlayerId, &Arena)>("respawn")
             .each_entity(|player, (respawn, health, position, id, arena)| {
                 let world = player.world();
                 let clock = world.cloned::<&MatchClock>().0;

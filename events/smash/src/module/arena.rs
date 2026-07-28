@@ -87,50 +87,48 @@ impl Module for ArenaModule {
         // victims are collected first and killed once the query has finished.
         // Health reaching zero is the rarer path but a real one: hunger and
         // lava both get there.
-        world
-            .system_named::<()>("death_checks")
-            .run(|mut it| {
-                while it.next() {
-                    let world = it.world();
-                    // The arena is only lethal while a match is running.
-                    // Mineplex got this for free because its hub was a separate
-                    // world; hyperion serves one set of chunks, so the hub is a
-                    // region of the same world and the kill plane would
-                    // otherwise reach it. Without this gate a player standing in
-                    // the lobby with a kill plane above them dies on the tick
-                    // they connect, four times, and is eliminated before the
-                    // game starts.
-                    if !matches!(
-                        world.cloned::<&Lobby>().phase,
-                        Phase::Preparing | Phase::Playing
-                    ) {
-                        continue;
-                    }
-                    let arena = world.cloned::<&Arena>();
-                    let clock = world.cloned::<&MatchClock>().0;
-                    let mut doomed = Vec::new();
-
-                    world
-                        .query::<(&Position, &Health)>()
-                        .with(Player::id())
-                        .without(Eliminated::id())
-                        .without(RespawnAt::id())
-                        .build()
-                        .each_entity(|player, (position, health)| {
-                            if lives::is_invulnerable(player, clock) {
-                                return;
-                            }
-                            if health.is_dead() {
-                                doomed.push((player.id(), DeathCause::Damage));
-                            } else if arena.is_out_of_bounds(position.0) {
-                                doomed.push((player.id(), DeathCause::Void));
-                            }
-                        });
-
-                    for (player, cause) in doomed {
-                        lives::kill(world.entity_at(player), cause);
-                    }
+        world.system_named::<()>("death_checks").run(|mut it| {
+            while it.next() {
+                let world = it.world();
+                // The arena is only lethal while a match is running.
+                // Mineplex got this for free because its hub was a separate
+                // world; hyperion serves one set of chunks, so the hub is a
+                // region of the same world and the kill plane would
+                // otherwise reach it. Without this gate a player standing in
+                // the lobby with a kill plane above them dies on the tick
+                // they connect, four times, and is eliminated before the
+                // game starts.
+                if !matches!(
+                    world.cloned::<&Lobby>().phase,
+                    Phase::Preparing | Phase::Playing
+                ) {
+                    continue;
                 }
-            });
+                let arena = world.cloned::<&Arena>();
+                let clock = world.cloned::<&MatchClock>().0;
+                let mut doomed = Vec::new();
+
+                world
+                    .query::<(&Position, &Health)>()
+                    .with(Player::id())
+                    .without(Eliminated::id())
+                    .without(RespawnAt::id())
+                    .build()
+                    .each_entity(|player, (position, health)| {
+                        if lives::is_invulnerable(player, clock) {
+                            return;
+                        }
+                        if health.is_dead() {
+                            doomed.push((player.id(), DeathCause::Damage));
+                        } else if arena.is_out_of_bounds(position.0) {
+                            doomed.push((player.id(), DeathCause::Void));
+                        }
+                    });
+
+                for (player, cause) in doomed {
+                    lives::kill(world.entity_at(player), cause);
+                }
+            }
+        });
     }
 }
