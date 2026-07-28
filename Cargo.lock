@@ -2184,17 +2184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyperion-text"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "uuid",
- "valence_protocol",
-]
-
-[[package]]
 name = "hyperion-utils"
 version = "0.1.0"
 dependencies = [
@@ -3942,6 +3931,7 @@ dependencies = [
  "hyperion-event-runner",
  "hyperion-inventory",
  "hyperion-item",
+ "hyperion-minecraft-proto",
  "hyperion-permission",
  "hyperion-utils",
  "proptest",

@@ -25,13 +25,13 @@ use smash::{
         knockback::{Knockback, KnockbackModel, KnockbackTaken, resolve, strength, vanilla},
         lives::{
             DeathCause, Eliminated, InvulnerableUntil, Lives, MAX_LIVES, Placement, RespawnAt,
-            is_invulnerable, kill, killer_of, remaining_alive,
+            is_invulnerable, kill, killer_of, remaining_alive, tint_of,
         },
         lobby::{Lobby, LobbyConfig, Phase, alive_count, player_count, step},
         player::{Energy, Health, OnGround},
-        scoreboard::{COLLAPSE_ABOVE, Row, render},
+        scoreboard::{COLLAPSE_ABOVE, Row, SIDEBAR_WIDTH, render},
     },
-    server::{Channel, PlayerId, mock::Call},
+    server::{Channel, Component, NamedColor, PlayerId, Score, SidebarLine, TextColor, mock::Call},
 };
 
 const EPS: f32 = 1e-5;
@@ -332,20 +332,60 @@ fn standing_exactly_on_the_kill_plane_is_alive() {
     }
 }
 
-/// The colour of every possible remaining-lives count.
+/// The colour of every possible remaining-lives count, read through the
+/// relation.
 ///
-/// The whole table, because the failure being guarded against is one arm going
-/// missing and falling through to the next, which no spot check notices.
+/// The whole table, because the failure being guarded against is one band
+/// going missing and a count falling through to the next colour, which no spot
+/// check notices. Driven through the real world rather than a pure function:
+/// what matters is that `(ShownAs, tier)` lands on the player and carries the
+/// tint, because that edge is what anything asking "who is about to go out"
+/// will query.
 #[test]
 fn the_life_counter_has_one_colour_per_count() {
-    assert_eq!(Lives(0).colour(), "gray");
-    assert_eq!(Lives(1).colour(), "red");
-    assert_eq!(Lives(2).colour(), "gold");
-    assert_eq!(Lives(3).colour(), "yellow");
-    assert_eq!(Lives(4).colour(), "green");
-    // Four or more is green: nothing hands out a fifth, but the table is total.
-    assert_eq!(Lives(5).colour(), "green");
-    assert_eq!(Lives(u8::MAX).colour(), "green");
+    let mut game = Game::new();
+    let player = game.player("p", Vec3::ZERO);
+    let player = game.world.entity_from_id(player);
+
+    for (lives, expected) in [
+        (0, NamedColor::Gray),
+        (1, NamedColor::Red),
+        (2, NamedColor::Gold),
+        (3, NamedColor::Yellow),
+        (4, NamedColor::Green),
+        // Four or more is green: nothing hands out a fifth, but the bands are
+        // total and the widest one has to absorb everything above it.
+        (5, NamedColor::Green),
+        (u8::MAX, NamedColor::Green),
+    ] {
+        player.set(Lives(lives));
+        game.advance(0.05, 1);
+        assert_eq!(
+            tint_of(player),
+            Some(expected),
+            "{lives} lives should be drawn {expected:?}"
+        );
+    }
+}
+
+/// Being eliminated is gray whatever the life count still says.
+///
+/// Elimination and a zero life count are separate facts, and the sidebar reads
+/// the first: a player put out by something that did not decrement `Lives`
+/// would otherwise still be drawn as if they were in the match.
+#[test]
+fn an_eliminated_player_is_gray_whatever_their_lives_say() {
+    let mut game = Game::new();
+    let player = game.player("p", Vec3::ZERO);
+    let player = game.world.entity_from_id(player);
+
+    player.set(Lives(3));
+    game.advance(0.05, 1);
+    assert_eq!(tint_of(player), Some(NamedColor::Yellow));
+
+    player.add(Eliminated::id());
+    game.advance(0.05, 1);
+    assert_eq!(tint_of(player), Some(NamedColor::Gray));
 }
 
 /// Kill credit expires at exactly the window, not a moment either side.
@@ -915,9 +955,14 @@ fn a_refused_ability_tells_the_player_why() {
         })
         .collect();
     assert_eq!(
-        refusals,
+        refusals.iter().map(Component::plain).collect::<Vec<_>>(),
         vec![Refusal::OnCooldown.message().to_owned()],
         "the player was not told the ability was recharging"
+    );
+    assert_eq!(
+        refusals[0].runs()[0].color(),
+        Some(TextColor::Named(NamedColor::Red)),
+        "a refusal has to look like one"
     );
 }
 
@@ -998,7 +1043,7 @@ fn the_scoreboard_collapses_only_above_the_threshold() {
             .map(|index| Row {
                 name: format!("p{index:02}"),
                 lives: u8::try_from(index % 5).unwrap_or(0),
-                colour: "green",
+                colour: NamedColor::Green,
             })
             .collect()
     };
@@ -1012,7 +1057,7 @@ fn the_scoreboard_collapses_only_above_the_threshold() {
 
     let above = render(Phase::Playing, rows(COLLAPSE_ABOVE + 1));
     assert_eq!(above.len(), 2, "{above:?}");
-    assert!(above[0].starts_with("Players Alive: "));
+    assert!(above[0].text.plain().starts_with("Players Alive: "));
 }
 
 /// A collapsed sidebar counts the living and the dead correctly.
@@ -1027,27 +1072,34 @@ fn a_collapsed_sidebar_splits_the_living_from_the_dead() {
         .map(|index| Row {
             name: format!("p{index:02}"),
             lives: if index < 5 { 0 } else { 3 },
-            colour: "green",
+            colour: NamedColor::Green,
         })
         .collect();
 
     let lines = render(Phase::Playing, rows);
-    assert_eq!(lines, vec![
-        "Players Alive: 13".to_owned(),
-        "Players Dead: 5".to_owned()
-    ]);
+    assert_eq!(
+        lines
+            .iter()
+            .map(|line| line.text.plain())
+            .collect::<Vec<_>>(),
+        vec!["Players Alive: 13".to_owned(), "Players Dead: 5".to_owned()]
+    );
+    // Rank only. A count is not a rank, and putting it in the score column
+    // would reorder the two rows the moment the dead outnumbered the living.
+    assert_eq!(lines[0].score, Score::Rank(2));
+    assert_eq!(lines[1].score, Score::Rank(1));
 
     // A player on their last life is alive, not dead.
     let rows: Vec<Row> = (0..16)
         .map(|index| Row {
             name: format!("p{index:02}"),
             lives: u8::from(index > 0),
-            colour: "red",
+            colour: NamedColor::Red,
         })
         .collect();
     let lines = render(Phase::Playing, rows);
-    assert_eq!(lines[0], "Players Alive: 15");
-    assert_eq!(lines[1], "Players Dead: 1");
+    assert_eq!(lines[0].text.plain(), "Players Alive: 15");
+    assert_eq!(lines[1].text.plain(), "Players Dead: 1");
 }
 
 /// The hub gets a waiting line and a match does not.
@@ -1056,12 +1108,15 @@ fn the_sidebar_says_it_is_waiting_only_in_the_hub() {
     let rows = vec![Row {
         name: "solo".to_owned(),
         lives: 4,
-        colour: "green",
+        colour: NamedColor::Green,
     }];
     for phase in [Phase::Waiting, Phase::Countdown] {
         let lines = render(phase, rows.clone());
         assert_eq!(lines.len(), 2, "{phase:?}: {lines:?}");
-        assert_eq!(lines[1], "Waiting for players");
+        assert_eq!(lines[1].text.plain(), "Waiting for players");
+        // A status line has no number to show, and the client draws one
+        // anyway unless it is told not to.
+        assert_eq!(lines[1].score, Score::Rank(0));
     }
     for phase in [Phase::Preparing, Phase::Playing, Phase::Ended] {
         let lines = render(phase, rows.clone());
@@ -1076,23 +1131,181 @@ fn equal_scores_are_ordered_by_name() {
         Row {
             name: "zoe".to_owned(),
             lives: 2,
-            colour: "gold",
+            colour: NamedColor::Gold,
         },
         Row {
             name: "amy".to_owned(),
             lives: 2,
-            colour: "gold",
+            colour: NamedColor::Gold,
         },
         Row {
             name: "bob".to_owned(),
             lives: 4,
-            colour: "green",
+            colour: NamedColor::Green,
         },
     ];
     let lines = render(Phase::Playing, rows);
-    assert!(lines[0].contains("bob"), "{lines:?}");
-    assert!(lines[1].contains("amy"), "{lines:?}");
-    assert!(lines[2].contains("zoe"), "{lines:?}");
+    let names: Vec<String> = lines.iter().map(|line| line.text.plain()).collect();
+    assert_eq!(names, ["bob", "amy", "zoe"]);
+}
+
+/// The panel from the bug report, pinned whole.
+///
+/// This is the sidebar a player photographed, rendered by the code that
+/// replaced the one that drew it. Every field a player can see is asserted,
+/// because each of the three faults was invisible to a test that checked only
+/// one of them: an assertion on the text alone passes with the colour dropped,
+/// and an assertion on the colour alone passes with `[green]` still in the
+/// string.
+///
+/// What the reporter saw, with the score column on the right:
+///
+/// ```text
+/// Super Smash Mobs
+/// [green] Emerald_Explorer 4        3
+/// [green] Emerald_Explorer 4        2
+/// Waiting for players               1
+/// ```
+///
+/// What this asserts:
+///
+/// ```text
+/// Super Smash Mobs
+/// Emerald_Explorer                  4     <- drawn green
+/// Emerald_Explorer                  4     <- drawn green
+/// Waiting for players                     <- no number
+/// ```
+#[test]
+fn the_sidebar_from_the_bug_report_is_a_coloured_name_and_a_life_count() {
+    let rows = vec![
+        Row {
+            name: "Emerald_Explorer".to_owned(),
+            lives: 4,
+            colour: NamedColor::Green,
+        },
+        Row {
+            name: "Emerald_Explorer".to_owned(),
+            lives: 4,
+            colour: NamedColor::Green,
+        },
+    ];
+
+    let drawn: Vec<(String, Option<TextColor>, Option<i32>)> = render(Phase::Waiting, rows)
+        .iter()
+        .map(|line| {
+            let runs = line.text.runs();
+            assert_eq!(runs.len(), 1, "a row is one run of text: {:?}", line.text);
+            (
+                runs[0].text.clone().into_owned(),
+                runs[0].color(),
+                line.score.drawn(),
+            )
+        })
+        .collect();
+
+    assert_eq!(drawn, vec![
+        (
+            "Emerald_Explorer".to_owned(),
+            Some(TextColor::Named(NamedColor::Green)),
+            Some(4),
+        ),
+        (
+            "Emerald_Explorer".to_owned(),
+            Some(TextColor::Named(NamedColor::Green)),
+            Some(4),
+        ),
+        ("Waiting for players".to_owned(), None, None),
+    ]);
+}
+
+/// No row can widen the panel past its budget.
+///
+/// The panel is as wide as its widest row and the score is drawn hard against
+/// the right edge, so one long row is what pushes the red number onto the
+/// text. Budgeting is therefore a property of every row against one number,
+/// and the number the score takes has to be counted in: a row that fits until
+/// somebody has a hundred lives is not budgeted.
+#[test]
+fn no_row_can_widen_the_panel_past_its_budget() {
+    // What the client draws: the text, then a space, then the number against
+    // the right edge. A row with no number drawn pays for neither.
+    let drawn_width = |line: &SidebarLine| {
+        line.text.plain().chars().count()
+            + line
+                .score
+                .drawn()
+                .map_or(0, |value| value.to_string().chars().count() + 1)
+    };
+
+    // The longest name Minecraft allows, against the widest life count a `u8`
+    // can hold. Nothing the game generates is truncated.
+    let rows = vec![Row {
+        name: "M".repeat(16),
+        lives: u8::MAX,
+        colour: NamedColor::Green,
+    }];
+    let lines = render(Phase::Waiting, rows);
+    assert_eq!(
+        lines[0].text.plain(),
+        "M".repeat(16),
+        "a real name survives"
+    );
+    for line in &lines {
+        assert!(
+            drawn_width(line) <= SIDEBAR_WIDTH,
+            "{:?} is {} wide, past the {SIDEBAR_WIDTH} budget",
+            line.text.plain(),
+            drawn_width(line)
+        );
+    }
+
+    // A row that cannot fit is cut, not allowed through. The cut keeps the
+    // colour, because the colour is the warning and truncation is not a reason
+    // to drop it.
+    let rows = vec![Row {
+        name: "x".repeat(80),
+        lives: 1,
+        colour: NamedColor::Red,
+    }];
+    let lines = render(Phase::Playing, rows);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(
+        drawn_width(&lines[0]),
+        SIDEBAR_WIDTH,
+        "a cut row should spend exactly the budget: {:?}",
+        lines[0].text.plain()
+    );
+    assert!(
+        lines[0].text.plain().ends_with(".."),
+        "a cut row should say it was cut: {:?}",
+        lines[0].text.plain()
+    );
+    assert_eq!(
+        lines[0].text.runs()[0].color(),
+        Some(TextColor::Named(NamedColor::Red))
+    );
+
+    // A full lobby of the worst rows the game can produce, in both shapes.
+    for count in [1, COLLAPSE_ABOVE, COLLAPSE_ABOVE + 1, 64] {
+        let rows: Vec<Row> = (0..count)
+            .map(|index| Row {
+                // Sixteen characters, the longest name the client will send.
+                name: format!("player{index:010}"),
+                lives: u8::try_from(index % 5).unwrap_or(0),
+                colour: NamedColor::Gold,
+            })
+            .collect();
+        for phase in [Phase::Waiting, Phase::Playing] {
+            for line in &render(phase, rows.clone()) {
+                assert!(
+                    drawn_width(line) <= SIDEBAR_WIDTH,
+                    "{count} rows in {phase:?}: {:?} is {} wide",
+                    line.text.plain(),
+                    drawn_width(line)
+                );
+            }
+        }
+    }
 }
 
 /// An unchanged sidebar is not sent again.
@@ -1134,6 +1347,49 @@ fn an_unchanged_sidebar_is_not_redrawn() {
     );
 }
 
+/// A player is on the sidebar on the tick they appear, not the one after.
+///
+/// The sidebar chooses a colour from the tier table rather than from a
+/// player's `(ShownAs, tier)` edge, and this is why. Adding that edge inside a
+/// system is a deferred command, so on the tick a player is created there is
+/// no edge to read; a sidebar built on one left the newcomer out of the rows
+/// *and* out of the viewer list, so the panel under-counted the lobby and the
+/// player it had just dropped was never sent one.
+#[test]
+fn a_player_is_on_the_sidebar_the_tick_they_appear() {
+    let mut game = Game::new();
+    let joiner = game.player("joiner", Vec3::ZERO);
+    let joiner = game.world.entity_from_id(joiner).cloned::<&PlayerId>();
+
+    // Exactly one tick. The edge has not landed yet, and the panel must not
+    // care.
+    game.advance(0.05, 1);
+
+    let (to, lines) = game
+        .server
+        .calls()
+        .into_iter()
+        .find_map(|call| match call {
+            Call::Sidebar(id, _, lines) => Some((id, lines)),
+            _ => None,
+        })
+        .expect("no sidebar was drawn on the tick the player appeared");
+    assert_eq!(to, joiner);
+    assert_eq!(lines[0].text.plain(), "joiner");
+    assert_eq!(
+        lines[0].text.runs()[0].color(),
+        Some(TextColor::Named(NamedColor::Green)),
+        "a full-health name is green on its first tick, not uncoloured"
+    );
+    assert_eq!(lines[0].score, Score::Shown(i32::from(MAX_LIVES)));
+
+    // And the edge does land, one tick later, for whoever queries it.
+    assert_eq!(
+        tint_of(game.world.entity_from_id(game.players()[0])),
+        Some(NamedColor::Green)
+    );
+}
+
 /// A new viewer gets the sidebar even when its text has not changed.
 ///
 /// The dedup compares the lines *and* the viewers, and only the viewer half
@@ -1162,7 +1418,7 @@ fn a_player_who_arrives_gets_the_sidebar_even_if_it_reads_the_same() {
 
     // Swap one player for another. The counters are identical afterwards, so
     // the rendered text is byte for byte what it was.
-    let before: Vec<String> = game
+    let before = game
         .server
         .calls()
         .into_iter()
@@ -1179,7 +1435,7 @@ fn a_player_who_arrives_gets_the_sidebar_even_if_it_reads_the_same() {
     game.server.take();
     game.advance(0.05, 1);
 
-    let after: Vec<String> = game
+    let after = game
         .server
         .calls()
         .into_iter()

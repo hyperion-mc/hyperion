@@ -530,7 +530,13 @@ fn report(player: EntityView<'_>, outcome: Result<(), Refusal>) {
         return;
     };
     player.world().get::<&ServerHandle>(|server| {
-        server.send_message(id, crate::server::Channel::ActionBar, refusal.message());
+        // Red because a refusal is a refusal, and the action bar is the only
+        // place a player sees it.
+        server.send_message(
+            id,
+            crate::server::Channel::ActionBar,
+            crate::server::Text::text(refusal.message()).color(crate::server::NamedColor::Red),
+        );
     });
 }
 

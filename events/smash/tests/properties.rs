@@ -36,7 +36,7 @@ use smash::{
         arena::Arena,
         damage::{Armor, DamageKind, Damaged, MatchClock, MeleeBonus, hurt},
         knockback::{Knockback, KnockbackModel, KnockbackTaken, resolve, strength},
-        lives::{InvulnerableUntil, Lives, MAX_LIVES},
+        lives::{InvulnerableUntil, Lives, MAX_LIVES, band_index},
         lobby::{Lobby, LobbyConfig, Phase, step},
         player::{Energy, Health, Position},
     },
@@ -508,15 +508,32 @@ proptest! {
         prop_assert_eq!(arena.is_out_of_bounds(at), at.y < kill_y);
     }
 
-    /// Every remaining-lives count has a colour, and only a dead player is grey.
+    /// Every remaining-lives count lands in a band, and only zero lands in the
+    /// first one.
+    ///
+    /// Stated over `band_index` rather than over the world so the whole `u8`
+    /// range is reachable. The bounds are the ones `LivesModule` declares; a
+    /// band added or removed there without one here shows up as this property
+    /// disagreeing with `the_life_counter_has_one_colour_per_count`, which
+    /// drives the same table through a real world.
     #[test]
-    fn every_life_count_has_a_colour(lives in any::<u8>()) {
-        let colour = Lives(lives).colour();
-        prop_assert!(!colour.is_empty());
-        prop_assert!(
-            (colour == "gray") == (lives == 0),
-            "{lives} lives is coloured {colour}"
+    fn every_life_count_lands_in_a_band(lives in any::<u8>()) {
+        const BOUNDS: [u8; 5] = [0, 1, 2, 3, MAX_LIVES];
+
+        let band = band_index(&BOUNDS, lives);
+        prop_assert!(band.is_some(), "{lives} lives fell outside every band");
+        let band = band.unwrap();
+        prop_assert!(band < BOUNDS.len());
+        prop_assert_eq!(
+            band == 0,
+            lives == 0,
+            "only a player with no lives left is in the first band"
         );
+        // Above the widest bound, the widest band absorbs it rather than
+        // leaving the count unbanded.
+        if lives > MAX_LIVES {
+            prop_assert_eq!(band, BOUNDS.len() - 1);
+        }
     }
 }
 

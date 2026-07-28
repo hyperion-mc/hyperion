@@ -21,7 +21,7 @@ use crate::{
         lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
     },
-    server::{Channel, PlayerId, ServerHandle},
+    server::{Channel, PlayerId, ServerHandle, Text},
 };
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -203,7 +203,7 @@ pub fn select_kit(world: &World, player: EntityView<'_>, name: &str) -> Result<(
         let hotbar = kit::hotbar(player);
         world.get::<&ServerHandle>(|server| {
             server.set_hotbar(id, &hotbar);
-            server.send_message(id, Channel::Chat, &format!("Kit set to {name}."));
+            server.send_message(id, Channel::Chat, Text::text(format!("Kit set to {name}.")));
         });
     }
     Ok(())
@@ -289,8 +289,8 @@ fn on_phase_change(world: &WorldRef<'_>, from: Phase, to: Phase) {
         .emit(&PhaseChanged { from, to });
 }
 
-fn announce(world: &WorldRef<'_>, text: &str) {
-    world.get::<&ServerHandle>(|server| server.broadcast(Channel::Chat, text));
+fn announce(world: &WorldRef<'_>, text: &'static str) {
+    world.get::<&ServerHandle>(|server| server.broadcast(Channel::Chat, Text::text(text)));
 }
 
 /// Put everyone on a spawn point and give them their kit's hotbar.

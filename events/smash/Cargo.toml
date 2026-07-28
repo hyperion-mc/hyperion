@@ -16,6 +16,7 @@ hyperion-event-runner = { workspace = true }
 hyperion-clap = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-item = { workspace = true }
+hyperion-minecraft-proto = { workspace = true }
 hyperion-permission = { workspace = true }
 hyperion-utils = { workspace = true }
 rayon = { workspace = true }

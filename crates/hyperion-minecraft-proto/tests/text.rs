@@ -20,8 +20,8 @@ use hyperion_minecraft_proto::{
     Decode, Encode, Error, Reader, Writer,
     nbt::{Compound, Tag},
     text::{
-        Argument, ClickEvent, Component, Contents, DataSource, HoverEvent, NamedColor, NbtContents,
-        ObjectInfo, Score, Style, TextColor, Translatable,
+        Argument, ClickEvent, Component, Contents, DataSource, Decoration, HoverEvent, NamedColor,
+        NbtContents, ObjectInfo, Rgb24, Score, Style, TextColor, Translatable,
     },
 };
 
@@ -264,7 +264,7 @@ fn an_rgb_colour_is_uppercase_hex() {
     // `String.format(Locale.ROOT, "#%06X", value)`.
     agrees_with_vanilla(
         &styled("hi", Style {
-            color: Some(TextColor::Rgb(0x0012_3456)),
+            color: Some(TextColor::Rgb(Rgb24::new(0x12, 0x34, 0x56))),
             ..Style::new()
         }),
         "0A080005636F6C6F72000723313233343536080004746578740002686900",
@@ -280,7 +280,7 @@ fn every_named_colour_survives_its_name() {
             Ok(TextColor::Named(color))
         );
     }
-    assert_eq!(NamedColor::Gold.rgb(), 0x00FF_AA00);
+    assert_eq!(NamedColor::Gold.rgb(), Rgb24::new(0xFF, 0xAA, 0x00));
 }
 
 #[test]
@@ -288,6 +288,28 @@ fn an_unknown_colour_is_rejected() {
     assert!(TextColor::parse("puce").is_err());
     // Out of 24 bits.
     assert!(TextColor::parse("#1123456").is_err());
+}
+
+/// A colour wider than the wire's six hex digits cannot be built.
+///
+/// `TextColor::parse` always refused one; before [`Rgb24`] existed the same
+/// value could still be constructed directly and encoded to a seven digit
+/// string that no client reads back. The rejection now happens where the
+/// value is made rather than where it is sent, which is the only place it can
+/// happen before the bytes are gone.
+#[test]
+fn a_colour_outside_24_bits_is_unrepresentable() {
+    assert_eq!(
+        Rgb24::from_u24(0x00FF_FFFF),
+        Some(Rgb24::new(255, 255, 255))
+    );
+    assert_eq!(Rgb24::from_u24(0x0100_0000), None);
+
+    let red = Rgb24::new(0x12, 0x34, 0x56);
+    assert_eq!(red.get(), 0x0012_3456);
+    assert_eq!(red.channels(), [0x12, 0x34, 0x56]);
+    // Round trips through the string form the wire uses.
+    assert_eq!(TextColor::parse("#123456"), Ok(TextColor::Rgb(red)));
 }
 
 #[test]
@@ -515,4 +537,126 @@ fn a_verbatim_payload_survives_a_click_event() {
     let bytes = writer.into_vec();
     let mut reader = Reader::new(&bytes);
     assert_eq!(Component::decode(&mut reader).expect("decode"), component);
+}
+
+// --- the builder ----------------------------------------------------------
+
+/// The terse builder and the struct literal describe the same component.
+///
+/// The builder exists so that a caller with a colour in hand does not have to
+/// spell out eleven `None`s to use it, and the moment those two ways of saying
+/// it diverge the terse one is producing something nobody reviewed.
+#[test]
+fn the_builder_and_the_struct_literal_agree() {
+    let built = Component::text("hi").color(NamedColor::Red).bold();
+    let spelled = Component::text("hi").with_style(Style {
+        color: Some(TextColor::Named(NamedColor::Red)),
+        bold: Some(true),
+        ..Style::new()
+    });
+    assert_eq!(built, spelled);
+    assert_eq!(built.to_tag(), spelled.to_tag());
+
+    // Every decoration has a shorthand, and each one sets its own field.
+    let all = Decoration::ALL.into_iter().fold(Style::new(), Style::with);
+    let shorthands = Style::new()
+        .bold()
+        .italic()
+        .underlined()
+        .strikethrough()
+        .obfuscated();
+    assert_eq!(all, shorthands);
+    for decoration in Decoration::ALL {
+        assert_eq!(all.decoration(decoration), Some(true), "{decoration:?}");
+    }
+}
+
+/// Off is not the same as unset, and only off can undo a parent.
+#[test]
+fn turning_a_decoration_off_is_not_the_same_as_leaving_it_unset() {
+    let off = Style::new().without(Decoration::Italic);
+    let unset = Style::new().inherit(Decoration::Italic);
+    assert_eq!(off.decoration(Decoration::Italic), Some(false));
+    assert_eq!(unset.decoration(Decoration::Italic), None);
+    assert_ne!(off, unset);
+
+    let parent = Style::new().italic();
+    assert_eq!(
+        off.inheriting(&parent).decoration(Decoration::Italic),
+        Some(false),
+        "an explicit off must survive an italic parent"
+    );
+    assert_eq!(
+        unset.inheriting(&parent).decoration(Decoration::Italic),
+        Some(true),
+        "an unset decoration must take the parent's"
+    );
+}
+
+/// `runs` resolves inheritance the way the client does.
+///
+/// A child sets what it sets and inherits the rest, so a red parent with an
+/// uncoloured bold child gives a bold red run. Reading that off the tree is
+/// what lets a layout know how wide a row is and a test know what colour a
+/// player sees.
+#[test]
+fn runs_resolve_inherited_style() {
+    let component = Component::text("a")
+        .color(NamedColor::Red)
+        .append(Component::text("b").bold())
+        .append(Component::text("c").color(NamedColor::Green));
+
+    let runs = component.runs();
+    assert_eq!(runs.len(), 3);
+
+    assert_eq!(runs[0].text, "a");
+    assert_eq!(runs[0].color(), Some(TextColor::Named(NamedColor::Red)));
+    assert_eq!(runs[0].style.decoration(Decoration::Bold), None);
+
+    assert_eq!(runs[1].text, "b");
+    assert_eq!(
+        runs[1].color(),
+        Some(TextColor::Named(NamedColor::Red)),
+        "the child inherits the parent's colour"
+    );
+    assert_eq!(runs[1].style.decoration(Decoration::Bold), Some(true));
+
+    assert_eq!(runs[2].text, "c");
+    assert_eq!(runs[2].color(), Some(TextColor::Named(NamedColor::Green)));
+
+    assert_eq!(component.plain(), "abc");
+}
+
+/// Content the client generates contributes no run, and says so by omission.
+#[test]
+fn only_literal_text_becomes_a_run() {
+    let component = Component::text("you have ")
+        .append(Component::translatable("stat.deaths"))
+        .append(Component::text(" deaths"));
+
+    let texts: Vec<_> = component.runs().into_iter().map(|run| run.text).collect();
+    assert_eq!(texts, ["you have ", " deaths"]);
+    assert_eq!(component.plain(), "you have  deaths");
+}
+
+/// An empty literal is not a run, so `Component::text("")` used as a root to
+/// hang children off costs nothing.
+#[test]
+fn an_empty_literal_is_not_a_run() {
+    let component = Component::text("")
+        .append(Component::text("real").color(NamedColor::Aqua))
+        .extend([Component::text("!")]);
+    let runs = component.runs();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0].text, "real");
+    assert_eq!(runs[1].text, "!");
+}
+
+/// A hex colour set through the builder reaches the wire as `#RRGGBB`.
+#[test]
+fn a_builder_hex_colour_reaches_the_wire() {
+    agrees_with_vanilla(
+        &Component::text("hi").color(Rgb24::new(0x12, 0x34, 0x56)),
+        "0A080005636F6C6F72000723313233343536080004746578740002686900",
+    );
 }

@@ -83,6 +83,17 @@
             inherit (minecraft) jdk serverClasspath pin;
           };
 
+          # Styling is a field on a component, never characters in a string.
+          # See the file: the type covers the seam, this covers the one
+          # spelling a type cannot.
+          textGate = import ./nix/text.nix {
+            inherit pkgs;
+            sources = {
+              smashSource = ./events/smash/src;
+              protoSource = ./crates/hyperion-minecraft-proto/src;
+            };
+          };
+
           # One harness behind both the `nix run` gates and the sandboxed
           # checks, so the two cannot drift.
           e2e = import ./nix/e2e.nix {
@@ -760,6 +771,9 @@
 
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;
+
+            # A colour reaches a client as a component field or not at all.
+            smash-text-no-legacy-formatting = textGate;
 
             # The committed generated sources must match what the pipeline
             # produces, or the copy cargo reads is a fiction.
