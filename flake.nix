@@ -381,6 +381,7 @@
             completions-e2e = 6000;
             smash-hotbar-e2e = 7000;
             smash-hud-e2e = 8000;
+            smash-skin-e2e = 8500;
             bedwars-bow-e2e = 9000;
             # Not 10000: gameServerPort - proxyPort == 10000, so an offset of
             # 10000 aliases this gate's player port onto the base game-server
@@ -822,6 +823,25 @@
               '';
             };
 
+            # What every other player sees of a player who put on a kit: the
+            # committed skin, its Mojang signature, and the skin-overlay mask
+            # with the hat bit set. Separate from `smash-identity-e2e` because
+            # it reads the entity metadata as well as the tab list, and it is
+            # the regression gate for the skin and hat bugs.
+            smash-skin-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/skin-check.py
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-skin-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-skin-e2e)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
             # The same gate again, driving a client that reads its own
             # inventory rather than the world.
             #
@@ -1071,6 +1091,17 @@
               timeout = 300;
             };
 
+            # The regression gate for the skin and hat bugs, on a real
+            # connection: another player's view of a kit wearer carries the
+            # committed signed skin and every overlay including the hat.
+            smash-skin-e2e = e2e.mkCheck {
+              name = "hyperion-smash-skin-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "skin-check.py";
+              timeout = 300;
+            };
+
             # Which key each kit's abilities land on, read off the inventory
             # packets a real client receives. The failure it catches is silent
             # everywhere else: an ability bound one key to the right of where a
@@ -1132,6 +1163,7 @@
             completions-e2e-app = scripts.completions-e2e;
             smash-selector-e2e-app = scripts.smash-selector-e2e;
             smash-identity-e2e-app = scripts.smash-identity-e2e;
+            smash-skin-e2e-app = scripts.smash-skin-e2e;
             smash-hotbar-e2e-app = scripts.smash-hotbar-e2e;
             smash-hud-e2e-app = scripts.smash-hud-e2e;
             oob-move-e2e-app = scripts.oob-move-e2e;
