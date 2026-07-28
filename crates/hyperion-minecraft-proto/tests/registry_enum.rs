@@ -175,6 +175,35 @@ fn size_of_matches_the_width_the_table_reports() {
     );
 }
 
+/// The ids a regeneration is most likely to get wrong while staying
+/// self-consistent, pinned by hand.
+///
+/// `minecraft:entity_type` was renumbered between 1.20.1 and here, and the
+/// symptom of holding the old numbering is not an error -- it is the entity
+/// next to the one that was asked for appearing in the world. These two are
+/// what the retired `tests/entity_type.rs` pinned and they are worth keeping:
+/// every other test in this file would pass against a table that was wrong in
+/// the same way twice.
+#[test]
+fn the_entity_type_ids_are_the_26_2_ones() {
+    assert_eq!(registry::EntityType::Pig.id(), RegistryId(100));
+    assert_eq!(registry::EntityType::Player.id(), RegistryId(156));
+}
+
+#[test]
+fn a_type_this_version_dropped_does_not_resolve() {
+    assert_eq!(
+        registry::EntityType::from_name("minecraft:boat"),
+        None,
+        "split per wood in 1.21.2"
+    );
+    assert_eq!(
+        registry::EntityType::from_name("pig"),
+        None,
+        "the namespace is part of the name"
+    );
+}
+
 #[test]
 fn display_is_the_registry_name() {
     assert_eq!(
