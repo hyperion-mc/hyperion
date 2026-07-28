@@ -383,6 +383,42 @@
             smash-hud-e2e = 8000;
           };
 
+          # The lobby `smash-e2e` runs against, which is deliberately not the
+          # one the product ships.
+          #
+          # The gate's ability sweep changes kits, and a committed match
+          # refuses to, so the sweep needs a roster the lobby will not start
+          # on. That roster also needs at least two players in it, because
+          # `hurts_target` and `heals_caster` are claims about a second body.
+          # Production runs 2/4 so two people can start a game, and under 2/4
+          # no roster is both things at once. So the gate states the lobby it
+          # needs rather than inferring one, and `smash-match.py` checks it got
+          # it: the run fails if the lobby leaves the hub mid-sweep. Before
+          # this, the harness had `min_players - 1` written into it and the
+          # numbers moved out from under it (#1019).
+          #
+          # Both thresholds and not only the minimum: `full_players` is what
+          # decides the three-quarters band, which is the one that actually
+          # fired. At 2/4 three players satisfy `3 * 4 >= 4 * 3` and the sweep
+          # died 0.6 seconds in. These are the pre-#1019 numbers, under which
+          # three players start nothing even by the old band order, so this
+          # gate does not depend on the `countdown_for` fix that shipped
+          # alongside it.
+          smashGateLobby = {
+            sweepClients = 3;
+            env = {
+              SMASH_MIN_PLAYERS = 4;
+              SMASH_FULL_PLAYERS = 8;
+            };
+          };
+
+          # `env` as shell, for the gates that are scripts rather than checks.
+          exportsFor =
+            env:
+            lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (name: value: "export ${name}=${toString value}") env
+            );
+
           # Two gates on one offset, as a build failure rather than as a race.
           #
           # An eval-time check and not a runtime one: the failure it catches is a
@@ -640,7 +676,8 @@
               deps = [ pkgs.git ];
               text = ''
                 export HYPERION_EVENT=smash
-                export HYPERION_E2E_CLIENT=tools/smash-match.py
+                export HYPERION_E2E_CLIENT="tools/smash-match.py --sweep-clients ${toString smashGateLobby.sweepClients}"
+                ${exportsFor smashGateLobby.env}
                 export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-e2e)}}"
                 export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-e2e)}}"
                 exec "${lib.getExe runners.e2e}" "$@"
@@ -885,6 +922,11 @@
               gameServer = gameBinaries.smash;
               proxy = gameBinaries.hyperion-proxy;
               client = "smash-match.py";
+              clientArgs = [
+                "--sweep-clients"
+                (toString smashGateLobby.sweepClients)
+              ];
+              serverEnv = smashGateLobby.env;
               # A match is four clients playing for up to five minutes, so the
               # cap is the client's own budget plus room to boot and report.
               timeout = 480;

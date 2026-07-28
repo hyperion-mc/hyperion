@@ -83,19 +83,73 @@ impl Default for LobbyConfig {
     }
 }
 
+/// Read a player count from the environment, or keep `fallback`.
+///
+/// A value that is set but unreadable stops the server. It is a typo in a
+/// number the whole match schedule turns on, and a lobby quietly running
+/// thresholds nobody asked for is worse than one that does not boot.
+fn threshold_from_env(name: &str, fallback: u32) -> u32 {
+    std::env::var(name).map_or(fallback, |raw| {
+        raw.parse().unwrap_or_else(|error| {
+            panic!("{name} is not a player count: {raw:?} ({error})");
+        })
+    })
+}
+
 impl LobbyConfig {
+    /// The lobby this server is configured to run.
+    ///
+    /// `SMASH_MIN_PLAYERS` and `SMASH_FULL_PLAYERS` set the two thresholds, in
+    /// the same `SMASH_`-prefixed namespace the binary already reads its
+    /// address and its certificates from.
+    ///
+    /// This is the seam the type's own comment describes. The counts are the
+    /// part of a lobby deployments actually differ on -- a duels box, a full
+    /// house, a soak run -- and each wants its own without a rebuild and
+    /// without touching the state machine. The durations are not exposed,
+    /// because nobody has yet wanted them to differ.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let defaults = Self::default();
+        let config = Self {
+            min_players: threshold_from_env("SMASH_MIN_PLAYERS", defaults.min_players),
+            full_players: threshold_from_env("SMASH_FULL_PLAYERS", defaults.full_players),
+            ..defaults
+        };
+        assert!(
+            config.min_players >= 1,
+            "SMASH_MIN_PLAYERS is 0, so an empty lobby would start a match"
+        );
+        assert!(
+            config.full_players >= config.min_players,
+            "SMASH_FULL_PLAYERS is {} and SMASH_MIN_PLAYERS is {}, so the lobby would be full \
+             before it was allowed to start",
+            config.full_players,
+            config.min_players,
+        );
+        config
+    }
+
     /// How long the countdown should be for this many players, or `None` if
     /// there are not enough to run one.
+    ///
+    /// The minimum is checked first and alone. It used to be the last of three
+    /// branches, which let the three-quarters rule answer for a lobby that had
+    /// not reached its minimum at all: at `min_players: 4, full_players: 4`
+    /// three players satisfy `3 * 4 >= 4 * 3` and started a countdown under a
+    /// minimum of four. The field is named `min_players`, so it is a minimum;
+    /// the bands below only choose how long.
     #[must_use]
     pub const fn countdown_for(&self, players: u32) -> Option<f32> {
+        if players < self.min_players {
+            return None;
+        }
         if players >= self.full_players {
             Some(self.countdown_at_full)
         } else if players * 4 >= self.full_players * 3 {
             Some(self.countdown_at_three_quarters)
-        } else if players >= self.min_players {
-            Some(self.countdown_at_min)
         } else {
-            None
+            Some(self.countdown_at_min)
         }
     }
 }
@@ -296,7 +350,7 @@ impl Module for LobbyModule {
             .add_trait::<flecs::Singleton>();
         world.component::<PhaseChanged>();
         world.set(Lobby::default());
-        world.set(LobbyConfig::default());
+        world.set(LobbyConfig::from_env());
 
         world.system_named::<()>("smash::lobby_tick").run(|mut it| {
             while it.next() {

@@ -78,6 +78,75 @@ fn the_countdown_length_depends_on_how_full_the_lobby_is() {
     );
 }
 
+/// The bug: the three-quarters band answered for lobbies that had not reached
+/// their minimum, so `min_players` was not actually a minimum.
+///
+/// It needs a config whose bands touch. At 2/4 and at 4/8 the arithmetic hides
+/// it -- `full_players * 3 / 4` is above `min_players` in both -- which is why
+/// this went in unnoticed and why the case is spelled out rather than left to
+/// the live defaults.
+#[test]
+fn a_lobby_never_starts_below_its_own_minimum() {
+    for full_players in 1..=12 {
+        for min_players in 1..=full_players {
+            let config = LobbyConfig {
+                min_players,
+                full_players,
+                ..LobbyConfig::default()
+            };
+            for players in 0..min_players {
+                assert_eq!(
+                    config.countdown_for(players),
+                    None,
+                    "a lobby of min {min_players} / full {full_players} started a countdown with \
+                     {players} players, under its own stated minimum"
+                );
+            }
+            assert!(
+                config.countdown_for(min_players).is_some(),
+                "a lobby of min {min_players} / full {full_players} would not start at its own \
+                 stated minimum"
+            );
+        }
+    }
+}
+
+/// The reordering above is inert for both configurations anyone runs.
+///
+/// Production is 2/4 and `smash-e2e` declares 4/8. Neither has a player count
+/// whose band changed, and this is the check that says so rather than a claim
+/// in a commit message.
+#[test]
+fn the_live_configurations_are_unaffected_by_the_minimum_check() {
+    // What the old three-branch order returned, before the minimum was hoisted.
+    fn previously(config: &LobbyConfig, players: u32) -> Option<f32> {
+        if players >= config.full_players {
+            Some(config.countdown_at_full)
+        } else if players * 4 >= config.full_players * 3 {
+            Some(config.countdown_at_three_quarters)
+        } else if players >= config.min_players {
+            Some(config.countdown_at_min)
+        } else {
+            None
+        }
+    }
+
+    for (min_players, full_players) in [(2, 4), (4, 8)] {
+        let config = LobbyConfig {
+            min_players,
+            full_players,
+            ..LobbyConfig::default()
+        };
+        for players in 0..=full_players * 3 {
+            assert_eq!(
+                config.countdown_for(players),
+                previously(&config, players),
+                "min {min_players} / full {full_players} changed answer at {players} players"
+            );
+        }
+    }
+}
+
 #[test]
 fn reaching_the_minimum_starts_the_long_countdown() {
     let config = config();
