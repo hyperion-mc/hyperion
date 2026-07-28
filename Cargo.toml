@@ -36,8 +36,8 @@ members = [
     'crates/hyperion-packet-macros',
     'crates/hyperion-palette',
     'crates/hyperion-permission',
-    'crates/hyperion-proto',
     'crates/hyperion-proxy',
+    'crates/hyperion-proxy-proto',
     'crates/hyperion-utils',
     'crates/packet-channel',
     'events/bedwars',
@@ -239,8 +239,8 @@ path = 'crates/hyperion-palette'
 [workspace.dependencies.hyperion-permission]
 path = 'crates/hyperion-permission'
 
-[workspace.dependencies.hyperion-proto]
-path = 'crates/hyperion-proto'
+[workspace.dependencies.hyperion-proxy-proto]
+path = 'crates/hyperion-proxy-proto'
 
 [workspace.dependencies.hyperion-utils]
 path = 'crates/hyperion-utils'

@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hyperion_proto::{ArchivedSetReceiveBroadcasts, ArchivedShutdown};
+use hyperion_proxy_proto::{ArchivedSetReceiveBroadcasts, ArchivedShutdown};
 use rustc_hash::FxBuildHasher;
 use tracing::{error, instrument, warn};
 

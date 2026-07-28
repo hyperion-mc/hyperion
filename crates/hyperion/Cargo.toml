@@ -30,7 +30,7 @@ hyperion-event-macros = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-minecraft-proto = { workspace = true }
 hyperion-palette = { workspace = true }
-hyperion-proto = { workspace = true }
+hyperion-proxy-proto = { workspace = true }
 hyperion-utils = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

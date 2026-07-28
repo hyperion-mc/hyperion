@@ -13,7 +13,7 @@ use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId, packets::play::entity::RemoveEntities,
 };
-use hyperion_proto::ArchivedProxyToServerMessage;
+use hyperion_proxy_proto::ArchivedProxyToServerMessage;
 use hyperion_utils::EntityExt;
 use rustc_hash::FxHashMap;
 use rustls::{
@@ -377,8 +377,8 @@ async fn inner(socket: SocketAddr, crypto: Crypto, command_channel: CommandChann
                                     .unwrap();
 
                                 tx.send(IoBuf::encode_proxy_message(
-                                    &hyperion_proto::ServerToProxyMessage::AddChannel(
-                                        hyperion_proto::AddChannel {
+                                    &hyperion_proxy_proto::ServerToProxyMessage::AddChannel(
+                                        hyperion_proxy_proto::AddChannel {
                                             channel_id: ChannelId::from(channel).inner(),
                                             unsubscribe_packets: &packet_buf,
                                         },

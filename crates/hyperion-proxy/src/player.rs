@@ -4,7 +4,7 @@ use std::io::IoSlice;
 
 use arrayvec::ArrayVec;
 use bytes::Bytes;
-use hyperion_proto::{
+use hyperion_proxy_proto::{
     PlayerConnect, PlayerDisconnect, PlayerDisconnectReason, PlayerPackets, ProxyToServerMessage,
 };
 use rkyv::ser::allocator::Arena;

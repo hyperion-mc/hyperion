@@ -7,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 pub use decoder::PacketDecoder;
 use flecs_ecs::prelude::*;
 use glam::I16Vec2;
-use hyperion_proto::{ChunkPosition, ServerToProxyMessage};
+use hyperion_proxy_proto::{ChunkPosition, ServerToProxyMessage};
 use hyperion_utils::EntityExt;
 use libdeflater::CompressionLvl;
 use rustc_hash::FxHashMap;
@@ -274,7 +274,7 @@ impl Compose {
 
     /// Broadcast globally to all players
     ///
-    /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
+    /// Reaches the proxy as [`hyperion_proxy_proto::BroadcastGlobal`].
     pub const fn broadcast<P>(&self, packet: P) -> Broadcast<'_, P>
     where
         P: PacketBundle,
@@ -299,7 +299,7 @@ impl Compose {
 
     /// Broadcast a packet within a certain region.
     ///
-    /// See <https://github.com/andrewgazelka/hyperion-proto/blob/main/src/server_to_proxy.proto#L17-L22>
+    /// Reaches the proxy as [`hyperion_proxy_proto::BroadcastLocal`].
     pub const fn broadcast_local<P>(&self, packet: P, center: I16Vec2) -> BroadcastLocal<'_, P>
     where
         P: PacketBundle,
