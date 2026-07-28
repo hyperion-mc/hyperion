@@ -306,6 +306,16 @@ let
           pkgs.python3
           driver
         ];
+        # The game server builds a reqwest client at startup, before it knows
+        # whether it will ever make a request, and reqwest refuses to construct
+        # one without a trust store. A darwin build finds the keychain and a
+        # NixOS host often leaks /etc/ssl into the sandbox, so this check only
+        # looked green on the machines it was written on: on a stock Linux
+        # store it dies with `No CA certificates were loaded from the system`
+        # before the server opens its port. Measured on ubuntu-latest, GitHub
+        # Actions run 30341722090, where all three e2e gates failed this way
+        # and nothing else. Naming the bundle turns a leak into an input.
+        SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
         # Without this a darwin build gets no loopback at all and the proxy
         # cannot reach the game server. Linux ignores it and uses the sandbox's
         # own network namespace, which already has loopback up.

@@ -55,23 +55,41 @@ jobs:
           cache-on-failure: "true"
       - run: nix run --accept-flake-config .#${{ matrix.app }}
 
-  # Builds every flake app, which is what proves each one passes shellcheck and
-  # that its tools resolve.
+  # Every flake check, built. Blocking.
   #
-  # Reported, not enforced, for the same reason as the audit jobs above: it also
-  # builds `packages`, which cannot succeed yet. cargoUnit cannot vendor a lock
-  # holding one crate at one version from two git sources, which this lock does
-  # via tools/packet-inspector. A fix is in flight in the index repo. Main's
-  # `nix build` is broken today anyway, on a divan hash that matches no git
-  # dependency, so nothing regresses by landing this first.
+  # What it enforces and what it does not is nix/ci/flake-gate.nix, by name,
+  # and an excluded check is rebuilt here and required to still fail, so an
+  # exception cannot outlive its defect. This job used to be
+  # `continue-on-error: true` behind a paragraph of prose; ENG-10817 has the
+  # measurement of what that cost.
+  #
+  # runs-on is a hosted runner and the house rule says fleet self-hosted. The
+  # fleet cannot serve this repo: ix `crates/ci/dispatcher/src/config.rs` holds
+  # `GithubApp.org` as one `String`, and `github.rs` registers every JIT runner
+  # at `orgs/{org}` with org = indexable-inc, so a hyperion-mc job is never
+  # offered one. ENG-10824 tracks making the dispatcher multi-org. Until it
+  # lands, `nix build .#checks.x86_64-linux.<name>` is the same command here as
+  # on the fleet, so nothing about the gate has to change when it does.
   flake:
     name: Flake
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # p95 of the whole gate from a cold hosted store is under 20 minutes with
+    # cache.ix.dev warm (measured 2026-07-28, runs 30341722090 and 30342250503).
+    # This is a runner-level guard, not a target.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
-      - run: nix flake check --accept-flake-config
+        with:
+          # The DAEMON is what decides whether a content-addressed derivation
+          # can be realised, and cargoUnit content-addresses every crate unit.
+          # `extra-experimental-features` in the flake's nixConfig or in
+          # NIX_CONFIG reaches the client only: measured on run 30341528713,
+          # both of those leave a CA build failing while extra-conf here
+          # succeeds. The gate re-checks this itself and says so if it is lost.
+          extra-conf: |
+            extra-experimental-features = ca-derivations
+      - run: nix run --accept-flake-config .#flake-gate
 
   coverage:
     name: Code Coverage
