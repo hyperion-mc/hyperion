@@ -232,11 +232,17 @@ impl Module for BossBarModule {
         // default and it is spelled out because the teardown observer below is
         // built on it: it is the difference between one player disconnecting
         // and every player losing the bar.
+        // Relationship on both: each is only ever the first half of a pair --
+        // `(ShownTo, viewer)` and `(Sent, viewer)` -- so adding either as a
+        // bare tag is a panic at the call site rather than a silent no-op no
+        // query matches.
         world
             .component::<ShownTo>()
+            .add_trait::<flecs::Relationship>()
             .add_trait::<(flecs::OnDeleteTarget, flecs::Remove)>();
         world
             .component::<Sent>()
+            .add_trait::<flecs::Relationship>()
             .add_trait::<(flecs::OnDeleteTarget, flecs::Remove)>();
 
         // The whole of teardown. A bar stops being shown in three ways -- the

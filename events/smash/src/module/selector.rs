@@ -525,10 +525,15 @@ impl Module for SelectorModule {
 
         world.component::<Podium>();
         world.component::<Plinth>();
-        // Exclusive: a podium offers exactly one mob, so re-pointing one is a
-        // single `add` rather than a remove-then-add pair that can be
-        // interrupted halfway and leave a podium offering two kits.
-        world.component::<Offers>().add(flecs::Exclusive);
+        // Relationship: `Offers` is only ever the first half of `(Offers, kit)`,
+        // so adding it as a bare tag is a panic rather than a silent no-op that
+        // no query matches. Exclusive: a podium offers exactly one mob, so
+        // re-pointing one is a single `add` rather than a remove-then-add pair
+        // that can be interrupted halfway and leave a podium offering two kits.
+        world
+            .component::<Offers>()
+            .add_trait::<flecs::Relationship>()
+            .add(flecs::Exclusive);
         // Exclusive for the same reason: a mob stands on one podium, and a mob
         // that claimed to stand on two would offer two kits from one click.
         //
@@ -539,6 +544,7 @@ impl Module for SelectorModule {
         // extend when a podium grows a second thing attached to it.
         world
             .component::<StandsOn>()
+            .add_trait::<flecs::Relationship>()
             .add(flecs::Exclusive)
             .add_trait::<(flecs::OnDeleteTarget, flecs::Delete)>();
     }
