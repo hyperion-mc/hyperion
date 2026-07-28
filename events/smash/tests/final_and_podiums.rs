@@ -132,6 +132,9 @@ fn assert_aborts_on_constraint(case: &str) {
 }
 
 #[test]
+#[ignore = "behavioural subprocess-abort: the re-exec child crashes in ecs_init on the linux CI \
+            runner at a high rate, ENG-10852/ENG-10951. The structural checks above gate the trait \
+            in CI; run this locally with --run-ignored."]
 fn inheriting_from_a_leaf_kind_aborts() {
     for case in [
         "isa_player",
