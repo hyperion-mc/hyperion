@@ -9,6 +9,8 @@
 
 mod harness;
 
+use std::collections::BTreeMap;
+
 use flecs_ecs::prelude::*;
 use glam::{IVec3, Vec3};
 use harness::Game;
@@ -22,7 +24,7 @@ use smash::{
             self, FREE_BLOCK, MAX_RADIUS, MIN_RADIUS, PLINTH_Y, Plinth, StandsOn, TAKEN_BLOCK,
         },
     },
-    server::{Channel, PlayerId, mock::Call},
+    server::{Channel, PlayerId, Text, mock::Call},
 };
 
 /// The hub's glass wall, from `maps/hub.map`.
@@ -186,6 +188,94 @@ fn every_mob_and_block_the_ring_is_made_of_is_real() {
             "{mob} is not a mob, so the server would panic while building the hub"
         );
     }
+}
+
+/// A ring of unnamed mobs is a ring you have to click to read, which is what
+/// the operator hit in a real client.
+///
+/// Every podium, because the failure this catches is one mob quietly having no
+/// name: fourteen readable tags and one blank creature nobody dares click.
+#[test]
+fn every_mob_in_the_ring_is_captioned_with_its_kit() {
+    let game = Game::new();
+    selector::build(&game.world, IVec3::ZERO);
+
+    let plates = selector::nameplates(&game.world);
+    let podiums = selector::podiums(&game.world);
+    assert_eq!(
+        plates.len(),
+        podiums.len(),
+        "{} podiums and {} nameplates",
+        podiums.len(),
+        plates.len()
+    );
+
+    let by_podium: BTreeMap<Entity, Text> = plates.into_iter().collect();
+    for (podium, _, kit) in podiums {
+        let name = game
+            .world
+            .entity_from_id(kit)
+            .try_get::<&KitName>(|name| name.0)
+            .expect("a registered kit has a name");
+        let plate = by_podium
+            .get(&podium)
+            .unwrap_or_else(|| panic!("the podium offering {name} has no nameplate"));
+        assert_eq!(
+            plate.plain(),
+            name,
+            "the podium offering {name} is captioned {:?}",
+            plate.plain()
+        );
+    }
+}
+
+/// The caption says whether the mob is free, in the colour the wool under it
+/// is, and that is the whole of the difference between the two states.
+///
+/// Held against `plinths` rather than against a literal, because the claim is
+/// that the two readouts are one signal: a change that recoloured the wool and
+/// left the tag alone would pass a test that only read the tag.
+#[test]
+fn a_taken_mob_is_captioned_in_the_same_colour_as_its_wool() {
+    let mut game = lobby_with_podiums();
+    let player = game.player("Holder", Vec3::ZERO);
+    let wolf = kit::by_name(&game.world, "Wolf").expect("the registry has Wolf");
+
+    let free = selector::nameplate("Wolf", false);
+    let taken = selector::nameplate("Wolf", true);
+    assert_ne!(
+        free.style.color, taken.style.color,
+        "free and taken read identically, so the colour says nothing"
+    );
+    assert_eq!(free.plain(), taken.plain(), "the words should not change");
+
+    let plate_for = |game: &Game| {
+        let podium = selector::podiums(&game.world)
+            .into_iter()
+            .find(|(_, _, offered)| *offered == wolf.id())
+            .expect("Wolf has a podium");
+        selector::nameplates(&game.world)
+            .into_iter()
+            .find(|(entity, _)| *entity == podium.0)
+            .map(|(_, plate)| plate)
+            .expect("Wolf's podium has a nameplate")
+    };
+
+    assert_eq!(plate_for(&game).style.color, free.style.color);
+    assert_eq!(
+        plinth_block(&game, podium_for(&game, "Wolf").base),
+        FREE_BLOCK
+    );
+
+    lobby::choose(&game.world, game.world.entity_from_id(player), wolf)
+        .expect("an empty lobby refuses nothing");
+
+    assert_eq!(plate_for(&game).style.color, taken.style.color);
+    assert_eq!(
+        plinth_block(&game, podium_for(&game, "Wolf").base),
+        TAKEN_BLOCK,
+        "the wool and the caption disagree about who has the Wolf"
+    );
 }
 
 // ---------------------------------------------------------------------------

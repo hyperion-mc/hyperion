@@ -17,16 +17,22 @@
 use flecs_ecs::prelude::*;
 use glam::{I16Vec2, IVec3, Vec3};
 use hyperion::{
-    BlockKind, BlockState,
+    BlockKind, BlockState, Prev,
     net::Channel as EntityChannel,
     runtime::AsyncRuntime,
     simulation::{
-        Pitch, Position as MobPosition, Spawn, Uuid, Velocity, Yaw, blocks::Blocks,
+        Pitch, Position as MobPosition, Spawn, Uuid, Velocity, Yaw,
+        blocks::Blocks,
         entity_kind::EntityKind,
+        metadata::{
+            MetadataChanges,
+            entity::{CustomName, CustomNameVisible},
+        },
     },
 };
 
 use crate::{
+    flecs_ext::EntityViewExt,
     map::{self, MapSpec, parse},
     module::{
         arena::Arena,
@@ -34,7 +40,7 @@ use crate::{
         player::Player,
         selector,
     },
-    server::{PlayerId, ServerHandle},
+    server::{PlayerId, ServerHandle, Text},
 };
 
 /// Blocks between one region's centre and the next.
@@ -262,6 +268,44 @@ impl Module for MapModule {
                 }
             });
 
+        // The nameplates, recomputed from who is playing what and written only
+        // where they disagree with the mob that is wearing one.
+        //
+        // A poll beside `smash::render_podiums` rather than an observer, for
+        // the same reason that one is: a mob is freed most often by its holder
+        // disconnecting, which destroys an entity rather than removing an edge
+        // anything here could watch. `selector::nameplates` is the only place
+        // that says what a mob should be called, and this writes the
+        // difference.
+        world
+            .system_named::<()>("smash::render_nameplates")
+            .run(|mut it| {
+                while it.next() {
+                    let world = it.world();
+                    let wanted: std::collections::HashMap<_, _> =
+                        selector::nameplates(&world).into_iter().collect();
+                    world
+                        .query::<()>()
+                        .with((selector::StandsOn, id::<flecs::Wildcard>()))
+                        .build()
+                        .each_entity(|mob, ()| {
+                            let Some(podium) = mob.find_target(selector::StandsOn, |_| true) else {
+                                return;
+                            };
+                            let Some(label) = wanted.get(&podium.id()) else {
+                                return;
+                            };
+                            let current = mob
+                                .try_get::<&CustomName>(|name| (**name).clone())
+                                .unwrap_or_default();
+                            if current.as_ref() == Some(label) {
+                                return;
+                            }
+                            mob.set(CustomName::new(Some(label.clone())));
+                        });
+                }
+            });
+
         // Back to the hub when the results screen is over. The game half ends a
         // match by resetting lives and health; where players physically go is a
         // hosting question, so it is answered here.
@@ -301,6 +345,25 @@ fn stamp_podiums(blocks: &mut Blocks, world: &World) {
     }
 }
 
+/// Dress one podium mob in the name its kit declares.
+///
+/// Four writes and not one, because a metadata field only reaches a client
+/// that is already watching if the entity is set up to notice it changing.
+/// `CustomName` alone is enough for the subscribe packet, which is what a
+/// player walking up to the ring receives; the `(Prev, CustomName)` pair and
+/// `MetadataChanges` are what hyperion's `exchange_` system and
+/// `entity_metadata_sync` need to broadcast a *later* change, which is what
+/// makes the name go red the moment somebody takes the mob.
+///
+/// `Prev` starts equal to the name rather than at its default, so standing the
+/// ring up does not queue fifteen changes nobody has subscribed to yet.
+fn label_mob(mob: EntityView<'_>, label: Text) {
+    mob.set_pair::<Prev, _>(CustomName::new(Some(label.clone())));
+    mob.set(CustomName::new(Some(label)));
+    mob.set(CustomNameVisible::new(true));
+    mob.add(id::<MetadataChanges>());
+}
+
 /// Stand a real mob on each podium.
 ///
 /// The half of the selector the game cannot build for itself: `selector` says
@@ -318,6 +381,7 @@ fn stamp_podiums(blocks: &mut Blocks, world: &World) {
 /// a block that is not a block: a podium with nothing on it is a kit nobody
 /// can pick, and the hole would be the only report.
 fn stand_mobs(world: &World) {
+    let labels: std::collections::HashMap<_, _> = selector::nameplates(world).into_iter().collect();
     for (podium, at, name) in selector::mobs(world) {
         let kind = EntityKind::named(name).unwrap_or_else(|| panic!("{name:?} is not a mob"));
         #[expect(
@@ -325,7 +389,7 @@ fn stand_mobs(world: &World) {
             reason = "hub-local coordinates, tens of blocks"
         )]
         let position = Vec3::new(at.x as f32 + 0.5, at.y as f32, at.z as f32 + 0.5);
-        world
+        let mob = world
             .entity()
             .add_enum(kind)
             .set(MobPosition::new(position.x, position.y, position.z))
@@ -335,8 +399,17 @@ fn stand_mobs(world: &World) {
             .set(Pitch::new(0.0))
             .set(Velocity::new(0.0, 0.0, 0.0))
             .add(id::<EntityChannel>())
-            .add((selector::StandsOn, podium))
-            .add(id::<Spawn>());
+            .add((selector::StandsOn, podium));
+
+        // Before `Spawn`, which is the tag whose observer sends `AddEntity`.
+        // A name written afterwards would still reach anybody who subscribes
+        // later, because the subscribe path re-reads the components, but
+        // anybody already in range would get the mob first and its name in a
+        // second packet.
+        if let Some(label) = labels.get(&podium) {
+            label_mob(mob, label.clone());
+        }
+        mob.add(id::<Spawn>());
     }
 }
 

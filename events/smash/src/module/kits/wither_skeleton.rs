@@ -48,6 +48,7 @@ impl Module for WitherSkeleton {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.wither_skeleton.ambient",
             hurt: "minecraft:entity.wither_skeleton.hurt",
             death: "minecraft:entity.wither_skeleton.death",
         })

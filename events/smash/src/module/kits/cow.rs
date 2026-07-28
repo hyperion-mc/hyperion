@@ -35,6 +35,7 @@ impl Module for Cow {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.cow.ambient",
             hurt: "minecraft:entity.cow.hurt",
             death: "minecraft:entity.cow.death",
         })

@@ -228,6 +228,14 @@ pub fn choose(world: &World, player: EntityView<'_>, chosen: EntityView<'_>) -> 
     let name = chosen.try_get::<&KitName>(|name| name.0).unwrap_or("");
     kit::apply(world, player, chosen);
 
+    // The kit that was chosen, not the kit the player is on: this runs inside a
+    // deferred world, where `apply`'s `(Playing, kit)` edge has been queued and
+    // not applied, so asking the player what they are playing answers with what
+    // they were playing before. See `sound::play_declared_to`. Nothing here
+    // names a kit or looks a sound up; the mob answers for itself, to the player
+    // who chose it and to nobody else.
+    sound::play_declared_to(world.into(), chosen, sound::PlaysOnSelect, player);
+
     if let Some(id) = player.try_get::<&PlayerId>(|p| *p) {
         let hotbar = kit::hotbar(player);
         world.get::<&ServerHandle>(|server| {

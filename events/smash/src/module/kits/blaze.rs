@@ -42,6 +42,7 @@ impl Module for Blaze {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.blaze.ambient",
             hurt: "minecraft:entity.blaze.hurt",
             death: "minecraft:entity.blaze.death",
         })

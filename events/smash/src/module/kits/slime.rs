@@ -50,6 +50,7 @@ impl Module for Slime {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.slime.squish",
             hurt: "minecraft:entity.slime.hurt",
             death: "minecraft:entity.slime.death",
         })

@@ -54,6 +54,7 @@ impl Module for Wolf {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.wolf.ambient",
             hurt: "minecraft:entity.wolf.hurt",
             death: "minecraft:entity.wolf.death",
         })

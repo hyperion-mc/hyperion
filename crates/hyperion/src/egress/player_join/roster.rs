@@ -24,6 +24,30 @@
 //! Verified against the 26.2 client jar (sha1 2dc72797acbc1b63fc16a11c4ac393605f453754)
 //! and authlib 9.0.75, which ships inside the server bundle this repository
 //! already pins.
+//!
+//! # A texture change never costs a player their world
+//!
+//! This module used to hand the wearer a `Respawn`, on the reasoning that
+//! rebuilding `LocalPlayer` is the only thing that clears the cached
+//! `PlayerInfo` in the third bullet above. It does, and it also throws away
+//! everything else the client had: `handleRespawn` replaces `ClientLevel`
+//! wholesale, so the player loses every chunk and every entity in one packet.
+//!
+//! Giving those back is not a matter of re-sending terrain. Chunks could be
+//! restreamed from here, but entities could not: which entities a client is
+//! subscribed to is the proxy's bookkeeping, keyed on position, and it has no
+//! reason to re-offer a subscription the client already holds. So a respawn
+//! left the wearer standing in an empty hub with no podiums, no mobs and
+//! nobody else in it, and the operator saw the terrain half of that as
+//! "Loading terrain..." forever.
+//!
+//! So [`refresh`] does not respawn. The wearer's profile entry is replaced,
+//! which is what the tab list reads, and every *other* client drops and
+//! re-adds their entity, which is what puts the new skin on the model that
+//! matters. What is deliberately not fixed is the wearer's own first-person
+//! view of themselves, which keeps the texture their `LocalPlayer` was built
+//! with until something rebuilds it. That is one pair of arms against every
+//! client's whole world, and it is the trade this file makes on purpose.
 
 use flecs_ecs::{macros::system, prelude::*};
 use hyperion_minecraft_proto::{
@@ -31,7 +55,7 @@ use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     packets::{
         play::clientbound::{PlayerInfoRemove, RemoveEntities},
-        play_login::{GameEvent, Respawn},
+        play_login::GameEvent,
     },
 };
 use hyperion_utils::EntityExt;
@@ -42,10 +66,7 @@ use crate::{
         metadata::show_all,
         player_join::{PlayerInfoActions, PlayerList, PlayerListEntry, SkinProperty},
     },
-    net::{
-        Channel, Compose, ConnectionId, DataBundle,
-        protocol::{Clientbound, join},
-    },
+    net::{Channel, Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
         Name, Pitch, Position, Uuid, Velocity, Yaw, add_entity,
         entity_kind::EntityKind,
@@ -113,7 +134,7 @@ fn skin_property(skin: &PlayerSkin) -> Option<SkinProperty> {
 /// ordering is load bearing: the profile has to be on the client before the
 /// first `AddEntity` naming it, and the joining player's own subscription to
 /// other players' channels starts the moment [`Channel`] is added at the end of
-/// [`join::enter_world`].
+/// [`crate::net::protocol::join::enter_world`].
 ///
 /// # Errors
 /// Returns an error when a packet fails to encode.
@@ -156,17 +177,39 @@ fn retire(compose: &Compose, uuid: uuid::Uuid) -> anyhow::Result<()> {
     compose.broadcast(clientbound).send()
 }
 
+/// Dress `entity` in `skin`, unless it is already wearing it.
+///
+/// The comparison is on the profile property the client would receive and not
+/// on the component, because those are not the same question. A player who
+/// joins with no [`PlayerSkin`] at all and a player wearing [`PlayerSkin::EMPTY`]
+/// publish exactly the same profile -- no `textures` property either way -- so
+/// writing the second over the first changes nothing a client can observe and
+/// must not be published as a change.
+///
+/// That distinction is the whole reason this function exists. `apply_skins`
+/// hands every real client an empty skin a moment after it joins, because a
+/// vanilla client sends its profile id and hyperion answers by asking Mojang
+/// for a skin that an offline uuid does not have. Left as a plain `set`, that
+/// no-op tripped [`refresh`] on every single join.
+pub fn wear(entity: EntityView<'_>, skin: PlayerSkin) {
+    let published = entity.try_get::<&PlayerSkin>(skin_property).flatten();
+    if published == skin_property(&skin) {
+        return;
+    }
+    entity.set(skin);
+}
+
 /// Re-send `entity`'s profile so a changed skin takes effect.
 ///
 /// Two different sequences, because the client treats itself differently from
 /// everyone else. Others are told to forget the profile and the entity and are
-/// handed both again. The player themselves cannot be told to forget their own
-/// entity, so they get a `Respawn`, which is what rebuilds `LocalPlayer` and
-/// with it the `PlayerInfo` reference `AbstractClientPlayer` had cached.
+/// handed both again, which is what puts the new texture on the model. The
+/// wearer is told to forget the profile and is handed it back, and that is all:
+/// see this module's own documentation for why they are deliberately not
+/// respawned and what that costs.
 ///
 /// # Errors
-/// Returns an error when a packet fails to encode or when the registries carry
-/// no overworld dimension type.
+/// Returns an error when a packet fails to encode.
 fn refresh(entity: EntityView<'_>, compose: &Compose) -> anyhow::Result<()> {
     let Some(entry) = entry_of(entity) else {
         return Ok(());
@@ -176,7 +219,6 @@ fn refresh(entity: EntityView<'_>, compose: &Compose) -> anyhow::Result<()> {
     };
     let uuid = entry.uuid;
     let minecraft_id = entity.minecraft_id();
-    let mode = gamemode::of(entity);
 
     let remove_info = PlayerInfoRemove(vec![ProtoUuid(uuid.as_u128())]);
     let add_info = PlayerList::initialize(vec![entry]);
@@ -187,18 +229,7 @@ fn refresh(entity: EntityView<'_>, compose: &Compose) -> anyhow::Result<()> {
         &remove_info,
     ))?;
     mine.add_packet(&add_info)?;
-    mine.add_packet(Clientbound::new(PacketId::Respawn.to_raw(), &Respawn {
-        spawn_info: join::spawn_info(mode.to_game_type())?,
-        // Both `KEEP_ATTRIBUTES` and `KEEP_ENTITY_DATA`. This respawn is a
-        // cosmetic refresh and not a death, so wiping either would make a skin
-        // change reset the player's speed and pose as a side effect.
-        data_to_keep: 0x03,
-    }))?;
     mine.unicast(connection_id)?;
-
-    // The respawn leaves the client at the dimension's default position, so
-    // where the server thinks the player is has to be restated.
-    join::send_position(entity, compose, connection_id)?;
 
     let mut theirs = DataBundle::new(compose);
     theirs.add_packet(Clientbound::new(
@@ -325,7 +356,7 @@ impl Module for RosterModule {
                     let Some(entity) = world.try_get_alive(by) else {
                         continue;
                     };
-                    entity.set(skin);
+                    wear(entity, skin);
                 }
             });
 

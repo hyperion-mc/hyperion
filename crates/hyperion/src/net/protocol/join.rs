@@ -247,7 +247,12 @@ impl Module for JoinModule {
                     if !world.is_alive(entity) {
                         continue;
                     }
-                    world.entity_from_id(entity).set(skin);
+                    // `wear` and not `set`, because this fires after the join
+                    // and the overwhelmingly common answer from the session
+                    // server is the empty skin the player already publishes.
+                    // A plain write would republish the profile of every
+                    // client on the server a second after it joined.
+                    roster::wear(world.entity_from_id(entity), skin);
                 }
             });
 

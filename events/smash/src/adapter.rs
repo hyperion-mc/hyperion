@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use flecs_ecs::prelude::*;
 use glam::Vec3;
 use hyperion::{
+    egress::player_join::roster,
     hyperion_minecraft_proto::{
         generated::packet_id::play::clientbound::PacketId,
         packets::play::{
@@ -242,10 +243,17 @@ impl Module for SmashAdapterModule {
                 let Some(skin) = kit::skin_of(player) else {
                     return;
                 };
-                player.set(PlayerSkin::new(
-                    skin.textures.trim().to_owned(),
-                    skin.signature.trim().to_owned(),
-                ));
+                // `wear` and not `set`: re-picking the mob you are already
+                // playing publishes nothing, so a player leaning on a podium
+                // does not send every other client a stream of profile
+                // rewrites and entity respawns.
+                roster::wear(
+                    player,
+                    PlayerSkin::new(
+                        skin.textures.trim().to_owned(),
+                        skin.signature.trim().to_owned(),
+                    ),
+                );
             });
 
         // PostUpdate rather than OnStore: hyperion's own inventory and entity

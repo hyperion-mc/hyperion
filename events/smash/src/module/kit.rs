@@ -23,7 +23,7 @@ use crate::{
         damage::Armor,
         knockback::KnockbackTaken,
         player::{Energy, Health, JumpsLeft},
-        sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt},
+        sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt, PlaysOnSelect},
     },
     server::HotbarItem,
 };
@@ -262,11 +262,23 @@ pub const ULTIMATE_VOLUME: f32 = 1.6;
 
 /// The voice of the mob a kit is.
 ///
-/// Two sounds and not three: what *landing* a hit sounds like is deliberately
-/// the same for every kit, so that its pitch and volume can mean how hard
-/// rather than who. See [`crate::module::sound::IMPACT`].
+/// Three sounds, and what is deliberately *not* among them is the noise a
+/// landed hit makes: that one is the same for every kit so that its pitch and
+/// volume can mean how hard rather than who. See
+/// [`crate::module::sound::IMPACT`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct KitSounds {
+    /// Played to the player who just picked this mob off its podium, and to
+    /// nobody else. See [`crate::module::sound::PlaysOnSelect`].
+    ///
+    /// The mob's own greeting rather than a menu click: what a player has just
+    /// done is choose to *be* a skeleton, and the skeleton rattling back is
+    /// what says so without a line of text. Every one of these is the mob's
+    /// vanilla ambient sound where it has one, and `tests/sound.rs` holds all
+    /// fifteen against the generated `minecraft:sound_event` registry and
+    /// against each other, because a roster where two mobs answer alike is a
+    /// roster where the sound has stopped carrying which mob it was.
+    pub select: &'static str,
     /// Played on the victim when they are hurt, whoever hurt them.
     pub hurt: &'static str,
     /// Played where they died.
@@ -315,15 +327,20 @@ impl<'w> KitBuilder<'w> {
         self
     }
 
-    /// What this kit's mob sounds like when it is hurt and when it dies.
+    /// What this kit's mob sounds like when it is chosen, when it is hurt and
+    /// when it dies.
     ///
-    /// Hung off the kit prefab as `(PlaysOnHurt, sound)` and
-    /// `(PlaysOnDeath, sound)`, so the damage and death paths reach it through
-    /// the player's own `(Playing, kit)` edge and no subsystem learns a kit
-    /// name to do it.
+    /// Hung off the kit prefab as `(PlaysOnSelect, sound)`,
+    /// `(PlaysOnHurt, sound)` and `(PlaysOnDeath, sound)`, so the selector, the
+    /// damage path and the death path each reach it through the player's own
+    /// `(Playing, kit)` edge and no subsystem learns a kit name to do it.
     #[must_use]
     pub fn sounds(self, sounds: KitSounds) -> Self {
         let voice = Levels::default();
+        self.kit.add((
+            PlaysOnSelect,
+            sound::intern(self.world, sounds.select, voice),
+        ));
         self.kit
             .add((PlaysOnHurt, sound::intern(self.world, sounds.hurt, voice)));
         self.kit

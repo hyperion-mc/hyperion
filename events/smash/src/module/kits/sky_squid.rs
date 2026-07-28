@@ -39,6 +39,7 @@ impl Module for SkySquid {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.squid.ambient",
             hurt: "minecraft:entity.squid.hurt",
             death: "minecraft:entity.squid.death",
         })

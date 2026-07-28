@@ -41,6 +41,11 @@ impl Module for IronGolem {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            // An iron golem has no ambient sound either. The heavy metal
+            // swing is the one thing it makes that everybody recognises, and
+            // it is the right promise for a kit whose blurb is "hit like a
+            // truck".
+            select: "minecraft:entity.iron_golem.attack",
             hurt: "minecraft:entity.iron_golem.hurt",
             death: "minecraft:entity.iron_golem.death",
         })

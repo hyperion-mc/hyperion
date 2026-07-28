@@ -32,6 +32,7 @@ impl Module for Zombie {
             ..KitStats::default()
         })
         .sounds(KitSounds {
+            select: "minecraft:entity.zombie.ambient",
             hurt: "minecraft:entity.zombie.hurt",
             death: "minecraft:entity.zombie.death",
         })

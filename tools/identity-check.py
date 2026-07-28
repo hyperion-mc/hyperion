@@ -182,7 +182,19 @@ class Probe(match.MatchClient):
             actions, entries = parse_player_info_update(payload)
             for entry in entries:
                 known = self.roster.setdefault(entry["uuid"], {"properties": {}})
-                known.update(entry)
+                # Field by field, and the properties merged rather than
+                # replaced. A `PlayerInfoUpdate` that carries only a gamemode
+                # says nothing about a profile's properties, and every entry
+                # this parser builds starts with an empty `properties`, so a
+                # wholesale update forgets the texture the client was told about
+                # a moment earlier. The skin check below then reads `None` and
+                # reports a skin that never arrived, which was luck rather than
+                # design every time this gate passed.
+                for key, value in entry.items():
+                    if key == "properties":
+                        known["properties"].update(value)
+                    else:
+                        known[key] = value
             self.log(
                 "<- PlayerInfoUpdate actions=0x%02X %s"
                 % (
