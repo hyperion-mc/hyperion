@@ -768,7 +768,7 @@ fn change_position_or_correct_client(
         query
             .id
             .entity_view(query.world)
-            .set(PendingTeleportation::new(pose.position));
+            .set(PendingTeleportation::new(**pose));
     }
     query.view.get::<&mut MovementTracking>(|tracking| {
         tracking.received_movement_packets = tracking.received_movement_packets.saturating_add(1);
@@ -778,7 +778,7 @@ fn change_position_or_correct_client(
             tracking.server_velocity.y = 0.419_999_986_886_978_15;
 
             if tracking.sprinting {
-                let smth = query.yaw.yaw * 0.017_453_292;
+                let smth = **query.yaw * 0.017_453_292;
                 tracking.server_velocity += DVec3::new(
                     f64::from(-smth.sin()) * 0.2,
                     0.0,

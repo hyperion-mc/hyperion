@@ -1,25 +1,41 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
+//! The game world: what exists in it, and what the rules do to it each tick.
+//!
+//! This module is wiring. [`SimModule`] registers every component the
+//! simulation owns and every observer that reacts to one changing, and that
+//! registration order is load-bearing rather than incidental. What the
+//! components mean lives in the submodules, and the ones declared here are
+//! markers with no behaviour of their own.
+//!
+//! The split runs by subject, not by size:
+//!
+//! - [`pose`] is where an entity is and how big it is, which nearly every
+//!   other system reads and almost none of them write.
+//! - [`blocks`] is the world itself, loaded and streamed by chunk.
+//! - [`handlers`] and [`packet`] are the inbound edge, turning what a client
+//!   sent into events other modules can watch.
+//! - [`event`] is that vocabulary of events.
+//! - [`lookup`] finds an entity again from an id a packet carried.
+//! - [`metadata`] is the per-entity-kind state the client has to be told.
+//! - [`command`], [`inventory`], [`flight`], [`gamemode`], [`animation`],
+//!   [`skin`], [`xp`] are one game concept each.
+//!
+//! Nothing here knows which game is being played. That is `events/`.
 
-use bytemuck::{Pod, Zeroable};
-use derive_more::{Constructor, Deref, DerefMut, Display, From};
+use std::sync::Arc;
+
+use derive_more::{Deref, DerefMut, Display, From};
 use flecs_ecs::prelude::*;
-use geometry::aabb::Aabb;
-use glam::{DVec3, I16Vec2, IVec3, Quat, Vec3};
+use glam::{IVec3, Quat, Vec3};
 use hyperion_minecraft_proto::{
     Uuid as ProtoUuid,
     generated::packet_id::play::clientbound::PacketId,
     packets::{
-        play::{
-            entity::{AddEntity, pack_degrees},
-            player::{AbilityFlags, PlayerAbilities},
-        },
+        play::entity::{AddEntity, pack_degrees},
         play_login::{PlayerPosition, PositionMoveRotation, Relative, Vec3 as LoginVec3},
     },
     types::Vec3 as ProtoVec3,
 };
 use hyperion_utils::EntityExt;
-use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
 use skin::PlayerSkin;
 use tracing::{debug, error};
 use uuid;
@@ -37,7 +53,6 @@ use crate::{
         entity_kind::EntityKind,
         metadata::{Metadata, MetadataPrefabs, entity::EntityFlags},
     },
-    storage::ThreadLocalVec,
 };
 
 pub mod animation;
@@ -45,26 +60,30 @@ pub mod blocks;
 pub mod command;
 pub mod entity_kind;
 pub mod event;
+pub mod flight;
 pub mod gamemode;
 pub mod handlers;
 pub mod inventory;
+pub mod lookup;
 pub mod metadata;
 pub mod packet;
+pub mod pose;
 pub mod projectile_motion;
 pub mod skin;
 pub mod util;
+pub mod xp;
 
-#[derive(Component, Default, Debug, Deref, DerefMut)]
-pub struct StreamLookup {
-    /// The UUID of all players
-    inner: FxHashMap<u64, Entity>,
-}
-
-#[derive(Component, Default, Debug, Deref, DerefMut)]
-pub struct PlayerUuidLookup {
-    /// The UUID of all players
-    inner: HashMap<Uuid, Entity>,
-}
+// Re-exported at `simulation::` rather than left behind their new module
+// names. Which file a component is declared in is an implementation detail;
+// the path a game module imports it by is not, and every one of these was
+// public directly here before the split.
+pub use flight::{Flight, FlyingSpeed, MovementTracking};
+pub use lookup::{DeferredMap, IgnMap, PlayerUuidLookup, StreamLookup};
+pub use pose::{
+    ChunkPosition, EntitySize, PLAYER_SPAWN_POSITION, PendingTeleportation, Pitch, Position,
+    Velocity, Yaw, aabb, block_bounds, get_direction_from_rotation, get_rotation_from_velocity,
+};
+pub use xp::{Xp, XpVisual};
 
 /// Communicates with the proxy server.
 #[derive(Component, Clone, Deref, DerefMut, From)]
@@ -72,60 +91,10 @@ pub struct EgressComm {
     pub(crate) tx: tokio::sync::mpsc::UnboundedSender<bytes::Bytes>,
 }
 
-#[derive(Debug)]
-pub struct DeferredMap<K, V> {
-    to_add: ThreadLocalVec<(K, V)>,
-    to_remove: ThreadLocalVec<K>,
-    map: FxHashMap<K, V>,
-}
-
-impl<K, V> Default for DeferredMap<K, V> {
-    fn default() -> Self {
-        Self {
-            to_add: ThreadLocalVec::default(),
-            to_remove: ThreadLocalVec::default(),
-            map: HashMap::default(),
-        }
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn insert(&self, key: K, value: V, world: &World) {
-        self.to_add.push((key, value), world);
-    }
-
-    pub fn get<Q>(&self, key: &Q) -> Option<&V>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.map.get(key)
-    }
-
-    pub fn remove(&self, key: K, world: &World) {
-        self.to_remove.push(key, world);
-    }
-}
-
-impl<K: Eq + Hash, V> DeferredMap<K, V> {
-    pub fn update(&mut self) {
-        for (key, value) in self.to_add.drain() {
-            self.map.insert(key, value);
-        }
-
-        for key in self.to_remove.drain() {
-            self.map.remove(&key);
-        }
-    }
-}
-
 /// The in-game name of a player.
 // No #[flecs(meta)]: registered below as opaque, and a type cannot be both.
 #[derive(Component, Deref, From, Display, Debug)]
 pub struct Name(Arc<str>);
-
-#[derive(Component, Deref, DerefMut, From, Debug, Default)]
-pub struct IgnMap(DeferredMap<Arc<str>, Entity>);
 
 #[derive(Component, Debug, Default)]
 pub struct RaycastTravel;
@@ -151,164 +120,6 @@ pub enum PacketState {
     Play,
     Terminate,
     Configuration,
-}
-
-#[derive(
-    Component, Debug, Deref, DerefMut, PartialEq, Eq, PartialOrd, Copy, Clone, Default, Pod,
-    Zeroable, From
-)]
-#[flecs(meta)]
-#[repr(C)]
-pub struct Xp {
-    pub amount: u16,
-}
-
-pub struct XpVisual {
-    pub level: u8,
-    pub prop: f32,
-}
-
-impl Xp {
-    #[must_use]
-    pub fn get_visual(&self) -> XpVisual {
-        let level = match self.amount {
-            0..=6 => 0,
-            7..=15 => 1,
-            16..=26 => 2,
-            27..=39 => 3,
-            40..=54 => 4,
-            55..=71 => 5,
-            72..=90 => 6,
-            91..=111 => 7,
-            112..=134 => 8,
-            135..=159 => 9,
-            160..=186 => 10,
-            187..=215 => 11,
-            216..=246 => 12,
-            247..=279 => 13,
-            280..=314 => 14,
-            315..=351 => 15,
-            352..=393 => 16,
-            394..=440 => 17,
-            441..=492 => 18,
-            493..=549 => 19,
-            550..=611 => 20,
-            612..=678 => 21,
-            679..=750 => 22,
-            751..=827 => 23,
-            828..=909 => 24,
-            910..=996 => 25,
-            997..=1088 => 26,
-            1089..=1185 => 27,
-            1186..=1287 => 28,
-            1288..=1394 => 29,
-            1395..=1506 => 30,
-            1507..=1627 => 31,
-            1628..=1757 => 32,
-            1758..=1896 => 33,
-            1897..=2044 => 34,
-            2045..=2201 => 35,
-            2202..=2367 => 36,
-            2368..=2542 => 37,
-            2543..=2726 => 38,
-            2727..=2919 => 39,
-            2920..=3121 => 40,
-            3122..=3332 => 41,
-            3333..=3552 => 42,
-            3553..=3781 => 43,
-            3782..=4019 => 44,
-            4020..=4266 => 45,
-            4267..=4522 => 46,
-            4523..=4787 => 47,
-            4788..=5061 => 48,
-            5062..=5344 => 49,
-            5345..=5636 => 50,
-            5637..=5937 => 51,
-            5938..=6247 => 52,
-            6248..=6566 => 53,
-            6567..=6894 => 54,
-            6895..=7231 => 55,
-            7232..=7577 => 56,
-            7578..=7932 => 57,
-            7933..=8296 => 58,
-            8297..=8669 => 59,
-            8670..=9051 => 60,
-            9052..=9442 => 61,
-            9443..=9842 => 62,
-            _ => 63,
-        };
-
-        let (level_start, next_level_start) = match level {
-            0 => (0, 7),
-            1 => (7, 16),
-            2 => (16, 27),
-            3 => (27, 40),
-            4 => (40, 55),
-            5 => (55, 72),
-            6 => (72, 91),
-            7 => (91, 112),
-            8 => (112, 135),
-            9 => (135, 160),
-            10 => (160, 187),
-            11 => (187, 216),
-            12 => (216, 247),
-            13 => (247, 280),
-            14 => (280, 315),
-            15 => (315, 352),
-            16 => (352, 394),
-            17 => (394, 441),
-            18 => (441, 493),
-            19 => (493, 550),
-            20 => (550, 612),
-            21 => (612, 679),
-            22 => (679, 751),
-            23 => (751, 828),
-            24 => (828, 910),
-            25 => (910, 997),
-            26 => (997, 1089),
-            27 => (1089, 1186),
-            28 => (1186, 1288),
-            29 => (1288, 1395),
-            30 => (1395, 1507),
-            31 => (1507, 1628),
-            32 => (1628, 1758),
-            33 => (1758, 1897),
-            34 => (1897, 2045),
-            35 => (2045, 2202),
-            36 => (2202, 2368),
-            37 => (2368, 2543),
-            38 => (2543, 2727),
-            39 => (2727, 2920),
-            40 => (2920, 3122),
-            41 => (3122, 3333),
-            42 => (3333, 3553),
-            43 => (3553, 3782),
-            44 => (3782, 4020),
-            45 => (4020, 4267),
-            46 => (4267, 4523),
-            47 => (4523, 4788),
-            48 => (4788, 5062),
-            49 => (5062, 5345),
-            50 => (5345, 5637),
-            51 => (5637, 5938),
-            52 => (5938, 6248),
-            53 => (6248, 6567),
-            54 => (6567, 6895),
-            55 => (6895, 7232),
-            56 => (7232, 7578),
-            57 => (7578, 7933),
-            58 => (7933, 8297),
-            59 => (8297, 8670),
-            60 => (8670, 9052),
-            61 => (9052, 9443),
-            62 => (9443, 9843),
-            _ => (9843, 10242), // Extrapolated next value
-        };
-
-        let prop = f32::from(self.amount - level_start) / f32::from(next_level_start - level_start);
-
-        XpVisual { level, prop }
-    }
 }
 
 pub const FULL_HEALTH: f32 = 20.0;
@@ -401,203 +212,6 @@ impl Owner {
 #[derive(Component)]
 pub struct AiTargetable;
 
-/// The full pose of an entity. This is used for both [`Player`] and [`Npc`].
-#[derive(
-    Component,
-    Copy,
-    Clone,
-    Debug,
-    Serialize,
-    Deserialize,
-    Deref,
-    DerefMut,
-    From,
-    PartialEq
-)]
-#[flecs(meta)]
-pub struct Position {
-    /// The (x, y, z) position of the entity.
-    /// Note we are using [`Vec3`] instead of [`glam::DVec3`] because *cache locality* is important.
-    /// However, the Notchian server uses double precision floating point numbers for the position.
-    position: Vec3,
-}
-
-impl Position {
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self {
-            position: Vec3::new(x, y, z),
-        }
-    }
-}
-
-#[derive(
-    Component,
-    Copy,
-    Clone,
-    Debug,
-    Deref,
-    DerefMut,
-    Default,
-    Constructor,
-    PartialEq
-)]
-#[flecs(meta)]
-pub struct Yaw {
-    yaw: f32,
-}
-
-impl std::fmt::Display for Yaw {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let yaw = self.yaw;
-        write!(f, "{yaw}")
-    }
-}
-
-impl std::fmt::Display for Pitch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let pitch = self.pitch;
-        write!(f, "{pitch}")
-    }
-}
-
-#[derive(
-    Component,
-    Copy,
-    Clone,
-    Debug,
-    Deref,
-    DerefMut,
-    Default,
-    Constructor,
-    PartialEq
-)]
-#[flecs(meta)]
-pub struct Pitch {
-    pitch: f32,
-}
-
-const PLAYER_WIDTH: f32 = 0.6;
-const PLAYER_HEIGHT: f32 = 1.8;
-
-// No #[flecs(meta)]: this registers below as an opaque type serialised through
-// Display, and flecs aborts if a type is registered as both a struct and an
-// opaque. Uuid is the same shape.
-#[derive(Component, Copy, Clone, Debug, Constructor, PartialEq)]
-pub struct EntitySize {
-    pub half_width: f32,
-    pub height: f32,
-}
-
-impl core::fmt::Display for EntitySize {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let half_width = self.half_width;
-        let height = self.height;
-        write!(f, "{half_width}x{height}")
-    }
-}
-
-impl Default for EntitySize {
-    fn default() -> Self {
-        Self {
-            half_width: PLAYER_WIDTH / 2.0,
-            height: PLAYER_HEIGHT,
-        }
-    }
-}
-
-impl Position {
-    #[must_use]
-    pub fn sound_position(&self) -> IVec3 {
-        let position = self.position * 8.0;
-        position.as_ivec3()
-    }
-}
-
-#[derive(Component, Debug, Copy, Clone)]
-#[flecs(meta)]
-pub struct ChunkPosition {
-    pub position: I16Vec2,
-}
-
-const SANE_MAX_RADIUS: i16 = 128;
-
-impl ChunkPosition {
-    #[must_use]
-    #[expect(missing_docs)]
-    pub const fn null() -> Self {
-        // todo: huh
-        Self {
-            position: I16Vec2::new(SANE_MAX_RADIUS, SANE_MAX_RADIUS),
-        }
-    }
-}
-
-#[must_use]
-pub fn aabb(position: Vec3, size: EntitySize) -> Aabb {
-    let half_width = size.half_width;
-    let height = size.height;
-    Aabb::new(
-        position - Vec3::new(half_width, 0.0, half_width),
-        position + Vec3::new(half_width, height, half_width),
-    )
-}
-
-#[must_use]
-pub fn block_bounds(position: Vec3, size: EntitySize) -> (IVec3, IVec3) {
-    let bounding = aabb(position, size);
-    let min = bounding.min.floor().as_ivec3();
-    let max = bounding.max.ceil().as_ivec3();
-
-    (min, max)
-}
-
-/// The initial player spawn position. todo: this should not be a constant
-pub const PLAYER_SPAWN_POSITION: Vec3 = Vec3::new(-8_526_209_f32, 100f32, -6_028_464f32);
-
-impl Position {
-    /// Get the chunk position of the center of the player's bounding box.
-    #[must_use]
-    #[expect(clippy::cast_possible_truncation)]
-    pub fn to_chunk(&self) -> I16Vec2 {
-        let x = self.x as i32;
-        let z = self.z as i32;
-        let x = x >> 4;
-        let z = z >> 4;
-
-        let x = i16::try_from(x).unwrap();
-        let z = i16::try_from(z).unwrap();
-
-        I16Vec2::new(x, z)
-    }
-}
-
-/// The reaction of an entity, in particular to collisions as calculated in `entity_detect_collisions`.
-///
-/// Why is this useful?
-///
-/// - We want to be able to detect collisions in parallel.
-/// - Since we are accessing bounding boxes in parallel,
-///   we need to be able to make sure the bounding boxes are immutable (unless we have something like a
-///   [`std::sync::Arc`] or [`std::sync::RwLock`], but this is not efficient).
-/// - Therefore, we have an [`Velocity`] component which is used to store the reaction of an entity to collisions.
-/// - Later we can apply the reaction to the entity's [`Position`] to move the entity.
-#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
-#[flecs(meta)]
-pub struct Velocity(pub Vec3);
-
-impl Velocity {
-    #[must_use]
-    pub const fn new(x: f32, y: f32, z: f32) -> Self {
-        Self(Vec3::new(x, y, z))
-    }
-
-    #[must_use]
-    pub fn to_packet_units(self) -> valence_protocol::Velocity {
-        valence_protocol::Velocity::from_ms_f32((self.0 * 20.0).into())
-    }
-}
-
 /// The `add_entity` that puts this entity in a client's world.
 ///
 /// One packet rather than the spawn-plus-velocity pair 1.20.1 needed: since
@@ -637,357 +251,305 @@ pub(crate) fn add_entity(
     }
 }
 
-#[derive(Component, Default, Debug, Copy, Clone, PartialEq)]
-pub struct PendingTeleportation {
-    pub teleport_id: i32,
-    pub destination: Vec3,
-    pub ttl: u8,
-}
-
-impl PendingTeleportation {
-    #[must_use]
-    pub fn new(destination: Vec3) -> Self {
-        Self {
-            teleport_id: fastrand::i32(..),
-            destination,
-            ttl: 20,
-        }
-    }
-}
-
-#[derive(Component, Debug, Copy, Clone, PartialEq)]
-pub struct FlyingSpeed {
-    pub speed: f32,
-}
-
-impl FlyingSpeed {
-    #[must_use]
-    pub const fn new(speed: f32) -> Self {
-        Self { speed }
-    }
-}
-
-impl Default for FlyingSpeed {
-    fn default() -> Self {
-        Self { speed: 0.05 }
-    }
-}
-
-#[derive(Component, Default, Debug, Copy, Clone)]
-pub struct MovementTracking {
-    pub fall_start_y: f32,
-    pub last_tick_flying: bool,
-    pub last_tick_position: Vec3,
-    pub received_movement_packets: u8,
-    pub server_velocity: DVec3,
-    pub sprinting: bool,
-    pub was_on_ground: bool,
-}
-
-#[derive(Component, Default, Debug, Copy, Clone)]
-#[flecs(meta)]
-pub struct Flight {
-    pub allow: bool,
-    pub is_flying: bool,
-}
-
 #[derive(Component)]
 pub struct SimModule;
 
 impl Module for SimModule {
+    // Read as a table of contents. Each step runs in the order flecs needs:
+    // a relation has to be a registered entity before anything points at it,
+    // and an observer has to come after the components it watches.
     fn module(world: &World) {
-        component!(world, VarInt).member(id::<i32>(), "x");
-
-        component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
-
-        component!(world, IVec3 {
-            x: i32,
-            y: i32,
-            z: i32
-        });
-        component!(world, Vec3 {
-            x: f32,
-            y: f32,
-            z: f32
-        });
-
-        component!(world, Quat)
-            .member(id::<f32>(), "x")
-            .member(id::<f32>(), "y")
-            .member(id::<f32>(), "z")
-            .member(id::<f32>(), "w");
-
-        component!(world, BlockState).member(id::<u16>(), "id");
-
-        world.component::<Velocity>().meta();
-        world.component::<Player>();
-        world.component::<Visible>();
-        world.component::<Spawn>();
-        world.component::<Owner>();
-        world.component::<PendingTeleportation>();
-        world.component::<FlyingSpeed>();
-        world.component::<MovementTracking>();
-        world.component::<Flight>().meta();
-
-        world.component::<EntityKind>().meta();
-
-        // todo: how
-        // world
-        //     .component::<EntityKind>()
-        //     .add_trait::<(flecs::With, Yaw)>()
-        //     .add_trait::<(flecs::With, Pitch)>()
-        //     .add_trait::<(flecs::With, Velocity)>();
-
-        world.component::<MetadataPrefabs>();
-        world.component::<EntityFlags>();
-        let prefabs = metadata::register_prefabs(world);
-
-        world.set(prefabs);
-
-        world.component::<Xp>().meta();
-
-        world.component::<PlayerSkin>();
-        world.component::<gamemode::Gamemode>();
-        world
-            .component::<gamemode::DefaultGamemode>()
-            .add_trait::<flecs::Singleton>();
-        world.set(gamemode::DefaultGamemode::default());
-        world.component::<Command>();
-        // The completion vocabulary. `Suggests` is a relation, so it has to be
-        // a registered entity before an argument node can point at anything
-        // with it, and `flecs_manual_registration` means that will not happen
-        // on its own.
-        world.component::<command::Suggests>();
-        world.component::<command::SuggestionLabel>();
-        world.component::<command::FixedSuggestions>();
-
-        component!(world, IgnMap);
-
-        world.component::<Position>().meta();
-
-        world.component::<Name>();
-        component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
-
-        // A command argument declared with `.completes("player", Player::id())`
-        // offers whoever is connected at the moment the player presses tab.
-        // Here rather than in a game module because both halves are hyperion's:
-        // it owns `Player` and it owns the `Name` that login puts on one, so
-        // every event wants the same answer and none of them should restate it.
-        world
-            .component::<Player>()
-            .set(command::SuggestionLabel(|player| {
-                player.try_get::<&Name>(std::string::ToString::to_string)
-            }));
-
-        world.component::<AiTargetable>();
-        world.component::<ImmuneStatus>().meta();
-
-        world.component::<Uuid>();
-        component!(world, Uuid).opaque_func(meta_ser_stringify_type_display::<Uuid>);
-
-        world.component::<ChunkPosition>().meta();
-        world.component::<ConfirmBlockSequences>();
-        world.component::<animation::ActiveAnimation>();
-
-        world.component::<hyperion_inventory::PlayerInventory>();
-        world.component::<hyperion_inventory::CursorItem>();
-
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
-
-        observer!(
-            world,
-            Spawn,
-            &Compose,
-            [filter] & Uuid,
-            [filter] & Position,
-            [filter] & Pitch,
-            [filter] & Yaw,
-            [filter] & Velocity,
-        )
-        .with(id::<flecs::Any>())
-        .with_enum_wildcard::<EntityKind>()
-        .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
-            let entity = it.entity(row);
-            let minecraft_id = entity.minecraft_id();
-
-            let mut bundle = DataBundle::new(compose);
-
-            let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
-                let packet = add_entity(minecraft_id, kind, uuid, position, *pitch, *yaw, velocity);
-
-                bundle.add_packet(Clientbound::new(PacketId::AddEntity.to_raw(), &packet))?;
-                bundle.broadcast_local(position.to_chunk())?;
-
-                Ok(())
-            };
-
-            debug!("spawned entity");
-
-            entity.get::<&EntityKind>(|kind| {
-                if let Err(e) = spawn_entity(*kind) {
-                    error!("failed to spawn entity: {e}");
-                }
-            });
-        });
-
-        // Anything the server spawns needs an id invented for it.
-        //
-        // A player is the exception, and `ConnectionId` is what excludes them:
-        // their id was chosen and sent in `LoginFinished` before the entity had
-        // an `EntityKind` at all, and this observer would otherwise overwrite
-        // it. Not `without(Uuid)` alone, which looks like it covers this and
-        // does not: the login handler builds the player from inside a system,
-        // so its `set` is queued, this observer fires while an earlier queued
-        // command merges and sees no `Uuid` yet, and its own `set` is appended
-        // behind the login handler's and lands last. The player ended up
-        // wearing an id their own client had never been told. See ENG-10813.
-        world
-            .observer::<flecs::OnAdd, ()>()
-            .with_enum_wildcard::<EntityKind>()
-            .without(id::<Uuid>())
-            .without(id::<crate::net::ConnectionId>())
-            .each_entity(|entity, ()| {
-                debug!("adding uuid to entity");
-                entity.set(Uuid::new_v4());
-            });
-
-        world
-            .observer::<flecs::OnSet, ()>()
-            .with_enum_wildcard::<EntityKind>()
-            .each_entity(move |entity, ()| {
-                entity.get::<&EntityKind>(|kind| match kind {
-                    EntityKind::BlockDisplay => {
-                        entity.is_a(prefabs.block_display_base);
-                    }
-                    EntityKind::Item => {
-                        entity.is_a(prefabs.item_base);
-                    }
-                    EntityKind::Player => {
-                        entity.is_a(prefabs.player_base);
-                    }
-                    _ => {}
-                });
-            });
-
-        // whenever a Player component is added, we add the Flight component to them.
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, Flight)>();
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, FlyingSpeed)>();
-
-        observer!(
-            world,
-            flecs::OnSet,
-            &PendingTeleportation,
-            &Compose,
-            &Yaw,
-            &Pitch,
-            &ConnectionId
-        )
-        .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
-            // The same packet the join path sends, at the same id. Sending
-            // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client with
-            // no teleport to confirm, so `AcceptTeleportation` never came back,
-            // `PendingTeleportation` was never removed, and `sync_player_entity`
-            // took its pending-teleport branch forever after: no movement, no
-            // rotation and no velocity ever reached anyone again. A mid-match
-            // teleport is the whole of respawning.
-            let destination = pending_teleportation.destination.as_dvec3();
-            let pkt = PlayerPosition {
-                id: pending_teleportation.teleport_id,
-                change: PositionMoveRotation {
-                    position: LoginVec3 {
-                        x: destination.x,
-                        y: destination.y,
-                        z: destination.z,
-                    },
-                    // A correction teleport stops the player rather than
-                    // carrying their velocity into the new position.
-                    delta_movement: LoginVec3 {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                    },
-                    y_rot: **yaw,
-                    x_rot: **pitch,
-                },
-                relatives: Relative::NONE,
-            };
-
-            send(
-                compose,
-                *connection,
-                PacketId::PlayerPosition.to_raw(),
-                &pkt,
-            )
-            .unwrap();
-        });
-
-        observer!(
-            world,
-            flecs::OnSet,
-            &FlyingSpeed,
-            &Compose,
-            &ConnectionId,
-            &Flight
-        )
-        .each(|(flying_speed, compose, connection, flight)| {
-            send(
-                compose,
-                *connection,
-                PacketId::PlayerAbilities.to_raw(),
-                &abilities(*flight, *flying_speed),
-            )
-            .unwrap();
-        });
-
-        observer!(
-            world,
-            flecs::OnSet,
-            &Flight,
-            &Compose,
-            &ConnectionId,
-            &FlyingSpeed
-        )
-        .each(|(flight, compose, connection, flying_speed)| {
-            send(
-                compose,
-                *connection,
-                PacketId::PlayerAbilities.to_raw(),
-                &abilities(*flight, *flying_speed),
-            )
-            .unwrap();
-        });
+        register_reflection(world);
+        let prefabs = register_components(world);
+        register_observers(world, prefabs);
     }
 }
 
-/// What the client should be told it may do, given the two components that say
-/// so.
+/// The metadata flecs cannot derive on its own.
 ///
-/// Flight permission and flying speed live in separate components that are set
-/// independently, and the packet carries both, so either one changing has to
-/// resend the pair.
-const fn abilities(flight: Flight, flying_speed: FlyingSpeed) -> PlayerAbilities {
-    let mut flags = AbilityFlags::NONE;
-    if flight.allow {
-        flags = flags.union(AbilityFlags::CAN_FLY);
-    }
-    if flight.is_flying {
-        flags = flags.union(AbilityFlags::FLYING);
-    }
+/// `#[flecs(meta)]` covers hyperion's own structs. These are the ones it
+/// cannot reach: types owned by glam and valence, plus [`EntitySize`], which
+/// registers as an opaque serialised through `Display` because flecs aborts if
+/// a type is registered as both a struct and an opaque.
+fn register_reflection(world: &World) {
+    component!(world, VarInt).member(id::<i32>(), "x");
 
-    PlayerAbilities {
-        flags,
-        flying_speed: flying_speed.speed,
-        // Zero is what hyperion has always put in this slot, back when valence
-        // called it `fov_modifier`. Vanilla sends 0.1. ENG-10456 tracks
-        // whether that difference is visible.
-        walking_speed: 0.0,
-    }
+    component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
+
+    component!(world, IVec3 {
+        x: i32,
+        y: i32,
+        z: i32
+    });
+    component!(world, Vec3 {
+        x: f32,
+        y: f32,
+        z: f32
+    });
+
+    component!(world, Quat)
+        .member(id::<f32>(), "x")
+        .member(id::<f32>(), "y")
+        .member(id::<f32>(), "z")
+        .member(id::<f32>(), "w");
+
+    component!(world, BlockState).member(id::<u16>(), "id");
+}
+
+/// Every component and singleton the simulation owns.
+///
+/// Returns the metadata prefabs because [`register_observers`] needs them to
+/// pick a base for each entity kind it spawns. They used to reach it as a
+/// closure capture over one long function body; threading it through says so.
+fn register_components(world: &World) -> MetadataPrefabs {
+    world.component::<Velocity>().meta();
+    world.component::<Player>();
+    world.component::<Visible>();
+    world.component::<Spawn>();
+    world.component::<Owner>();
+    world.component::<PendingTeleportation>();
+    world.component::<FlyingSpeed>();
+    world.component::<MovementTracking>();
+    world.component::<Flight>().meta();
+
+    world.component::<EntityKind>().meta();
+
+    // todo: how
+    // world
+    //     .component::<EntityKind>()
+    //     .add_trait::<(flecs::With, Yaw)>()
+    //     .add_trait::<(flecs::With, Pitch)>()
+    //     .add_trait::<(flecs::With, Velocity)>();
+
+    world.component::<MetadataPrefabs>();
+    world.component::<EntityFlags>();
+    let prefabs = metadata::register_prefabs(world);
+
+    world.set(prefabs);
+
+    world.component::<Xp>().meta();
+
+    world.component::<PlayerSkin>();
+    world.component::<gamemode::Gamemode>();
+    world
+        .component::<gamemode::DefaultGamemode>()
+        .add_trait::<flecs::Singleton>();
+    world.set(gamemode::DefaultGamemode::default());
+    world.component::<Command>();
+    // The completion vocabulary. `Suggests` is a relation, so it has to be
+    // a registered entity before an argument node can point at anything
+    // with it, and `flecs_manual_registration` means that will not happen
+    // on its own.
+    world.component::<command::Suggests>();
+    world.component::<command::SuggestionLabel>();
+    world.component::<command::FixedSuggestions>();
+
+    component!(world, IgnMap);
+
+    world.component::<Position>().meta();
+
+    world.component::<Name>();
+    component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
+
+    // A command argument declared with `.completes("player", Player::id())`
+    // offers whoever is connected at the moment the player presses tab.
+    // Here rather than in a game module because both halves are hyperion's:
+    // it owns `Player` and it owns the `Name` that login puts on one, so
+    // every event wants the same answer and none of them should restate it.
+    world
+        .component::<Player>()
+        .set(command::SuggestionLabel(|player| {
+            player.try_get::<&Name>(std::string::ToString::to_string)
+        }));
+
+    world.component::<AiTargetable>();
+    world.component::<ImmuneStatus>().meta();
+
+    world.component::<Uuid>();
+    component!(world, Uuid).opaque_func(meta_ser_stringify_type_display::<Uuid>);
+
+    world.component::<ChunkPosition>().meta();
+    world.component::<ConfirmBlockSequences>();
+    world.component::<animation::ActiveAnimation>();
+
+    world.component::<hyperion_inventory::PlayerInventory>();
+    world.component::<hyperion_inventory::CursorItem>();
+
+    world
+        .component::<Player>()
+        .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
+
+    prefabs
+}
+
+/// The observers that react to those components changing.
+fn register_observers(world: &World, prefabs: MetadataPrefabs) {
+    observer!(
+        world,
+        Spawn,
+        &Compose,
+        [filter] & Uuid,
+        [filter] & Position,
+        [filter] & Pitch,
+        [filter] & Yaw,
+        [filter] & Velocity,
+    )
+    .with(id::<flecs::Any>())
+    .with_enum_wildcard::<EntityKind>()
+    .each_iter(|it, row, (compose, uuid, position, pitch, yaw, velocity)| {
+        let entity = it.entity(row);
+        let minecraft_id = entity.minecraft_id();
+
+        let mut bundle = DataBundle::new(compose);
+
+        let mut spawn_entity = move |kind: EntityKind| -> anyhow::Result<()> {
+            let packet = add_entity(minecraft_id, kind, uuid, position, *pitch, *yaw, velocity);
+
+            bundle.add_packet(Clientbound::new(PacketId::AddEntity.to_raw(), &packet))?;
+            bundle.broadcast_local(position.to_chunk())?;
+
+            Ok(())
+        };
+
+        debug!("spawned entity");
+
+        entity.get::<&EntityKind>(|kind| {
+            if let Err(e) = spawn_entity(*kind) {
+                error!("failed to spawn entity: {e}");
+            }
+        });
+    });
+
+    // Anything the server spawns needs an id invented for it.
+    //
+    // A player is the exception, and `ConnectionId` is what excludes them:
+    // their id was chosen and sent in `LoginFinished` before the entity had
+    // an `EntityKind` at all, and this observer would otherwise overwrite
+    // it. Not `without(Uuid)` alone, which looks like it covers this and
+    // does not: the login handler builds the player from inside a system,
+    // so its `set` is queued, this observer fires while an earlier queued
+    // command merges and sees no `Uuid` yet, and its own `set` is appended
+    // behind the login handler's and lands last. The player ended up
+    // wearing an id their own client had never been told. See ENG-10813.
+    world
+        .observer::<flecs::OnAdd, ()>()
+        .with_enum_wildcard::<EntityKind>()
+        .without(id::<Uuid>())
+        .without(id::<crate::net::ConnectionId>())
+        .each_entity(|entity, ()| {
+            debug!("adding uuid to entity");
+            entity.set(Uuid::new_v4());
+        });
+
+    world
+        .observer::<flecs::OnSet, ()>()
+        .with_enum_wildcard::<EntityKind>()
+        .each_entity(move |entity, ()| {
+            entity.get::<&EntityKind>(|kind| match kind {
+                EntityKind::BlockDisplay => {
+                    entity.is_a(prefabs.block_display_base);
+                }
+                EntityKind::Item => {
+                    entity.is_a(prefabs.item_base);
+                }
+                EntityKind::Player => {
+                    entity.is_a(prefabs.player_base);
+                }
+                _ => {}
+            });
+        });
+
+    // whenever a Player component is added, we add the Flight component to them.
+    world
+        .component::<Player>()
+        .add_trait::<(flecs::With, Flight)>();
+    world
+        .component::<Player>()
+        .add_trait::<(flecs::With, FlyingSpeed)>();
+
+    observer!(
+        world,
+        flecs::OnSet,
+        &PendingTeleportation,
+        &Compose,
+        &Yaw,
+        &Pitch,
+        &ConnectionId
+    )
+    .each(|(pending_teleportation, compose, yaw, pitch, connection)| {
+        // The same packet the join path sends, at the same id. Sending
+        // 1.20.1's `PlayerPositionLook` here instead left a 26.2 client with
+        // no teleport to confirm, so `AcceptTeleportation` never came back,
+        // `PendingTeleportation` was never removed, and `sync_player_entity`
+        // took its pending-teleport branch forever after: no movement, no
+        // rotation and no velocity ever reached anyone again. A mid-match
+        // teleport is the whole of respawning.
+        let destination = pending_teleportation.destination.as_dvec3();
+        let pkt = PlayerPosition {
+            id: pending_teleportation.teleport_id,
+            change: PositionMoveRotation {
+                position: LoginVec3 {
+                    x: destination.x,
+                    y: destination.y,
+                    z: destination.z,
+                },
+                // A correction teleport stops the player rather than
+                // carrying their velocity into the new position.
+                delta_movement: LoginVec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                y_rot: **yaw,
+                x_rot: **pitch,
+            },
+            relatives: Relative::NONE,
+        };
+
+        send(
+            compose,
+            *connection,
+            PacketId::PlayerPosition.to_raw(),
+            &pkt,
+        )
+        .unwrap();
+    });
+
+    observer!(
+        world,
+        flecs::OnSet,
+        &FlyingSpeed,
+        &Compose,
+        &ConnectionId,
+        &Flight
+    )
+    .each(|(flying_speed, compose, connection, flight)| {
+        send(
+            compose,
+            *connection,
+            PacketId::PlayerAbilities.to_raw(),
+            &flight::abilities(*flight, *flying_speed),
+        )
+        .unwrap();
+    });
+
+    observer!(
+        world,
+        flecs::OnSet,
+        &Flight,
+        &Compose,
+        &ConnectionId,
+        &FlyingSpeed
+    )
+    .each(|(flight, compose, connection, flying_speed)| {
+        send(
+            compose,
+            *connection,
+            PacketId::PlayerAbilities.to_raw(),
+            &flight::abilities(*flight, *flying_speed),
+        )
+        .unwrap();
+    });
 }
 
 #[derive(Component)]
@@ -995,23 +557,3 @@ pub struct Spawn;
 
 #[derive(Component)]
 pub struct Visible;
-
-#[must_use]
-pub fn get_rotation_from_velocity(velocity: Vec3) -> (f32, f32) {
-    let yaw = (-velocity.x).atan2(velocity.z).to_degrees(); // Correct yaw calculation
-    let pitch = (-velocity.y).atan2(velocity.length()).to_degrees(); // Correct pitch calculation
-    (yaw, pitch)
-}
-
-#[must_use]
-pub fn get_direction_from_rotation(yaw: f32, pitch: f32) -> Vec3 {
-    // Convert angles from degrees to radians
-    let yaw_rad = yaw.to_radians();
-    let pitch_rad = pitch.to_radians();
-
-    Vec3::new(
-        -pitch_rad.cos() * yaw_rad.sin(), // x = -cos(pitch) * sin(yaw)
-        -pitch_rad.sin(),                 // y = -sin(pitch)
-        pitch_rad.cos() * yaw_rad.cos(),  // z = cos(pitch) * cos(yaw)
-    )
-}
