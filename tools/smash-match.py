@@ -1312,21 +1312,26 @@ class Match:
             SHIELD_PROBE_WINDOW,
         )
 
-    def probe_shield(self, entry):
-        """Whether a hit landed on the caster immediately after the press.
+    def probe_shield(self, entry, landed_before):
+        """Whether the same hit landed before the press and was refused after it.
 
-        Taken in `exercise` rather than in `observe`, because the shield is one
-        second long and `observe` waits two: a reading taken afterwards finds
-        every window already closed and calls a working ability broken.
+        Taken around the press rather than around the *window*, because the two
+        shields in the roster are one second and nineteen: a check shaped as
+        "wait it out and hit again" works for the first and cannot afford the
+        second. Bracketing the press needs no knowledge of the duration at all.
 
-        `None` when the entry claims no shield. The probe costs the caster
+        What this therefore does not check is that the window ever ends. That is
+        the effect module's behaviour rather than any one kit's, and the Rust
+        side proves it once in `tests/contract.rs`.
+
+        False when the entry claims no shield. The probe costs the caster
         health, and running it on all fifty-one would perturb every other
         reading in the sweep -- `heals_caster` most of all, which is measured as
         the caster's health going *up*.
         """
         if "shields_caster" not in entry["proves"]:
-            return None
-        return not self.hit_caster()
+            return False
+        return landed_before and not self.hit_caster()
 
     def measure_melee(self):
         """What one melee swing at the near victim takes off, right now."""
@@ -1438,14 +1443,37 @@ class Match:
                         % (victim.name, was, victim.health),
                     )
 
-        # `held` was the probe taken inside the window; this is the one taken
-        # after it. Both halves, because a shield that never lifts and a server
-        # that cannot deal damage produce the same single reading.
-        if "shields_caster" in entry["proves"] and held and self.hit_caster():
+        # `held` is the pair of probes taken either side of the press, in
+        # `exercise`. Both halves, because a shield that never lifts and a
+        # server that cannot deal damage produce the same single reading -- and
+        # bracketing the press rather than the window is what lets one shape
+        # cover a one-second shield and a nineteen-second one.
+        if held:
             found["shields_caster"] = (
-                "a hit inside the window sent no health packet and the same hit "
-                "after it did"
+                "the same hit landed before the cast and sent no health packet "
+                "after it"
             )
+
+        # Nothing is cast. The claim is that the ability is still acting,
+        # because it left a mode on the caster rather than doing one thing, so
+        # what is watched for is any of the packets an ability produces
+        # arriving again on its own.
+        if "sustains" in entry["proves"]:
+            watched = {client.name: client.health for client in self.clients}
+            self.window_motions.clear()
+            self.wait(LINGER_WINDOW)
+            for client in self.clients:
+                was = watched.get(client.name)
+                if was is not None and client.health is not None and client.health < was - 0.05:
+                    found.setdefault(
+                        "sustains",
+                        "%s lost health with nothing pressed: %.2f to %.2f"
+                        % (client.name, was, client.health),
+                    )
+            if "sustains" not in found and self.window_motions:
+                found["sustains"] = "%d motion packets arrived with nothing pressed" % len(
+                    self.window_motions
+                )
         return found
 
     def window_sounds(self):
@@ -1494,11 +1522,12 @@ class Match:
             if "heals_caster" in outstanding:
                 self.wound_attacker()
 
+            # Before the press, so the shield probes bracket it.
+            landed_before = "shields_caster" in entry["proves"] and self.hit_caster()
+
             before = self.baseline(entry)
             self.press(entry)
-            # Immediately, before anything waits: the only shield in the roster
-            # is one second long.
-            held = self.probe_shield(entry)
+            held = self.probe_shield(entry, landed_before)
             if attempt == 0:
                 self.probe_cooldown(entry)
             for name, note in self.observe(entry, before, held).items():

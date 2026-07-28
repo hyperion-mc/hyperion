@@ -13,6 +13,7 @@ use glam::Vec3;
 use crate::{
     module::{
         ability::{Cast, Observable, splash, splash_at},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, fire},
@@ -80,7 +81,11 @@ impl Module for IronGolem {
             description: "Leap, then land hard. Everything nearby goes flying.",
             cooldown: 7.0,
             requires_ground: true,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::LaunchesCaster,
+            ],
             activate: seismic_slam,
             ..AbilitySpec::DEFAULT
         })
@@ -88,9 +93,14 @@ impl Module for IronGolem {
             name: "Earthquake",
             sound: "minecraft:entity.ravager.roar",
             item: "minecraft:nether_star",
-            description: "Shake the whole map. Anyone touching the ground pays.",
+            description: "Shake the whole map for sixteen seconds. Anyone touching the ground \
+                          keeps paying.",
             cooldown: 16.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: earthquake,
             ..AbilitySpec::DEFAULT
         })
@@ -155,17 +165,45 @@ fn reel_in(impact: &Impact<'_>) {
 }
 
 /// The kit's panic button and its combo finisher.
+///
+/// "Leap, then land hard", per its own tooltip and the wiki. The leap is the
+/// half that was missing: the ability launched nobody and the description
+/// promised it anyway.
 fn seismic_slam(cast: &Cast<'_>) {
+    // Up and slightly along, so it clears an edge rather than only a head.
+    // `[APPROXIMATED]`; the wiki gives no figure, and this is tuned to about the
+    // height of the kit's own double jump.
+    cast.server.add_velocity(
+        cast.player,
+        Vec3::Y * 0.85 + Vec3::new(cast.facing.0.x, 0.0, cast.facing.0.z).normalize_or_zero() * 0.4,
+    );
     splash(cast, 8.0, 10.5, 2.4);
 }
 
-/// Hits every grounded player on the map, wherever they are.
+/// `[SOURCE]` sixteen seconds. An earthquake that lasts one frame is a thump.
+fn earthquake(cast: &Cast<'_>) {
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(EARTHQUAKE_SECONDS, EARTHQUAKE_INTERVAL, quake),
+    );
+}
+
+/// `[SOURCE]` "Earthquake, 16 s".
+const EARTHQUAKE_SECONDS: f32 = 16.0;
+
+/// `[APPROXIMATED]`. Slow enough that a player can cross the map between
+/// shocks, which is what makes leaving the ground the answer to it.
+const EARTHQUAKE_INTERVAL: f32 = 1.5;
+
+/// One shock. Hits every grounded player on the map, wherever they are.
 ///
 /// Each victim is hurt once, by id. Splashing at each of their positions in
 /// turn double-hit anyone standing near somebody else, which made the ultimate
 /// swing between three damage and twelve depending on how bunched up the arena
 /// happened to be.
-fn earthquake(cast: &Cast<'_>) {
+fn quake(cast: &Cast<'_>) {
     use crate::module::{
         damage::{DamageKind, Damaged, hurt},
         knockback::Knockback,

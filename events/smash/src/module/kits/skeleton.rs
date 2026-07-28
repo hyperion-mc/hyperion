@@ -13,6 +13,7 @@ use glam::Vec3;
 
 use crate::module::{
     ability::{Cast, Observable, charge_steps, splash},
+    effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     player::Position,
     projectile::{Flight, Impact, Payload, fire},
@@ -93,9 +94,13 @@ impl Module for Skeleton {
             name: "Arrow Storm",
             sound: "minecraft:item.crossbow.shoot",
             item: "minecraft:nether_star",
-            description: "Fire without ever reloading.",
+            description: "Eight seconds of firing without ever reloading.",
             cooldown: 8.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: arrow_storm,
             ..AbilitySpec::DEFAULT
         })
@@ -174,8 +179,34 @@ fn haul_shooter(impact: &Impact<'_>) {
         .get::<&crate::server::ServerHandle>(|server| server.add_velocity(id, pull));
 }
 
+/// "Fire without ever reloading" is a duration, not a volley.
+///
+/// It used to be ten arrows in one frame, which is the opposite of never
+/// reloading: it is one enormous reload. Eight seconds of a Barrage-sized
+/// volley several times a second is the sentence the wiki actually writes, and
+/// it is the same `arrow` the rest of the kit fires.
 fn arrow_storm(cast: &Cast<'_>) {
-    for index in 0..MAX_BARRAGE_ARROWS * 2 {
-        arrow(cast, index as f32 * 0.01);
-    }
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ARROW_STORM_SECONDS, ARROW_STORM_INTERVAL, arrow_volley),
+    );
+}
+
+/// `[SHEET]` the ultimate's cooldown is 8 s, and Mineplex's ultimates run for
+/// about as long as they take to come back.
+const ARROW_STORM_SECONDS: f32 = 8.0;
+
+/// `[APPROXIMATED]`. One arrow, three times a second.
+///
+/// One and not a Barrage-sized five: "without ever reloading" removes the draw,
+/// it does not multiply the arrow. Five per beat is 90 damage a second, which
+/// killed both scripted victims inside the first second and then read as the
+/// ability having stopped -- the strongest possible version of the mode looking
+/// exactly like a broken one.
+const ARROW_STORM_INTERVAL: f32 = 0.3;
+
+fn arrow_volley(cast: &Cast<'_>) {
+    arrow(cast, 0.0);
 }

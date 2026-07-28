@@ -14,8 +14,9 @@ use glam::Vec3;
 
 use crate::{
     module::{
-        ability::{Cast, Observable, splash_at},
+        ability::{self, Cast, Observable, splash_at},
         damage::MatchClock,
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         projectile::{Flight, Impact, Payload, fire},
     },
@@ -81,9 +82,13 @@ impl Module for WitherSkeleton {
             name: "Wither Swap",
             sound: "minecraft:entity.shulker.teleport",
             item: "minecraft:nether_star",
-            description: "Every image at once.",
+            description: "Twenty seconds of images, going off around you one after another.",
             cooldown: 20.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: wither_swap,
             ..AbilitySpec::DEFAULT
         })
@@ -136,7 +141,27 @@ fn wither_image(cast: &Cast<'_>) {
     });
 }
 
+/// `[APPROXIMATED]` throughout; the wiki names the ultimate and gives no
+/// figures.
+///
+/// "Every image at once" read as one blast because there was no duration to
+/// spread them over. Twenty seconds of an image going off every second and a
+/// half is the kit's own trick, repeated, which is what its name says.
 fn wither_swap(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 6.0, 9.0, 1.8);
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, SWAP_INTERVAL, swap_burst),
+    );
+}
+
+const SWAP_INTERVAL: f32 = 1.5;
+
+/// Per burst, and there are thirteen.
+const SWAP_DAMAGE: f32 = 2.5;
+
+fn swap_burst(cast: &Cast<'_>) {
+    splash_at(cast, cast.position.0, 6.0, SWAP_DAMAGE, 1.8);
     cast.server.cue(cast.position.0, Cue::Explosion);
 }

@@ -74,6 +74,8 @@ pub struct Description(pub &'static str);
 /// - [`Self::BuffsMelee`] is the same melee swing hurting more than it did
 /// - [`Self::AfflictsTarget`] is a *second* `ClientboundSetHealth` for the
 ///   victim, on a later tick, with nothing cast in between
+/// - [`Self::Sustains`] is any of those arriving again, later, with nothing
+///   pressed in between
 /// - [`Self::ShieldsCaster`] is the absence of one: a hit lands on the caster
 ///   during the window and no `ClientboundSetHealth` follows it, and the same
 ///   hit after the window does
@@ -100,11 +102,31 @@ pub enum Observable {
     /// ability that declares it and merely hits hard fails the gate, because
     /// the gate stops casting and watches.
     AfflictsTarget,
+    /// The ability goes on acting after the cast, because it left a mode on the
+    /// caster rather than doing one thing.
+    ///
+    /// What a Smash Crystal grants. The wiki gives every ultimate as a
+    /// duration -- "lasts 20 seconds", "unlimited flight and eggs", "call
+    /// lightning down once a second" -- and fourteen of the fifteen were a
+    /// single frame. Distinct from [`Self::AfflictsTarget`], which is something
+    /// left on the *victim*: this is something left on the caster, and it is
+    /// proved by the world going on changing -- more damage, more motion --
+    /// through a window in which nothing at all is pressed.
+    Sustains,
     /// The caster cannot be hurt for a window.
     ///
-    /// Proved by hitting them and finding no health lost, and then waiting the
-    /// window out and hitting them again to find some -- because "no damage"
-    /// on its own is also what a broken damage pipeline looks like.
+    /// Proved by the *same hit* landing before the cast and being refused after
+    /// it. Both halves are needed, because "took no damage" on its own is also
+    /// what a broken damage pipeline looks like, and a pair taken either side of
+    /// one press rules that out without anyone having to know how long the
+    /// window is.
+    ///
+    /// That last part matters: the two shields in the roster are one second and
+    /// nineteen, and a proof shaped as "wait it out and hit again" works for the
+    /// first and cannot afford the second. What the gates therefore do *not*
+    /// check per ability is that the window ever ends. That is the effect
+    /// module's behaviour rather than any one kit's, and `tests/contract.rs`
+    /// proves it once, there.
     ShieldsCaster,
 }
 
@@ -120,6 +142,7 @@ impl Observable {
             Self::HealsCaster => "heals_caster",
             Self::BuffsMelee => "buffs_melee",
             Self::AfflictsTarget => "afflicts_target",
+            Self::Sustains => "sustains",
             Self::ShieldsCaster => "shields_caster",
         }
     }
@@ -274,7 +297,18 @@ fn commit(ability: EntityView<'_>, player: EntityView<'_>) {
     }
 }
 
-fn cast_from<'w>(
+/// Build a [`Cast`] for `player` firing `ability`, without firing it.
+///
+/// Public because an ability is not the only thing that runs an ability's
+/// payload. A Smash Crystal's twenty seconds is the same payload on a beat, and
+/// [`crate::module::effect::Repeats`] needs exactly this to hand one a `Cast`
+/// -- so that a pulse and a press are the same function with the same helpers,
+/// rather than two shapes a kit has to write its ability twice for.
+///
+/// `None` when the player is missing anything a cast needs, which is a player
+/// who is mid-teardown.
+#[must_use]
+pub fn cast_from<'w>(
     world: WorldRef<'w>,
     player: EntityView<'w>,
     ability: EntityView<'w>,

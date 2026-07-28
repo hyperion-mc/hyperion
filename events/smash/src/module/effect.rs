@@ -49,7 +49,12 @@ use crate::{
 #[derive(Component, Debug)]
 pub struct Effect;
 
-/// Relationship: `(Afflicting, victim)` on the effect entity.
+/// Relationship: `(Upon, player)` on the effect entity.
+///
+/// The player the effect is attached to, whether it is doing them harm or good.
+/// A burn and a Smash Crystal's twenty seconds are the same bookkeeping and
+/// this is the edge both hang from; the word is `Upon` and not `Afflicting`
+/// because half of them are buffs.
 ///
 /// Pointing from the effect at the player rather than the other way around,
 /// because one player carries many effects and a relationship is cheapest to
@@ -57,7 +62,7 @@ pub struct Effect;
 /// disconnects takes their effects' edges with them, so an expiry firing
 /// afterwards finds no target instead of hurting whoever recycled the id.
 #[derive(Component, Debug)]
-pub struct Afflicting;
+pub struct Upon;
 
 /// Relationship: `(InflictedBy, attacker)` on the effect entity.
 ///
@@ -116,6 +121,49 @@ pub struct Shows {
     pub sound: &'static str,
 }
 
+/// An action taken over and over for as long as the effect stands.
+///
+/// The action is handed a [`Cast`], the same value an ability's own payload
+/// gets, because a beat *is* a cast the player is not making: Storm Squid calls
+/// a bolt down once a second for twenty seconds and the nineteen beats after
+/// the first are indistinguishable from the first. That makes every helper --
+/// `splash`, `fire`, `afflict` -- work unchanged inside a pulse, and it means a
+/// kit writes its ultimate once rather than once per shape.
+///
+/// This is what makes an ultimate a mode rather than a frame. Fourteen of the
+/// fifteen were a single `splash` where the source says fifteen to twenty
+/// seconds; each is now one of these with a pulse that does what the single
+/// frame used to, and the duration doing the rest.
+///
+/// Separate from [`Ticks`] on purpose, and the line between them is data versus
+/// behaviour. Damage over time is common enough, and uniform enough, to be
+/// worth expressing as numbers a gate can read without running anything --
+/// which is why fire and poison are `Ticks` and not two `fn`s. Anything else an
+/// ability wants to do repeatedly is a `fn`, for the same reason
+/// [`crate::module::ability::OnActivate`] is. A kit reaching for `Repeats` to
+/// deal plain damage on an interval wants `Ticks`.
+#[derive(Component, Copy, Clone)]
+pub struct Repeats {
+    /// Seconds between beats.
+    pub every: f32,
+    /// Seconds until the next one.
+    pub until_next: f32,
+    pub pulse: fn(&Cast<'_>),
+}
+
+/// Run when the effect ends, however it ends.
+///
+/// For an effect that changed something which has to change back. Cow's
+/// Mooshroom Madness is the whole reason it exists: it raised the caster's
+/// maximum health by five hearts and never lowered it again, so a Cow who
+/// picked up two crystals in a match finished it on forty hearts.
+///
+/// Runs on expiry, on [`clear`], and on the holder dying -- every path that
+/// destroys the effect goes through [`end`], which is the point of there being
+/// one such path.
+#[derive(Component, Copy, Clone)]
+pub struct Ends(pub fn(&Cast<'_>));
+
 /// While this stands, the victim cannot be hurt.
 ///
 /// A tag and not a duration: the duration is [`Expires`], and a shield that
@@ -128,7 +176,12 @@ pub struct Shields;
 ///
 /// Filled in with update syntax like [`crate::module::kit::AbilitySpec`], so a
 /// kit writes the two fields its effect has instead of a wall of `None`.
-#[derive(Debug, Copy, Clone)]
+///
+/// No `Debug`, deliberately. Two of its fields are bare `fn`s, whose only
+/// printable content is a code address, and a derived `Debug` that renders a
+/// behaviour as `0x7f...` is worse than not having one: it looks like
+/// information.
+#[derive(Copy, Clone)]
 pub struct Affliction {
     /// How long it stands, in seconds.
     pub seconds: f32,
@@ -138,6 +191,10 @@ pub struct Affliction {
     pub shows: Option<Shows>,
     /// Whether the victim is untouchable while it stands.
     pub shields: bool,
+    /// `Some` for an effect that does something on a beat. See [`Repeats`].
+    pub repeats: Option<Repeats>,
+    /// `Some` for an effect that has to undo something. See [`Ends`].
+    pub ends: Option<Ends>,
 }
 
 impl Affliction {
@@ -146,7 +203,45 @@ impl Affliction {
         ticks: None,
         shows: None,
         shields: false,
+        repeats: None,
+        ends: None,
     };
+
+    /// A mode: `seconds` of doing `pulse` every `every` seconds.
+    ///
+    /// What a Smash Crystal grants. The wiki gives every ultimate as a
+    /// duration -- "lasts 20 seconds", "unlimited flight and eggs", "call
+    /// lightning down once a second" -- and this is that sentence, with the
+    /// thing it does once per beat.
+    #[must_use]
+    pub const fn mode(seconds: f32, every: f32, pulse: fn(&Cast<'_>)) -> Self {
+        Self {
+            seconds,
+            repeats: Some(Repeats {
+                every,
+                // The first beat lands immediately, unlike a burn's. Pressing
+                // an ultimate and watching nothing happen for a second is how
+                // a player concludes the button is broken.
+                until_next: 0.0,
+                pulse,
+            }),
+            ..Self::DEFAULT
+        }
+    }
+
+    /// The same, with something to undo when it lapses.
+    #[must_use]
+    pub const fn undone_by(mut self, ends: fn(&Cast<'_>)) -> Self {
+        self.ends = Some(Ends(ends));
+        self
+    }
+
+    /// The same, with nothing able to touch the holder while it lasts.
+    #[must_use]
+    pub const fn untouchable(mut self) -> Self {
+        self.shields = true;
+        self
+    }
 
     /// Damage over time that a client can see, which is the only kind any kit
     /// has wanted: an invisible burn is indistinguishable from the server
@@ -171,7 +266,7 @@ impl Affliction {
                 until_next: interval,
             }),
             shows: Some(shows),
-            shields: false,
+            ..Self::DEFAULT
         }
     }
 
@@ -258,7 +353,7 @@ pub fn afflict(world: WorldRef<'_>, victim: EntityView<'_>, blame: Blame, afflic
         .set(Expires {
             remaining: affliction.seconds,
         })
-        .add((Afflicting, victim))
+        .add((Upon, victim))
         .add((Source, world.entity_at(blame.source)))
         .add((InflictedBy, world.entity_at(blame.attacker)));
 
@@ -267,6 +362,12 @@ pub fn afflict(world: WorldRef<'_>, victim: EntityView<'_>, blame: Blame, afflic
     }
     if let Some(shows) = affliction.shows {
         effect.set(shows);
+    }
+    if let Some(repeats) = affliction.repeats {
+        effect.set(repeats);
+    }
+    if let Some(ends) = affliction.ends {
+        effect.set(ends);
     }
     if affliction.shields {
         effect.add(Shields::id());
@@ -316,9 +417,7 @@ fn matching(
         .with(Effect::id())
         .build()
         .each_entity(|effect, ()| {
-            if effect.target(Afflicting, 0).map(|target| target.id()) == Some(victim)
-                && keep(effect)
-            {
+            if effect.target(Upon, 0).map(|target| target.id()) == Some(victim) && keep(effect) {
                 found.push(effect.id());
             }
         });
@@ -353,12 +452,35 @@ pub fn clear(world: WorldRef<'_>, victim: Entity) {
 }
 
 /// Destroy one effect, undoing whatever it turned on.
+///
+/// The one path out. Expiry, [`clear`] and a holder dying all come through
+/// here, which is what lets [`Ends`] promise it runs however the effect ends
+/// rather than only when the clock reaches zero.
 fn end(world: WorldRef<'_>, effect: EntityView<'_>) {
+    let holder = effect.target(Upon, 0);
+
     if effect.has(Shields::id())
-        && let Some(victim) = effect.target(Afflicting, 0)
+        && let Some(holder) = holder
     {
-        disarm_shield(world, victim.id(), effect.id());
+        disarm_shield(world, holder.id(), effect.id());
     }
+
+    // After the shield is disarmed and before the entity is destroyed, so an
+    // `Ends` that heals the holder is not fighting an immunity that has not
+    // lifted yet.
+    if let (Some(ends), Some(holder)) = (effect.try_get::<&Ends>(|ends| *ends), holder)
+        && holder.is_alive()
+    {
+        let ability = effect.target(Source, 0).unwrap_or(holder);
+        world.get::<&ServerHandle>(|server| {
+            if let Some(cast) =
+                crate::module::ability::cast_from(world, holder, ability, &**server, 1.0)
+            {
+                ends.0(&cast);
+            }
+        });
+    }
+
     effect.destruct();
 }
 
@@ -369,6 +491,18 @@ struct Application {
     amount: f32,
     kind: DamageKind,
     shows: Option<Shows>,
+}
+
+/// One beat of one effect, decided before anything is mutated.
+///
+/// Collected for the same reason [`Application`] is: a pulse spawns
+/// projectiles, hurts players and reads positions, and flecs refuses all three
+/// from inside the query that found the effect.
+struct Beat {
+    holder: Entity,
+    /// The ability instance the beat is cast as. See [`Repeats`].
+    ability: Entity,
+    pulse: fn(&Cast<'_>),
 }
 
 #[derive(Component)]
@@ -383,10 +517,12 @@ impl Module for EffectModule {
         world.component::<Ticks>();
         world.component::<Shows>();
         world.component::<Shields>();
+        world.component::<Repeats>();
+        world.component::<Ends>();
         // Exclusive: an effect afflicts exactly one player, comes from one
         // place and is owed to one attacker. A second target would silently
         // double every tick it deals.
-        world.component::<Afflicting>().add(flecs::Exclusive);
+        world.component::<Upon>().add(flecs::Exclusive);
         world.component::<InflictedBy>().add(flecs::Exclusive);
         world.component::<Source>().add(flecs::Exclusive);
 
@@ -403,6 +539,7 @@ impl Module for EffectModule {
                     let dt = it.delta_time();
 
                     let mut applications = Vec::new();
+                    let mut beats = Vec::new();
                     let mut finished = Vec::new();
 
                     world
@@ -410,7 +547,7 @@ impl Module for EffectModule {
                         .with(Effect::id())
                         .build()
                         .each_entity(|effect, expires| {
-                            let Some(victim) = effect.target(Afflicting, 0) else {
+                            let Some(victim) = effect.target(Upon, 0) else {
                                 // The player it was put on has gone. Collected
                                 // so the entity does not leak for the rest of
                                 // the match.
@@ -432,6 +569,30 @@ impl Module for EffectModule {
                                 return;
                             }
 
+                            let attacker = effect.target(InflictedBy, 0).map(|by| by.id());
+
+                            if let Some(mut repeats) = effect.try_get::<&Repeats>(|r| *r) {
+                                repeats.until_next -= dt;
+                                if repeats.until_next <= 0.0 {
+                                    // Advanced by adding rather than assigning,
+                                    // so a long frame does not push every later
+                                    // beat out by however far this one
+                                    // overshot. `max` because the first beat
+                                    // starts at zero and a slow frame could
+                                    // otherwise leave it permanently behind.
+                                    repeats.until_next =
+                                        (repeats.until_next + repeats.every).max(0.0);
+                                    beats.push(Beat {
+                                        holder: victim.id(),
+                                        ability: effect
+                                            .target(Source, 0)
+                                            .map_or_else(|| victim.id(), |from| from.id()),
+                                        pulse: repeats.pulse,
+                                    });
+                                }
+                                effect.set(repeats);
+                            }
+
                             let Some(mut ticks) = effect.try_get::<&Ticks>(|ticks| *ticks) else {
                                 return;
                             };
@@ -448,7 +609,7 @@ impl Module for EffectModule {
 
                             applications.push(Application {
                                 victim: victim.id(),
-                                attacker: effect.target(InflictedBy, 0).map(|by| by.id()),
+                                attacker,
                                 amount: ticks.amount,
                                 kind: ticks.kind,
                                 shows: effect.try_get::<&Shows>(|shows| *shows),
@@ -479,6 +640,27 @@ impl Module for EffectModule {
                         world.get::<&ServerHandle>(|server| {
                             server.cue(at, shows.cue);
                             server.play_sound(at, Sound::new(shows.sound, SoundCategory::Players));
+                        });
+                    }
+
+                    // Beats after the damage-over-time applications, so an
+                    // ultimate that pulses into a victim who is already burning
+                    // sees the burn's damage rather than racing it.
+                    for beat in beats {
+                        let holder = world.entity_at(beat.holder);
+                        let ability = world.entity_at(beat.ability);
+                        if !holder.is_alive() || !ability.is_alive() {
+                            continue;
+                        }
+                        world.get::<&ServerHandle>(|server| {
+                            // A beat is cast at full charge. An ultimate that
+                            // scales off charge would otherwise fire at zero
+                            // for every beat but the one the player pressed.
+                            if let Some(cast) = crate::module::ability::cast_from(
+                                world, holder, ability, &**server, 1.0,
+                            ) {
+                                (beat.pulse)(&cast);
+                            }
                         });
                     }
 

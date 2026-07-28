@@ -14,7 +14,7 @@ use glam::Vec3;
 use crate::{
     flecs_ext::WorldRefExt,
     module::{
-        ability::{Cast, Observable, splash_at},
+        ability::{self, Cast, Observable, splash_at},
         damage::{DamageKind, Damaged, hurt},
         effect::{self, Affliction, Shows},
         kit::{self, AbilitySpec, KitSounds, KitStats},
@@ -132,6 +132,7 @@ impl Module for Blaze {
                 Observable::LaunchesTarget,
                 Observable::LaunchesCaster,
                 Observable::AfflictsTarget,
+                Observable::Sustains,
             ],
             activate: phoenix,
             ..AbilitySpec::DEFAULT
@@ -188,10 +189,28 @@ fn firefly(cast: &Cast<'_>) {
     splash_at(cast, ahead, 3.0, 9.0 * cast.charge.max(0.4), 1.8);
 }
 
-/// `[APPROXIMATED]`: free flight for twenty seconds is a movement mode the game
-/// half has no way to enter, so what is modelled is the damage pass and the
-/// fire it leaves on everyone it passes through.
+/// `[WIKI]` "twenty seconds of Firefly with no charge and free flight".
+///
+/// The twenty seconds is the ability. Free flight is not a movement mode the
+/// seam can enter, so each beat pushes the Blaze along its own look direction,
+/// which is what free flight looks like from the outside: a Blaze that keeps
+/// going where it points until the crystal runs out.
 fn phoenix(cast: &Cast<'_>) {
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, PHOENIX_INTERVAL, phoenix_pass),
+    );
+}
+
+/// `[APPROXIMATED]`. Firefly's own charge is 1.5 s and Phoenix removes it, so a
+/// pass a second is "Firefly with no charge" at about the rate a player could
+/// press it.
+const PHOENIX_INTERVAL: f32 = 1.0;
+
+/// One uncharged Firefly, and the fire it leaves behind.
+fn phoenix_pass(cast: &Cast<'_>) {
     let ahead = cast.position.0 + cast.facing.0.normalize_or_zero() * 3.0;
     cast.server.add_velocity(
         cast.player,

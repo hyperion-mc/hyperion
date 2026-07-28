@@ -16,6 +16,7 @@ use crate::{
     module::{
         ability::{Cast, Observable, splash_at},
         damage::{DamageKind, Damaged, hurt},
+        effect::{self, Affliction},
         kit::{self, AbilitySpec, KitSounds, KitStats},
         knockback::Knockback,
         player::Energy,
@@ -91,9 +92,15 @@ impl Module for Slime {
             name: "Giga Slime",
             sound: "minecraft:entity.slime.jump",
             item: "minecraft:nether_star",
-            description: "Become enormous and untouchable. Everything near you dies.",
+            description: "Nineteen seconds of being enormous and untouchable. Everything near you \
+                          dies.",
             cooldown: 19.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::ShieldsCaster,
+                Observable::Sustains,
+            ],
             activate: giga_slime,
             ..AbilitySpec::DEFAULT
         })
@@ -157,13 +164,42 @@ fn slime_slam(cast: &Cast<'_>) {
     });
 }
 
-/// Full damage immunity both ways in Mineplex; here it is the contact damage
-/// that matters, applied around a body three blocks tall.
+/// `[SHEET]` nineteen seconds. `[WIKI]` "enormous and untouchable".
+///
+/// Untouchable is the shield, which is real: nothing lands on a Giga Slime for
+/// the whole nineteen seconds. Enormous is the contact damage a body that size
+/// does, on a beat, which is also what makes standing next to one fatal --
+/// `docs/smash-design.md` records that per-kit hitboxes do not exist and the
+/// mob shape is a client-side disguise, so the size itself is presentation and
+/// the contact is the mechanic.
+///
+/// It used to be one splash and no shield at all, which is the two halves of
+/// the tooltip both missing.
 fn giga_slime(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0 + Vec3::Y * 3.0, 5.0, 8.0, 2.0);
-
     // Growing back to full is part of the ultimate: the bar is the hitbox.
     cast.caster.get::<&mut Energy>(|energy| {
         energy.current = energy.max;
     });
+
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(GIGA_SECONDS, GIGA_INTERVAL, giga_contact).untouchable(),
+    );
+}
+
+/// `[SHEET]` Giga Slime's cooldown, which is also its duration.
+const GIGA_SECONDS: f32 = 19.0;
+
+/// `[APPROXIMATED]`. Often enough that walking through a Giga Slime is not
+/// survivable, rare enough that the damage below is a real number rather than
+/// a per-tick trickle.
+const GIGA_INTERVAL: f32 = 1.0;
+
+/// `[APPROXIMATED]`. Per beat, and there are nineteen.
+const GIGA_DAMAGE: f32 = 4.0;
+
+fn giga_contact(cast: &Cast<'_>) {
+    splash_at(cast, cast.position.0 + Vec3::Y * 3.0, 5.0, GIGA_DAMAGE, 2.0);
 }

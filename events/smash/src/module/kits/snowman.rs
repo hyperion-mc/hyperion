@@ -10,7 +10,8 @@ use flecs_ecs::prelude::*;
 use glam::Vec3;
 
 use crate::module::{
-    ability::{Cast, Observable, splash_at},
+    ability::{self, Cast, Observable, splash_at},
+    effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     projectile::{Flight, Payload, fire},
 };
@@ -79,9 +80,13 @@ impl Module for Snowman {
             name: "Snow Turret",
             sound: "minecraft:entity.snowball.throw",
             item: "minecraft:nether_star",
-            description: "A snowman that shoots for you. Twenty seconds, three of them.",
+            description: "Snowmen that shoot for you. Twenty seconds, three of them.",
             cooldown: 1.0,
-            proves: &[Observable::HurtsTarget, Observable::LaunchesTarget],
+            proves: &[
+                Observable::HurtsTarget,
+                Observable::LaunchesTarget,
+                Observable::Sustains,
+            ],
             activate: snow_turret,
             ..AbilitySpec::DEFAULT
         })
@@ -120,14 +125,36 @@ fn arctic_aura(cast: &Cast<'_>) {
     splash_at(cast, cast.position.0, 5.0, AURA_BONUS_DAMAGE, 0.2);
 }
 
-/// Six snowballs in a ring, the first one down the barrel.
+/// Twenty seconds of a six-snowball ring, the first one down the barrel.
 ///
 /// The ring is turned to face the caster: it used to be laid out in absolute
 /// world directions, so the ultimate hit whatever happened to be east of the
 /// snowman and a target dead ahead was in the gap between two of the six unless
 /// the fight happened to be lined up with +X. Nobody would have noticed from the
 /// inside, because the ability does fire and does hit *something*.
+///
+/// `[WIKI]` three turrets for twenty seconds; `[SOURCE]` says one, and
+/// `docs/smash-design.md` records the disagreement.
+///
+/// A turret is a thing that keeps shooting, which is the half that was missing:
+/// the ability fired one ring of six snowballs and stopped. Without a spawned
+/// mob to stand there and fire -- which needs the host's entity system -- the
+/// ring on a beat for twenty seconds is what a player standing next to a
+/// Snowman actually experiences, and it is the same ring.
 fn snow_turret(cast: &Cast<'_>) {
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(ability::ULTIMATE_SECONDS, TURRET_INTERVAL, turret_ring),
+    );
+}
+
+/// `[APPROXIMATED]`. Blizzard's own cooldown is 0.4 s and a turret is meant to
+/// be a second Snowman, so a ring a second is roughly three of them firing.
+const TURRET_INTERVAL: f32 = 1.0;
+
+fn turret_ring(cast: &Cast<'_>) {
     let flat = Vec3::new(cast.facing.0.x, 0.0, cast.facing.0.z).normalize_or_zero();
     // Looking straight down leaves no bearing to build a ring on.
     let forward = if flat == Vec3::ZERO { Vec3::Z } else { flat };

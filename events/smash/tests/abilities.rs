@@ -217,12 +217,38 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool
                 .into_iter()
                 .any(|(victim, was)| bench.health_of(victim).current < was - 1e-3)
         }
-        // Two probes, because "took no damage" on its own is also what a broken
-        // damage pipeline looks like: a shield that never lifts and a game that
-        // cannot hurt anybody are the same reading. The window has to hold, and
-        // then it has to end. `held` is the first probe, taken back when the
-        // window was still open; this is the second.
-        Observable::ShieldsCaster => held && probe_hit(bench),
+        // Nothing is cast. The claim is that the ability is still acting, so
+        // what is measured is the world changing anyway -- damage landing on
+        // anybody, or a launch, or a burst of particles. Broader than
+        // `AfflictsTarget`, which is health specifically and on a victim
+        // specifically, because an ultimate's mode is not always damage: Giga
+        // Slime's is a shield and Frenzy's is a lunge.
+        Observable::Sustains => {
+            // Everybody is stood back up first. An ultimate that has already
+            // killed both victims cannot hurt them again, so without this the
+            // *strongest* modes are the ones that read as doing nothing --
+            // which is how Arrow Storm first failed this.
+            bench.place(before.caster_at);
+            let watched =
+                [bench.caster, bench.near, bench.far].map(|player| bench.health_of(player).current);
+            bench.game.server.take();
+            bench.game.advance(LINGER_SECONDS, 40);
+
+            let hurt_somebody = [bench.caster, bench.near, bench.far]
+                .iter()
+                .zip(watched)
+                .any(|(player, was)| bench.health_of(*player).current < was - 1e-3);
+            hurt_somebody
+                || bench.game.server.calls().iter().any(|call| {
+                    matches!(
+                        call,
+                        Call::AddVelocity(..) | Call::SetHealth(..) | Call::Cue(..)
+                    )
+                })
+        }
+        // Both probes were taken either side of the press, in `Immediate`,
+        // because neither can be taken from here: see that type.
+        Observable::ShieldsCaster => held,
     }
 }
 
@@ -235,24 +261,35 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool
 /// to raise this with it.
 const LINGER_SECONDS: f32 = 2.0;
 
-/// Facts whose lifetime is shorter than [`Bench::settle`], taken the instant a
-/// cast returns.
+/// Facts that can only be read either side of the press itself.
 ///
-/// Sky Squid's shield lasts one second and `settle` waits one and a half, so a
-/// reading taken only after settling finds every shield already over and calls
-/// a working ability broken. This is the one observation that has to be made
-/// before the sweep waits.
+/// Sky Squid's shield lasts one second and [`Bench::settle`] waits one and a
+/// half, so a reading taken after settling finds it already over and calls a
+/// working ability broken. Giga Slime's lasts nineteen, so a reading that waits
+/// for it to end never gets one. The only window both fit in is the press.
 struct Immediate {
-    /// Whether a hit on the caster was refused. Only meaningful, and only
-    /// taken, when the entry claims [`Observable::ShieldsCaster`]: the probe
-    /// costs the caster health and would otherwise perturb every other reading.
+    /// The same hit landed before the cast and was refused after it.
+    ///
+    /// Two probes and not one, because a shield that never lifts and a server
+    /// that cannot deal damage produce the same single reading. Taken either
+    /// side of the press rather than before and after the *window*, so the
+    /// check does not need to know how long the window is -- which is what lets
+    /// one shape cover both a one-second shield and a nineteen-second one.
+    ///
+    /// Only taken when the entry claims [`Observable::ShieldsCaster`]. The probe
+    /// costs the caster health and would otherwise perturb every other reading
+    /// in the sweep, `heals_caster` most of all.
     held: bool,
 }
 
 impl Immediate {
-    fn taken(bench: &Bench, entry: &Declared) -> Self {
+    /// `landed_before` is [`probe_hit`] from before the press. The caller takes
+    /// it, because by the time this runs the ability has already fired.
+    fn taken(bench: &Bench, entry: &Declared, landed_before: bool) -> Self {
         Self {
-            held: entry.proves.contains(&Observable::ShieldsCaster) && !probe_hit(bench),
+            held: entry.proves.contains(&Observable::ShieldsCaster)
+                && landed_before
+                && !probe_hit(bench),
         }
     }
 }
@@ -401,9 +438,12 @@ fn every_declared_effect_actually_happens() {
                 bench.recover(&entry, attempt);
             }
             bench.arm(&entry);
+            // Before the press, so the pair brackets it. See `Immediate::held`.
+            let landed_before =
+                entry.proves.contains(&Observable::ShieldsCaster) && probe_hit(&bench);
             let before = snapshot(&bench);
             bench.press(&entry);
-            let immediate = Immediate::taken(&bench, &entry);
+            let immediate = Immediate::taken(&bench, &entry, landed_before);
             bench.settle();
             outstanding
                 .retain(|observable| !observed(&bench, *observable, &before, immediate.held));
@@ -577,6 +617,71 @@ fn an_ultimate_is_granted_for_a_window_and_then_taken_back() {
         Ok(()),
         "an expired ultimate should be nothing at all in that slot, not a refusal"
     );
+}
+
+/// No ultimate leaves a player permanently changed.
+///
+/// A Smash Crystal is a window. Anything an ultimate alters about the player
+/// themselves -- their maximum health, their armour, how far they are thrown --
+/// has to be back where it started once the window closes, or picking a crystal
+/// up twice in a match compounds and the kit drifts away from every number the
+/// registry publishes.
+///
+/// Written as a sweep over the class rather than as a test for the one kit that
+/// had the bug. Cow's Mooshroom Madness raised the maximum by five hearts and
+/// never lowered it, so a Cow with two crystals finished on forty and a third
+/// on fifty; the reason to check every ultimate instead is that nothing about
+/// that bug was specific to Cow, and the next one will not be either.
+#[test]
+fn an_ultimate_gives_the_player_back_when_it_is_done() {
+    use smash::module::{damage::Armor, kit::KitStats, knockback::KnockbackTaken};
+
+    let manifest = ability::manifest(&Game::new().world);
+    let mut failures = Vec::new();
+
+    for entry in manifest.into_iter().filter(|entry| entry.ultimate) {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+
+        let stats = bench
+            .caster()
+            .target(Playing, 0)
+            .and_then(|kit| kit.try_get::<&KitStats>(|stats| *stats))
+            .expect("a player on a kit has its stats");
+
+        bench.arm(&entry);
+        bench.press(&entry);
+
+        // Past the longest window any ultimate declares, with room for the
+        // final beat and the teardown that follows it.
+        bench.game.advance(ability::ULTIMATE_SECONDS + 4.0, 240);
+
+        let health = bench.health_of(bench.caster);
+        let armor = bench.caster().cloned::<&Armor>().0;
+        let knockback = bench.caster().cloned::<&KnockbackTaken>().0;
+
+        let label = format!("{} / {}", entry.kit, entry.name);
+        if (health.max - stats.max_health).abs() > 1e-3 {
+            failures.push(format!(
+                "{label} left the caster on a maximum of {} health where the kit declares {}",
+                health.max, stats.max_health
+            ));
+        }
+        if (armor - stats.armor).abs() > 1e-3 {
+            failures.push(format!(
+                "{label} left the caster on {armor} armour where the kit declares {}",
+                stats.armor
+            ));
+        }
+        if (knockback - stats.knockback_taken).abs() > 1e-3 {
+            failures.push(format!(
+                "{label} left the caster taking {knockback}x knockback where the kit declares {}",
+                stats.knockback_taken
+            ));
+        }
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 /// What the charge accumulator hands a payload, against wall clock.
