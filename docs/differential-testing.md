@@ -88,6 +88,16 @@ recordings and fails the build with the diff. This is why there is no Java
 agent seeding `RandomSource`: not seeding it and proving independence is a
 stronger statement than seeding it and asserting one.
 
+### Across platforms
+
+`Mth`'s sine table is built with `Math.sin`, which the JLS allows to be off by
+an ulp and does not require to agree between implementations, so a recording
+made on one machine could in principle differ from one made on another and the
+drift check would fail for whoever ran it second. It does not: recording the
+committed scenarios on `x86_64-linux` and on `aarch64-darwin` produces
+byte-identical files. Worth re-checking on a JDK bump rather than assuming,
+since it is a property of the runtime and not of anything in this repository.
+
 ### What this therefore does not prove
 
 - **The bow's spread.** `Projectile.shoot` adds a random triangular term scaled
