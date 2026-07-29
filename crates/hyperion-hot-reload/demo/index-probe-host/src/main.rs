@@ -1,5 +1,9 @@
 //! Compares component-index allocation across the host/module dylib boundary.
 //! See the module crate for why this is behavioural rather than an address comparison.
+#![allow(
+    clippy::print_stdout,
+    reason = "this binary's whole purpose is reporting what it measured"
+)]
 
 use flecs_ecs::core::ComponentId;
 
@@ -27,13 +31,15 @@ fn main() {
 
     let lib = unsafe { libloading::Library::new(&path) }.expect("failed to dlopen the module");
     let module_index = unsafe {
-        let f: libloading::Symbol<'_, unsafe extern "C" fn() -> u32> =
-            lib.get(b"probe_module_index").expect("no module index symbol");
+        let f: libloading::Symbol<'_, unsafe extern "C" fn() -> u32> = lib
+            .get(b"probe_module_index")
+            .expect("no module index symbol");
         f()
     };
     let module_position_index = unsafe {
-        let f: libloading::Symbol<'_, unsafe extern "C" fn() -> u32> =
-            lib.get(b"probe_position_index").expect("no position index symbol");
+        let f: libloading::Symbol<'_, unsafe extern "C" fn() -> u32> = lib
+            .get(b"probe_position_index")
+            .expect("no position index symbol");
         f()
     };
     // Leaked deliberately: `dlclose` would unmap text the process still holds pointers
@@ -42,7 +48,10 @@ fn main() {
 
     println!("host indices: {host_indices:?} (max {host_max})");
     println!("module's own type index: {module_index}");
-    println!("hyperion::simulation::Position index: host {}, module {module_position_index}", host_indices[3]);
+    println!(
+        "hyperion::simulation::Position index: host {}, module {module_position_index}",
+        host_indices[3]
+    );
 
     let shared_pool = module_index > host_max;
     let shared_hyperion_index = host_indices[3] == module_position_index;

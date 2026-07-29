@@ -14,6 +14,15 @@
 //! copies and shared copies both printed mismatched addresses. Allocation order cannot be
 //! faked -- if the pool is shared, an index taken here is strictly greater than every
 //! index the host took first.
+//!
+//! The equality of any single index is not evidence either, and looked like evidence once.
+//! Two separate pools both start at 1, so a type that happens to be the first registered on
+//! each side reads `1` and `1`. That is what this probe reported when the module linked its
+//! own static copy of everything, which is exactly the case it exists to detect.
+//!
+//! What makes the pool shared is `flecs_ecs` being built as a dylib, so every consumer
+//! resolves one `libflecs_ecs.so`. It is not this crate's dependency list: dropping the
+//! `hyperion-hot-reload` dependency entirely leaves the probe passing.
 
 use flecs_ecs::core::ComponentId;
 
@@ -37,9 +46,5 @@ pub unsafe extern "C" fn probe_position_index() -> u32 {
 /// Called by the probe host through `dlsym`. Returns a plain integer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn probe_module_index() -> u32 {
-    // Referencing the runtime crate is what puts `hyperion-hot-reload` in this dylib's
-    // `DT_NEEDED`. A module that merely lists it as a dependency without using it links
-    // its own static copy of everything, which is the case this probe exists to detect.
-    let _ = hyperion_hot_reload::AbiToken::current();
     <ModuleOnlyMarker as ComponentId>::index()
 }

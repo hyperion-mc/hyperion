@@ -2028,7 +2028,6 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
- "hyperion-hot-reload",
  "libloading 0.9.0",
 ]
 
@@ -2038,7 +2037,6 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion",
- "hyperion-hot-reload",
 ]
 
 [[package]]
