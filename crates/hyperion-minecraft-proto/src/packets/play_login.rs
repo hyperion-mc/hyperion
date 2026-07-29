@@ -521,6 +521,136 @@ impl Decode<'_> for GameEvent {
     }
 }
 
+// --- set time -------------------------------------------------------------
+
+/// The minimum bytes one clock update occupies on the wire: a `VarInt` clock
+/// id, a `VarLong` `total_ticks`, and two `f32`s, so `1 + 1 + 4 + 4`.
+const MIN_CLOCK_UPDATE_SIZE: usize = 10;
+
+/// The network id of the overworld clock in `minecraft:world_clock`.
+///
+/// The registry the server sends during configuration lists
+/// `minecraft:overworld` first, so it is id `0`. This is the clock that moves
+/// the sun; freezing it freezes the daylight cycle.
+pub const OVERWORLD_CLOCK_ID: i32 = 0;
+
+/// One world clock's state on the wire (`ClockNetworkState`).
+///
+/// The client advances the clock by `rate` ticks each tick and interpolates
+/// the sun with `partial_tick`, so it holds the day time without the server
+/// resending it. A `rate` of `0.0` freezes the clock: that is exactly what a
+/// paused clock -- or the `advance_time` gamerule being off -- serialises to,
+/// per `ServerClockManager.ClockInstance.packNetworkState` in 26.2.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClockNetworkState {
+    /// The clock's accumulated ticks. For the overworld clock this is the day
+    /// time that positions the sun (`6000` noon, `18000` midnight). `VarLong`.
+    pub total_ticks: i64,
+    /// Sub-tick remainder the client interpolates from; `0.0` on a fresh sync.
+    pub partial_tick: f32,
+    /// Ticks the clock advances per server tick. `1.0` is the vanilla daylight
+    /// speed; `0.0` freezes it.
+    pub rate: f32,
+}
+
+impl ClockNetworkState {
+    /// A frozen clock parked at `total_ticks` (`partial_tick` `0.0`, `rate`
+    /// `0.0`). The client holds the sun here and never advances it.
+    #[must_use]
+    pub const fn frozen(total_ticks: i64) -> Self {
+        Self {
+            total_ticks,
+            partial_tick: 0.0,
+            rate: 0.0,
+        }
+    }
+
+    fn encode(&self, writer: &mut Writer) {
+        writer.var_long(self.total_ticks);
+        writer.f32(self.partial_tick);
+        writer.f32(self.rate);
+    }
+
+    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+        Ok(Self {
+            total_ticks: reader.var_long()?,
+            partial_tick: reader.f32()?,
+            rate: reader.f32()?,
+        })
+    }
+}
+
+/// `minecraft:set_time`, clientbound (`ClientboundSetTimePacket`).
+///
+/// 26.2 replaced the old `(gameTime, timeOfDay)` pair with a `gameTime` plus a
+/// map of per-`WorldClock` states (`ClockNetworkState`). `game_time` is the
+/// world age; each clock update carries its own day time and advance `rate`.
+///
+/// # Freezing the sun
+///
+/// With no `SetTime` at all the client free-runs its own daylight cycle and
+/// the sun drifts. Sending the overworld clock ([`OVERWORLD_CLOCK_ID`]) once
+/// with [`ClockNetworkState::frozen`] pins the day time: the client's `rate`
+/// is `0.0`, so it holds the sun without the server resending time every tick.
+///
+/// # Ids, not names
+///
+/// The map is keyed by the clock's network id in `minecraft:world_clock`,
+/// written by `ByteBufCodecs.holderRegistry(Registries.WORLD_CLOCK)`, which is
+/// a bare `VarInt` with no direct-holder escape (the same shape as
+/// [`CommonPlayerSpawnInfo::dimension_type`]). The id is positional in the
+/// registry the server sent during configuration.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetTime {
+    /// The world age (`Level.getGameTime`). Not the day time; anything that
+    /// reads game time still gets the real value while the day time is frozen.
+    pub game_time: i64,
+    /// Per-clock updates keyed by the clock's `minecraft:world_clock` network
+    /// id. A single overworld entry is enough to freeze the sky; vanilla's own
+    /// per-clock updates are one-entry maps too.
+    pub clock_updates: Vec<(i32, ClockNetworkState)>,
+}
+
+impl SetTime {
+    /// A `SetTime` that freezes the overworld daylight cycle at `day_time`
+    /// while reporting `game_time` as the world age.
+    #[must_use]
+    pub fn freeze_overworld(game_time: i64, day_time: i64) -> Self {
+        Self {
+            game_time,
+            clock_updates: vec![(OVERWORLD_CLOCK_ID, ClockNetworkState::frozen(day_time))],
+        }
+    }
+}
+
+impl Encode for SetTime {
+    fn encode(&self, writer: &mut Writer) -> Result<()> {
+        writer.i64(self.game_time);
+        write_count(writer, self.clock_updates.len())?;
+        for (clock_id, state) in &self.clock_updates {
+            writer.var_int(*clock_id);
+            state.encode(writer);
+        }
+        Ok(())
+    }
+}
+
+impl Decode<'_> for SetTime {
+    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
+        let game_time = reader.i64()?;
+        let count = read_count(reader, MIN_CLOCK_UPDATE_SIZE)?;
+        let mut clock_updates = Vec::with_capacity(count);
+        for _ in 0..count {
+            let clock_id = reader.var_int()?;
+            clock_updates.push((clock_id, ClockNetworkState::decode(reader)?));
+        }
+        Ok(Self {
+            game_time,
+            clock_updates,
+        })
+    }
+}
+
 // --- teleport -------------------------------------------------------------
 
 /// Which fields of a teleport are relative to the player's current state

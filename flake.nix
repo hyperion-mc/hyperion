@@ -1151,6 +1151,25 @@
               timeout = 300;
             };
 
+            # The daylight cycle, frozen at the protocol level, on a real
+            # connection. 26.2 drives the sun from a per-world clock the client
+            # advances itself from a `rate` the server sends once; hyperion sent
+            # no `SetTime` at all, so a client free-ran its own cycle and the sun
+            # drifted. `world-time-check.py` joins, decodes the `SetTime` (id
+            # 113) the join path now sends, and asserts the overworld clock
+            # arrives with `rate` 0.0 at a fixed day time and never advances over
+            # several seconds of ticks. Fail-then-pass by construction: an
+            # unpatched server sends no `SetTime`, so the first assertion is red.
+            # smash rather than bedwars because the freeze lives in shared join
+            # code and smash needs no world downloaded into the sandbox.
+            world-time-e2e = e2e.mkCheck {
+              name = "hyperion-world-time-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "world-time-check.py";
+              timeout = 180;
+            };
+
             # `checks.e2e` above took the names the two app wrappers used to
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
