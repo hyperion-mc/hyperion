@@ -248,6 +248,35 @@ pub fn get_direction_from_rotation(yaw: f32, pitch: f32) -> Vec3 {
     )
 }
 
+/// Registration module for the core kinematics base: where an entity is
+/// ([`Position`]) and how it is moving ([`Velocity`]).
+///
+/// This is the "settled base" of the flecs module convention (see the root
+/// `CLAUDE.md`): the two components nearly every system reads, registered in
+/// one importable place so nothing re-registers them ad hoc. Both the
+/// simulation ([`super::SimComponentsModule`]) and the projectile physics
+/// import this rather than each calling `world.component::<Position>()`
+/// themselves, and a use-before-register of the kinematics base becomes an
+/// import edge the DAG supplies rather than an ordering a contributor can miss
+/// (ENG-11000's class).
+///
+/// It imports [`super::ReflectionComponentsModule`] because `Position` and
+/// `Velocity` register their reflection through the glam `Vec3` meta that module
+/// installs, so a standalone `world.import::<KinematicsComponentsModule>()` into
+/// a bare world is self-sufficient. Registration only, no behavior.
+#[derive(Component)]
+pub struct KinematicsComponentsModule;
+
+impl Module for KinematicsComponentsModule {
+    fn module(world: &World) {
+        // `Position`/`Velocity` carry `#[flecs(meta)]` over a `Vec3`, so the
+        // glam reflection has to exist before their meta is registered.
+        world.import::<super::ReflectionComponentsModule>();
+        world.component::<Position>().meta();
+        world.component::<Velocity>().meta();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
