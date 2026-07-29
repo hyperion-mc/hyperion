@@ -35,7 +35,7 @@ in
 
     gameServer = mkOption {
       type = types.str;
-      example = "hyperion-game.internal:35565";
+      example = "hyperion-game.ix.internal:35565";
       description = ''
         The game server, as `host:port`.
 

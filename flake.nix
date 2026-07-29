@@ -1421,7 +1421,7 @@
                 }
 
                 expect "/bin/bedwars --ip :: --port 35565"
-                expect "/bin/hyperion-proxy '[::]:25565' --server hyperion-game.internal:35565"
+                expect "/bin/hyperion-proxy '[::]:25565' --server hyperion-game.ix.internal:35565"
                 expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/game.crt --private-key /var/lib/hyperion-pki/game_private_key.pem"
                 expect "--root-ca-cert /var/lib/hyperion-pki/root_ca.crt --cert /var/lib/hyperion-pki/proxy.crt --private-key /var/lib/hyperion-pki/proxy_private_key.pem"
 
@@ -1543,7 +1543,7 @@
 
               services.hyperion-proxy = {
                 enable = true;
-                gameServer = "hyperion-game.internal:35565";
+                gameServer = "hyperion-game.ix.internal:35565";
                 pki = {
                   rootCaCert = "/var/lib/hyperion-pki/root_ca.crt";
                   cert = "/var/lib/hyperion-pki/proxy.crt";
