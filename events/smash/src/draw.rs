@@ -37,12 +37,11 @@
 //! `Flight` already owns.
 
 use flecs_ecs::prelude::*;
-use glam::Vec3;
 use hyperion::{
     net::Channel,
     simulation::{
         BroadcastProjectile, Pitch, Position, Spawn, Uuid, Velocity, Yaw,
-        projectile_motion::{EYE_HEIGHT, look_angles},
+        projectile_motion::look_angles,
     },
 };
 
@@ -79,17 +78,17 @@ impl Module for DrawModule {
             .each_entity(|projectile, (visual, flight)| {
                 let per_tick = flight.velocity / TICKS_PER_SECOND;
                 let (yaw, pitch) = look_angles(flight.velocity);
-                // What a client sees leaves the shooter's eye, not the tracked
-                // feet position: a projectile drawn from the stomach is the bug
-                // this fixes. A constant vertical lift (not the rotating muzzle
-                // offset) keeps the rendered arc a clean parabola tick to tick.
-                // The `Flight` simulation is unchanged; this is the render only.
-                let seen = flight.position + Vec3::Y * EYE_HEIGHT;
-
+                // Render the flight position directly: `fire` already launched
+                // the projectile from the shooter's eye, so the picture and the
+                // hit are the same flight. One source, no visual/sim offset.
                 projectile
                     .add_enum(visual.0)
                     .set(Uuid::new_v4())
-                    .set(Position::new(seen.x, seen.y, seen.z))
+                    .set(Position::new(
+                        flight.position.x,
+                        flight.position.y,
+                        flight.position.z,
+                    ))
                     .set(Velocity::new(per_tick.x, per_tick.y, per_tick.z))
                     .set(Yaw::new(yaw))
                     .set(Pitch::new(pitch))
@@ -124,7 +123,7 @@ impl Module for DrawModule {
             .kind(id::<flecs::pipeline::PostUpdate>())
             .each(|(flight, position, velocity, yaw, pitch)| {
                 let (y, p) = look_angles(flight.velocity);
-                **position = flight.position + Vec3::Y * EYE_HEIGHT;
+                **position = flight.position;
                 velocity.0 = flight.velocity / TICKS_PER_SECOND;
                 **yaw = y;
                 **pitch = p;

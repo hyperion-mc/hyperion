@@ -120,6 +120,7 @@ def main():
     def draw(seconds, note):
         client.spawned.clear()
         client.syncs.clear()
+        client.motions.clear()
         client.aim(35.0, -20.0)
         client.send_position()
         client.use_slot(bow_slot, "(nock) " + note)
@@ -187,50 +188,53 @@ def main():
     )
 
     arrow_id = launch["id"]
-    pairs = client.syncs.get(arrow_id, [])
-    samples = [pos for pos, _vel in pairs]
-    print("flight: %d EntityPositionSync samples for arrow %d" % (len(samples), arrow_id), flush=True)
-    check(
-        len(samples) >= 12,
-        "the server broadcasts the arrow's position every tick as it flies "
-        "(got %d; 0 means it never left the muzzle on the wire)" % len(samples),
+    velocities = client.motions.get(arrow_id, [])
+    syncs = client.syncs.get(arrow_id, [])
+    print(
+        "flight: %d SetEntityMotion (per-tick velocity) packets, %d absolute "
+        "EntityPositionSync, for arrow %d" % (len(velocities), len(syncs), arrow_id),
+        flush=True,
     )
-    if len(samples) >= 2:
-        px, py, pz = samples[0]
-        v = list(pairs[0][1])
-        arc = [(px, py, pz)]
-        for _ in range(120):
-            # smash Flight integrates gravity before the move (DecayThenMove):
-            # v.y -= g*dt, then pos += v*dt. In wire units that is v.y -= 0.05
-            # then pos += v, and getting the order backwards drifts ~0.05/tick.
-            v[1] -= 0.05
-            px += v[0]
-            py += v[1]
-            pz += v[2]
-            arc.append((px, py, pz))
-
-        def dist_to_arc(point):
-            best = float("inf")
-            px0, py0, pz0 = point
-            for k in range(len(arc) - 1):
-                ax, ay, az = arc[k]
-                bx, by, bz = arc[k + 1]
-                dx, dy, dz = bx - ax, by - ay, bz - az
-                length2 = dx * dx + dy * dy + dz * dz
-                t = 0.0 if length2 == 0.0 else max(0.0, min(1.0, ((px0 - ax) * dx + (py0 - ay) * dy + (pz0 - az) * dz) / length2))
-                cx, cy, cz = ax + t * dx, ay + t * dy, az + t * dz
-                best = min(best, math.dist((px0, py0, pz0), (cx, cy, cz)))
-            return best
-
-        worst = max(dist_to_arc(s) for s in samples)
-        moved = math.dist(samples[-1], spawn)
-        print("arc: worst off-arc %.3f blocks, travelled %.1f blocks" % (worst, moved), flush=True)
-        check(
-            worst < 1.0,
-            "the arrow flies its Flight arc on the wire (worst off-arc %.3f "
-            "blocks over %d samples)" % (worst, len(samples)),
+    # Smoothness (the vanilla wire pattern): the arrow is driven by per-tick
+    # velocity, which the client predicts smooth position from -- NOT by per-tick
+    # absolute position teleports. An arrow has no client interpolation handler,
+    # so an absolute EntityPositionSync hard-snaps it ~3 blocks a tick = jagged.
+    check(
+        len(velocities) >= 12,
+        "the server sends the arrow's velocity every tick (SetEntityMotion), the "
+        "vanilla representation the client predicts smooth motion from (got %d)"
+        % len(velocities),
+    )
+    check(
+        len(syncs) == 0,
+        "the arrow is never hard-teleported by a per-tick absolute "
+        "EntityPositionSync (got %d; any per-tick absolute sync IS the jagged "
+        "~3-block-a-tick snap this fixes)" % len(syncs),
+    )
+    # A real flight: integrate the per-tick velocity stream from the launch and
+    # confirm it travels a real distance and shows gravity in vy.
+    if len(velocities) >= 2:
+        px, py, pz = spawn
+        for vx, vy, vz in velocities:
+            px += vx
+            py += vy
+            pz += vz
+        moved = math.dist((px, py, pz), spawn)
+        vy_first, vy_last = velocities[0][1], velocities[-1][1]
+        print(
+            "velocity arc: integrated %.1f blocks; vy %.3f -> %.3f"
+            % (moved, vy_first, vy_last),
+            flush=True,
         )
-        check(moved > 6.0, "the arrow travels a real distance (%.1f blocks)" % moved)
+        check(
+            moved > 6.0,
+            "the velocity stream integrates to a real flight (%.1f blocks)" % moved,
+        )
+        check(
+            vy_last < vy_first,
+            "gravity shows in the per-tick velocity (vy %.3f -> %.3f)"
+            % (vy_first, vy_last),
+        )
 
     pump(client, 0.6)
     short = draw(0.4, "short draw")
