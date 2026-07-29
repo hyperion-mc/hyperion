@@ -182,9 +182,15 @@ version = "1.1.9"
 # stage to `flecs_components_get`, which asserts, so every system with a sparse
 # term aborts under `set_threads > 1` — which is every system here. Repin on
 # upstream once that lands.
+#
+# Also carrying the shared-dylib change: `crate-type = ["dylib", "rlib"]` plus a
+# build script that re-exports flecs's C symbols. Hot reloading needs exactly one
+# copy of this crate in the process, because it owns the process-global pool that
+# hands out each component type's index into a world's component array. See
+# `docs/hot-reload.md`.
 features = ['flecs_manual_registration']
 git = 'https://github.com/andrewgazelka/Flecs-Rust'
-rev = '252944dedbc80741b7cca30dea67c5be95638950'
+rev = 'f09dc5308d00c6a88c82b1195334b6ed2b2d2868'
 
 [workspace.dependencies.geometry]
 path = 'crates/geometry'
