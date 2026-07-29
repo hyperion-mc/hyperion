@@ -36,7 +36,7 @@ use crate::{
         event::{self, HitGroundEvent},
         handlers::is_grounded,
         metadata::{MetadataChanges, get_and_clear_metadata},
-        projectile_motion::{MotionOrder, lerp_rotation, look_angles},
+        projectile_motion::{MotionOrder, ProjectileMotion, lerp_rotation, look_angles},
     },
     spatial::get_first_collision,
     storage::Events,
@@ -527,9 +527,18 @@ impl Module for EntityStateSyncModule {
 
                 let world = it.world();
                 let arrow_entity = it.entity(row);
+                // Prefer the per-instance `ProjectileMotion` that
+                // `seed_projectile_motion` puts on every simulated kind, so an
+                // ability can override one projectile's gravity or drag; fall
+                // back to the kind's vanilla default for anything that has a
+                // kind but no component yet.
                 let motion = arrow_entity
-                    .try_get::<&EntityKind>(|kind| kind.projectile_motion())
-                    .flatten();
+                    .try_get::<&ProjectileMotion>(|motion| *motion)
+                    .or_else(|| {
+                        arrow_entity
+                            .try_get::<&EntityKind>(|kind| kind.projectile_motion())
+                            .flatten()
+                    });
 
                 if velocity.0 != Vec3::ZERO {
                     let center = **position;

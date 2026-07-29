@@ -276,6 +276,10 @@ impl Module for SimComponentsModule {
         // the `Position`/`Velocity` kinematics base, so both exist before
         // `register_components` annotates the rest.
         world.import::<pose::KinematicsComponentsModule>();
+        // The projectile components (`ProjectileMotion`) come from their own
+        // registration module, which a physics-only consumer can import without
+        // the rest of the simulation.
+        world.import::<projectile_motion::ProjectileComponentsModule>();
         // Registers every remaining simulation component and sets the
         // `MetadataPrefabs` singleton, which `SimModule`'s observers read back
         // to pick a prefab base per entity kind.
@@ -501,6 +505,22 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
         .each_entity(|entity, ()| {
             debug!("adding uuid to entity");
             entity.set(Uuid::new_v4());
+        });
+
+    // Seed a projectile's per-tick motion from its kind's vanilla default the
+    // moment the kind is set, so the integrator reads a component a game module
+    // can also override per instance (a hook with no gravity, a heavier lob). A
+    // kind with no entry in `SIMULATED` gets nothing, exactly as before.
+    world
+        .observer_named::<flecs::OnAdd, ()>("seed_projectile_motion")
+        .with_enum_wildcard::<EntityKind>()
+        .each_entity(|entity, ()| {
+            if let Some(motion) = entity
+                .try_get::<&EntityKind>(|kind| kind.projectile_motion())
+                .flatten()
+            {
+                entity.set(motion);
+            }
         });
 
     world
