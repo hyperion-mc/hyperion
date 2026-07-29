@@ -33,18 +33,39 @@ in
       '';
     };
 
-    gameServer = mkOption {
-      type = types.str;
-      example = "hyperion-game.ix.internal:35565";
-      description = ''
-        The game server, as `host:port`.
+    # Two typed fields rather than one `host:port` string. The string form
+    # made the port a second copy of `services.hyperion-game-server.port`,
+    # free to drift from it, and nothing rendered the pair in one place.
+    gameServer = {
+      host = mkOption {
+        type = types.str;
+        example = "hyperion-game.ix.internal";
+        description = ''
+          The game server's name.
 
-        This must be a name, not an address. The host part becomes the TLS
-        server name the proxy expects on the game server's certificate, so an
-        address here fails the handshake against a certificate issued for a
-        name, and the failure reads as a connection problem rather than a
-        naming one.
-      '';
+          This must be a name, not an address: it becomes the TLS server name
+          the proxy expects on the game server's certificate, so an address
+          here fails the handshake against a certificate issued for a name,
+          and the failure reads as a connection problem rather than a naming
+          one.
+
+          It must also be a name the guest can resolve. On ix that is the
+          `ix.internal` zone; a bare `.internal` is not a zone ix serves, so
+          it is forwarded upstream and returns NXDOMAIN.
+        '';
+      };
+
+      port = mkOption {
+        type = types.port;
+        default = 35565;
+        description = ''
+          The port the game server listens on.
+
+          Where both services evaluate together, set this from
+          `config.services.hyperion-game-server.port` rather than repeating
+          the number, so the two cannot disagree.
+        '';
+      };
     };
 
     openFirewall = mkOption {
@@ -74,7 +95,7 @@ in
         ExecStart = escapeShellArgs ([
           "${cfg.package}/bin/${cfg.package.meta.mainProgram}"
           cfg.listen
-          "--server" cfg.gameServer
+          "--server" "${cfg.gameServer.host}:${toString cfg.gameServer.port}"
           "--root-ca-cert" (toString cfg.pki.rootCaCert)
           "--cert" (toString cfg.pki.cert)
           "--private-key" (toString cfg.pki.privateKey)
