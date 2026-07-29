@@ -37,6 +37,13 @@ fn record_rustc() {
 
 /// The flecs C symbol patterns both platforms have to re-export, spelled without the
 /// leading underscore Mach-O adds.
+///
+/// `flecs_ecs`'s own `build.rs` carries the same list, and that is not a duplicate to
+/// consolidate: every dylib that ends up *containing* flecs's C has to export it, and
+/// which dylib that is depends on how the consumer links. Under the shared-dylib recipe
+/// flecs lives in `libflecs_ecs.so` and this list matches nothing here, harmlessly; built
+/// without `-C prefer-dynamic`, this crate absorbs flecs itself and this list is the only
+/// thing making it reachable.
 const FLECS_EXPORTS: [&str; 4] = ["ecs_*", "flecs_*", "Ecs*", "FLECS_*"];
 
 fn export_flecs_symbols() {
