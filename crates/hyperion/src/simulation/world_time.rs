@@ -41,14 +41,25 @@ impl Default for WorldTime {
     }
 }
 
-/// Installs the default [`WorldTime`] singleton so the join path always finds
-/// one to freeze the sky at. Events that want a different sky call
-/// `world.set(WorldTime { .. })` after importing this.
+/// Registers [`WorldTime`] as a singleton and installs its noon default so the
+/// join path always finds one to freeze the sky at. Events that want a
+/// different sky call `world.set(WorldTime { .. })` after this is imported.
+///
+/// The `add_trait::<flecs::Singleton>()` is load-bearing, not decoration: a
+/// bare `world.set` stores the value but never registers the component, so
+/// `world.get::<&WorldTime>` asserts "component is not registered" the first
+/// time a player joins. A release build compiles that assert out and reads the
+/// value anyway, which is why the miss only surfaced when the smash server was
+/// booted in the dev profile. `HyperionCore` imports this directly, next to
+/// `SpatialModule`, so every event gets it regardless of what else it imports.
 #[derive(Component)]
 pub struct WorldTimeModule;
 
 impl Module for WorldTimeModule {
     fn module(world: &World) {
+        world
+            .component::<WorldTime>()
+            .add_trait::<flecs::Singleton>();
         world.set(WorldTime::default());
     }
 }

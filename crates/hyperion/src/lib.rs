@@ -427,6 +427,12 @@ impl HyperionCore {
         // bedwars imported it and smash did not, so the panic was one arrow
         // away the whole time.
         world.import::<SpatialModule>();
+        // The frozen-daylight singleton. Registered here, next to
+        // `SpatialModule`, rather than nested inside `ProtocolModule` so that
+        // it exists for every event before anyone joins: the join path reads
+        // `WorldTime` and a `world.get` of an unregistered singleton panics in
+        // a dev build. See `WorldTimeModule`.
+        world.import::<crate::simulation::WorldTimeModule>();
         // After the simulation, whose components the effects layer writes.
         world.import::<crate::effects::EffectsModule>();
 
