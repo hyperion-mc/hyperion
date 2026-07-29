@@ -1035,6 +1035,24 @@
               needsGenMap = true;
             };
 
+            # The bow read off the wire, as a store-cached gate rather than
+            # only the `nix run .#bedwars-bow-e2e` runner. `bow-check.py` fires
+            # a real draw and reads the arrow's `ClientboundAddEntity`: its
+            # velocity (the charge curve), and since this change its two
+            # rotation bytes -- the client-visible heading. An off-axis shot
+            # proves the heading is vanilla's projectile convention
+            # (`yaw = atan2(dx, dz)`), not the shooter's own look yaw that
+            # rendered every arrow mirrored. Same bedwars server and world as
+            # the `e2e` gate above.
+            bedwars-bow-e2e = e2e.mkCheck {
+              name = "hyperion-bedwars-bow-e2e";
+              gameServer = gameBinaries.bedwars;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "bow-check.py";
+              clientArgs = [ "--name" "Archer" ];
+              needsGenMap = true;
+            };
+
             smash-e2e = e2e.mkCheck {
               name = "hyperion-smash-e2e";
               gameServer = gameBinaries.smash;

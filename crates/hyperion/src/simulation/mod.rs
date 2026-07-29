@@ -81,7 +81,7 @@ pub use flight::{Flight, FlyingSpeed, MovementTracking};
 pub use lookup::{DeferredMap, IgnMap, PlayerUuidLookup, StreamLookup};
 pub use pose::{
     ChunkPosition, EntitySize, PLAYER_SPAWN_POSITION, PendingTeleportation, Pitch, Position,
-    Velocity, Yaw, aabb, block_bounds, get_direction_from_rotation, get_rotation_from_velocity,
+    Velocity, Yaw, aabb, block_bounds, get_direction_from_rotation,
 };
 pub use xp::{Xp, XpVisual};
 
