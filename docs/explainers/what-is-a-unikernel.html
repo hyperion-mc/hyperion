@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What is a unikernel? (and what Hermit is)</title>
+<style>
+:root{--bg:#fbfbfa;--fg:#1a1a19;--muted:#6b6b66;--line:#e3e3df;--card:#fff;
+ --accent:#c2410c;--dim:#ececE8;--ok:#15803d;--bad:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--fg:#eeeeec;--muted:#9a9a94;
+ --line:#2c2c29;--card:#1c1c1a;--accent:#fb923c;--dim:#262623;--ok:#4ade80;--bad:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+ font:16.5px/1.7 ui-sans-serif,-apple-system,"Segoe UI",Inter,sans-serif}
+main{max-width:820px;margin:0 auto;padding:52px 24px 120px}
+h1{font-size:31px;line-height:1.18;margin:0 0 12px;letter-spacing:-.018em}
+h2{font-size:22px;margin:52px 0 14px;letter-spacing:-.01em;line-height:1.25}
+h3{font-size:16.5px;margin:26px 0 8px}
+p{margin:0 0 16px}
+.lede{font-size:19px;color:var(--fg)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.87em;
+ background:var(--dim);padding:1.5px 5px;border-radius:4px}
+pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;
+ background:var(--card);border:1px solid var(--line);border-radius:10px;
+ padding:14px 16px;overflow-x:auto;line-height:1.55}
+pre code{background:none;padding:0;font-size:inherit}
+.note{border-left:3px solid var(--accent);padding:2px 0 2px 16px;margin:0 0 18px;color:var(--muted)}
+.note strong{color:var(--fg)}
+
+/* stack diagram */
+.stacks{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:22px 0 10px}
+@media(max-width:680px){.stacks{grid-template-columns:1fr}}
+.stack{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.stack h4{margin:0 0 4px;font-size:14px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.stack .sub{font-size:13px;color:var(--muted);margin:0 0 12px;min-height:32px}
+.layer{border:1px solid var(--line);border-radius:7px;padding:8px 11px;margin:0 0 6px;
+ font-size:14px;cursor:pointer;transition:.14s;background:var(--bg);position:relative}
+.layer:hover{border-color:var(--accent)}
+.layer.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.layer .tag{float:right;font-size:11px;color:var(--muted);letter-spacing:.04em}
+.layer.gone{opacity:.34;text-decoration:line-through;text-decoration-color:var(--bad)}
+.layer.app{background:color-mix(in srgb,var(--accent) 13%,transparent);font-weight:600}
+.ring{font-size:11px;color:var(--muted);letter-spacing:.06em;margin:10px 0 5px;text-transform:uppercase}
+#layerinfo{background:var(--card);border:1px solid var(--line);border-radius:10px;
+ padding:13px 16px;font-size:14.5px;min-height:74px;margin:0 0 8px}
+#layerinfo .t{font-weight:600;display:block;margin-bottom:3px}
+
+/* bind walkthrough */
+.walk{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:18px 0}
+.walkctl{display:flex;gap:8px;align-items:center;margin:0 0 14px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;background:var(--bg);color:var(--fg);
+ border:1px solid var(--line);border-radius:7px;padding:6px 13px;cursor:pointer;transition:.14s}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+.steps{display:grid;gap:5px}
+.step{display:grid;grid-template-columns:26px 1fr;gap:11px;padding:7px 9px;border-radius:7px;
+ font-size:14px;opacity:.3;transition:.2s;align-items:start}
+.step.vis{opacity:1;background:var(--dim)}
+.step .n{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
+.step .d{color:var(--muted);font-size:13px;display:block;margin-top:1px}
+.cost{margin-top:12px;font-size:14px;color:var(--muted);border-top:1px solid var(--line);padding-top:11px}
+.cost b{color:var(--fg)}
+
+table{border-collapse:collapse;width:100%;font-size:14.5px;margin:6px 0 16px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+td.y{color:var(--ok)}td.n{color:var(--bad)}
+
+.quiz{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
+.quiz p{margin:0 0 10px;font-weight:600}
+.opt{display:block;width:100%;text-align:left;margin:0 0 6px}
+.opt.right{background:color-mix(in srgb,var(--ok) 17%,transparent);border-color:var(--ok)}
+.opt.wrong{background:color-mix(in srgb,var(--bad) 15%,transparent);border-color:var(--bad)}
+.ans{font-size:14px;color:var(--muted);margin:9px 0 0;display:none}
+.ans.show{display:block}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);
+ font-size:13.5px;color:var(--muted)}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>What is a unikernel, and what is Hermit?</h1>
+
+<p class="lede">Start with a question that sounds silly: what is the operating system actually
+<em>for</em>? Not what it does — what problem does it solve that you would otherwise have to solve
+yourself? Once that has a sharp answer, unikernels stop being exotic. They are what you get when
+the answer turns out to be "nothing, in this particular case."</p>
+
+<h2>The OS is a referee</h2>
+
+<p>Your program does not touch the network card. It cannot. It asks the kernel to, through a
+<strong>system call</strong> — and that call is not an ordinary function call. It flips the CPU from
+unprivileged mode into privileged mode, crosses into a different address space, does the work, and
+flips back.</p>
+
+<p>Why that ceremony? Because a normal computer runs many mutually-untrusting programs on one piece
+of hardware. Your browser must not read your password manager's memory. Two programs both wanting
+the network must not corrupt each other's packets. The kernel is the referee: it isolates, it
+multiplexes, it enforces. The privilege boundary is what gives the referee teeth — programs
+<em>cannot</em> cheat, not merely <em>should not</em>.</p>
+
+<p>That is a genuinely hard problem and the kernel solves it well. But notice the premise it rests
+on: <em>many mutually-untrusting programs, one machine.</em></p>
+
+<h2>Now break the premise</h2>
+
+<p>Picture a Firecracker microVM whose entire job is to run one Minecraft server. One program. No
+users logging in, no cron, no second tenant. The VM itself is already isolated from every other VM
+by the hypervisor.</p>
+
+<p>Who is the referee protecting whom from? There is only one player.</p>
+
+<p>So all that machinery becomes pure cost. A scheduler juggling processes that do not exist. Drivers
+for hardware that is not there. A privilege boundary defending your program from itself. A unikernel
+is the observation that in this situation you can <strong>delete the referee</strong>: link the
+kernel and the application into a single program, in one address space, at one privilege level.</p>
+
+<p>A system call becomes a function call. Not a faster system call — an ordinary
+<code>call</code> instruction into code that happens to live in the same binary.</p>
+
+<h3>Click a layer to see what it costs you</h3>
+
+<div class="stacks">
+  <div class="stack">
+    <h4>Ordinary Linux VM</h4>
+    <p class="sub">Guest kernel plus userspace, inside a VM, on a hypervisor.</p>
+    <div class="ring">ring 3 · user</div>
+    <div class="layer app sel" data-k="app">your program<span class="tag">hyperion</span></div>
+    <div class="layer" data-k="libc">glibc / musl<span class="tag">libc</span></div>
+    <div class="ring">— privilege boundary —</div>
+    <div class="ring">ring 0 · kernel</div>
+    <div class="layer" data-k="sys">syscall entry<span class="tag">trap</span></div>
+    <div class="layer" data-k="sched">scheduler, MM, VFS<span class="tag">linux</span></div>
+    <div class="layer" data-k="drv">device drivers<span class="tag">virtio</span></div>
+    <div class="ring">— hypervisor —</div>
+    <div class="layer" data-k="hv">KVM / Firecracker<span class="tag">host</span></div>
+  </div>
+  <div class="stack">
+    <h4>Hermit unikernel</h4>
+    <p class="sub">One binary. One address space. One privilege level.</p>
+    <div class="ring">one ring · everything</div>
+    <div class="layer app sel" data-k="app2">your program<span class="tag">hyperion</span></div>
+    <div class="layer" data-k="std">Rust <code>std</code> = the kernel API<span class="tag">hermit</span></div>
+    <div class="layer gone" data-k="gonesys">syscall entry<span class="tag">deleted</span></div>
+    <div class="layer" data-k="hkern">Hermit: sched, MM, smoltcp<span class="tag">linked in</span></div>
+    <div class="layer" data-k="hdrv">virtio-net driver<span class="tag">linked in</span></div>
+    <div class="ring">— hypervisor —</div>
+    <div class="layer" data-k="hv2">QEMU / Firecracker / uhyve<span class="tag">host</span></div>
+  </div>
+</div>
+<div id="layerinfo"></div>
+
+<h2>The same line of Rust, two different worlds</h2>
+
+<p>Here is what makes Hermit specifically interesting rather than just academically cute. Write
+this:</p>
+
+<pre><code>let listener = TcpListener::bind("0.0.0.0:25565")?;</code></pre>
+
+<p>You do not change that line. You change the compilation <em>target</em>. Watch what the same
+source does in each world.</p>
+
+<div class="walk">
+  <div class="walkctl">
+    <button id="bLinux" class="on">Linux target</button>
+    <button id="bHermit">Hermit target</button>
+    <button id="bStep">Step ▸</button>
+    <button id="bReset">Reset</button>
+  </div>
+  <div class="steps" id="steps"></div>
+  <div class="cost" id="cost"></div>
+</div>
+
+<div class="note"><strong>The point is not that one is faster.</strong> It is that the boundary moved.
+On Linux, <code>std</code> is a library that <em>calls</em> the kernel. On Hermit, <code>std</code>
+<em>is</em> the interface to a kernel that is part of your binary. Same API, radically different
+thing underneath — which is exactly why your code compiles unchanged, and also why the failure
+modes are strange. More on that below.</p>
+
+<h2>Why virtio keeps coming up</h2>
+
+<p>A unikernel still runs on a hypervisor, so its "hardware" is emulated. Emulating a real network
+card faithfully — register by register, interrupt by interrupt — is slow and pointless, because the
+guest knows perfectly well it is virtualised.</p>
+
+<p><strong>virtio</strong> drops the pretence. Guest and host agree on a shared-memory ring buffer:
+the guest writes packet descriptors into a queue, rings a doorbell, the host picks them up. No
+device emulation, just a queue. That is why a unikernel needs a virtio driver and roughly nothing
+else — <code>virtio-net</code> for networking, and the driver is a few thousand lines rather than
+the tens of thousands a real NIC would take.</p>
+
+<p class="note">This is where a request for "virtio-mem" runs aground. virtio-mem is
+hot-plug memory — growing a guest's RAM at runtime. In Rust guest-land it does not exist:
+Hermit's driver set is console, fs, net and vsock, and the <code>virtio-drivers</code> crate has no
+driver, no issue and no PR for it. Only a Linux guest under Firecracker 1.14+ has it today.</p>
+
+<h2>What you give up, concretely</h2>
+
+<p>Delete the referee and you delete the things the referee provided. Some of that you will not
+miss. Some of it half your dependency tree assumes exists.</p>
+
+<table>
+<tr><th>What</th><th>On Hermit</th><th>Why</th></tr>
+<tr><td><code>std::net</code></td><td class="y">works</td><td>smoltcp + virtio-net, DHCP on by default</td></tr>
+<tr><td><code>std::thread</code></td><td class="y">works</td><td>Hermit has its own scheduler</td></tr>
+<tr><td><code>std::process</code></td><td class="n">absent entirely</td><td>there are no processes — that was the referee's job</td></tr>
+<tr><td><code>std::fs</code></td><td class="n">partial</td><td>no rename, symlink, canonicalize or locking</td></tr>
+<tr><td>C libraries</td><td class="n">mostly break</td><td>they assume POSIX, which assumes a kernel to call</td></tr>
+</table>
+
+<p>That last row is the one that decides everything in practice. When this was tried on hyperion,
+<strong>11 of 24 crates cross-compiled</strong> — and pure-Rust ones sailed through, including the
+protocol layer and an entire ECS. The blockers were four C-shaped dependencies:
+<code>socket2</code> ("doesn't support the compile target"), <code>openssl-sys</code>,
+<code>libz-ng-sys</code>, <code>ring</code>. Everything downstream of those fell over with them.</p>
+
+<h2>A bug that only this architecture can have</h2>
+
+<p>This one is worth sitting with, because it teaches the model better than any diagram.</p>
+
+<p>The build produced an image that booted, printed to the console, and then failed
+<em>every single socket call</em> with an uninformative <code>Kind(Uncategorized)</code>. Same
+source, same kernel, different Rust nightly: works first try.</p>
+
+<p>Why? Because <code>std</code> is compiled against a specific version of the Hermit kernel
+interface. The old nightly's <code>std</code> spoke <code>hermit-abi</code> 0.4; the kernel answered
+0.5. Networking had moved.</p>
+
+<p>Now ask why this cannot happen on Linux in the same way. Because the Linux syscall ABI is frozen
+essentially forever — a binary from 2005 still runs. That stability is a deliberate, expensive
+promise, and you only notice it exists when you step somewhere it is not being made. On a unikernel
+the "syscall ABI" is a Rust crate version, and crate versions move.</p>
+
+<h2>So when is this actually worth it?</h2>
+
+<p>Boot time is the honest headline. In the real run, the guest was <strong>listening 13.166 ms
+after boot</strong> and answered a client in 3.6 ms. There is no init, no udev, no systemd, no
+userspace at all — the binary <em>is</em> the machine. If you are spinning up a VM per request or
+per match, that number is the whole argument.</p>
+
+<p>The attack surface argument is real but narrower than it is usually sold: a smaller kernel means
+fewer bugs, but "no privilege separation inside the VM" means a bug that does exist has nothing
+standing in its way.</p>
+
+<p>And the cost is the table above. A Minecraft server that wants TLS, compression and a
+memory-mapped world database is asking for exactly the C libraries that do not survive the trip.
+Which is why the sober conclusion from the experiment was: the proxy is a plausible target, the full
+game server is not, yet.</p>
+
+<h2>Check yourself</h2>
+
+<div class="quiz" data-a="1">
+  <p>1. Why does a unikernel make a "system call" cheaper?</p>
+  <button class="opt" data-i="0">The kernel code is more optimised</button>
+  <button class="opt" data-i="1">There is no privilege transition — it is an ordinary function call</button>
+  <button class="opt" data-i="2">Calls are batched and sent to the hypervisor together</button>
+  <p class="ans">There is no ring 3 to ring 0 transition, because there is only one ring. The kernel
+  is linked into your binary, so the "call" is a <code>call</code> instruction. Note this also means
+  a bug in your code can scribble on kernel memory — you traded safety for speed, deliberately.</p>
+</div>
+
+<div class="quiz" data-a="2">
+  <p>2. Pure-Rust crates cross-compiled fine; <code>ring</code> and <code>openssl-sys</code> did not.
+  What is the actual dividing line?</p>
+  <button class="opt" data-i="0">Crate size and compile time</button>
+  <button class="opt" data-i="1">Unsafe code, which unikernels forbid</button>
+  <button class="opt" data-i="2">Whether the crate builds C that assumes a POSIX kernel underneath</button>
+  <p class="ans">All three blockers ship C. C libraries are written against POSIX — file descriptors,
+  <code>mmap</code>, syscalls — and Hermit provides only part of that. Rust code targeting
+  <code>std</code> just needs <code>std</code> to exist, which is precisely what Hermit supplies.</p>
+</div>
+
+<div class="quiz" data-a="0">
+  <p>3. "Bare metal" here means the code runs with no hypervisor at all. True?</p>
+  <button class="opt" data-i="0">False — it still runs as a guest, on virtio devices</button>
+  <button class="opt" data-i="1">True — that is what bare metal means</button>
+  <button class="opt" data-i="2">True on x86, false on ARM</button>
+  <p class="ans">Bare metal here means no OS <em>between your code and the machine it sees</em>. That
+  machine is still virtual: QEMU, Firecracker or uhyve, with virtio devices. Hermit can boot on real
+  hardware, but the whole toolchain and every driver is aimed at the virtualised case.</p>
+</div>
+
+<footer>
+Verified numbers (11 of 24 crates, 13.166 ms to listening, the <code>hermit-abi</code> 0.4/0.5
+mismatch) come from this repository's own bare-metal experiment on 2026-07-27; see
+<code>docs/bare-metal.md</code>. Hermit is
+<a href="https://github.com/hermit-os/kernel">hermit-os/kernel</a>, v0.13.2. The diagrams are
+schematic illustrations of the architecture, not measured output.
+</footer>
+
+</main>
+<script>
+const INFO={
+ app:["your program","On Linux it is one process among many. It has its own virtual address space and cannot see anyone else's — enforced by hardware, not by convention."],
+ libc:["glibc / musl","Translates ordinary function calls into system calls. This is the layer C libraries are written against, and the reason they are hard to port."],
+ sys:["syscall entry","The expensive bit. The CPU switches privilege level, swaps stacks, and enters the kernel. Costs hundreds of cycles even before doing any work."],
+ sched:["scheduler, memory, VFS","Decides which of the many runnable processes gets the CPU, hands out memory, arbitrates the filesystem. All of it exists to referee between programs."],
+ drv:["device drivers","Linux carries drivers for thousands of devices. A VM has about four. The rest is dead weight in the image."],
+ hv:["KVM / Firecracker","Isolates this VM from every other VM. Note this is already doing the isolation job — which is the observation the whole unikernel idea rests on."],
+ app2:["your program","Identical Rust source. Only the compilation target changed."],
+ std:["Rust std = the kernel API","The clever part. Hermit implements Rust's standard library for itself, so std::net::TcpListener works and your code needs no rewriting."],
+ gonesys:["syscall entry — deleted","No privilege boundary, so nothing to cross. What was a trap is now a call instruction. This is where the performance comes from, and where the safety went."],
+ hkern:["Hermit: scheduler, MM, smoltcp","A kernel, but linked into your binary as ordinary Rust. smoltcp is the TCP/IP stack — a pure-Rust one, which is why it survives the trip."],
+ hdrv:["virtio-net driver","Just the handful of virtio devices. No PCI zoo, no legacy hardware. A few thousand lines instead of tens of thousands."],
+ hv2:["QEMU / Firecracker / uhyve","Still a guest. uhyve is Hermit's own minimal monitor, built for the case where the guest is one unikernel."]
+};
+const li=document.getElementById('layerinfo');
+function show(k){const v=INFO[k];li.innerHTML='<span class="t">'+v[0]+'</span>'+v[1];}
+document.querySelectorAll('.layer').forEach(el=>{
+  el.onclick=()=>{document.querySelectorAll('.layer').forEach(x=>x.classList.remove('sel'));
+    el.classList.add('sel');show(el.dataset.k);};
+});
+show('app');
+
+const WALK={
+ linux:[["bind() in std","std::net calls libc's bind(), an ordinary function call inside your address space"],
+        ["libc issues SYSCALL","the instruction that changes the CPU's privilege level"],
+        ["CPU traps to ring 0","registers saved, stack swapped, kernel entry — hundreds of cycles before any work happens"],
+        ["kernel validates","checks the fd, the permissions, the address family; this is the referee doing its job"],
+        ["socket layer → driver","the kernel's TCP stack allocates the socket, talks to the virtio-net driver"],
+        ["return trap to ring 3","unwind all of the above and hand back a file descriptor"]],
+ hermit:[["bind() in std","Hermit's std::net — a different implementation behind the identical API"],
+         ["call into smoltcp","an ordinary function call. Same address space, same privilege level, no trap"],
+         ["smoltcp allocates the socket","a pure-Rust TCP stack, linked into your binary like any other crate"],
+         ["virtio-net queue","descriptor written into the shared ring buffer the hypervisor is watching"],
+         ["return","a value comes back from a function. That is the whole story"]]
+};
+let mode='linux',step=0;
+const stepsEl=document.getElementById('steps'),costEl=document.getElementById('cost');
+function render(){
+  const w=WALK[mode];
+  stepsEl.innerHTML=w.map((s,i)=>
+    '<div class="step'+(i<step?' vis':'')+'"><span class="n">'+(i+1)+
+    '</span><span>'+s[0]+'<span class="d">'+s[1]+'</span></span></div>').join('');
+  costEl.innerHTML = step<w.length
+    ? '<b>'+step+' of '+w.length+'</b> steps — keep going'
+    : (mode==='linux'
+      ? '<b>6 steps, two privilege transitions.</b> Every one of them exists to protect programs from each other — and this VM runs exactly one program.'
+      : '<b>5 steps, zero privilege transitions.</b> Nothing was optimised. A boundary was removed, because nothing was on the other side of it.');
+  document.getElementById('bStep').disabled = step>=w.length;
+}
+document.getElementById('bLinux').onclick=()=>{mode='linux';step=0;
+  document.getElementById('bLinux').classList.add('on');
+  document.getElementById('bHermit').classList.remove('on');render();};
+document.getElementById('bHermit').onclick=()=>{mode='hermit';step=0;
+  document.getElementById('bHermit').classList.add('on');
+  document.getElementById('bLinux').classList.remove('on');render();};
+document.getElementById('bStep').onclick=()=>{step++;render();};
+document.getElementById('bReset').onclick=()=>{step=0;render();};
+render();
+
+document.querySelectorAll('.quiz').forEach(q=>{
+  const right=+q.dataset.a;
+  q.querySelectorAll('.opt').forEach(b=>{
+    b.onclick=()=>{
+      q.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+      q.querySelectorAll('.opt').forEach(x=>
+        x.classList.add(+x.dataset.i===right?'right':(x===b?'wrong':'')));
+      q.querySelector('.ans').classList.add('show');
+    };
+  });
+});
+</script>
+</body>
+</html>
