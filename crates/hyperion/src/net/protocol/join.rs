@@ -12,8 +12,8 @@ use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     packets::play_login::{
         BlockPos, ClockNetworkState, CommonPlayerSpawnInfo, GameEvent, GameType, GlobalPos, Login,
-        PlayerPosition, PositionMoveRotation, Relative, SetChunkCacheCenter, SetDefaultSpawnPosition,
-        SetTime, Vec3,
+        PlayerPosition, PositionMoveRotation, Relative, SetChunkCacheCenter,
+        SetDefaultSpawnPosition, SetTime, Vec3,
     },
 };
 use hyperion_utils::EntityExt;
@@ -224,10 +224,7 @@ pub fn enter_world(
         PacketId::SetTime.to_raw(),
         &SetTime {
             game_time: compose.global().tick,
-            clock_updates: vec![(
-                overworld_clock,
-                ClockNetworkState::frozen(day_time),
-            )],
+            clock_updates: vec![(overworld_clock, ClockNetworkState::frozen(day_time))],
         },
     )?;
 
