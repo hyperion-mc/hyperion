@@ -509,6 +509,37 @@ SHARED_HYPERION_INDEX=true
 PROBE_OK
 ```
 
+### A behaviour-only module does not avoid this
+
+There is an appealing argument that it should. `CLAUDE.md` splits every flecs module into a
+registration module that only declares components and a behaviour module that only installs
+systems and observers, and notes that this lets a consumer import the types without the
+systems. Put only behaviour modules in the reloadable library, keep every registration
+module in the host, and the manual-registration problem does look like it disappears: a
+library that registers nothing cannot collide with anything.
+
+That much is true, and it is the right split for a different reason given below. **It does
+not make the shared pool optional.** Registering a component and *looking one up* are
+different operations and only the first is avoided. A system's query still resolves `T` to
+an id through `T::index()`, so a behaviour module reading `Position` needs the same index
+the host filled.
+
+Measured, not argued. `demo/index-probe-module` registers nothing at all — it declares one
+marker type and calls `index()` — and in the unshared configuration it read
+`hyperion::simulation::Position` as index **2** where the host had it at **4**. A pure
+behaviour module querying `Position` would have read a slot the host never wrote.
+
+So the registration/behaviour split is worth keeping, but for the hazard it actually
+addresses: **component layout**. A system compiled against one struct layout reading a world
+that holds another is silent memory corruption. Keeping component definitions in the host
+and having the library depend on them rather than declare them means there is exactly one
+definition of each layout in the process. The gate on top of that turns a layout change into
+a refusal rather than a corruption.
+
+The honest boundary that falls out, and which belongs in front of anyone using this:
+**changing what a system does is a reload; adding or changing a component type is a host
+rebuild and a restart.**
+
 ### The build recipe
 
 1. `flecs_ecs` needs `crate-type = ["dylib", "rlib"]` and a `build.rs` emitting the version
@@ -519,6 +550,12 @@ PROBE_OK
 3. Host and every module build with
    `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
    plus rpaths to the rust sysroot and to wherever the dylibs land.
+
+What makes the pool shared is step 1 and nothing else. It is tempting to think a module has
+to *reference* `hyperion-hot-reload` to end up on the shared runtime — an earlier version of
+the probe carried a call to `AbiToken::current()` with a comment claiming exactly that.
+Removing the dependency entirely leaves the probe passing. The dependency being a dylib is
+what shares it; a consumer's import list has nothing to do with it.
 
 `--allow-shlib-undefined` is not a shrug. `simulation/metadata/mod.rs` hand-writes
 `impl PartialOrd for $name where $type: PartialOrd`, and for 7 metadata types that bound is
@@ -594,3 +631,55 @@ Three things these numbers are not:
 For the deployment as a whole, the game server is not the slow part. Most of an `ix apply`
 is working out what to deploy rather than deploying it, and that cost is unrelated to
 anything here.
+
+## Handing this off: what is left, in order
+
+The mechanism is proven and the deployment is not built. Four steps remain. The third is
+the risky one; the rest are known work.
+
+**1. Make `hyperion` a dylib and settle the build flags.** `crate-type = ["dylib", "rlib"]`
+plus `-C prefer-dynamic -C link-arg=-Wl,--undefined-version
+-C link-arg=-Wl,--allow-shlib-undefined` everywhere. Small edit, wide blast radius: it
+changes how every consumer links, and a plain `cargo test` without those flags will not
+link the result. Confirm by running `demo/index-probe-host`, which should print `PROBE_OK`.
+
+**2. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
+`export_module!`.** The rules already avoid the host seam by design, but they reach into
+`crate::server`, `crate::flecs_ext` and about fifteen `hyperion::` items, so this is a real
+refactor rather than a file move. Registration modules stay in the host per the section
+above.
+
+**3. Package it. This is the risky step.** The game server binary and the module dylib have
+to be separate store paths, both built with the flags from step 1, with rpaths that resolve
+in the nix store rather than in `target/debug`. Nothing here is verified — every
+measurement in this document was taken from a cargo build, not a nix one. Expect the
+surprises to be here.
+
+**4. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
+`reloadTriggers`, the stable `/etc` path, and an `ExecReload` client that exits non-zero on
+a refusal. Small, and the design is settled.
+
+### Adopting it costs no scheduled restart
+
+Step 1 changes the host binary, so the running game server has to restart once to pick it
+up — but that restart never has to be scheduled *for this*. The fleet already restarts for
+version bumps, and the proxy and the game are built from the same repository, so those
+move every node anyway. The split host can sit in the tree and take effect on the next
+apply that was happening regardless.
+
+Design for that: none of this should want its own window. The claim is then not "one
+restart, then none" but that no restart was ever scheduled for it, including the first.
+
+### Reproducing the measurements
+
+Everything in this document was measured on dev-compute-6 (x86_64-linux, 32 cores,
+rustc 1.99.0-nightly `dc3f85158`) and on aarch64-darwin, through `nix develop` and cargo.
+The build tree under `/tmp/hotreload-elf` on that host **was deleted** when the node was
+released, so reproducing means a fresh clone and a warm toolchain fetch — roughly twenty
+seconds for the devShell once the store is warm, and a couple of minutes for the first
+`cargo build -p hyperion-hot-reload`.
+
+Note that `cargo build -p smash` does **not** work in the devShell on Linux, for reasons
+unrelated to any of this: jemalloc 5.3.1's configure cannot survive GCC 15
+(`cannot determine return type of strerror_r`). The nix package path is unaffected.
+ENG-11279. Until it is fixed, iterate on darwin and use nix for Linux artifacts.
