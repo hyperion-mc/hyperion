@@ -37,8 +37,13 @@
 //! `Flight` already owns.
 
 use flecs_ecs::prelude::*;
-use hyperion::simulation::{
-    Pitch, Position, Spawn, Uuid, Velocity, Yaw, projectile_motion::look_angles,
+use glam::Vec3;
+use hyperion::{
+    net::Channel,
+    simulation::{
+        BroadcastProjectile, Pitch, Position, Spawn, Uuid, Velocity, Yaw,
+        projectile_motion::{EYE_HEIGHT, look_angles},
+    },
 };
 
 use crate::module::projectile::{Flight, Projectile, Visual};
@@ -50,7 +55,7 @@ struct Drawn;
 /// Minecraft runs at twenty ticks a second, and hyperion's [`Velocity`] is in
 /// blocks per tick where [`Flight`] is in blocks per second. Every crossing
 /// between the two goes through this.
-const TICKS_PER_SECOND: f32 = 20.0;
+pub(crate) const TICKS_PER_SECOND: f32 = 20.0;
 
 #[derive(Component)]
 pub struct DrawModule;
@@ -74,24 +79,55 @@ impl Module for DrawModule {
             .each_entity(|projectile, (visual, flight)| {
                 let per_tick = flight.velocity / TICKS_PER_SECOND;
                 let (yaw, pitch) = look_angles(flight.velocity);
+                // What a client sees leaves the shooter's eye, not the tracked
+                // feet position: a projectile drawn from the stomach is the bug
+                // this fixes. A constant vertical lift (not the rotating muzzle
+                // offset) keeps the rendered arc a clean parabola tick to tick.
+                // The `Flight` simulation is unchanged; this is the render only.
+                let seen = flight.position + Vec3::Y * EYE_HEIGHT;
 
                 projectile
                     .add_enum(visual.0)
                     .set(Uuid::new_v4())
-                    .set(Position::new(
-                        flight.position.x,
-                        flight.position.y,
-                        flight.position.z,
-                    ))
+                    .set(Position::new(seen.x, seen.y, seen.z))
                     .set(Velocity::new(per_tick.x, per_tick.y, per_tick.z))
                     .set(Yaw::new(yaw))
                     .set(Pitch::new(pitch))
+                    // A broadcast channel of its own and the marker that says
+                    // to keep sending its position: advance_drawn_projectiles
+                    // below moves the wire components each tick and hyperion's
+                    // broadcast_marked_projectiles sends them, so the client
+                    // sees the arc rather than dead-reckoning from the spawn.
+                    // No Owner, so hyperion never integrates or re-hits it;
+                    // Flight stays the one authority for where it goes.
+                    .add(Channel)
+                    .add(BroadcastProjectile)
                     .add(Drawn::id());
                 // Enqueued rather than added: the `Spawn` observer that sends
                 // `add_entity` runs at the sync point, after this system's
                 // deferred component adds above have been applied, so the packet
                 // it builds sees the kind and position this set.
                 projectile.enqueue(Spawn);
+            });
+
+        // Move the wire components each tick from the `Flight` that owns the
+        // motion, so hyperion's `broadcast_marked_projectiles` has a fresh
+        // position to send. `PostUpdate`, after `smash::fly` has integrated
+        // `Flight` this tick. The projectile points where it is going, re-aimed
+        // off its velocity every tick, the same as a hyperion-owned arrow.
+        world
+            .system_named::<(&Flight, &mut Position, &mut Velocity, &mut Yaw, &mut Pitch)>(
+                "smash::advance_drawn_projectiles",
+            )
+            .with(Projectile::id())
+            .with(Drawn::id())
+            .kind(id::<flecs::pipeline::PostUpdate>())
+            .each(|(flight, position, velocity, yaw, pitch)| {
+                let (y, p) = look_angles(flight.velocity);
+                **position = flight.position + Vec3::Y * EYE_HEIGHT;
+                velocity.0 = flight.velocity / TICKS_PER_SECOND;
+                **yaw = y;
+                **pitch = p;
             });
     }
 }

@@ -16,7 +16,7 @@ use hyperion::{
         handlers::PacketSwitchQuery,
         metadata::living_entity::{ArrowsInEntity, HandStates},
         packet::HandlerRegistry,
-        projectile_motion::look_angles,
+        projectile_motion::{MAX_ARROW_SPEED, bow_power, look_angles, muzzle},
     },
     storage::{EventQueue, Events},
 };
@@ -47,15 +47,6 @@ const TICKS_PER_SECOND: f32 = 20.0;
 /// runs, the other is how long the bow takes, and vanilla is free to change
 /// either without the other.
 const FULL_DRAW_TICKS: f32 = 20.0;
-
-/// Blocks per tick a fully drawn bow gives its arrow.
-///
-/// `releaseUsing` passes `f * 3.0` to `AbstractArrow#shootFromRotation`, where
-/// `f` is the fraction [`BowCharging::get_charge`] returns. This is the 3.0,
-/// and it is the same number
-/// `crates/hyperion/tests/differential/scenarios/arrow-level-shot.json` records
-/// a vanilla shot at.
-const MAX_ARROW_SPEED: f32 = 3.0;
 
 #[derive(Component)]
 pub struct BowModule;
@@ -124,17 +115,10 @@ impl BowCharging {
     /// multiply turned into 3.6 blocks a tick -- a fifth faster than a real bow
     /// can shoot -- under a comment claiming 3.0 was the maximum.
     #[must_use]
-    #[expect(
-        clippy::suboptimal_flops,
-        reason = "mul_add is a fused multiply-add: one rounding where Java does two. \
-                  getPowerForTime evaluates `(f * f + f * 2.0F) / 3.0F` as separate float \
-                  operations, and this file exists to give the same answer it does, so the two \
-                  roundings are the behaviour rather than an oversight"
-    )]
     pub fn get_charge(&self) -> f32 {
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
         let f = elapsed.as_secs_f32() * TICKS_PER_SECOND / FULL_DRAW_TICKS;
-        ((f * f + f * 2.0) / 3.0).min(1.0)
+        bow_power(f)
     }
 }
 
@@ -248,8 +232,7 @@ impl Module for BowModule {
                         // keeps it aimed from here; this is only the launch seed.
                         let (arrow_yaw, arrow_pitch) = look_angles(velocity);
 
-                        let spawn_pos =
-                            Vec3::new(position.x, position.y + 1.62, position.z) + direction * 0.5;
+                        let spawn_pos = muzzle(**position, direction);
 
                         debug!("Arrow spawn position: {:?}", spawn_pos);
 
