@@ -547,6 +547,14 @@ rebuild and a restart.**
    `error: cannot satisfy dependencies so 'flecs_ecs' only shows up once`, because two
    dylibs each bundle their own copy.
 2. `hyperion` needs `crate-type = ["dylib", "rlib"]`.
+
+   Both crates now emit two artifacts on every build rather than one -- `flecs_ecs`'s
+   dylib is about 37 MB next to a 45 MB rlib. Whether that costs meaningful build time is
+   **not established**: a clean `cargo build -p flecs_ecs` measured 8875 ms with both and
+   8817 ms with the rlib alone, which is within noise, but a stale dylib in the target
+   directory means the second configuration may not have taken effect. Treat the build-time
+   cost as unmeasured rather than as shown to be zero, and measure it properly if CI wall
+   time matters.
 3. Host and every module build with
    `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
    plus rpaths to the rust sysroot and to wherever the dylibs land.
