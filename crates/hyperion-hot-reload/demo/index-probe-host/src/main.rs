@@ -61,7 +61,11 @@ fn main() {
     assert!(
         shared_pool,
         "host and module allocate component indices from separate pools: the module got \
-         {module_index} after the host had already taken up to {host_max}"
+         {module_index} after the host had already taken up to {host_max}.\nThis is the expected \
+         result on a default build, and the probe is the reason to know it. Passing needs the \
+         dylib recipe in docs/hot-reload.md: `hyperion` built as a dylib and everything compiled \
+         with `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C \
+         link-arg=-Wl,--allow-shlib-undefined`."
     );
     println!("PROBE_OK");
 }

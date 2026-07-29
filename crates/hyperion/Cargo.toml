@@ -85,22 +85,6 @@ tracing-subscriber = { workspace = true }
 [lints]
 workspace = true
 
-# Built as a dylib, not merely as an rlib, so the host binary and a hot-reloadable game
-# module resolve `flecs_ecs` -- and through it flecs's C globals and its process-global
-# component-index pool -- to one copy.
-#
-# Linking this crate statically into the host is what creates the second copy, even when
-# the module itself is well behaved: the host drags `flecs_ecs` in through this rlib while
-# the module resolves it from the shared runtime dylib. Measured directly, the host
-# allocated component indices 1..4 and the module then allocated 1, and
-# `hyperion::simulation::Position` read index 4 in the host and 2 in the module. Neither
-# `AbiToken` nor anything else in the reload path notices, because both sides are internally
-# consistent; the world is simply indexed two different ways.
-#
-# The `rlib` stays so `cargo test` and non-reloading consumers link normally.
-[lib]
-crate-type = ["dylib", "rlib"]
-
 [package]
 authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
 edition.workspace = true
