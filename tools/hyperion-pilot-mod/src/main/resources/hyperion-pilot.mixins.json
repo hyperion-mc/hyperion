@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "dev.hyperion.pilot.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ConnectionMixin",
+		"KeyboardInputMixin",
+		"KeyMappingAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
