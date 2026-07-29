@@ -416,6 +416,7 @@
             smash-hotbar-e2e = 7000;
             smash-hud-e2e = 8000;
             smash-skin-e2e = 8500;
+            smash-bow-e2e = 8700;
             bedwars-bow-e2e = 9000;
             # Not 10000: gameServerPort - proxyPort == 10000, so an offset of
             # 10000 aliases this gate's player port onto the base game-server
@@ -962,6 +963,26 @@
               '';
             };
 
+            # The smash bow read off the wire: one client takes the Skeleton kit
+            # in the hub, draws Barrage at two lengths and releases. Proves the
+            # arrow leaves the eye, its heading is `look_angles(velocity)`, it is
+            # broadcast per tick so it flies, and a longer draw is faster. The
+            # smash mirror of `bedwars-bow-e2e`.
+            smash-bow-e2e = {
+              deps = [
+                pkgs.git
+                pkgs.python3
+              ];
+              text = ''
+                export HYPERION_EVENT=smash
+                export HYPERION_E2E_CLIENT=tools/smash-bow-check.py
+                ${exportsFor smashGateLobby.env}
+                export HYPERION_PLAYER_PORT="''${HYPERION_PLAYER_PORT:-${toString (proxyPort + e2eOffsets.smash-bow-e2e)}}"
+                export HYPERION_SERVER_PORT="''${HYPERION_SERVER_PORT:-${toString (gameServerPort + e2eOffsets.smash-bow-e2e)}}"
+                exec "${lib.getExe runners.e2e}" "$@"
+              '';
+            };
+
           });
 
           scripts = checkScripts // runners // { inherit ci; };
@@ -1062,6 +1083,23 @@
               client = "bow-check.py";
               clientArgs = [ "--name" "Archer" ];
               needsGenMap = true;
+            };
+
+            # The smash bow, the same claims on smash's own projectile path. One
+            # client takes the Skeleton kit in the hub and draws Barrage: the
+            # arrow must leave the eye (smash fired from the feet), be broadcast
+            # every tick so it flies (a smash projectile carries no `Owner`, so
+            # `update_projectile_positions` never sent it), and a longer draw
+            # must be faster (smash fired every arrow at one fixed speed). A high
+            # `SMASH_MIN_PLAYERS` keeps one client in the hub rather than racing
+            # a match countdown. smash arenas are `include_str`, so no map.
+            smash-bow-e2e = e2e.mkCheck {
+              name = "hyperion-smash-bow-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "smash-bow-check.py";
+              clientArgs = [ "--name" "Archer" ];
+              serverEnv = smashGateLobby.env;
             };
 
             smash-e2e = e2e.mkCheck {
@@ -1208,6 +1246,7 @@
             # hold, and those wrappers still have to pass shellcheck.
             e2e-app = scripts.e2e;
             smash-e2e-app = scripts.smash-e2e;
+            smash-bow-e2e-app = scripts.smash-bow-e2e;
             completions-e2e-app = scripts.completions-e2e;
             smash-selector-e2e-app = scripts.smash-selector-e2e;
             smash-identity-e2e-app = scripts.smash-identity-e2e;

@@ -102,6 +102,55 @@ pub fn look_angles(velocity: Vec3) -> (f32, f32) {
     (yaw, pitch)
 }
 
+/// A standing player's eye height, in blocks (`Player.getStandingEyeHeight`).
+///
+/// A projectile leaves the eye, not the feet the entity position tracks, so
+/// the vanilla bow and every ability that fires "from where you are looking"
+/// both add this before launching. Fire from the feet and the shot renders as
+/// one loosed from the stomach.
+pub const EYE_HEIGHT: f32 = 1.62;
+
+/// How far in front of the eye a launched projectile starts, in blocks. Vanilla
+/// nocks the arrow a half block along the look so it clears the shooter's own
+/// hitbox on the first tick.
+pub const MUZZLE_OFFSET: f32 = 0.5;
+
+/// The point a projectile launches from: the shooter's eye, a half block along
+/// `direction`. `feet` is the tracked entity [`super::Position`]; `direction`
+/// is the unit look vector from [`super::get_direction_from_rotation`]. Both
+/// events call this so the muzzle is written down once.
+#[must_use]
+pub fn muzzle(feet: Vec3, direction: Vec3) -> Vec3 {
+    Vec3::new(feet.x, feet.y + EYE_HEIGHT, feet.z) + direction * MUZZLE_OFFSET
+}
+
+/// Blocks per tick a fully drawn bow gives its arrow.
+///
+/// `BowItem.releaseUsing` passes `getPowerForTime(...) * 3.0` to the arrow and
+/// the curve saturates at 1.0, so a full draw is exactly this.
+pub const MAX_ARROW_SPEED: f32 = 3.0;
+
+/// Vanilla's `BowItem.getPowerForTime`, keyed on the draw as a fraction of a
+/// full draw rather than a raw tick count.
+///
+/// `power = (f*f + f*2) / 3`, clamped to 1.0, where `f` is `drawTicks / 20`.
+/// Returned as a fraction so the caller's `* MAX_ARROW_SPEED` lands on exactly
+/// vanilla's maximum. Both events call this rather than transcribe the curve a
+/// second time: bedwars keys `f` on the held `Duration`, smash on an ability's
+/// 0..1 charge.
+#[must_use]
+#[expect(
+    clippy::suboptimal_flops,
+    reason = "mul_add is a fused multiply-add: one rounding where Java does two. getPowerForTime \
+              evaluates `(f * f + f * 2.0F) / 3.0F` as separate float operations, and this \
+              function exists to give the same answer it does, so the two roundings are the \
+              behaviour rather than an oversight"
+)]
+pub fn bow_power(draw_fraction: f32) -> f32 {
+    let f = draw_fraction;
+    ((f * f + f * 2.0) / 3.0).min(1.0)
+}
+
 /// One tick of vanilla's rotation smoothing: `Projectile.lerpRotation`.
 ///
 /// Slides `current` by whole turns into the half-open window

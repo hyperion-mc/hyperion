@@ -10,14 +10,20 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-use hyperion::simulation::entity_kind::EntityKind;
+use hyperion::simulation::{
+    entity_kind::EntityKind,
+    projectile_motion::{MAX_ARROW_SPEED, bow_power},
+};
 
-use crate::module::{
-    ability::{Cast, Observable, charge_steps, splash},
-    effect::{self, Affliction},
-    kit::{self, AbilitySpec, KitSounds, KitStats},
-    player::Position,
-    projectile::{Flight, Impact, Payload, Visual, fire},
+use crate::{
+    draw::TICKS_PER_SECOND,
+    module::{
+        ability::{Cast, Observable, charge_steps, splash},
+        effect::{self, Affliction},
+        kit::{self, AbilitySpec, KitSounds, KitStats},
+        player::Position,
+        projectile::{Flight, Impact, Payload, Visual, fire},
+    },
 };
 
 /// Flat, regardless of draw. `KitSkeleton.arrowDamage` overwrites the vanilla
@@ -111,13 +117,22 @@ impl Module for Skeleton {
 
 fn arrow(cast: &Cast<'_>, spread: f32) {
     let jitter = Vec3::new(spread, spread * 0.5, spread);
+    // A vanilla bow: the draw sets the arrow's speed through `bow_power`.
+    // `MAX_ARROW_SPEED` is blocks per tick and `Flight` is blocks per second, so
+    // it crosses the tick rate. A full draw is `1.0 * 3.0 * 20 = 60`, the speed
+    // every arrow used to leave at; a tap is now slower, and Barrage still fires
+    // more arrows the longer it is held. (The eye-height muzzle the client sees
+    // is applied to the drawn entity in `crate::draw`; the flight simulation
+    // stays keyed on the shooter's tracked position.)
+    let facing = cast.facing.0.normalize_or_zero();
+    let speed = bow_power(cast.charge) * MAX_ARROW_SPEED * TICKS_PER_SECOND;
     fire(
         cast.world,
         cast.caster,
         Visual(EntityKind::Arrow),
         Flight {
             position: cast.position.0,
-            velocity: (cast.facing.0.normalize_or_zero() + jitter) * 60.0,
+            velocity: (facing + jitter) * speed,
             gravity: 20.0,
             seconds_left: 3.0,
             radius: 0.4,

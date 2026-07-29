@@ -308,6 +308,7 @@ fn register_components(world: &World) -> MetadataPrefabs {
     world.component::<Player>();
     world.component::<Visible>();
     world.component::<Spawn>();
+    world.component::<BroadcastProjectile>();
     world.component::<Owner>();
     world.component::<PendingTeleportation>();
     world.component::<FlyingSpeed>();
@@ -556,6 +557,18 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
 
 #[derive(Component)]
 pub struct Spawn;
+
+/// Marks a projectile whose position hyperion broadcasts to its channel every
+/// tick, regardless of who owns it.
+///
+/// The per-tick `EntityPositionSync` used to live only inside
+/// `update_projectile_positions`, which requires an [`Owner`] to integrate and
+/// collide the entity. A game half that owns its own flight (smash decorates a
+/// projectile it is already integrating) wants the broadcast without the
+/// integration, so the two are split: this marker drives the broadcast, an
+/// [`Owner`] drives the integration, and an entity can carry either or both.
+#[derive(Component)]
+pub struct BroadcastProjectile;
 
 #[derive(Component)]
 pub struct Visible;

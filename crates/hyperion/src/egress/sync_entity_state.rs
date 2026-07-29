@@ -26,9 +26,10 @@ use itertools::Either;
 
 use crate::{
     Prev,
-    net::{ChannelId, Compose, ConnectionId, DataBundle, protocol::Clientbound},
+    net::{Channel, ChannelId, Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
-        Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
+        BroadcastProjectile, Flight, MovementTracking, Owner, PendingTeleportation, Pitch,
+        Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
         blocks::Blocks,
         entity_kind::EntityKind,
@@ -636,6 +637,38 @@ impl Module for EntityStateSyncModule {
                 }
             },
         );
+
+        // The other half of `update_projectile_positions`' broadcast, for the
+        // projectiles that carry no `Owner` because a game module integrates
+        // their own flight. The marker, not the ownership, is what says "keep
+        // telling clients where this is": a smash projectile advances its own
+        // position and only wants the send. `OnStore`, after every integrator
+        // has moved the entity this tick, and gated on `Channel` so the send
+        // has subscribers to reach.
+        system!(
+            "broadcast_marked_projectiles",
+            world,
+            &Compose,
+            &Position,
+            &Velocity,
+            &Yaw,
+            &Pitch,
+        )
+        .with(id::<BroadcastProjectile>())
+        .with(id::<Channel>())
+        .kind(id::<flecs::pipeline::OnStore>())
+        .each_iter(|it, row, (compose, position, velocity, yaw, pitch)| {
+            let entity = it.entity(row);
+            broadcast_projectile_position(
+                compose,
+                entity.into(),
+                entity.minecraft_id(),
+                **position,
+                velocity.0,
+                **yaw,
+                **pitch,
+            );
+        });
 
         track_previous::<Position>(world);
         track_previous::<Yaw>(world);
