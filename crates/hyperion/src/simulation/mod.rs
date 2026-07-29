@@ -81,8 +81,9 @@ pub mod xp;
 pub use flight::{Flight, FlyingSpeed, MovementTracking};
 pub use lookup::{DeferredMap, IgnMap, PlayerUuidLookup, StreamLookup};
 pub use pose::{
-    ChunkPosition, EntitySize, PLAYER_SPAWN_POSITION, PendingTeleportation, Pitch, Position,
-    Velocity, Yaw, aabb, block_bounds, get_direction_from_rotation,
+    ChunkPosition, EntitySize, KinematicsComponentsModule, PLAYER_SPAWN_POSITION,
+    PendingTeleportation, Pitch, Position, Velocity, Yaw, aabb, block_bounds,
+    get_direction_from_rotation,
 };
 pub use world_time::{WorldTime, WorldTimeModule};
 pub use xp::{Xp, XpVisual};
@@ -253,17 +254,69 @@ pub(crate) fn add_entity(
     }
 }
 
+/// Registration module for the simulation: every component, singleton, prefab,
+/// and reflection the game world owns, and nothing that behaves.
+///
+/// The behavior (observers, systems) lives in [`SimModule`], which imports this
+/// first. Keeping the two apart is the repo-wide flecs convention (see the
+/// root `CLAUDE.md`): a consumer that wants the simulation's *types* without its
+/// *behavior* -- the smash mock, a physics-only rebuild -- imports this module
+/// directly and gets a world where `Velocity`, `Position`, `EntityKind` and the
+/// rest are registered, with none of the spawn/metadata observers attached.
+#[derive(Component)]
+pub struct SimComponentsModule;
+
+impl Module for SimComponentsModule {
+    // The order is load-bearing: a relation has to be a registered entity
+    // before anything points at it, and reflection has to precede the
+    // components it annotates.
+    fn module(world: &World) {
+        // The base of the registration DAG: `KinematicsComponentsModule`
+        // imports `ReflectionComponentsModule` (glam/valence meta) and registers
+        // the `Position`/`Velocity` kinematics base, so both exist before
+        // `register_components` annotates the rest.
+        world.import::<pose::KinematicsComponentsModule>();
+        // Registers every remaining simulation component and sets the
+        // `MetadataPrefabs` singleton, which `SimModule`'s observers read back
+        // to pick a prefab base per entity kind.
+        register_components(world);
+    }
+}
+
+/// Behavior module for the simulation: the observers that react to the
+/// components changing. It imports [`SimComponentsModule`] for the types it
+/// watches, so flecs's import DAG registers every component before an observer
+/// is declared -- an observer that comes before the component it watches is the
+/// ordering the DAG now forbids.
 #[derive(Component)]
 pub struct SimModule;
 
 impl Module for SimModule {
-    // Read as a table of contents. Each step runs in the order flecs needs:
-    // a relation has to be a registered entity before anything points at it,
-    // and an observer has to come after the components it watches.
+    fn module(world: &World) {
+        world.import::<SimComponentsModule>();
+        // `SimComponentsModule` set this; `MetadataPrefabs` is `Copy`, so read a
+        // value out for the observers rather than holding the singleton borrow
+        // across their setup.
+        let prefabs = world.get::<&MetadataPrefabs>(|prefabs| *prefabs);
+        register_observers(world, prefabs);
+    }
+}
+
+/// Registration module for the reflection metadata flecs cannot derive on its
+/// own: the glam and valence types (`Vec3`, `IVec3`, `Quat`, `VarInt`,
+/// `BlockState`) plus [`EntitySize`] as an opaque.
+///
+/// The root of the simulation's registration DAG. Everything whose
+/// `#[flecs(meta)]` reaches a glam type -- [`Position`], [`Velocity`] and the
+/// rest -- imports this (directly or through
+/// [`KinematicsComponentsModule`](pose::KinematicsComponentsModule)) so the
+/// base types exist before their meta is registered. Registration only.
+#[derive(Component)]
+pub struct ReflectionComponentsModule;
+
+impl Module for ReflectionComponentsModule {
     fn module(world: &World) {
         register_reflection(world);
-        let prefabs = register_components(world);
-        register_observers(world, prefabs);
     }
 }
 
@@ -276,6 +329,13 @@ impl Module for SimModule {
 fn register_reflection(world: &World) {
     component!(world, VarInt).member(id::<i32>(), "x");
 
+    // `EntitySize` registers as an opaque, which needs the component to exist
+    // first. In a full boot `HyperionCore` happens to register it before
+    // importing the simulation, but a standalone import of this module (the
+    // smash mock, projectile physics) has no such luck -- so register it here
+    // and keep the module self-sufficient. Plain, not `.meta()`: a meta-struct
+    // plus an opaque on one type aborts.
+    world.component::<EntitySize>();
     component!(world, EntitySize).opaque_func(meta_ser_stringify_type_display::<EntitySize>);
 
     component!(world, IVec3 {
@@ -304,7 +364,8 @@ fn register_reflection(world: &World) {
 /// pick a base for each entity kind it spawns. They used to reach it as a
 /// closure capture over one long function body; threading it through says so.
 fn register_components(world: &World) -> MetadataPrefabs {
-    world.component::<Velocity>().meta();
+    // `Position` and `Velocity` are registered by
+    // `KinematicsComponentsModule`, imported before this runs.
     world.component::<Player>();
     world.component::<Visible>();
     world.component::<Spawn>();
@@ -348,8 +409,6 @@ fn register_components(world: &World) -> MetadataPrefabs {
     world.component::<command::FixedSuggestions>();
 
     component!(world, IgnMap);
-
-    world.component::<Position>().meta();
 
     world.component::<Name>();
     component!(world, Name).opaque_func(meta_ser_stringify_type_display::<Name>);
