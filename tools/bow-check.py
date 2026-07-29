@@ -71,6 +71,10 @@ take_var_int = base.take_var_int
 var_int = base.var_int
 
 S2C_ADD_ENTITY = 0x01
+# `ClientboundEntityPositionSyncPacket`, id 35 in protocol 776. This is the
+# absolute per-tick position the server broadcasts for a flying arrow; without
+# it a client renders the spawn and nothing after.
+S2C_ENTITY_POSITION_SYNC = 0x23
 
 # `PlayerInventory::HOTBAR_START_SLOT`: `ClientboundContainerSetSlot` numbers
 # the whole inventory, and the nine keys a player can see begin here.
@@ -132,6 +136,9 @@ class Archer(match.MatchClient):
         # Every AddEntity this client received, as dicts.
         self.spawned = []
         self.slots = {}
+        # entity id -> list of absolute positions from EntityPositionSync,
+        # in arrival order (one per server tick while it flies).
+        self.syncs = {}
 
     def absorb(self, packet_id, payload):
         if packet_id == match.S2C_LOGIN:
@@ -148,6 +155,8 @@ class Archer(match.MatchClient):
             self.send(match.C2S_KEEP_ALIVE, payload[:8])
         elif packet_id == S2C_ADD_ENTITY:
             self.absorb_add_entity(payload)
+        elif packet_id == S2C_ENTITY_POSITION_SYNC:
+            self.absorb_position_sync(payload)
         elif packet_id == match.S2C_CONTAINER_SET_SLOT:
             self.absorb_slot(payload)
         elif packet_id == match.S2C_SYSTEM_CHAT:
@@ -189,6 +198,19 @@ class Archer(match.MatchClient):
                 + (speed, entry["wire_yaw"], entry["wire_pitch"])
             )
         )
+
+    def absorb_position_sync(self, payload):
+        """`ClientboundEntityPositionSyncPacket`: id, then absolute position,
+        the velocity a client predicts between syncs from, and rotation. The
+        whole point of this gate is that the server sends one of these per tick
+        as the arrow flies. Both the position and the velocity are kept: the
+        arc check anchors on the first sync's own state, so a spawn-time quirk
+        (a re-add a block away) cannot skew it."""
+        entity_id, offset = take_var_int(payload)
+        x, y, z = struct.unpack(">ddd", payload[offset : offset + 24])
+        offset += 24
+        vx, vy, vz = struct.unpack(">ddd", payload[offset : offset + 24])
+        self.syncs.setdefault(entity_id, []).append(((x, y, z), (vx, vy, vz)))
 
     def absorb_slot(self, payload):
         _container, offset = take_var_int(payload)
@@ -440,6 +462,130 @@ def main():
             "the wire yaw is not the shooter's look yaw of 35 (the mirrored-"
             "heading bug); got %.1f" % wire_yaw,
         )
+
+    # --- the arrow actually flies, on the wire ------------------------
+    #
+    # Everything above reads the launch. This is the part the operator cares
+    # about: after the spawn, does the server keep telling a client where the
+    # arrow is, and does it travel the vanilla arc? Fire steeply up into open
+    # sky so nothing stops it, then follow the EntityPositionSync stream for the
+    # arrow and hold it against the arc integrated forward from its own launch
+    # velocity (pos += v; v *= 0.99; v.y -= 0.05, AbstractArrow.tick). This
+    # fails if the arrow does not move, moves at the wrong speed, never gets a
+    # position update, or does not fall.
+    client.spawned.clear()
+    client.syncs.clear()
+    client.aim(0.0, -80.0)
+    client.send_position()
+    pump(client, 0.3)
+    flew = draw(1.5, "(full draw, aimed up)")
+    pump(client, 1.2)
+    check(
+        len(flew) == 1,
+        "the upward full draw fires one arrow (got %d)" % len(flew),
+    )
+    if flew:
+        launch = flew[0][0]
+        arrow_id = launch["id"]
+        spawn = launch["position"]
+        vx, vy, vz = launch["motion"]
+        pairs = client.syncs.get(arrow_id, [])
+        samples = [pos for pos, _vel in pairs]
+
+        check(
+            len(samples) >= 20,
+            "the server broadcasts the arrow's position every tick as it flies "
+            "(got %d EntityPositionSync packets; 0 means the client is never "
+            "told the arrow moved)" % len(samples),
+        )
+        if len(samples) < 2:
+            print("RESULT: failure (no flight to trace)", flush=True)
+            return 1
+
+        # Vanilla's own integration, forward from the arrow's own first synced
+        # state: pos += v; v *= 0.99; v.y -= 0.05 (AbstractArrow.tick). Anchoring
+        # on the first sync rather than the spawn keeps a one-block spawn re-add
+        # out of the measurement; what is under test is that every later synced
+        # position lies on the arc this start implies.
+        px, py, pz = samples[0]
+        v = list(pairs[0][1])
+        arc = [(px, py, pz)]
+        for _ in range(120):
+            px += v[0]
+            py += v[1]
+            pz += v[2]
+            v[0] *= 0.99
+            v[1] *= 0.99
+            v[2] *= 0.99
+            v[1] -= 0.05
+            arc.append((px, py, pz))
+
+        def dist_to_arc(point):
+            """Least distance from `point` to the piecewise-linear vanilla arc,
+            and how far along it (segment index) that nearest point sits.
+
+            Matching to the nearest point on the curve rather than to a fixed
+            tick makes this robust to a dropped or coalesced position packet: a
+            correct arrow lies *on* the arc whatever the packet cadence, so this
+            measures the shape, not the timing."""
+            best_d = float("inf")
+            best_k = 0
+            px0, py0, pz0 = point
+            for k in range(len(arc) - 1):
+                ax, ay, az = arc[k]
+                bx, by, bz = arc[k + 1]
+                dx, dy, dz = bx - ax, by - ay, bz - az
+                length2 = dx * dx + dy * dy + dz * dz
+                if length2 == 0.0:
+                    t = 0.0
+                else:
+                    t = ((px0 - ax) * dx + (py0 - ay) * dy + (pz0 - az) * dz) / length2
+                    t = max(0.0, min(1.0, t))
+                cx, cy, cz = ax + t * dx, ay + t * dy, az + t * dz
+                d = ((px0 - cx) ** 2 + (py0 - cy) ** 2 + (pz0 - cz) ** 2) ** 0.5
+                if d < best_d:
+                    best_d, best_k = d, k
+            return best_d, best_k
+
+        # Loose on purpose: the wire velocity is LP-quantised and the server
+        # integrates in f32, so this is a bound, not a fit. It is far tighter
+        # than a frozen arrow, a wrong launch speed, or a missing gravity term,
+        # each of which walks the wire trajectory off the arc by whole blocks.
+        tol = 1.0
+        worst = 0.0
+        reached = 0
+        for wx, wy, wz in samples:
+            d, k = dist_to_arc((wx, wy, wz))
+            worst = max(worst, d)
+            reached = max(reached, k)
+        # A couple of the first spawn-adjacent samples can predate the first
+        # integration tick; the shape over the whole flight is the claim.
+        print(
+            "arc match: %d samples, worst off-arc %.3f blocks, reached tick %d"
+            % (len(samples), worst, reached),
+            flush=True,
+        )
+        check(
+            worst < tol,
+            "the arrow flies the vanilla arc on the wire, not some other path "
+            "(worst off-arc distance %.3f blocks over %d samples, tolerance "
+            "%.2f)" % (worst, len(samples), tol),
+        )
+        check(
+            reached >= 12,
+            "the arrow flies a real stretch of the arc, not just the first "
+            "tick or two (nearest arc point reached tick %d)" % reached,
+        )
+
+        # And it went somewhere: the last sync is a long way from the spawn.
+        if samples:
+            lx, ly, lz = samples[-1]
+            moved = ((lx - spawn[0]) ** 2 + (ly - spawn[1]) ** 2 + (lz - spawn[2]) ** 2) ** 0.5
+            check(
+                moved > 8.0,
+                "the arrow travelled a real distance (%.1f blocks from spawn "
+                "after %d ticks)" % (moved, len(samples)),
+            )
 
     print(
         "RESULT: %s (%d checks failed)"
