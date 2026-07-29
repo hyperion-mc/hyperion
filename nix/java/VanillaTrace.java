@@ -495,7 +495,16 @@ public final class VanillaTrace extends MinecraftServer {
     /// A run that spends this many ticks waiting for chunks has hit something
     /// other than ordinary chunk loading, and saying so beats emitting a trace
     /// of an entity that never moved.
-    private static final int WARMUP_LIMIT = 600;
+    ///
+    /// The counter is ticks, not seconds, and chunk generation runs on worker
+    /// threads while the tick loop spins, so a host with fewer cores to spare
+    /// burns more ticks getting to the same place. Measured warmups on a
+    /// GitHub hosted runner were 45, 78, 104, 149 and 174 ticks in one run
+    /// that then blew past 600 on the sixth recording, so 600 was tight enough
+    /// to be a load sensor rather than a stuck-run detector. Four times the
+    /// worst observed value keeps it a guard against genuinely stuck chunks
+    /// without firing on a busy machine.
+    private static final int WARMUP_LIMIT = 2400;
 
     @Override
     protected void tickServer(BooleanSupplier haveTime) {
@@ -579,6 +588,28 @@ public final class VanillaTrace extends MinecraftServer {
             write();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+        // A short trace is a failed run, and it has to exit non-zero here or
+        // nothing downstream can tell. Minecraft catches anything thrown from
+        // `tickServer` -- including this recorder's own WARMUP_LIMIT guard --
+        // turns it into a crash report, and then shuts the server down
+        // *cleanly*, which lands in this method. Exiting 0 with whatever
+        // samples happened to exist wrote a zero-sample trace, and the seed
+        // comparison in nix/differential.nix then reported the run as
+        // "arrow-crosswind-shot is not reproducible: seeds 4242 and 8675309
+        // disagree" -- a physics claim about a run that never recorded a tick.
+        // `ticks + 1` because index 0 is the state before the first tick.
+        int wanted = scenario.ticks + 1;
+        if (samples.size() != wanted) {
+            LOGGER.error(
+                    "{}: recorded {} of {} samples at seed {}. The run did not finish; see the"
+                            + " crash report or the exception above for why, and do not read this"
+                            + " trace as a disagreement about physics.",
+                    scenario.name,
+                    samples.size(),
+                    wanted,
+                    seed);
+            System.exit(1);
         }
         System.exit(0);
     }

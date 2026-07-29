@@ -216,8 +216,8 @@ pub fn enter_world(
     // registry the client was sent in configuration, so the two cannot drift.
     let day_time = world.get::<&WorldTime>(|world_time| world_time.day_time);
     let overworld_clock = registries::WORLD_CLOCK
-        .id_of("minecraft:overworld")
-        .ok_or_else(|| anyhow::anyhow!("world_clock registry has no minecraft:overworld"))?;
+        .id_of(LEVEL)
+        .ok_or_else(|| anyhow::anyhow!("world_clock registry has no {LEVEL}"))?;
     send(
         compose,
         connection_id,
