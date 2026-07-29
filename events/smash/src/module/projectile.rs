@@ -18,7 +18,7 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-use hyperion::simulation::entity_kind::EntityKind;
+use hyperion::simulation::{entity_kind::EntityKind, projectile_motion::EYE_HEIGHT};
 
 use crate::{
     flecs_ext::WorldRefExt,
@@ -113,9 +113,15 @@ pub fn fire(
     world: WorldRef<'_>,
     shooter: EntityView<'_>,
     visual: Visual,
-    flight: Flight,
+    mut flight: Flight,
     payload: Payload,
 ) {
+    // Launch from the shooter's eye, not the tracked feet: the flight the hit
+    // is computed on is then the flight the client is shown (`crate::draw`
+    // renders `flight.position` directly), so a shot that visually passes
+    // through a player is a shot that hits one. `nearest_target` treats the
+    // victim as an upright body so an eye-high shot still connects.
+    flight.position += Vec3::Y * EYE_HEIGHT;
     world
         .new_entity()
         .add(Projectile::id())
@@ -182,7 +188,7 @@ impl Module for ProjectileModule {
                 hurt(victim, Damaged {
                     attacker: shooter,
                     amount: payload.damage,
-                    knockback: Knockback::from(at).times(payload.knockback),
+                    knockback: Knockback::from(at - flight.velocity).times(payload.knockback),
                     kind: DamageKind::Projectile,
                 });
 
@@ -217,14 +223,60 @@ impl Module for ProjectileModule {
     }
 }
 
-/// The point on the segment `from`..`to` nearest `point`.
-fn closest_on_segment(from: Vec3, to: Vec3, point: Vec3) -> Vec3 {
-    let along = to - from;
-    let length_squared = along.length_squared();
-    if length_squared <= f32::EPSILON {
-        return from;
+/// A standing player's height in blocks. The hit treats a victim as an upright
+/// segment from the feet to here, not a point at the feet: an arrow crosses a
+/// player at any height, and now that projectiles launch from the eye the shot
+/// travels at chest height, not ankle height. Matching only the feet is what
+/// let an eye-high shot sail over a target standing in front of the shooter.
+const PLAYER_HEIGHT: f32 = 1.8;
+
+/// The nearest pair of points between two segments, one on each, clamped to the
+/// endpoints (Ericson, *Real-Time Collision Detection*). Used to measure the
+/// arrow's swept path against the victim's upright body.
+#[expect(
+    clippy::many_single_char_names,
+    reason = "the single-letter names are Ericson's own notation for the \
+              closest-points-between-segments algorithm; prose names would obscure the \
+              correspondence to the reference"
+)]
+fn closest_between_segments(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3) -> (Vec3, Vec3) {
+    let d1 = q1 - p1;
+    let d2 = q2 - p2;
+    let r = p1 - p2;
+    let a = d1.length_squared();
+    let e = d2.length_squared();
+    let f = d2.dot(r);
+
+    if a <= f32::EPSILON && e <= f32::EPSILON {
+        return (p1, p2);
     }
-    from + along * ((point - from).dot(along) / length_squared).clamp(0.0, 1.0)
+
+    let (s, t) = if a <= f32::EPSILON {
+        (0.0, (f / e).clamp(0.0, 1.0))
+    } else {
+        let c = d1.dot(r);
+        if e <= f32::EPSILON {
+            ((-c / a).clamp(0.0, 1.0), 0.0)
+        } else {
+            let b = d1.dot(d2);
+            let denom = a.mul_add(e, -(b * b));
+            let s = if denom > f32::EPSILON {
+                (b.mul_add(f, -(c * e)) / denom).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let t = b.mul_add(s, f) / e;
+            if t < 0.0 {
+                ((-c / a).clamp(0.0, 1.0), 0.0)
+            } else if t > 1.0 {
+                (((b - c) / a).clamp(0.0, 1.0), 1.0)
+            } else {
+                (s, t)
+            }
+        }
+    };
+
+    (p1 + d1 * s, p2 + d2 * t)
 }
 
 /// Closest living player within `radius` of the segment this tick swept,
@@ -252,8 +304,13 @@ fn nearest_target(
             if health.is_dead() || Some(entity.id()) == exclude {
                 return;
             }
-            let at = closest_on_segment(from, to, position.0);
-            let distance = position.0.distance(at);
+            let (at, on_body) = closest_between_segments(
+                from,
+                to,
+                position.0,
+                position.0 + Vec3::Y * PLAYER_HEIGHT,
+            );
+            let distance = at.distance(on_body);
             if distance > radius {
                 return;
             }

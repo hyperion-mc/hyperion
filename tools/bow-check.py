@@ -75,6 +75,11 @@ S2C_ADD_ENTITY = 0x01
 # absolute per-tick position the server broadcasts for a flying arrow; without
 # it a client renders the spawn and nothing after.
 S2C_ENTITY_POSITION_SYNC = 0x23
+# `ClientboundSetEntityMotionPacket`, id 101 in protocol 776. The per-tick
+# velocity a flying arrow is now driven by: the client dead-reckons position
+# from it (`AbstractArrow.tick`) and renders smoothly, where a per-tick absolute
+# `EntityPositionSync` would hard-teleport the arrow instead.
+S2C_SET_ENTITY_MOTION = 0x65
 
 # `PlayerInventory::HOTBAR_START_SLOT`: `ClientboundContainerSetSlot` numbers
 # the whole inventory, and the nine keys a player can see begin here.
@@ -139,6 +144,9 @@ class Archer(match.MatchClient):
         # entity id -> list of absolute positions from EntityPositionSync,
         # in arrival order (one per server tick while it flies).
         self.syncs = {}
+        # entity id -> list of velocities from SetEntityMotion, in arrival
+        # order (one per tick while it flies, the vanilla-smooth representation).
+        self.motions = {}
 
     def absorb(self, packet_id, payload):
         if packet_id == match.S2C_LOGIN:
@@ -157,6 +165,8 @@ class Archer(match.MatchClient):
             self.absorb_add_entity(payload)
         elif packet_id == S2C_ENTITY_POSITION_SYNC:
             self.absorb_position_sync(payload)
+        elif packet_id == S2C_SET_ENTITY_MOTION:
+            self.absorb_set_motion(payload)
         elif packet_id == match.S2C_CONTAINER_SET_SLOT:
             self.absorb_slot(payload)
         elif packet_id == match.S2C_SYSTEM_CHAT:
@@ -211,6 +221,15 @@ class Archer(match.MatchClient):
         offset += 24
         vx, vy, vz = struct.unpack(">ddd", payload[offset : offset + 24])
         self.syncs.setdefault(entity_id, []).append(((x, y, z), (vx, vy, vz)))
+
+    def absorb_set_motion(self, payload):
+        """`ClientboundSetEntityMotionPacket`: id, then the velocity packed with
+        the low-precision vec3 codec. This is the per-tick packet a smooth arrow
+        rides on -- the client integrates position from it rather than being
+        teleported."""
+        entity_id, offset = take_var_int(payload)
+        motion, _offset = match.take_lp_vec3(payload, offset)
+        self.motions.setdefault(entity_id, []).append(motion)
 
     def absorb_slot(self, payload):
         _container, offset = take_var_int(payload)
@@ -475,6 +494,7 @@ def main():
     # position update, or does not fall.
     client.spawned.clear()
     client.syncs.clear()
+    client.motions.clear()
     client.aim(0.0, -80.0)
     client.send_position()
     pump(client, 0.3)
@@ -488,103 +508,54 @@ def main():
         launch = flew[0][0]
         arrow_id = launch["id"]
         spawn = launch["position"]
-        vx, vy, vz = launch["motion"]
-        pairs = client.syncs.get(arrow_id, [])
-        samples = [pos for pos, _vel in pairs]
-
-        check(
-            len(samples) >= 20,
-            "the server broadcasts the arrow's position every tick as it flies "
-            "(got %d EntityPositionSync packets; 0 means the client is never "
-            "told the arrow moved)" % len(samples),
-        )
-        if len(samples) < 2:
-            print("RESULT: failure (no flight to trace)", flush=True)
-            return 1
-
-        # Vanilla's own integration, forward from the arrow's own first synced
-        # state: pos += v; v *= 0.99; v.y -= 0.05 (AbstractArrow.tick). Anchoring
-        # on the first sync rather than the spawn keeps a one-block spawn re-add
-        # out of the measurement; what is under test is that every later synced
-        # position lies on the arc this start implies.
-        px, py, pz = samples[0]
-        v = list(pairs[0][1])
-        arc = [(px, py, pz)]
-        for _ in range(120):
-            px += v[0]
-            py += v[1]
-            pz += v[2]
-            v[0] *= 0.99
-            v[1] *= 0.99
-            v[2] *= 0.99
-            v[1] -= 0.05
-            arc.append((px, py, pz))
-
-        def dist_to_arc(point):
-            """Least distance from `point` to the piecewise-linear vanilla arc,
-            and how far along it (segment index) that nearest point sits.
-
-            Matching to the nearest point on the curve rather than to a fixed
-            tick makes this robust to a dropped or coalesced position packet: a
-            correct arrow lies *on* the arc whatever the packet cadence, so this
-            measures the shape, not the timing."""
-            best_d = float("inf")
-            best_k = 0
-            px0, py0, pz0 = point
-            for k in range(len(arc) - 1):
-                ax, ay, az = arc[k]
-                bx, by, bz = arc[k + 1]
-                dx, dy, dz = bx - ax, by - ay, bz - az
-                length2 = dx * dx + dy * dy + dz * dz
-                if length2 == 0.0:
-                    t = 0.0
-                else:
-                    t = ((px0 - ax) * dx + (py0 - ay) * dy + (pz0 - az) * dz) / length2
-                    t = max(0.0, min(1.0, t))
-                cx, cy, cz = ax + t * dx, ay + t * dy, az + t * dz
-                d = ((px0 - cx) ** 2 + (py0 - cy) ** 2 + (pz0 - cz) ** 2) ** 0.5
-                if d < best_d:
-                    best_d, best_k = d, k
-            return best_d, best_k
-
-        # Loose on purpose: the wire velocity is LP-quantised and the server
-        # integrates in f32, so this is a bound, not a fit. It is far tighter
-        # than a frozen arrow, a wrong launch speed, or a missing gravity term,
-        # each of which walks the wire trajectory off the arc by whole blocks.
-        tol = 1.0
-        worst = 0.0
-        reached = 0
-        for wx, wy, wz in samples:
-            d, k = dist_to_arc((wx, wy, wz))
-            worst = max(worst, d)
-            reached = max(reached, k)
-        # A couple of the first spawn-adjacent samples can predate the first
-        # integration tick; the shape over the whole flight is the claim.
+        velocities = client.motions.get(arrow_id, [])
+        syncs = client.syncs.get(arrow_id, [])
         print(
-            "arc match: %d samples, worst off-arc %.3f blocks, reached tick %d"
-            % (len(samples), worst, reached),
+            "flight: %d SetEntityMotion (per-tick velocity), %d absolute "
+            "EntityPositionSync, for arrow %d"
+            % (len(velocities), len(syncs), arrow_id),
             flush=True,
         )
+        # Smoothness (the vanilla wire pattern): the arrow is driven by per-tick
+        # velocity, which the client predicts smooth position from -- NOT by
+        # per-tick absolute position teleports. An arrow has no client
+        # interpolation handler, so an absolute EntityPositionSync hard-snaps it
+        # ~3 blocks a tick = jagged. This is the assertion the fix turns green.
         check(
-            worst < tol,
-            "the arrow flies the vanilla arc on the wire, not some other path "
-            "(worst off-arc distance %.3f blocks over %d samples, tolerance "
-            "%.2f)" % (worst, len(samples), tol),
+            len(velocities) >= 20,
+            "the server sends the arrow's velocity every tick (SetEntityMotion), "
+            "the vanilla representation the client predicts smooth motion from "
+            "(got %d)" % len(velocities),
         )
         check(
-            reached >= 12,
-            "the arrow flies a real stretch of the arc, not just the first "
-            "tick or two (nearest arc point reached tick %d)" % reached,
+            len(syncs) == 0,
+            "the arrow is never hard-teleported by a per-tick absolute "
+            "EntityPositionSync (got %d; any per-tick absolute sync IS the jagged "
+            "snap this fixes)" % len(syncs),
         )
-
-        # And it went somewhere: the last sync is a long way from the spawn.
-        if samples:
-            lx, ly, lz = samples[-1]
-            moved = ((lx - spawn[0]) ** 2 + (ly - spawn[1]) ** 2 + (lz - spawn[2]) ** 2) ** 0.5
+        # A real flight: integrate the per-tick velocity stream from the launch
+        # and confirm it travels a real distance and shows gravity in vy.
+        if len(velocities) >= 2:
+            px, py, pz = spawn
+            for vx, vy, vz in velocities:
+                px += vx
+                py += vy
+                pz += vz
+            moved = ((px - spawn[0]) ** 2 + (py - spawn[1]) ** 2 + (pz - spawn[2]) ** 2) ** 0.5
+            vy_first, vy_last = velocities[0][1], velocities[-1][1]
+            print(
+                "velocity arc: integrated %.1f blocks; vy %.3f -> %.3f"
+                % (moved, vy_first, vy_last),
+                flush=True,
+            )
             check(
                 moved > 8.0,
-                "the arrow travelled a real distance (%.1f blocks from spawn "
-                "after %d ticks)" % (moved, len(samples)),
+                "the velocity stream integrates to a real flight (%.1f blocks)" % moved,
+            )
+            check(
+                vy_last < vy_first,
+                "gravity shows in the per-tick velocity (vy %.3f -> %.3f)"
+                % (vy_first, vy_last),
             )
 
     print(

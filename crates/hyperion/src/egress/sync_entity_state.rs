@@ -42,45 +42,37 @@ use crate::{
     storage::Events,
 };
 
-/// Broadcasts a projectile's current position, velocity and heading to every
-/// client in its channel, as one `EntityPositionSync`. Factored out of
-/// `update_projectile_positions` so the send is not another block deep in that
-/// system; the call site explains why an arrow needs one every tick.
-fn broadcast_projectile_position(
-    compose: &Compose,
-    channel: ChannelId,
-    id: i32,
-    position: Vec3,
-    velocity: Vec3,
-    y_rot: f32,
-    x_rot: f32,
-) {
-    let packet = EntityPositionSync {
+/// Broadcasts a projectile's current velocity to every client in its channel,
+/// as one `SetEntityMotion`, every tick.
+///
+/// Not an absolute `EntityPositionSync`: an arrow has no client-side
+/// interpolation handler (`AbstractArrow` does not override `getInterpolation`),
+/// so `handleEntityPositionSync` -> `setPos` HARD-TELEPORTS it -- one absolute
+/// sync per tick snaps the arrow ~3 blocks every 50ms, which is the jagged
+/// motion. The client already dead-reckons the arrow's own physics each tick
+/// (`AbstractArrow.tick`: `pos += vel; vel *= 0.99; vel.y -= 0.05`), seeded from
+/// the `add_entity` velocity, and it applies `SetEntityMotion` through
+/// `lerpMotion` -- so re-sending the server's velocity each tick keeps the
+/// client's prediction exact and it renders smoothly, the way vanilla does
+/// (velocity on change plus client prediction, never a per-tick teleport). The
+/// heading is re-derived client-side from the velocity, so it is not sent.
+fn broadcast_projectile_velocity(compose: &Compose, channel: ChannelId, id: i32, velocity: Vec3) {
+    let packet = SetEntityMotion {
         id,
-        values: PositionMoveRotation {
-            position: ProtoVec3 {
-                x: f64::from(position.x),
-                y: f64::from(position.y),
-                z: f64::from(position.z),
-            },
-            delta_movement: ProtoVec3 {
-                x: f64::from(velocity.x),
-                y: f64::from(velocity.y),
-                z: f64::from(velocity.z),
-            },
-            y_rot,
-            x_rot,
+        movement: ProtoVec3 {
+            x: f64::from(velocity.x),
+            y: f64::from(velocity.y),
+            z: f64::from(velocity.z),
         },
-        on_ground: false,
     };
     if let Err(error) = compose
         .broadcast_channel(
-            Clientbound::new(PacketId::EntityPositionSync.to_raw(), &packet),
+            Clientbound::new(PacketId::SetEntityMotion.to_raw(), &packet),
             channel,
         )
         .send()
     {
-        tracing::error!("failed to broadcast arrow position: {error}");
+        tracing::error!("failed to broadcast arrow velocity: {error}");
     }
 }
 
@@ -568,7 +560,11 @@ impl Module for EntityStateSyncModule {
                             // gravity and drag first and aims from the result. So
                             // the arrow is aimed before the step and the thrown
                             // kind after it.
-                            let rotation = match motion.order {
+                            // The rotation easing still runs (it keeps the
+                            // stored facing correct for anything server-side
+                            // that reads it) but is no longer sent: the client
+                            // re-derives an arrow's heading from its velocity.
+                            let _rotation = match motion.order {
                                 MotionOrder::MoveThenDecay => {
                                     let rotation = aim_along(yaw, pitch, velocity.0);
                                     motion.step(position, &mut velocity.0);
@@ -580,27 +576,20 @@ impl Module for EntityStateSyncModule {
                                 }
                             };
 
-                            // Tell every client watching this arrow where it now is.
-                            // Without this the launch `add_entity` is the only thing a
-                            // client ever hears about the arrow: it renders the spawn and
-                            // then has nothing to move it, so the arc is right on the
-                            // server and the arrow sits still on the wire. One absolute
-                            // sync per tick, the same packet the player teleport path
-                            // sends, carries the new position, the velocity a client
-                            // predicts between syncs from, and the re-aimed heading.
-                            let (y_rot, x_rot) = rotation.unwrap_or((0.0, 0.0));
+                            // Tell every client watching this arrow how fast it
+                            // is going, every tick, and let the client dead-reckon
+                            // the position from it. The launch `add_entity`
+                            // already seeded the velocity; this keeps the client's
+                            // prediction exact without the per-tick teleport that
+                            // an absolute position sync would be.
                             let id = arrow_entity.minecraft_id();
-                            let pos = **position;
                             let vel = velocity.0;
                             world.get::<&Compose>(|compose| {
-                                broadcast_projectile_position(
+                                broadcast_projectile_velocity(
                                     compose,
                                     arrow_entity.into(),
                                     id,
-                                    pos,
                                     vel,
-                                    y_rot,
-                                    x_rot,
                                 );
                             });
                         }
@@ -645,30 +634,19 @@ impl Module for EntityStateSyncModule {
         // position and only wants the send. `OnStore`, after every integrator
         // has moved the entity this tick, and gated on `Channel` so the send
         // has subscribers to reach.
-        system!(
-            "broadcast_marked_projectiles",
-            world,
-            &Compose,
-            &Position,
-            &Velocity,
-            &Yaw,
-            &Pitch,
-        )
-        .with(id::<BroadcastProjectile>())
-        .with(id::<Channel>())
-        .kind(id::<flecs::pipeline::OnStore>())
-        .each_iter(|it, row, (compose, position, velocity, yaw, pitch)| {
-            let entity = it.entity(row);
-            broadcast_projectile_position(
-                compose,
-                entity.into(),
-                entity.minecraft_id(),
-                **position,
-                velocity.0,
-                **yaw,
-                **pitch,
-            );
-        });
+        system!("broadcast_marked_projectiles", world, &Compose, &Velocity,)
+            .with(id::<BroadcastProjectile>())
+            .with(id::<Channel>())
+            .kind(id::<flecs::pipeline::OnStore>())
+            .each_iter(|it, row, (compose, velocity)| {
+                let entity = it.entity(row);
+                broadcast_projectile_velocity(
+                    compose,
+                    entity.into(),
+                    entity.minecraft_id(),
+                    velocity.0,
+                );
+            });
 
         track_previous::<Position>(world);
         track_previous::<Yaw>(world);

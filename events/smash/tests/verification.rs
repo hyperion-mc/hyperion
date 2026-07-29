@@ -1847,7 +1847,7 @@ fn the_match_clock_advances_only_during_play() {
 mod projectiles {
     use flecs_ecs::prelude::*;
     use glam::Vec3;
-    use hyperion::simulation::entity_kind::EntityKind;
+    use hyperion::simulation::{entity_kind::EntityKind, projectile_motion::EYE_HEIGHT};
     use smash::{
         module::{
             player::{Health, Player, Position},
@@ -1909,9 +1909,11 @@ mod projectiles {
             "travelled {} horizontally in 0.1s at 10 blocks a second",
             flight.position.x
         );
-        // And it has started falling rather than rising.
+        // And it has started falling rather than rising. `fire` launches from
+        // the shooter's eye, `EYE_HEIGHT` above the given point, so the arrow
+        // starts at 50 + 1.62 and this checks it is below that, i.e. falling.
         assert!(
-            flight.position.y < 50.0,
+            flight.position.y < 50.0 + EYE_HEIGHT,
             "gravity pushed it up to {}",
             flight.position.y
         );
@@ -2108,8 +2110,11 @@ mod projectiles {
                 _ => None,
             })
             .expect("a hit is heard where it landed");
+        // The crossing is at the target's column (x, z near 0); the height is
+        // the eye level the arrow now flies at, since `fire` launches from the
+        // eye, so check the horizontal crossing rather than distance to the feet.
         assert!(
-            contact.distance(Vec3::ZERO) < 0.5,
+            contact.x.abs() < 0.5 && contact.z.abs() < 0.5,
             "the hit was reported at {contact}, which is not where the path crossed the target"
         );
     }
