@@ -26,7 +26,7 @@ use itertools::Either;
 
 use crate::{
     Prev,
-    net::{Compose, ConnectionId, DataBundle, protocol::Clientbound},
+    net::{ChannelId, Compose, ConnectionId, DataBundle, protocol::Clientbound},
     simulation::{
         Flight, MovementTracking, Owner, PendingTeleportation, Pitch, Position, Velocity, Xp, Yaw,
         animation::ActiveAnimation,
@@ -41,16 +41,63 @@ use crate::{
     storage::Events,
 };
 
-/// Eases a projectile's stored facing toward the heading of `velocity`, in
-/// vanilla's projectile convention (see [`look_angles`]). A no-op for an
-/// entity carrying neither a yaw nor a pitch, which is anything the physics
-/// module does not aim.
-fn aim_along(yaw: Option<&mut Yaw>, pitch: Option<&mut Pitch>, velocity: Vec3) {
-    if let (Some(yaw), Some(pitch)) = (yaw, pitch) {
-        let (target_yaw, target_pitch) = look_angles(velocity);
-        **yaw = lerp_rotation(**yaw, target_yaw);
-        **pitch = lerp_rotation(**pitch, target_pitch);
+/// Broadcasts a projectile's current position, velocity and heading to every
+/// client in its channel, as one `EntityPositionSync`. Factored out of
+/// `update_projectile_positions` so the send is not another block deep in that
+/// system; the call site explains why an arrow needs one every tick.
+fn broadcast_projectile_position(
+    compose: &Compose,
+    channel: ChannelId,
+    id: i32,
+    position: Vec3,
+    velocity: Vec3,
+    y_rot: f32,
+    x_rot: f32,
+) {
+    let packet = EntityPositionSync {
+        id,
+        values: PositionMoveRotation {
+            position: ProtoVec3 {
+                x: f64::from(position.x),
+                y: f64::from(position.y),
+                z: f64::from(position.z),
+            },
+            delta_movement: ProtoVec3 {
+                x: f64::from(velocity.x),
+                y: f64::from(velocity.y),
+                z: f64::from(velocity.z),
+            },
+            y_rot,
+            x_rot,
+        },
+        on_ground: false,
+    };
+    if let Err(error) = compose
+        .broadcast_channel(
+            Clientbound::new(PacketId::EntityPositionSync.to_raw(), &packet),
+            channel,
+        )
+        .send()
+    {
+        tracing::error!("failed to broadcast arrow position: {error}");
     }
+}
+
+/// Eases a projectile's stored facing toward the heading of `velocity`, in
+/// vanilla's projectile convention (see [`look_angles`]), and returns the yaw
+/// and pitch it settled on so the caller can put them on the wire. `None` for
+/// an entity carrying neither a yaw nor a pitch, which is anything the physics
+/// module does not aim.
+fn aim_along(
+    yaw: Option<&mut Yaw>,
+    pitch: Option<&mut Pitch>,
+    velocity: Vec3,
+) -> Option<(f32, f32)> {
+    let (yaw, pitch) = (yaw?, pitch?);
+    let (target_yaw, target_pitch) = look_angles(velocity);
+    **yaw = lerp_rotation(**yaw, target_yaw);
+    **pitch = lerp_rotation(**pitch, target_pitch);
+    Some((**yaw, **pitch))
 }
 
 #[derive(Component)]
@@ -520,16 +567,41 @@ impl Module for EntityStateSyncModule {
                             // gravity and drag first and aims from the result. So
                             // the arrow is aimed before the step and the thrown
                             // kind after it.
-                            match motion.order {
+                            let rotation = match motion.order {
                                 MotionOrder::MoveThenDecay => {
-                                    aim_along(yaw, pitch, velocity.0);
+                                    let rotation = aim_along(yaw, pitch, velocity.0);
                                     motion.step(position, &mut velocity.0);
+                                    rotation
                                 }
                                 MotionOrder::DecayThenMove => {
                                     motion.step(position, &mut velocity.0);
-                                    aim_along(yaw, pitch, velocity.0);
+                                    aim_along(yaw, pitch, velocity.0)
                                 }
-                            }
+                            };
+
+                            // Tell every client watching this arrow where it now is.
+                            // Without this the launch `add_entity` is the only thing a
+                            // client ever hears about the arrow: it renders the spawn and
+                            // then has nothing to move it, so the arc is right on the
+                            // server and the arrow sits still on the wire. One absolute
+                            // sync per tick, the same packet the player teleport path
+                            // sends, carries the new position, the velocity a client
+                            // predicts between syncs from, and the re-aimed heading.
+                            let (y_rot, x_rot) = rotation.unwrap_or((0.0, 0.0));
+                            let id = arrow_entity.minecraft_id();
+                            let pos = **position;
+                            let vel = velocity.0;
+                            world.get::<&Compose>(|compose| {
+                                broadcast_projectile_position(
+                                    compose,
+                                    arrow_entity.into(),
+                                    id,
+                                    pos,
+                                    vel,
+                                    y_rot,
+                                    x_rot,
+                                );
+                            });
                         }
                         return;
                     };
