@@ -21,6 +21,7 @@
 //! it moves at all. Sharing one integrator between them is wrong by about a
 //! tenth of a block on the first tick and it never converges.
 
+use flecs_ecs::prelude::*;
 use glam::Vec3;
 
 use super::entity_kind::EntityKind;
@@ -35,7 +36,12 @@ pub enum MotionOrder {
 }
 
 /// One tick of vanilla projectile motion.
-#[derive(Debug, Copy, Clone, PartialEq)]
+///
+/// A per-instance component, not only a per-kind lookup: the kind's entry in
+/// [`SIMULATED`] is the vanilla default an `OnAdd` observer seeds, and a game
+/// module may override it on a single projectile (a hook with no gravity, a
+/// heavier lob) without inventing a new entity kind.
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct ProjectileMotion {
     /// The velocity is multiplied by this every tick, out of water.
     ///
