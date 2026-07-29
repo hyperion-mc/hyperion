@@ -560,3 +560,37 @@ Three pieces make that hold:
 Not built. `app.run()` in an event's `init_game` is flecs's own main loop and offers no
 per-tick Rust hook; it would become an explicit `while world.progress()` so reloads land
 between ticks, which is also what the "reloads must happen between ticks" gap above needs.
+
+### What a reload costs
+
+Measured, debug profile, three runs each. The Linux figures are dev-compute-6 (32 cores);
+the smash figure is aarch64-darwin.
+
+| | |
+| --- | --- |
+| rules-only rebuild and link (`smash`, 9756 lines of rules code, one line edited) | 1.76 / 1.85 / 2.07 s |
+| minimal module rebuild and link (165 KB dylib) | 282 / 285 / 283 ms |
+| process start **and** `dlopen` — an upper bound on the reload | 31 ms |
+| touching the engine instead: host and engine rebuild | 4.42 s |
+| unit restart | zero, by construction |
+| world rebuild, chunk resend, re-join | zero, by construction |
+
+The last two rows are the point. An engine change costs 2.4x the compile *and* loses the
+process, the world and every connected player. A rules change costs neither.
+
+Three things these numbers are not:
+
+- **Not the release profile.** A deployment builds release, which compiles slower. Treat
+  these as the shape of the cost, not the deployed figure.
+- **Not a rules dylib.** The rules are not a separate crate yet, so the smash row is
+  `-p smash` relinking the whole binary. A rules dylib links strictly less, so this
+  over-estimates rather than under-estimates.
+- **Not smash's reload.** The 31 ms is a 165 KB probe module and includes process startup,
+  so the in-process reload is strictly less — but a larger dylib takes longer to `dlopen`,
+  and the schema diff scales with component count. The demo separately reports
+  `instances rewritten: 0` for a code-only change, which is the case that does no archetype
+  moves at all.
+
+For the deployment as a whole, the game server is not the slow part. Most of an `ix apply`
+is working out what to deploy rather than deploying it, and that cost is unrelated to
+anything here.
