@@ -418,5 +418,145 @@ Stated plainly, because these are the parts a reader cannot see for themselves.
   duplicate entries, and this branch's lock differs from it only by the three new crates.
   The two hot-reload checks build and pass on their own:
   `nix build .#checks.<system>.hot-reload-demo .#checks.<system>.hot-reload-registry-guard`.
-- **Only tested on aarch64-darwin.** `build.rs` has a Linux branch using
-  `--export-dynamic` instead of ld64's `-exported_symbol`, and it has never been run.
+- **The deployment half is designed, not shipped.** Nothing here is wired to `ix apply`,
+  to a systemd unit, or to hyperion's own modules. See "Deploying a reload" below for the
+  shape and what is missing.
+
+## Linux, and the one copy of flecs everything depends on
+
+Verified on x86_64-linux (dev-compute-6, rustc 1.99.0-nightly `dc3f85158`). It did not
+work there before, in two separate ways, and both failures are quiet enough to be worth
+naming.
+
+### Exports: `--export-dynamic` cannot undo what rustc does to a dylib
+
+rustc links a `dylib` with its own anonymous version script ending in `local: *`, which
+demotes every symbol it did not generate. flecs's C symbols arrive with `DEFAULT`
+visibility and `LOCAL` binding — physically present, dynamically unreachable:
+
+```
+$ nm -D --defined-only libhyperion_hot_reload.so | wc -l
+9001
+$ nm -D --defined-only libhyperion_hot_reload.so | grep -c " ecs_"
+0
+$ readelf -sW libhyperion_hot_reload.so | grep -w ecs_init
+  5905: ... FUNC    LOCAL  DEFAULT   14 ecs_init
+```
+
+Neither `-Wl,--export-dynamic` nor `-Wl,--export-dynamic-symbol=ecs_*` helps; a
+version-script demotion is not something either flag can reverse. Both were tried and both
+left the count at 0. The fix is a *second* version script naming the flecs globs with no
+`local:` clause — ld merges version scripts and an explicit pattern beats a `*` wildcard,
+so it promotes exactly those and leaves rustc's own exports alone. After: 10717 exported,
+666 of them `ecs_*`, `ecs_init` `GLOBAL`.
+
+Note that `-all_load` was never the load-bearing half on macOS either. `flecs_ecs_sys`
+compiles `src/flecs_rust.c`, which `#include`s `flecs.c`, so `libflecs.a` has exactly one
+member and any reference drags the whole thing in on both platforms. The platforms differ
+only in export visibility.
+
+**Where the script goes matters and the wrong placement is silent.** A build script's
+`rustc-link-arg` applies to its own crate's artifacts. Putting it in `flecs_ecs_sys` — the
+crate flecs's C actually lives in — does nothing, because that crate is an rlib absorbed
+into a dylib rather than linked itself. Measured: 0 exported `ecs_*`, no warning. It
+belongs in whichever crate *produces the dylib*.
+
+### One pool, or the world is indexed two different ways
+
+`flecs_ecs`'s derive emits, per component type, a `static INDEX` initialised from a
+process-global `INDEX_POOL`, and that index is a slot in the world's component array. The
+`flecs_manual_registration` note earlier in this document is about the *id* being
+per-world; the *index* is not. Two copies of `flecs_ecs` in one process is two pools, and
+a module then writes into a slot the host never filled.
+
+Nothing in the reload path detects this. `AbiToken` passes, no error is raised, and both
+sides are internally consistent — they simply disagree about which slot is which.
+
+`demo/index-probe-{host,module}` measures it. Two things about how, because the obvious
+approaches both give the wrong answer:
+
+- **Do not compare `ecs_init as usize` across the boundary.** An executable taking the
+  address of a dynamically-linked function gets its own PLT stub, so the addresses differ
+  whether or not the copy is shared. Measured both cases; both printed a mismatch.
+- **Do not compare one type's index for equality.** Two independent pools each start at 1,
+  so the first type registered on each side reads `1` and `1` and looks shared when nothing
+  is. This is what the probe reported before the module referenced the runtime crate at all.
+
+What works is allocation order, which cannot coincide: with one pool, an index taken in the
+module is strictly greater than every index the host took first.
+
+With `hyperion` as a plain rlib:
+
+```
+host indices: [1, 2, 3, 4] (max 4)
+module's own type index: 1
+hyperion::simulation::Position index: host 4, module 2
+SHARED_POOL=false
+```
+
+The *host* is what creates the second copy — it pulls `flecs_ecs` in through hyperion's
+rlib while the module resolves it from the runtime dylib. A module that touches no hyperion
+component does not avoid this; the host's own linkage is enough.
+
+With `flecs_ecs` and `hyperion` both dylibs:
+
+```
+host indices: [1, 2, 3, 4] (max 4)
+module's own type index: 5
+hyperion::simulation::Position index: host 4, module 4
+SHARED_POOL=true
+SHARED_HYPERION_INDEX=true
+PROBE_OK
+```
+
+### The build recipe
+
+1. `flecs_ecs` needs `crate-type = ["dylib", "rlib"]` and a `build.rs` emitting the version
+   script above. Without the dylib you get
+   `error: cannot satisfy dependencies so 'flecs_ecs' only shows up once`, because two
+   dylibs each bundle their own copy.
+2. `hyperion` needs `crate-type = ["dylib", "rlib"]`.
+3. Host and every module build with
+   `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
+   plus rpaths to the rust sysroot and to wherever the dylibs land.
+
+`--allow-shlib-undefined` is not a shrug. `simulation/metadata/mod.rs` hand-writes
+`impl PartialOrd for $name where $type: PartialOrd`, and for 7 metadata types that bound is
+unsatisfiable because glam's `Quat` and `Vec3` have no `PartialOrd`. rustc never codegens
+those `partial_cmp` bodies but still lists them in the dylib's export list. They cannot be
+called — calling one fails to compile on the same unsatisfiable bound — so allowing them
+undefined is sound. Removing the blanket impl from that macro would remove the need for the
+flag, and is the better fix.
+
+**Steps 1 and 2 are not landed.** They were verified through a local `[patch]` against a
+copy of the fork checkout. Landing them means a commit in `andrewgazelka/Flecs-Rust` and a
+repin here.
+
+## Deploying a reload
+
+The mechanism a running server needs is not a file watcher. It is systemd's, and NixOS
+already exposes it.
+
+`nixos/doc/manual/development/unit-handling.section.md` in nixpkgs: *"If they are different
+but only `X-Reload-Triggers` in the `[Unit]` section is changed, **reload** the unit."* So a
+game-logic-only change can reach a running server as a `systemctl reload` rather than a
+restart, which means the process never exits, the proxy's backend socket never closes, and
+no player is disturbed.
+
+Three pieces make that hold:
+
+- `reloadTriggers = [ gameModuleDylib ]`, so the dylib's store path lands in
+  `X-Reload-Triggers` **and nowhere else**. If it also appeared in `ExecStart` or
+  `Environment` the `[Service]` section would differ and the whole scheme degrades to a
+  restart.
+- The process reaches the dylib through a stable path — `environment.etc` — since `/etc` is
+  rebuilt during activation, before units are acted on, and changing a symlink there is not
+  a unit change at all.
+- `ExecReload` is a fixed string: a client that asks the running process to reload and
+  **exits non-zero when the gate refuses**, printing the refusal and its `migration!` stub.
+  A refused reload then surfaces as a failed activation with the reason in the deploy
+  output, rather than as a silent no-op, and the world keeps running on the old build.
+
+Not built. `app.run()` in an event's `init_game` is flecs's own main loop and offers no
+per-tick Rust hook; it would become an explicit `while world.progress()` so reloads land
+between ticks, which is also what the "reloads must happen between ticks" gap above needs.
