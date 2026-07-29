@@ -19,10 +19,11 @@ What it decodes and accumulates:
     (`Avatar.DATA_PLAYER_MODE_CUSTOMISATION` on 26.2), whose bits are the
     second skin layer: cape, jacket, sleeves, trouser legs and the hat. A zero
     there renders a player with no overlays at all.
-  - `AddEntity` (0x01) -> the uuid the entity carries, which is the only thing
-    that ties a tab-list profile id to the entity whose metadata holds its
-    overlay mask. Without it a test knows a profile has a skin but not which
-    body wears it.
+  - `AddEntity` (0x01) -> the whole spawn, through the one `decode_add_entity`
+    every gate shares: the uuid that ties a tab-list profile id to the entity
+    whose metadata holds its overlay mask, and -- since 26.2 packs them into
+    this packet -- the velocity and the facing (yaw and pitch), which is what a
+    projectile gate reads to check the heading the client turns the model by.
 
 The accumulator merges field by field across packets, because a
 `PlayerInfoUpdate` that carries only a gamemode says nothing about a profile's
@@ -51,6 +52,7 @@ _match = _load("smash_match", "smash-match.py")
 take_var_int = _base.take_var_int
 take_string = _base.take_string
 take_nbt_string = _match.take_nbt_string
+take_lp_vec3 = _match.take_lp_vec3
 
 # Clientbound play ids in protocol 776, from
 # crates/hyperion-minecraft-proto/src/generated/packet_id.rs.
@@ -200,6 +202,40 @@ def decode_entity_metadata(payload):
     return entity_id, fields
 
 
+def decode_add_entity(payload):
+    """`ClientboundAddEntityPacket#STREAM_CODEC`, field for field.
+
+    The one decoder for this packet. Every gate that asks what a spawned entity
+    is reads the same fields, and a second copy is exactly how the skin gates
+    and the bow gate would drift apart -- the drift this module exists to end.
+    Returns the id that ties an entity to its metadata, the uuid that ties it to
+    a tab-list profile, the type, the position, the velocity (since 26.2 the
+    packet carries it, packed the same way `set_entity_motion` does), and the
+    facing -- yaw and pitch in degrees off the two `Mth.packDegrees` bytes, the
+    projectile convention the client turns the model by.
+    """
+    entity_id, offset = take_var_int(payload)
+    uuid = payload[offset : offset + 16].hex()
+    offset += 16
+    type_id, offset = take_var_int(payload, offset)
+    x, y, z = struct.unpack(">ddd", payload[offset : offset + 24])
+    offset += 24
+    motion, offset = take_lp_vec3(payload, offset)
+    # Facing rides right after the velocity: a signed byte of pitch then one of
+    # yaw, each 1/256 of a turn (`Mth.unpackDegrees`).
+    x_rot, y_rot = struct.unpack(">bb", payload[offset : offset + 2])
+    offset += 2
+    return {
+        "id": entity_id,
+        "uuid": uuid,
+        "type": type_id,
+        "position": (x, y, z),
+        "motion": motion,
+        "pitch": x_rot * 360.0 / 256.0,
+        "yaw": y_rot * 360.0 / 256.0,
+    }
+
+
 class Monitor:
     """Accumulated, queryable state from a client's received packets.
 
@@ -221,9 +257,8 @@ class Monitor:
 
     def feed(self, packet_id, payload):
         if packet_id == S2C_ADD_ENTITY:
-            entity_id, offset = take_var_int(payload)
-            uuid = payload[offset : offset + 16].hex()
-            self.entity_of_profile[uuid] = entity_id
+            entity = decode_add_entity(payload)
+            self.entity_of_profile[entity["uuid"]] = entity["id"]
         elif packet_id == S2C_SET_ENTITY_DATA:
             entity_id, fields = decode_entity_metadata(payload)
             self.metadata.setdefault(entity_id, {}).update(fields)
