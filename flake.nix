@@ -991,12 +991,13 @@
             inherit pkgs rustToolchain;
           };
 
-          workspace = cargoUnit.buildWorkspace {
-            pname = "hyperion";
+          # Shared across the release workspace below and the dev-profile one
+          # the boot gate uses, so the source, lock and dependency hashes have
+          # one definition rather than two that drift.
+          workspaceArgs = {
             src = ./.;
             workspaceRoot = ./.;
             cargoLock = ./Cargo.lock;
-            cargoArgs = [ "--workspace" ];
 
             inherit nativeBuildInputs;
 
@@ -1021,6 +1022,36 @@
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
             };
           };
+
+          workspace = cargoUnit.buildWorkspace (
+            workspaceArgs
+            // {
+              pname = "hyperion";
+              cargoArgs = [ "--workspace" ];
+            }
+          );
+
+          # The same game servers, compiled with `debug_assertions` on -- the
+          # dev profile `nix run .#smash` runs and the operator actually plays.
+          # This exists only for the boot gate: a release build compiles out the
+          # flecs "component is not registered" assert, so the release binaries
+          # above boot cleanly even when a singleton is set but never registered
+          # (ENG-11000). Booting these catches that class before it reaches a
+          # host. Unoptimised on purpose -- the dev profile is both the fastest
+          # to compile and the one under test.
+          devWorkspace = cargoUnit.buildWorkspace (
+            workspaceArgs
+            // {
+              pname = "hyperion-dev";
+              cargoArgs = [
+                "-p"
+                "smash"
+                "-p"
+                "bedwars"
+              ];
+              profile = "dev";
+            }
+          );
           # cargoUnit names a binary derivation after its cargo target, but
           # does not set `meta.mainProgram`, so `lib.getExe` guesses the
           # derivation name and misses. The NixOS modules below read
@@ -1041,6 +1072,14 @@
             bedwars = named "bedwars" workspace.binaries.bedwars;
             smash = named "smash" workspace.binaries.smash;
             hyperion-proxy = named "hyperion-proxy" workspace.binaries.hyperion-proxy;
+          };
+
+          # The dev-profile game servers the boot gate boots. Same servers as
+          # `gameBinaries`, compiled with `debug_assertions` on. Named for the
+          # same `meta.mainProgram` reason.
+          devGameBinaries = {
+            bedwars = named "bedwars" devWorkspace.binaries.bedwars;
+            smash = named "smash" devWorkspace.binaries.smash;
           };
 
           # `nix flake check` builds every app, which is what proves each one
@@ -1240,6 +1279,51 @@
               proxy = gameBinaries.hyperion-proxy;
               client = "world-time-check.py";
               timeout = 180;
+            };
+
+            # The dev-profile boot gate. ENG-11000 shipped a singleton that was
+            # `world.set` but never registered as a component; a release build
+            # compiles the flecs "component is not registered" assert out, so
+            # every release gate above -- `world-time-e2e` included -- stayed
+            # green while the dev profile the operator actually runs
+            # (`nix run .#smash`) aborted on boot and crash-looped the server.
+            #
+            # These two gates boot each event's game server compiled with
+            # `debug_assertions` on (`devGameBinaries`). A singleton that is set
+            # but never registered aborts during module init, so the server
+            # never opens its port and the driver fails with the panic in the
+            # log tail. The client that then joins runs the join path under the
+            # same assert, so a registration miss reached only from a join fails
+            # here too. The proxy and client stay on the release build: neither
+            # carries the bug, and only the game server needs the assert.
+            #
+            # This is the gate that makes the class impossible rather than
+            # catching one instance: any set-but-unregistered singleton in any
+            # module either event loads turns this red. A dev build is
+            # unoptimised, so both boot and the join get a generous deadline.
+            smash-dev-boot-e2e = e2e.mkCheck {
+              name = "hyperion-smash-dev-boot-e2e";
+              gameServer = devGameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "client-26.2.py";
+              clientArgs = [
+                "--name"
+                "smashdevboot"
+              ];
+              timeout = 300;
+            };
+
+            bedwars-dev-boot-e2e = e2e.mkCheck {
+              name = "hyperion-bedwars-dev-boot-e2e";
+              gameServer = devGameBinaries.bedwars;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "client-26.2.py";
+              clientArgs = [
+                "--name"
+                "bedwarsdevboot"
+              ];
+              needsGenMap = true;
+              timeout = 300;
             };
 
             # `checks.e2e` above took the names the two app wrappers used to
