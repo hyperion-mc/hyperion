@@ -152,6 +152,7 @@ pub struct ProtocolModule;
 
 impl Module for ProtocolModule {
     fn module(world: &World) {
+        world.import::<crate::simulation::WorldTimeModule>();
         world.import::<pre_play::PrePlayModule>();
         world.import::<join::JoinModule>();
     }

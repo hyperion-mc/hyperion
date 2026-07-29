@@ -71,6 +71,7 @@ pub mod pose;
 pub mod projectile_motion;
 pub mod skin;
 pub mod util;
+pub mod world_time;
 pub mod xp;
 
 // Re-exported at `simulation::` rather than left behind their new module
@@ -83,6 +84,7 @@ pub use pose::{
     ChunkPosition, EntitySize, PLAYER_SPAWN_POSITION, PendingTeleportation, Pitch, Position,
     Velocity, Yaw, aabb, block_bounds, get_direction_from_rotation,
 };
+pub use world_time::{WorldTime, WorldTimeModule};
 pub use xp::{Xp, XpVisual};
 
 /// Communicates with the proxy server.

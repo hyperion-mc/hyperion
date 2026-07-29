@@ -11,8 +11,9 @@ use flecs_ecs::prelude::*;
 use hyperion_minecraft_proto::{
     generated::packet_id::play::clientbound::PacketId,
     packets::play_login::{
-        BlockPos, CommonPlayerSpawnInfo, GameEvent, GameType, GlobalPos, Login, PlayerPosition,
-        PositionMoveRotation, Relative, SetChunkCacheCenter, SetDefaultSpawnPosition, Vec3,
+        BlockPos, ClockNetworkState, CommonPlayerSpawnInfo, GameEvent, GameType, GlobalPos, Login,
+        PlayerPosition, PositionMoveRotation, Relative, SetChunkCacheCenter, SetDefaultSpawnPosition,
+        SetTime, Vec3,
     },
 };
 use hyperion_utils::EntityExt;
@@ -25,7 +26,7 @@ use crate::{
         Channel, Compose, ConnectionId,
         protocol::{registries, send},
     },
-    simulation::{Comms, MovementTracking, Pitch, Position, Yaw, gamemode},
+    simulation::{Comms, MovementTracking, Pitch, Position, WorldTime, Yaw, gamemode},
 };
 
 /// The level this server serves. Only one, so the dimension list in [`Login`]
@@ -202,6 +203,31 @@ pub fn enter_world(
         &GameEvent {
             event: GameEvent::LEVEL_CHUNKS_LOAD_START,
             param: 0.0,
+        },
+    )?;
+
+    // Freeze the daylight cycle. 26.2 makes the client advance the sun itself
+    // from the overworld clock's `rate`; with no `SetTime` at all the client
+    // never learns a rate and free-runs its own cycle, so the sky drifts. One
+    // `SetTime` with the overworld clock at `rate` 0.0 pins the sun -- the same
+    // bytes a paused clock serialises to (`ServerClockManager`) -- and there is
+    // no per-tick resend. `game_time` stays the real world age; only the day
+    // time is frozen. The clock's network id comes from the same `world_clock`
+    // registry the client was sent in configuration, so the two cannot drift.
+    let day_time = world.get::<&WorldTime>(|world_time| world_time.day_time);
+    let overworld_clock = registries::WORLD_CLOCK
+        .id_of("minecraft:overworld")
+        .ok_or_else(|| anyhow::anyhow!("world_clock registry has no minecraft:overworld"))?;
+    send(
+        compose,
+        connection_id,
+        PacketId::SetTime.to_raw(),
+        &SetTime {
+            game_time: compose.global().tick,
+            clock_updates: vec![(
+                overworld_clock,
+                ClockNetworkState::frozen(day_time),
+            )],
         },
     )?;
 
