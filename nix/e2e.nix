@@ -12,6 +12,11 @@
   sources,
 }:
 let
+  # The scripted clients that verify a skin's Mojang signature the way an
+  # online client does need `cryptography`; every other client ignores it. One
+  # interpreter for all of them keeps the driver and the checks in step.
+  clientPython = pkgs.python3.withPackages (python: [ python.cryptography ]);
+
   # The world bedwars loads. `hyperion-genmap` downloads this from GitHub the
   # first time a server boots and caches it under the user's cache directory,
   # which a sandbox has no way to do: there is no network in there. So the
@@ -125,7 +130,7 @@ let
   # nobody runs until CI does.
   driver = pkgs.writeShellApplication {
     name = "hyperion-e2e-driver";
-    runtimeInputs = [ pkgs.python3 ];
+    runtimeInputs = [ clientPython ];
     text = ''
       # Job control, so each background process is its own group. `cargo run`
       # forks the binary under test, and killing only cargo would leave the
@@ -313,7 +318,7 @@ let
     pkgs.runCommand name
       {
         nativeBuildInputs = [
-          pkgs.python3
+          clientPython
           driver
         ];
         # The game server builds a reqwest client at startup, before it knows

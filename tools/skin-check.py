@@ -28,12 +28,19 @@ goes red.
 """
 
 import argparse
+import base64
 import importlib.util
 import json
 import pathlib
 import struct
 import sys
 import time
+from urllib.parse import urlparse
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 TOOLS = pathlib.Path(__file__).resolve().parent
 ROOT = TOOLS.parent
@@ -48,6 +55,52 @@ def _load(name, filename):
 
 match = _load("smash_match", "smash-match.py")
 monitor = _load("packet_monitor", "packet_monitor.py")
+
+# `TextureUrlChecker.ALLOWED_DOMAINS` on the client is exactly this one host;
+# authlib throws the whole payload away, signature and all, for any other.
+ALLOWED_TEXTURE_DOMAINS = {"textures.minecraft.net"}
+
+
+def _mojang_keys():
+    """Mojang's committed profile-property public keys, DER-decoded."""
+    data = json.loads(
+        (ROOT / "events" / "smash" / "skins" / "mojang-profile-keys.json").read_text()
+    )
+    return [load_der_public_key(base64.b64decode(e["publicKey"])) for e in data["profilePropertyKeys"]]
+
+
+def yggdrasil_signed(value, signature):
+    """Whether `signature` verifies over the base64 `value` string's bytes under
+    one of Mojang's keys, RSA with SHA-1.
+
+    This is exactly what `YggdrasilServicesKeyInfo.validateProperty` runs before
+    an online client keeps a skin for anyone but its wearer. Byte-equality to a
+    committed file is a weaker claim: a committed-but-invalid signature passes
+    that and still renders as Steve for every other player.
+    """
+    if not signature:
+        return False
+    try:
+        blob = base64.b64decode(signature, validate=True)
+    except (ValueError, base64.binascii.Error):
+        return False
+    for key in _mojang_keys():
+        try:
+            key.verify(blob, value.encode(), padding.PKCS1v15(), hashes.SHA1())
+            return True
+        except InvalidSignature:
+            continue
+    return False
+
+
+def skin_url(value):
+    """The SKIN texture url inside a base64 textures payload, or ''."""
+    try:
+        payload = json.loads(base64.b64decode(value))
+    except (ValueError, base64.binascii.Error):
+        return ""
+    return ((payload.get("textures") or {}).get("SKIN") or {}).get("url", "")
+
 base = match.base
 
 take_var_int = base.take_var_int
@@ -173,6 +226,31 @@ def main():
         view["textures_signature"] == expected_sig,
         "and it carries its Mojang signature, without which only the wearer "
         "would see it",
+    )
+
+    # The signed-skins crux: verify the signature the wire carried the way a
+    # vanilla online client does, not merely that it equals a committed file.
+    wire_value = view["textures_value"] or ""
+    wire_sig = view["textures_signature"] or ""
+    check(
+        yggdrasil_signed(wire_value, wire_sig),
+        "the wire signature verifies under a Mojang profile key (SIGNED), so a "
+        "real online client keeps this skin for other players and does not fall "
+        "back to Steve",
+    )
+    check(
+        urlparse(skin_url(wire_value)).hostname in ALLOWED_TEXTURE_DOMAINS,
+        "the skin url is on textures.minecraft.net, the only host a client will "
+        "load a skin from",
+    )
+    # A guard is not a guard until it has failed: a one-byte tamper must not
+    # verify, or the check above would pass for any bytes at all.
+    _blob = bytearray(base64.b64decode(wire_sig)) if wire_sig else bytearray(b"\x00")
+    _blob[0] ^= 0x01
+    check(
+        not yggdrasil_signed(wire_value, base64.b64encode(bytes(_blob)).decode()),
+        "a one-byte-tampered signature is rejected, so the verification above is "
+        "real and not vacuous",
     )
 
     ok = wait_until(

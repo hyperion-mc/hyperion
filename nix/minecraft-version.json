@@ -18,5 +18,11 @@
     "sha1": "823e2250d24b3ddac457a60c92a6a941943fcd6a",
     "sha256": "sha256-zazfsliY3l5LSw5d3MJyL3cGfkZgVwnC2IbAAOu2PsU=",
     "size": 60894273
+  },
+  "client": {
+    "url": "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar",
+    "sha1": "2dc72797acbc1b63fc16a11c4ac393605f453754",
+    "sha256": "sha256-QIlu6fHivsPJNNqsfpPUHp49nC+K4Mo2bVL/v9GvopA=",
+    "size": 39193383
   }
 }
