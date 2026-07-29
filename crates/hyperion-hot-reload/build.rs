@@ -35,16 +35,57 @@ fn record_rustc() {
     println!("cargo::rustc-env=HYPERION_HOT_RELOAD_RUSTC={fingerprint}");
 }
 
+/// The flecs C symbol patterns both platforms have to re-export, spelled without the
+/// leading underscore Mach-O adds.
+const FLECS_EXPORTS: [&str; 4] = ["ecs_*", "flecs_*", "Ecs*", "FLECS_*"];
+
 fn export_flecs_symbols() {
     println!("cargo::rerun-if-changed=build.rs");
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if matches!(target_os.as_str(), "macos" | "ios") {
         println!("cargo::rustc-link-arg=-Wl,-all_load");
         // ld64 unions -exported_symbol with the export list rustc generates.
-        for pattern in ["_ecs_*", "_flecs_*", "_Ecs*", "_FLECS_*"] {
-            println!("cargo::rustc-link-arg=-Wl,-exported_symbol,{pattern}");
+        for pattern in FLECS_EXPORTS {
+            println!("cargo::rustc-link-arg=-Wl,-exported_symbol,_{pattern}");
         }
     } else {
-        println!("cargo::rustc-link-arg=-Wl,--export-dynamic");
+        export_flecs_symbols_elf();
     }
+}
+
+/// ELF needs a version script, because `--export-dynamic` cannot undo what rustc does.
+///
+/// rustc links a `dylib` with its own anonymous version script ending in `local: *`, which
+/// demotes every symbol it did not generate. flecs's C symbols land in the object with
+/// `DEFAULT` visibility and `LOCAL` binding, so they are present and unreachable, and
+/// `--export-dynamic` and `--export-dynamic-symbol` are both powerless against a
+/// version-script demotion. Measured on x86_64-linux: 9001 exported symbols, zero of them
+/// `ecs_*`, `ecs_init` reading `FUNC LOCAL DEFAULT`.
+///
+/// A game module that cannot resolve `ecs_*` here links its own copy of `libflecs.a`
+/// instead, which is two `ecs_os_api` globals in one process -- the failure `AbiToken`
+/// exists to catch, arriving on a platform where the check itself could not run.
+///
+/// ld merges multiple version scripts and an explicit pattern beats a `*` wildcard, so a
+/// second script naming these globs promotes exactly them and leaves rustc's own exports
+/// alone. Same measurement after: 10717 exported, 666 of them `ecs_*`, `ecs_init` GLOBAL.
+fn export_flecs_symbols_elf() {
+    let out_dir = std::env::var("OUT_DIR").expect("cargo always sets OUT_DIR");
+    let script = std::path::Path::new(&out_dir).join("flecs-exports.map");
+
+    let mut text = String::from("{\n  global:\n");
+    for pattern in FLECS_EXPORTS {
+        text.push_str("    ");
+        text.push_str(pattern);
+        text.push_str(";\n");
+    }
+    // No `local:` clause. This script adds to rustc's export list rather than replacing
+    // it; a `local: *` here would hide every Rust symbol the host resolves through.
+    text.push_str("};\n");
+
+    std::fs::write(&script, text).expect("failed to write the flecs version script");
+    println!(
+        "cargo::rustc-link-arg=-Wl,--version-script={}",
+        script.display()
+    );
 }
