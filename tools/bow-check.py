@@ -46,6 +46,7 @@ Exits non-zero on the first thing that is not true, after printing what it saw.
 
 import argparse
 import importlib.util
+import math
 import pathlib
 import struct
 import sys
@@ -81,6 +82,28 @@ MAX_ARROW_SPEED = 3.0
 
 # `LastFireTime::can_fire`, in seconds.
 FIRE_COOLDOWN = 0.150
+
+
+def look_angles(motion):
+    """Vanilla's projectile facing for a velocity, the server's own `look_angles`.
+
+    A projectile stores `yaw = atan2(dx, dz)` and `pitch = atan2(dy, horizontal)`
+    (`AbstractArrow.tick`), which is the sign-flip of the look convention a
+    shooter's own yaw uses. Kept here rather than imported, so changing the Rust
+    cannot also change what proves it.
+    """
+    mx, my, mz = motion
+    horizontal = math.hypot(mx, mz)
+    yaw = math.degrees(math.atan2(mx, mz))
+    pitch = math.degrees(math.atan2(my, horizontal))
+    return yaw, pitch
+
+
+def angle_delta(a, b):
+    """The shorter arc between two angles in degrees, so 179 and -179 are two
+    apart rather than 358."""
+    d = (a - b) % 360.0
+    return min(d, 360.0 - d)
 
 
 def entity_type_id(name):
@@ -150,18 +173,27 @@ class Archer(match.MatchClient):
         offset += 24
         motion, offset = match.take_lp_vec3(payload, offset)
         speed = (motion[0] ** 2 + motion[1] ** 2 + motion[2] ** 2) ** 0.5
+        # Since 26.2 the facing rides right after the velocity: a signed byte
+        # of pitch then one of yaw, each 1/256 of a turn (`Mth.packDegrees`).
+        # This is the client-visible heading the rotation gate below reads.
+        (x_rot, y_rot) = struct.unpack(">bb", payload[offset : offset + 2])
+        offset += 2
+        wire_pitch = x_rot * 360.0 / 256.0
+        wire_yaw = y_rot * 360.0 / 256.0
         entry = {
             "id": entity_id,
             "type": type_id,
             "position": (x, y, z),
             "motion": motion,
             "speed": speed,
+            "wire_yaw": wire_yaw,
+            "wire_pitch": wire_pitch,
         }
         self.spawned.append(entry)
         self.log(
             "<- AddEntity id=%d type=%d at (%.2f, %.2f, %.2f) motion=(%.3f, "
-            "%.3f, %.3f) |v|=%.3f"
-            % ((entity_id, type_id, x, y, z) + motion + (speed,))
+            "%.3f, %.3f) |v|=%.3f yaw=%.1f pitch=%.1f"
+            % ((entity_id, type_id, x, y, z) + motion + (speed, wire_yaw, wire_pitch))
         )
 
     def absorb_slot(self, payload):
@@ -365,6 +397,51 @@ def main():
         "two releases %d ms apart fire once, not twice (got %d arrows)"
         % (int(FIRE_COOLDOWN / 3.0 * 1000), len(burst)),
     )
+
+    # --- the heading on the wire --------------------------------------
+    #
+    # The arc was always right; what a bystander saw was not. A projectile
+    # stores yaw = atan2(dx, dz), pitch = atan2(dy, horizontal) -- the
+    # sign-flip of the shooter's own look -- and hyperion used to send the
+    # shooter's own yaw instead, so every arrow rendered mirrored across its
+    # line of flight. Fire off a coordinate axis so the sign shows, and read
+    # the two rotation bytes straight out of the AddEntity. Nothing here is
+    # inferred: this is the number the client turns the arrow model by.
+    pump(client, 0.5)
+    client.aim(35.0, -20.0)
+    client.send_position()
+    pump(client, 0.3)
+    angled = draw(1.5, "(full draw, aimed yaw 35 pitch -20)")
+    check(
+        len(angled) == 1,
+        "an off-axis full draw fires exactly one arrow (got %d)" % len(angled),
+    )
+    if angled:
+        launch = angled[0][0]
+        exp_yaw, exp_pitch = look_angles(launch["motion"])
+        wire_yaw = launch["wire_yaw"]
+        wire_pitch = launch["wire_pitch"]
+        # One angle byte is 360/256 = 1.40625 degrees; allow two steps for the
+        # quantisation plus the f32 the server aims in.
+        tol = 2.0 * 360.0 / 256.0
+        check(
+            angle_delta(wire_yaw, exp_yaw) < tol,
+            "the arrow's wire yaw is atan2(dx, dz) = %.1f (got %.1f)"
+            % (exp_yaw, wire_yaw),
+        )
+        check(
+            angle_delta(wire_pitch, exp_pitch) < tol,
+            "the arrow's wire pitch is atan2(dy, horizontal) = %.1f (got %.1f)"
+            % (exp_pitch, wire_pitch),
+        )
+        # And it is the projectile convention, not the shooter's look: the old
+        # bug sent the player's own +35 where vanilla sends its sign-flip. This
+        # is the assertion that fails loudly if the mirrored heading returns.
+        check(
+            angle_delta(wire_yaw, 35.0) > 10.0,
+            "the wire yaw is not the shooter's look yaw of 35 (the mirrored-"
+            "heading bug); got %.1f" % wire_yaw,
+        )
 
     print(
         "RESULT: %s (%d checks failed)"

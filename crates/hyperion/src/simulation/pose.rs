@@ -236,13 +236,6 @@ impl PendingTeleportation {
 }
 
 #[must_use]
-pub fn get_rotation_from_velocity(velocity: Vec3) -> (f32, f32) {
-    let yaw = (-velocity.x).atan2(velocity.z).to_degrees(); // Correct yaw calculation
-    let pitch = (-velocity.y).atan2(velocity.length()).to_degrees(); // Correct pitch calculation
-    (yaw, pitch)
-}
-
-#[must_use]
 pub fn get_direction_from_rotation(yaw: f32, pitch: f32) -> Vec3 {
     // Convert angles from degrees to radians
     let yaw_rad = yaw.to_radians();
