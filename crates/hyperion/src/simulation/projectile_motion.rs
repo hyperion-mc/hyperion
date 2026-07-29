@@ -21,9 +21,13 @@
 //! it moves at all. Sharing one integrator between them is wrong by about a
 //! tenth of a block on the first tick and it never converges.
 
+use flecs_ecs::prelude::*;
 use glam::Vec3;
 
-use super::entity_kind::EntityKind;
+use super::{
+    entity_kind::EntityKind,
+    pose::{Position, Velocity},
+};
 
 /// Where the position update sits relative to the velocity update.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -35,7 +39,13 @@ pub enum MotionOrder {
 }
 
 /// One tick of vanilla projectile motion.
-#[derive(Debug, Copy, Clone, PartialEq)]
+///
+/// A per-instance component, not only a per-kind lookup: the kind's entry in
+/// [`SIMULATED`] is the vanilla default `seed_projectile_motion` installs, and a
+/// game module may override it on one projectile (a hook with no gravity, a
+/// heavier lob) without inventing a new entity kind. Registered by
+/// [`ProjectileComponentsModule`].
+#[derive(Component, Debug, Copy, Clone, PartialEq)]
 pub struct ProjectileMotion {
     /// The velocity is multiplied by this every tick, out of water.
     ///
@@ -225,6 +235,56 @@ impl EntityKind {
             .iter()
             .find(|(kind, _)| *kind == self)
             .map(|(_, motion)| *motion)
+    }
+}
+
+/// Registration module for the projectile components: types only, no behavior.
+///
+/// Imports [`super::KinematicsComponentsModule`] because everything that
+/// integrates a projectile reads `Position` and `Velocity`, so importing this
+/// alone into a bare world is enough to have the whole projectile component set
+/// registered -- which is what lets a game module's test harness run the physics
+/// with no host, no egress and no world. Registration only, per the repo-wide
+/// flecs convention.
+#[derive(Component)]
+pub struct ProjectileComponentsModule;
+
+impl Module for ProjectileComponentsModule {
+    fn module(world: &World) {
+        world.import::<super::KinematicsComponentsModule>();
+        world.component::<ProjectileMotion>();
+    }
+}
+
+/// Behavior module for projectile flight: one system, and no registration of
+/// its own.
+///
+/// Host-free on purpose. It reads `Position`, `Velocity` and
+/// [`ProjectileMotion`] and writes the first two, so it needs no world to
+/// collide against, no `Compose` to send with and no entity kind: a game
+/// module's mock world can import this and get exactly vanilla's per-tick
+/// integration. Where the projectile *hits* and how it is *drawn* are separate
+/// components and separate modules, so an event picks each independently.
+#[derive(Component)]
+pub struct ProjectilePhysicsModule;
+
+impl Module for ProjectilePhysicsModule {
+    fn module(world: &World) {
+        world.import::<ProjectileComponentsModule>();
+
+        // Vanilla's own per-tick step for whatever this projectile's motion
+        // says, plus the heading a projectile always points along: it faces
+        // where it is going, re-derived from the velocity every tick. Nothing
+        // here sends a packet -- the egress layer reads the components this
+        // leaves behind.
+        world
+            .system_named::<(&mut Position, &mut Velocity, &ProjectileMotion)>(
+                "integrate_projectiles",
+            )
+            .kind(id::<flecs::pipeline::OnUpdate>())
+            .each(|(position, velocity, motion)| {
+                motion.step(position, &mut velocity.0);
+            });
     }
 }
 
