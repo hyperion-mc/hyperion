@@ -13,15 +13,18 @@
 //! to close that gap; this test is the proof, in the dev build `cargo test`
 //! produces. It fails (aborts) if the reflection import is dropped.
 
-use flecs_ecs::{
-    core::{World, WorldGet},
-    prelude::*,
-};
+use flecs_ecs::{core::World, prelude::*};
 use hyperion::simulation::{KinematicsComponentsModule, Position, Velocity};
 use serial_test::serial;
 
 #[test]
 #[serial]
+#[expect(
+    clippy::float_cmp,
+    reason = "the assertions round-trip the exact literals just set through the bare world; an \
+              epsilon would weaken the claim, which is that the component stored and returned the \
+              same bits rather than that it stored something close"
+)]
 fn kinematics_base_is_usable_after_standalone_import() {
     // A bare world: no HyperionCore, no SimModule, nothing but the kinematics
     // registration module. This is the smash mock / projectile-physics shape.
