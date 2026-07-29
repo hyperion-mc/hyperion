@@ -64,6 +64,7 @@ def _load(name, filename):
 
 
 match = _load("smash_match", "smash-match.py")
+monitor = _load("packet_monitor", "packet_monitor.py")
 base = match.base
 
 take_var_int = base.take_var_int
@@ -80,8 +81,6 @@ HOTBAR_START_SLOT = match.HOTBAR_START_SLOT
 # that changing the constant in Rust cannot also change what proves it.
 MAX_ARROW_SPEED = 3.0
 
-# `LastFireTime::can_fire`, in seconds.
-FIRE_COOLDOWN = 0.150
 
 
 def look_angles(motion):
@@ -160,40 +159,35 @@ class Archer(match.MatchClient):
             self.alive = False
 
     def absorb_add_entity(self, payload):
-        """`ClientboundAddEntityPacket#STREAM_CODEC`, field for field.
+        """Decode one AddEntity with the shared `packet_monitor` decoder.
 
-        Since 26.2 this packet carries the entity's velocity itself, through
-        the same packed codec `set_entity_motion` uses, which is the whole
-        reason a launch speed is checkable from a client at all.
+        The launch velocity (the charge curve) and the two rotation bytes (the
+        client-visible heading) both come from that one decoder, so this gate
+        and the skin gates read the packet the same way. `wire_yaw`/`wire_pitch`
+        are its `yaw`/`pitch`, named for what the heading assertions below ask.
         """
-        entity_id, offset = take_var_int(payload)
-        offset += 16  # uuid
-        type_id, offset = take_var_int(payload, offset)
-        x, y, z = struct.unpack(">ddd", payload[offset : offset + 24])
-        offset += 24
-        motion, offset = match.take_lp_vec3(payload, offset)
+        entity = monitor.decode_add_entity(payload)
+        motion = entity["motion"]
         speed = (motion[0] ** 2 + motion[1] ** 2 + motion[2] ** 2) ** 0.5
-        # Since 26.2 the facing rides right after the velocity: a signed byte
-        # of pitch then one of yaw, each 1/256 of a turn (`Mth.packDegrees`).
-        # This is the client-visible heading the rotation gate below reads.
-        (x_rot, y_rot) = struct.unpack(">bb", payload[offset : offset + 2])
-        offset += 2
-        wire_pitch = x_rot * 360.0 / 256.0
-        wire_yaw = y_rot * 360.0 / 256.0
         entry = {
-            "id": entity_id,
-            "type": type_id,
-            "position": (x, y, z),
+            "id": entity["id"],
+            "type": entity["type"],
+            "position": entity["position"],
             "motion": motion,
             "speed": speed,
-            "wire_yaw": wire_yaw,
-            "wire_pitch": wire_pitch,
+            "wire_yaw": entity["yaw"],
+            "wire_pitch": entity["pitch"],
         }
         self.spawned.append(entry)
         self.log(
             "<- AddEntity id=%d type=%d at (%.2f, %.2f, %.2f) motion=(%.3f, "
             "%.3f, %.3f) |v|=%.3f yaw=%.1f pitch=%.1f"
-            % ((entity_id, type_id, x, y, z) + motion + (speed, wire_yaw, wire_pitch))
+            % (
+                (entry["id"], entry["type"])
+                + entry["position"]
+                + motion
+                + (speed, entry["wire_yaw"], entry["wire_pitch"])
+            )
         )
 
     def absorb_slot(self, payload):
@@ -386,16 +380,20 @@ def main():
     client.spawned.clear()
     client.use_slot(bow_slot, "(nock, first of two)")
     pump(client, 1.2)
+    # Both releases before the next socket read, so the server sees them
+    # within a tick of each other, far inside `LastFireTime::can_fire`'s 150 ms
+    # window. An earlier version slept 50 ms between them -- still inside the
+    # window, but a loaded server could stall the two releases more than 150 ms
+    # apart and fire both, a wall-clock race that failed the gate under load.
+    # Back to back asserts the same thing without the race.
     client.release_slot(bow_slot, "(first release)")
-    # Deliberately inside `LastFireTime::can_fire`'s 150 ms window.
-    time.sleep(FIRE_COOLDOWN / 3.0)
     client.release_slot(bow_slot, "(second release, inside the cooldown)")
     pump(client, 1.0)
     burst = arrows_seen()
     check(
         len(burst) == 1,
-        "two releases %d ms apart fire once, not twice (got %d arrows)"
-        % (int(FIRE_COOLDOWN / 3.0 * 1000), len(burst)),
+        "two releases inside the 150 ms cooldown fire once, not twice "
+        "(got %d arrows)" % len(burst),
     )
 
     # --- the heading on the wire --------------------------------------
