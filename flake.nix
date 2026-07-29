@@ -504,16 +504,29 @@
                 ''
             );
 
+          # Every directory under events/ is a game server crate, so the set of
+          # events is read from the tree rather than listed here. A new event
+          # directory becomes a `nix run .#<event>` app with no flake edit.
+          events = lib.attrNames (
+            lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./events)
+          );
+
+          # One process-compose definition, parameterized by event name: the
+          # game server runs that event's crate and nothing selects it at run
+          # time, so `nix run .#smash` and `nix run .#bedwars` are the same
+          # stack with the event fixed rather than one generic stack behind an
+          # environment variable.
+          #
           # Generated rather than committed as YAML: the ports and cert paths
           # then have one source of truth shared with the standalone apps above.
           # Commands are single-line: a backslash continuation is literal in a
           # Nix indented string, survives into the YAML, and reaches the shell
           # as a stray argument rather than a line join.
-          processComposeConfig = (pkgs.formats.yaml { }).generate "process-compose.yaml" {
+          mkProcessComposeConfig = event: (pkgs.formats.yaml { }).generate "process-compose-${event}.yaml" {
             version = "0.5";
             processes = {
               game-server = {
-                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p \"$\{HYPERION_EVENT:-bedwars}\" -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
+                command = "cargo run --profile \"$\{HYPERION_PROFILE:-dev}\" -p ${event} -- --ip 0.0.0.0 --port \"$\{HYPERION_SERVER_PORT:-${toString gameServerPort}}\" --root-ca-cert ${certsDir}/root_ca.crt --cert ${certsDir}/server.crt --private-key ${certsDir}/server_private_key.pem";
                 availability.restart = "on_failure";
               };
 
@@ -529,7 +542,33 @@
             };
           };
 
-          runners = lib.mapAttrs mkScript {
+          # Each event gets a `nix run .#<event>` app that boots that same stack
+          # with the event fixed: certificates first if missing, then the game
+          # server and proxy under process-compose. One generator over the
+          # events list rather than a copy per event, so a new event directory
+          # gets a run app for free and there is nothing to keep in sync.
+          mkDevStack = event: {
+            deps = [ pkgs.process-compose pkgs.git ];
+            text = ''
+              root="$(git rev-parse --show-toplevel)"
+              certs="$root/${certsDir}"
+              if [ ! -f "$certs/root_ca.crt" ]; then
+                echo "no dev certificates yet; generating them" >&2
+                "${lib.getExe runners.certs}"
+              fi
+              cd "$root"
+              # process-compose's own API port has to move with the game
+              # ports, or a second checkout dies on 8080 before either process
+              # starts.
+              api_port="''${HYPERION_PC_PORT:-$(( 8080 + ''${HYPERION_PLAYER_PORT:-${toString proxyPort}} - ${toString proxyPort} ))}"
+              echo "event: ${event} | players: 0.0.0.0:''${HYPERION_PLAYER_PORT:-${toString proxyPort}} | game server: 127.0.0.1:''${HYPERION_SERVER_PORT:-${toString gameServerPort}}"
+              exec process-compose --config ${mkProcessComposeConfig event} --port "$api_port" "$@"
+            '';
+          };
+
+          eventDevStacks = lib.genAttrs events mkDevStack;
+
+          runners = lib.mapAttrs mkScript (eventDevStacks // {
             # Builds four successive versions of the demo game module and drives
             # one running world through all of them. Being a nix app is what
             # makes the single-compiler precondition structural rather than a
@@ -593,65 +632,11 @@
               '';
             };
 
-            bedwars = {
-              deps = [ pkgs.git ];
-              text = ''
-                certs="$(git rev-parse --show-toplevel)/${certsDir}"
-                exec cargo run --profile release-full -p bedwars -- \
-                  --ip 0.0.0.0 --port 35565 \
-                  --root-ca-cert "$certs/root_ca.crt" \
-                  --cert "$certs/server.crt" \
-                  --private-key "$certs/server_private_key.pem" \
-                  "$@"
-              '';
-            };
-
-            # Super Smash Mobs, the second event. Same shape as bedwars: one
-            # game server per process, each binding its own port, so the two
-            # are selected at run time rather than sharing anything.
-            smash = {
-              deps = [ pkgs.git ];
-              text = ''
-                certs="$(git rev-parse --show-toplevel)/${certsDir}"
-                exec cargo run --profile release-full -p smash -- \
-                  --ip 0.0.0.0 --port "''${HYPERION_SERVER_PORT:-${toString gameServerPort}}" \
-                  --root-ca-cert "$certs/root_ca.crt" \
-                  --cert "$certs/server.crt" \
-                  --private-key "$certs/server_private_key.pem" \
-                  "$@"
-              '';
-            };
-
             bots.text = ''
               ulimit -Sn ${fileDescriptors}
               exec cargo run --release -p rust-mc-bot -- \
                 "''${1:-127.0.0.1:25565}" "''${2:-100}"
             '';
-
-            # process-compose supervises the two processes instead of the
-            # shell doing it: it gives dependency ordering (the proxy waits for
-            # the game server's port), per-process restart policy, a readable
-            # TUI with separated logs, and one Ctrl-C that actually stops
-            # everything. GNU parallel gave none of that -- a crashed process
-            # just vanished from an interleaved stream.
-            dev = {
-              deps = [ pkgs.process-compose pkgs.git ];
-              text = ''
-                root="$(git rev-parse --show-toplevel)"
-                certs="$root/${certsDir}"
-                if [ ! -f "$certs/root_ca.crt" ]; then
-                  echo "no dev certificates yet; generating them" >&2
-                  "${lib.getExe runners.certs}"
-                fi
-                cd "$root"
-                # process-compose's own API port has to move with the game
-                # ports, or a second checkout dies on 8080 before either process
-                # starts.
-                api_port="''${HYPERION_PC_PORT:-$(( 8080 + ''${HYPERION_PLAYER_PORT:-${toString proxyPort}} - ${toString proxyPort} ))}"
-                echo "players: 0.0.0.0:''${HYPERION_PLAYER_PORT:-${toString proxyPort}} | game server: 127.0.0.1:''${HYPERION_SERVER_PORT:-${toString gameServerPort}}"
-                exec process-compose --config ${processComposeConfig} --port "$api_port" "$@"
-              '';
-            };
 
             # Joins a running server with the real Minecraft client and says
             # whether a player reached the world.
@@ -678,7 +663,7 @@
             # protocol version. A client is what notices.
             #
             # Ports come from the environment and default off the dev ports, so
-            # a run does not fight a `nix run .#dev` open in another terminal.
+            # a run does not fight a `nix run .#bedwars` stack open in another terminal.
             e2e = {
               deps = [
                 pkgs.git
@@ -922,7 +907,7 @@
             # the *icon* for a charged ability, and `smash-e2e` already proves
             # that path. This is the vanilla weapon -- nock, spend an arrow,
             # launch it at a speed the draw decides -- which only bedwars has,
-            # and bedwars is what `nix run .#dev` and `packages.default` build.
+            # and bedwars is what `nix run .#bedwars` and `packages.default` build.
             #
             # It asserts the launch velocity out of `ClientboundAddEntity`
             # rather than watching where the arrow lands, because since 26.2
@@ -943,15 +928,7 @@
               '';
             };
 
-            # `nix run .#dev` runs bedwars; this runs the same stack on smash.
-            smash-dev = {
-              deps = [ pkgs.process-compose pkgs.git ];
-              text = ''
-                export HYPERION_EVENT=smash
-                exec "${lib.getExe runners.dev}" "$@"
-              '';
-            };
-          };
+          });
 
           scripts = checkScripts // runners // { inherit ci; };
 
@@ -1290,7 +1267,9 @@
               program = lib.getExe script;
             })
             (scripts // {
-              default = scripts.dev;
+              # `nix run` with no target boots the bedwars stack, the event
+              # `packages.default` also builds.
+              default = scripts.bedwars;
               # What CI runs. A contributor can run the same one command and
               # see the same verdict, which is what stops the two drifting.
               inherit (checks) flake-gate;

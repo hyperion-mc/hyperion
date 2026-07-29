@@ -55,7 +55,7 @@ https://github.com/user-attachments/assets/64a4a8c7-f375-4821-a1c7-0efc69c1ae0b
 
 - Machine: 2023 MacBook Pro Max 16" (14-cores)
 - Chunk Render Distance: 32 (4225 total)
-- Commit hash `faac9117` run with `nix run .#dev -- release`
+- Commit hash `faac9117` run with `HYPERION_PROFILE=release-full nix run .#bedwars`
 - Bot Launch Command: `nix run .#bots -- 127.0.0.1:25565 {number}`
 
 The bulk of player-specific processing occurs in our proxy layer, which handles tasks like regional multicasting and can
@@ -238,22 +238,24 @@ with mTLS, so generate throwaway development certificates once:
 nix run .#certs
 ```
 
-Then `nix run .#dev` supervises both with process-compose — the proxy starts
-after the game server, each restarts on failure, and one Ctrl-C stops
-everything. Connect a Minecraft 1.20.1 client to `localhost:25565`.
+Then run the event you want. Each event under `events/` is its own run app that
+supervises the whole stack with process-compose: the proxy starts after the
+game server, each restarts on failure, and one Ctrl-C stops everything. Connect
+a Minecraft 1.20.1 client to `localhost:25565`.
 
 ```bash
-nix run .#dev
+nix run .#bedwars   # or: nix run .#smash
 ```
 
-Build optimised instead with `HYPERION_PROFILE=release-full nix run .#dev`.
+`nix run` with no target runs `.#bedwars`. Build optimised instead with
+`HYPERION_PROFILE=release-full nix run .#bedwars`.
 
 Two checkouts on one machine both want 25565, 35565 and process-compose's own
 8080. `HYPERION_PLAYER_PORT` and `HYPERION_SERVER_PORT` move the second one out
 of the way, and the process-compose port follows the player port:
 
 ```bash
-HYPERION_PLAYER_PORT=25567 HYPERION_SERVER_PORT=35567 nix run .#dev
+HYPERION_PLAYER_PORT=25567 HYPERION_SERVER_PORT=35567 nix run .#bedwars
 ```
 
 Point bots at it with `nix run .#bots -- 127.0.0.1:25565 100`.
@@ -265,9 +267,9 @@ Every command is a flake app, so nix is the only thing you need installed.
 | Command | Does |
 | --- | --- |
 | `nix run .#certs` | Throwaway dev certificates for the mTLS link |
-| `nix run .#dev` | Game server and proxy under process-compose |
+| `nix run .#bedwars` | Bedwars game server and proxy under process-compose |
+| `nix run .#smash` | Smash game server and proxy under process-compose |
 | `nix run .#proxy` | Proxy alone, release-full |
-| `nix run .#bedwars` | Game server alone, release-full |
 | `nix run .#bots -- <ip> <count>` | Connect bots to a running server |
 | `nix run .#ci` | The cargo half of CI: format, lint, test, doc, deny, machete |
 | `nix run .#flake-gate` | The nix half: builds every flake check CI enforces |

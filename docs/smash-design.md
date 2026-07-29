@@ -569,11 +569,12 @@ setup, jemalloc, `Crypto::new`, then build the world, `world.set(ServerHandle)`,
 
 One addition over bedwars: `--embedded-proxy <ADDR>`. `HyperionProxyModule`
 runs a proxy inside the game-server process, and bedwars imports it
-unconditionally, so `nix run .#dev` has the in-process proxy and the standalone
-one racing for port 25565. The loser panics in a background tokio task and the
-process carries on, which is a hard failure to read. Making it a flag lets
-`nix run .#smash` be a whole server in one process and `nix run .#smash-dev`
-run the deployed shape with no race.
+unconditionally, so a game server started next to the standalone proxy has both
+racing for port 25565. The loser panics in a background tokio task and the
+process carries on, which is a hard failure to read. Making it a flag lets the
+`nix run .#smash` stack run the game server and the standalone proxy with no
+race, while passing `--embedded-proxy` still gives the single-process deployed
+shape when a deployment wants it.
 
 ### New: `events/smash/src/module/selector.rs`
 
