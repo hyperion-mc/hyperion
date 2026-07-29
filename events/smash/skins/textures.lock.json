@@ -1,0 +1,62 @@
+{
+  "blaze": {
+    "sha256": "sha256-7NioZFWlw5HWCZzkA9mwQMVnmKEdAvZwMIzX7ouhZSg=",
+    "url": "http://textures.minecraft.net/texture/ecd8a86455a5c391d6099ce403d9b040c56798a11d02f670308cd7ee8ba16528"
+  },
+  "chicken": {
+    "sha256": "sha256-7qrg+paewSsxGVY7OokxJw1AHrQqrwh3xQBetj5iSTE=",
+    "url": "http://textures.minecraft.net/texture/eeaae0fa969ec12b3119563b3a8931270d401eb42aaf0877c5005eb63e624931"
+  },
+  "cow": {
+    "sha256": "sha256-Yb+kOjugpjw7FEF7StUxPodywdov9qgDNbNFsuq5wbw=",
+    "url": "http://textures.minecraft.net/texture/61bfa43a3ba0a63c3b14417b4ad5313e8772c1da2ff6a80335b345b2eab9c1bc"
+  },
+  "creeper": {
+    "sha256": "sha256-tUXOiIjleQa1SPkUtX7wV1dnUzL9Sp56+znJCLUDHDU=",
+    "url": "http://textures.minecraft.net/texture/b545ce8888e57906b548f914b57ef05757675332fd4a9e7afb39c908b5031c35"
+  },
+  "enderman": {
+    "sha256": "sha256-qRkFgseYVbTlHZQj2K35ulZhGxp41fKUSguG6KCNQNI=",
+    "url": "http://textures.minecraft.net/texture/a9190582c79855b4e51d9423d8adf9ba56611b1a78d5f2944a0b86e8a08d40d2"
+  },
+  "guardian": {
+    "sha256": "sha256-Zxfom1ycMMxGHj/u7cTY4No/A6rpGi4Z265C5Gd9IIc=",
+    "url": "http://textures.minecraft.net/texture/6717e89b5c9c30cc461e3feeedc4d8e0da3f03aae91a2e19dbae42e4677d2087"
+  },
+  "iron_golem": {
+    "sha256": "sha256-z2nYuvNV+n5/8wM4ifIS0AICZm7E7mfnBEEbRHYMVgA=",
+    "url": "http://textures.minecraft.net/texture/cf69d8baf355fa7e7ff3033889f212d00202666ec4ee67e704411b44760c5600"
+  },
+  "skeleton": {
+    "sha256": "sha256-r+cnY+AhK3fwhm7Y0cizGySwrlhd051xtTA1HLNzMUU=",
+    "url": "http://textures.minecraft.net/texture/afe72763e0212b77f0866ed8d1c8b31b24b0ae585dd39d71b530351cb3733145"
+  },
+  "sky_squid": {
+    "sha256": "sha256-AFoWKESxBXxed7E+wuWWN1r4lNxOrtY6u8NbDkhttRQ=",
+    "url": "http://textures.minecraft.net/texture/5a162844b1057c5e77b13ec2e596375af894dc4eaed63abbc35b0e486db514"
+  },
+  "slime": {
+    "sha256": "sha256-EjW7ykWUaT628sPQTmqA9e9YpG8apbNICh3LGBZ+dLI=",
+    "url": "http://textures.minecraft.net/texture/1235bbca4594693eb6f2c3d04e6a80f5ef58a46f1aa5b3480a1dcb18167e74b2"
+  },
+  "snowman": {
+    "sha256": "sha256-nL5sqgiGVEJ3uTiGw/eCFGksk24GYRnkbWo7fCQcjK4=",
+    "url": "http://textures.minecraft.net/texture/9cbe6caa0886544277b93886c3f78214692c936e066119e46d6a3b7c241c8cae"
+  },
+  "spider": {
+    "sha256": "sha256-H9Hvc35p7n8SpEKerV3PRo+Y8700j+hDiV8SQ0JyIPw=",
+    "url": "http://textures.minecraft.net/texture/1fd1ef737e69ee7f12a4429ead5dcf468f98f3bd348fe843895f1243427220fc"
+  },
+  "wither_skeleton": {
+    "sha256": "sha256-BgAp37GKJ+aSjVZXAl+TGOly4CrZVy9W0keVZ2qtj8k=",
+    "url": "http://textures.minecraft.net/texture/60029dfb18a27e6928d5657025f9318e972e02ad9572f56d24795676aad8fc9"
+  },
+  "wolf": {
+    "sha256": "sha256-kspMFoWszs83M8dufJ9TtomBFSjB9WdfbmnfazRK1mc=",
+    "url": "http://textures.minecraft.net/texture/92ca4c1685accecf3733c76e7c9f53b689811528c1f5675f6e69df6b344ad667"
+  },
+  "zombie": {
+    "sha256": "sha256-wvLP9uWOAMZp+66F2cPWpF4O+ge7wJ+xPUJpYw4z4jk=",
+    "url": "http://textures.minecraft.net/texture/c2f2cff6e58e00c669fbae85d9c3d6a45e0efa07bbc09fb13d4269630e33e239"
+  }
+}

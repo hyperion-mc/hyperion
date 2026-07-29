@@ -234,6 +234,71 @@ let
       fi
     '';
 
+  # The client jar, for the one question a server capture cannot answer: how the
+  # vanilla client sources the LOCAL player's own skin, and whether any packet
+  # short of a Respawn refreshes it. LocalPlayer, AbstractClientPlayer, PlayerInfo
+  # and SkinManager are client-only, so they are absent from the server jar the
+  # other decompiles read. 26.1+ ships unobfuscated, so the names below are
+  # Mojang's own and need no mapping. See hyperion-mc/hyperion#1056.
+  clientJar = pkgs.fetchurl {
+    name = "minecraft-client-${pin.id}.jar";
+    inherit (pin.client) url;
+    hash = pin.client.sha256;
+    meta = {
+      description = "Mojang's Minecraft ${pin.id} client jar";
+      license = lib.licenses.unfree;
+    };
+  };
+
+  # The client's skin path, decompiled. Scoped to the classes that decide what
+  # skin a player entity renders, so the #1056 verdict cites source rather than a
+  # memory of it, and a jar bump that moves the path fails the landmark checks
+  # below rather than silently going stale. Unlike the server jar the other
+  # decompiles unpack, the client jar is not a bundler: the classes sit directly
+  # under net/minecraft.
+  clientSkinSources = pkgs.runCommand "minecraft-client-skin-sources-${pin.id}"
+    {
+      nativeBuildInputs = [ pkgs.cfr pkgs.unzip ];
+      meta = {
+        description = "Decompiled client skin and player classes for Minecraft ${pin.id}";
+        license = lib.licenses.unfree; # Mojang EULA; derived from the client jar.
+      };
+    }
+    ''
+      mkdir -p classes && (cd classes && unzip -q ${clientJar} \
+        'net/minecraft/client/player/AbstractClientPlayer*.class' \
+        'net/minecraft/client/player/LocalPlayer*.class' \
+        'net/minecraft/client/player/RemotePlayer*.class' \
+        'net/minecraft/client/multiplayer/PlayerInfo*.class' \
+        'net/minecraft/client/multiplayer/ClientPacketListener*.class' \
+        'net/minecraft/client/resources/SkinManager*.class' \
+        'net/minecraft/world/entity/player/PlayerSkin*.class')
+      cd classes
+
+      # Inner classes collapse onto their outermost class's file, so each outer
+      # brings its siblings along. Same '$'-anchored rewrite the other decompiles
+      # use.
+      find net/minecraft -name '*.class' | sed 's/\$[^/]*\.class$/.class/' | sort -u > selected.txt
+      echo "decompiling $(wc -l < selected.txt) client skin classes" >&2
+
+      mkdir -p $out
+      cfr --outputdir $out --silent true --comments false $(cat selected.txt)
+
+      # Landmarks: the exact members the #1056 verdict reads. A jar bump that
+      # renames any of them fails here rather than leaving the verdict citing an
+      # empty file.
+      acp="$out/net/minecraft/client/player/AbstractClientPlayer.java"
+      info="$out/net/minecraft/client/multiplayer/PlayerInfo.java"
+      cpl="$out/net/minecraft/client/multiplayer/ClientPacketListener.java"
+      for f in "$acp" "$info" "$cpl"; do
+        if [ ! -e "$f" ]; then echo "missing decompiled $f" >&2; exit 1; fi
+      done
+      grep -q "PlayerSkin getSkin" "$acp" || { echo "AbstractClientPlayer.getSkin gone" >&2; exit 1; }
+      grep -q "createSkinLookup" "$info" || { echo "PlayerInfo.createSkinLookup gone" >&2; exit 1; }
+      grep -q "handlePlayerInfoUpdate" "$cpl" || { echo "handlePlayerInfoUpdate gone" >&2; exit 1; }
+      grep -q "handleRespawn" "$cpl" || { echo "handleRespawn gone" >&2; exit 1; }
+    '';
+
   # The bundler jar is a launcher wrapped around the real server jar and its
   # dependencies. Both the harness below and anything else wanting to run
   # server code needs them unpacked with a classpath, so it happens once.
@@ -950,6 +1015,8 @@ in
     generatedData
     decompiledSources
     physicsSources
+    clientJar
+    clientSkinSources
     protocolJson
     generatedRust
     vanillaEncoder

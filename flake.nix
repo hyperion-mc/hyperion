@@ -141,10 +141,29 @@
             root = ./.;
             fileset = lib.fileset.unions [
               ./nix/verify-kit-skins.py
+              ./nix/verify-kit-skin-images.py
               ./events/smash/skins
               ./events/smash/src/module/kits
             ];
           };
+
+          # Every kit's skin image, fetched from the url its signed payload names
+          # and pinned by hash in textures.lock.json. Fixed-output so the image
+          # gate stays offline and store-cached: the fetch happens once, here,
+          # not inside the sandboxed check and not on every run.
+          kitSkinImages =
+            let
+              lock = lib.importJSON ./events/smash/skins/textures.lock.json;
+            in
+            pkgs.runCommand "hyperion-kit-skin-images" { } (
+              lib.concatStringsSep "\n" (
+                [ "mkdir -p $out" ]
+                ++ lib.mapAttrsToList (
+                  mob: entry:
+                  "cp ${pkgs.fetchurl { inherit (entry) url; hash = entry.sha256; }} $out/${mob}.png"
+                ) lock
+              )
+            );
 
           checkScripts = lib.mapAttrs mkScript {
             # `flecs_ecs_sys`'s default features include `regenerate_binding`,
@@ -179,6 +198,21 @@
               text = ''
                 root="$(git rev-parse --show-toplevel)"
                 exec python3 "$root/nix/verify-kit-skins.py"
+              '';
+            };
+
+            # Repin every kit's skin image by hash after a skin changes. Impure
+            # (it reaches Mojang's texture host), which is why it is a command
+            # and not a check; the check that reads its output is offline.
+            sync-kit-skin-textures = {
+              deps = [
+                pkgs.python3
+                pkgs.nix
+                pkgs.git
+              ];
+              text = ''
+                root="$(git rev-parse --show-toplevel)"
+                exec python3 "$root/nix/sync-kit-skin-textures.py"
               '';
             };
 
@@ -1176,6 +1210,18 @@
                   python3 ${kitSkinSource}/nix/verify-kit-skins.py | tee "$out"
                 '';
 
+            # A signed property is only half of it: the url it covers still has
+            # to serve a real skin image and not a broken link. Offline via the
+            # pinned, prefetched images in kitSkinImages.
+            kit-skins-images =
+              pkgs.runCommand "hyperion-kit-skins-images"
+                {
+                  nativeBuildInputs = [ kitSkinPython ];
+                }
+                ''
+                  python3 ${kitSkinSource}/nix/verify-kit-skin-images.py ${kitSkinImages} | tee "$out"
+                '';
+
             # The pinned world URL still has to be the one the server asks for.
             genmap-url-pinned = e2e.genMapUrlPinned;
 
@@ -1300,6 +1346,7 @@
             minecraft-data = minecraft.generatedData;
             minecraft-decompiled = minecraft.decompiledSources;
             minecraft-physics-sources = minecraft.physicsSources;
+            minecraft-client-skin-sources = minecraft.clientSkinSources;
             minecraft-protocol = minecraft.protocolJson;
             minecraft-proto-rust = minecraft.generatedRust;
             minecraft-encoder-fixtures = minecraft.encoderFixtures;
