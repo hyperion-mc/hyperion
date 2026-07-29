@@ -1,0 +1,42 @@
+plugins {
+	// net.fabricmc.fabric-loom (not -remap): Minecraft 26.1+ ships unobfuscated,
+	// so Loom does not remap and mod deps use plain implementation/compileOnly.
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = project.archive_base_name
+}
+
+repositories {
+}
+
+// Single source set, client-only mod. splitEnvironmentSourceSets() is the
+// example-mod default but adds a second source set we do not need: every class
+// here is client-side and declared "environment": "client" in fabric.mod.json.
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def props = ["version": project.version]
+	inputs.properties props
+	filesMatching("fabric.mod.json") {
+		expand props
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}

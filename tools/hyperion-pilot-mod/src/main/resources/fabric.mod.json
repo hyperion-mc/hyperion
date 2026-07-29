@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "hyperion-pilot",
+	"version": "${version}",
+	"name": "Hyperion Pilot",
+	"description": "Client-side agent bridge for testing the hyperion server (MC 26.2). Logs inbound/outbound packets to JSONL, shows a live packet overlay, and exposes a unix-socket RPC to pilot the real client and take screenshots.",
+	"authors": [
+		"hyperion-mc"
+	],
+	"contact": {
+		"homepage": "https://github.com/hyperion-mc/hyperion",
+		"sources": "https://github.com/hyperion-mc/hyperion"
+	},
+	"license": "MIT",
+	"icon": "assets/hyperion-pilot/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.hyperion.pilot.HyperionPilotClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "hyperion-pilot.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
