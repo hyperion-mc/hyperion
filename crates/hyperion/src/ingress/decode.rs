@@ -146,17 +146,40 @@ fn register_play(world: &World) {
     );
 }
 
+/// Registration module for the play-decode path: the per-connection frame
+/// [`Receiver`](packet_channel::Receiver) and the shared [`Decompressor`].
+///
+/// Registration only, per the flecs convention in the root `CLAUDE.md`. The
+/// systems that read them live in [`DecodeModule`], which imports this.
+#[derive(Component)]
+pub struct DecodeComponentsModule;
+
+impl Module for DecodeComponentsModule {
+    fn module(world: &World) {
+        world.component::<packet_channel::Receiver>();
+
+        // Registered as a singleton before it is set. A bare `set` stores the
+        // value without registering the type, and that is the dev-only
+        // ECS_INVALID_OPERATION abort of ENG-11000.
+        world
+            .component::<Decompressor>()
+            .add_trait::<flecs::Singleton>();
+        world.set(Decompressor::default());
+    }
+}
+
+/// Behavior module for the play-decode path: the `recv_data` system that drains
+/// every queued frame and dispatches it through [`packet_switch`].
 #[derive(Component)]
 pub struct DecodeModule;
 
 impl Module for DecodeModule {
     fn module(world: &World) {
-        world.component::<packet_channel::Receiver>();
-
-        world
-            .component::<Decompressor>()
-            .add_trait::<flecs::Singleton>();
-        world.set(Decompressor::default());
+        world.import::<DecodeComponentsModule>();
+        // `recv_data` reads `Position`, `Yaw`, `Pitch` and `EntitySize` off the
+        // player it is decoding for, so the module registering the kinematics
+        // base is imported rather than assumed.
+        world.import::<crate::simulation::KinematicsComponentsModule>();
 
         register_play(world);
     }

@@ -55,23 +55,44 @@ use valence_protocol::{
 };
 use valence_server::ItemStack;
 
-use super::{Player, event, handlers::PacketSwitchQuery};
+use super::{event, handlers::PacketSwitchQuery};
 use crate::net::{
     Compose, ConnectionId, DataBundle,
     protocol::{Clientbound, send},
 };
 
+/// Registration module for the inventory types: the player's own
+/// [`PlayerInventory`] and [`CursorItem`], the [`InventoryState`] tracking what
+/// the client has been told, and the [`OpenInventory`] that points at a
+/// container being viewed.
+///
+/// Registration only, per the flecs convention in the root `CLAUDE.md`, and it
+/// imports nothing: a consumer wanting an entity to *have* an inventory (a mock,
+/// a test, a kit builder) gets the types from here without the packet systems in
+/// [`InventoryModule`]. The `Player`-implies-inventory traits live with `Player`
+/// in [`SimComponentsModule`](crate::simulation::SimComponentsModule), which
+/// imports this, so the trait and the component it points at cannot be
+/// registered out of order.
+#[derive(Component)]
+pub struct InventoryComponentsModule;
+
+impl Module for InventoryComponentsModule {
+    fn module(world: &World) {
+        world.component::<PlayerInventory>();
+        world.component::<CursorItem>();
+        world.component::<InventoryState>();
+        world.component::<OpenInventory>();
+    }
+}
+
+/// Behavior module for inventories: the observers and systems that keep a
+/// client's copy of a container in step with the server's.
 #[derive(Component)]
 pub struct InventoryModule;
 
 impl Module for InventoryModule {
     fn module(world: &World) {
-        world.component::<OpenInventory>();
-        world.component::<InventoryState>();
-
-        world
-            .component::<Player>()
-            .add_trait::<(flecs::With, InventoryState)>();
+        world.import::<InventoryComponentsModule>();
 
         observer!(
             world,

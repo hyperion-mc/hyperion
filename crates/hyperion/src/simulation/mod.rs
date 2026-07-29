@@ -280,6 +280,10 @@ impl Module for SimComponentsModule {
         // registration module, which a physics-only consumer can import without
         // the rest of the simulation.
         world.import::<projectile_motion::ProjectileComponentsModule>();
+        // The inventory types, so the `Player`-implies-`CursorItem` and
+        // `Player`-implies-`InventoryState` traits below have a registered
+        // component to point at.
+        world.import::<inventory::InventoryComponentsModule>();
         // Registers every remaining simulation component and sets the
         // `MetadataPrefabs` singleton, which `SimModule`'s observers read back
         // to pick a prefab base per entity kind.
@@ -438,12 +442,16 @@ fn register_components(world: &World) -> MetadataPrefabs {
     world.component::<ConfirmBlockSequences>();
     world.component::<animation::ActiveAnimation>();
 
-    world.component::<hyperion_inventory::PlayerInventory>();
-    world.component::<hyperion_inventory::CursorItem>();
-
+    // `PlayerInventory`, `CursorItem` and `InventoryState` are registered by
+    // `inventory::InventoryComponentsModule`, imported above. What belongs here
+    // is the other half: a `Player` carries all three, and that trait is a
+    // statement about `Player`, which this module owns.
     world
         .component::<Player>()
         .add_trait::<(flecs::With, hyperion_inventory::CursorItem)>();
+    world
+        .component::<Player>()
+        .add_trait::<(flecs::With, hyperion_inventory::InventoryState)>();
 
     prefabs
 }

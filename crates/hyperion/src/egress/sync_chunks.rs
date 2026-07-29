@@ -36,12 +36,32 @@ pub struct ChunkSendQueue {
     changes: Vec<I16Vec2>,
 }
 
+/// Registration module for chunk streaming: the per-player
+/// [`ChunkSendQueue`].
+///
+/// Registration only, per the flecs convention in the root `CLAUDE.md`. The two
+/// systems that fill and drain the queue live in [`SyncChunksModule`], which
+/// imports this.
+#[derive(Component)]
+pub struct SyncChunksComponentsModule;
+
+impl Module for SyncChunksComponentsModule {
+    fn module(world: &World) {
+        world.component::<ChunkSendQueue>();
+    }
+}
+
+/// Behavior module for chunk streaming: one system turns a change of chunk into
+/// a queue of columns to send, the other drains that queue at a fixed rate.
 #[derive(Component)]
 pub struct SyncChunksModule;
 
 impl Module for SyncChunksModule {
     fn module(world: &World) {
-        world.component::<ChunkSendQueue>();
+        world.import::<SyncChunksComponentsModule>();
+        // Both systems read `Position` and the `ChunkPosition` derived from it,
+        // so the kinematics registration base is imported rather than assumed.
+        world.import::<crate::simulation::KinematicsComponentsModule>();
 
         let radius = world.get::<&Config>(|config| config.view_distance);
         let liberal_radius = radius + 2;

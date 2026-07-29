@@ -76,16 +76,35 @@ fn remove_player_from_visibility(world: &World) {
         });
 }
 
+/// Registration module for the inbound edge: the [`PendingRemove`] tag a
+/// disconnect leaves behind and the [`ServerPingResponse`] singleton the status
+/// path answers from.
+///
+/// Registration only, per the flecs convention in the root `CLAUDE.md`. The
+/// systems live in [`IngressModule`], which imports this.
+#[derive(Component)]
+pub struct IngressComponentsModule;
+
+impl Module for IngressComponentsModule {
+    fn module(world: &World) {
+        world.component::<PendingRemove>();
+        // Registered as a singleton before it is set: a bare `set` leaves the
+        // type unregistered, which aborts a dev build (ENG-11000).
+        world
+            .component::<ServerPingResponse>()
+            .add_trait::<flecs::Singleton>();
+        world.set(ServerPingResponse::default());
+    }
+}
+
+/// Behavior module for the inbound edge: shutdown, the IGN map refresh, play
+/// decoding, and reaping the entities a disconnect marked [`PendingRemove`].
 #[derive(Component)]
 pub struct IngressModule;
 
 impl Module for IngressModule {
     fn module(world: &World) {
-        world.component::<PendingRemove>();
-        world
-            .component::<ServerPingResponse>()
-            .add_trait::<flecs::Singleton>();
-        world.set(ServerPingResponse::default());
+        world.import::<IngressComponentsModule>();
 
         world.import::<DecodeModule>();
 

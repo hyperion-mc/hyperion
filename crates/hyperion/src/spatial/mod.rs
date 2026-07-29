@@ -19,6 +19,31 @@ use super::{
     },
 };
 
+/// Registration module for the spatial index: the [`Spatial`] opt-in tag and
+/// the [`SpatialIndex`] singleton it feeds.
+///
+/// Registration only, per the flecs convention in the root `CLAUDE.md`. A
+/// consumer that wants to mark entities [`Spatial`] and read the index without
+/// the per-tick rebuild attached imports this; the rebuild lives in
+/// [`SpatialModule`].
+#[derive(Component)]
+pub struct SpatialComponentsModule;
+
+impl Module for SpatialComponentsModule {
+    fn module(world: &World) {
+        world.component::<Spatial>();
+        // `add_trait::<flecs::Singleton>()` before the `set`: a bare `set`
+        // stores the value without registering the type, which is the
+        // ENG-11000 abort in a dev build.
+        world
+            .component::<SpatialIndex>()
+            .add_trait::<flecs::Singleton>();
+        world.set(SpatialIndex::default());
+    }
+}
+
+/// Behavior module for the spatial index: the `OnStore` pass that rebuilds the
+/// BVH from what moved this tick.
 #[derive(Component)]
 pub struct SpatialModule;
 
@@ -145,11 +170,12 @@ fn all_indexed_entities(world: &World) -> Vec<Entity> {
 //
 impl Module for SpatialModule {
     fn module(world: &World) {
-        world.component::<Spatial>();
-        world
-            .component::<SpatialIndex>()
-            .add_trait::<flecs::Singleton>();
-        world.set(SpatialIndex::default());
+        world.import::<SpatialComponentsModule>();
+        // The rebuild reads `Position` and `EntitySize` off every `Spatial`
+        // entity, so the module that registers them is imported here rather
+        // than assumed: a full boot happens to register them first, a
+        // standalone import of this module would not.
+        world.import::<crate::simulation::KinematicsComponentsModule>();
 
         system!("recalculate_spatial_index", world, &mut SpatialIndex,)
             .kind(id::<flecs::pipeline::OnStore>())
