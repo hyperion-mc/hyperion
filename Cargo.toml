@@ -28,6 +28,8 @@ members = [
     'crates/hyperion-gui',
     'crates/hyperion-hot-reload',
     'crates/hyperion-hot-reload/demo/host',
+    'crates/hyperion-hot-reload/demo/index-probe-host',
+    'crates/hyperion-hot-reload/demo/index-probe-module',
     'crates/hyperion-hot-reload/demo/module',
     'crates/hyperion-inventory',
     'crates/hyperion-item',
