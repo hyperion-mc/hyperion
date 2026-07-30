@@ -48,6 +48,13 @@ let
 
   enforced = lib.subtractLists excludedNames names;
 
+  # The results file is JSON assembled with printf rather than jq, so a name
+  # has to be a string that survives being dropped between two quotes. Every
+  # attribute in `checks` is a plain identifier today, and this is what stops
+  # the day one is not from producing a results file that parses as something
+  # else, or does not parse at all.
+  unquotable = lib.filter (name: builtins.match "[A-Za-z0-9._-]+" name == null) names;
+
   quote = xs: lib.concatMapStringsSep " " lib.escapeShellArg xs;
 
   # The recorded evidence is printed by the gate, not left in this file for
@@ -101,6 +108,53 @@ let
           ${reasonArms}esac
       }
 
+      # Every check's derivation path, in one flake load.
+      #
+      # A derivation path is known at evaluation time even where an output path
+      # is not, so this is the one identity the gate can state for every check
+      # including the deferred ones. It goes in the results file below, where a
+      # consumer comparing a pull request against main uses it to tell a flaky
+      # check from a broken one: the same derivation with two different
+      # outcomes is proof the change did not cause the failure.
+      #
+      # One `--apply` over the whole set rather than one `nix eval` per name.
+      # Both would work while the flake reference is locked and the evaluation
+      # cache is warm -- a per-name `nix eval` of an already-built attribute
+      # measured 0.26 s -- but that is a property of the checkout being clean,
+      # and 67 full evaluations is what it costs when it is not. One load costs
+      # one load either way.
+      drv_map="$(mktemp -t flake-gate-drvs.XXXXXX)"
+      trap 'rm -f "$drv_map"' EXIT
+      nix eval --accept-flake-config --raw "$flake#checks.${system}" --apply '
+        checks:
+        builtins.concatStringsSep "\n" (
+          builtins.attrValues (builtins.mapAttrs (name: check: name + " " + check.drvPath) checks)
+        )
+      ' > "$drv_map"
+
+      declare -A drv_path=()
+      # `--raw` writes no trailing newline, so the last pair arrives with `read`
+      # already at end of file and would be dropped by the loop condition alone.
+      while read -r name path || [ -n "$name" ]; do
+        [ -n "$name" ] || continue
+        drv_path["$name"]="$path"
+      done < "$drv_map"
+
+      # A name the gate was built with that evaluation does not produce would
+      # otherwise report as a failed check, which is a true statement about
+      # nothing. Say which name instead.
+      unevaluated=()
+      for name in "''${enforced[@]}" "''${excluded[@]}"; do
+        [ -n "''${drv_path[$name]:-}" ] || unevaluated+=("$name")
+      done
+      if [ "''${#unevaluated[@]}" -gt 0 ]; then
+        {
+          echo "checks.${system} did not evaluate: ''${unevaluated[*]}"
+          echo "the gate was built against a different set of names than the flake has."
+        } >&2
+        exit 1
+      fi
+
       # One `nix build` for the whole set, rather than one per name.
       #
       # The checks ran strictly one after another and nothing about a check
@@ -125,11 +179,11 @@ let
       # having never been attempted -- the opposite of the complete report the
       # loops below exist to produce.
       #
-      # The cost, named: an evaluation error in any one check now aborts the
-      # command before anything builds, so every name reports FAILED where only
-      # the broken one used to. nix prints the eval error with the offending
-      # attribute in it immediately above the report, which is where to look
-      # when every name goes red at once.
+      # The cost, named: one evaluation covers every check, so an evaluation
+      # error anywhere in `checks` now stops the gate at the `nix eval` above
+      # with nix's own message, rather than failing one name and passing the
+      # other 66. The report is not printed at all in that case, which is the
+      # honest answer: nothing was measured.
       installables=()
       for name in "''${enforced[@]}" "''${excluded[@]}"; do
         installables+=("$flake#checks.${system}.$name")
@@ -161,15 +215,46 @@ let
       # downstream of a content-addressed one has a deferred output path.
       # `nix eval .#checks.${system}.smash-e2e.outPath` answers with a
       # placeholder rather than a store path for 14 of the 67 checks, and those
-      # 14 are exactly the e2e gates.
+      # 14 are exactly the e2e gates. Given the derivation, nix resolves it
+      # against the realisations it recorded and answers exactly.
+      #
+      # By derivation path rather than by flake attribute, so this loads no
+      # flake at all: 67 of these cost nothing whatever state the evaluation
+      # cache is in.
       #
       # Output is dropped because the only thing on the failing path is nix
       # explaining that it will not build with max-jobs 0, which is the answer
       # rather than a problem. The build above is where a check says why it
       # failed.
       realised() {
-        nix build --accept-flake-config --no-link --max-jobs 0 --builders "" \
-          "$flake#checks.${system}.$1" > /dev/null 2>&1
+        nix build --no-link --max-jobs 0 --builders "" "$1^*" > /dev/null 2>&1
+      }
+
+      # A machine-readable verdict beside the human one, one line per check.
+      #
+      # It exists so that a consumer comparing this run against another can
+      # difference the set of failing checks without scraping the log, which is
+      # the only other place the answer lives. The name is the attribute, so a
+      # reader never has to map `hyperion-smash-e2e` back to `smash-e2e`.
+      #
+      # No `seconds` field, and the reason is the change above rather than an
+      # oversight: with every check realised by one concurrent `nix build`,
+      # a per-check wall time is not a thing that exists. `smash-e2e` and
+      # `bedwars-bow-e2e` overlap, both overlap the compile they depend on, and
+      # any number attributed to one of them would be a share of a wall clock
+      # they did not have to themselves. Recovering real per-check durations
+      # means splitting the realisation into a dependency phase and a leaf
+      # phase and timing the leaves, which is a different change with its own
+      # failure modes. The gate's total is printed below and in the job log.
+      #
+      # Built with printf rather than jq: an attribute name is checked at
+      # evaluation time (see `unquotable`) to need no JSON escaping, and a
+      # store path cannot contain a quote or a backslash.
+      results="''${FLAKE_GATE_RESULTS:-flake-gate-results.jsonl}"
+      : > "$results"
+      record() {
+        printf '{"attr":"%s","outcome":"%s","drvPath":"%s","seconds":null}\n' \
+          "$1" "$2" "$3" >> "$results"
       }
 
       status=0
@@ -178,18 +263,24 @@ let
       # Every failure is reported rather than the first one only, so a single
       # push can fix all of them.
       for name in "''${enforced[@]}"; do
-        if realised "$name"; then
+        if realised "''${drv_path[$name]}"; then
           echo "ok        $name"
+          record "$name" pass "''${drv_path[$name]}"
         else
           echo "FAILED    $name"
+          record "$name" fail "''${drv_path[$name]}"
           failed+=("$name")
           status=1
         fi
       done
 
+      # An excluded check is recorded by what it did, not by how the gate
+      # treats it. A consumer differencing two runs wants the outcome; whether
+      # this file forgives it is this file's business and changes under them.
       for name in "''${excluded[@]}"; do
-        if realised "$name"; then
+        if realised "''${drv_path[$name]}"; then
           echo "STALE     $name"
+          record "$name" pass "''${drv_path[$name]}"
           {
             echo "checks.${system}.$name is excluded from CI but now builds."
             echo "nix/ci/flake-gate.nix excluded it on this evidence:"
@@ -199,9 +290,17 @@ let
           status=1
         else
           echo "excluded  $name (still failing, on the evidence recorded for it)"
+          record "$name" fail "''${drv_path[$name]}"
           reason "$name"
         fi
       done
+
+      echo ""
+      echo "$results holds one json line per check: attr, outcome, drvPath."
+      # The gate's own wall clock, so a run says what it cost without anyone
+      # having to subtract two timestamps out of the job log. This is the
+      # number the change to one concurrent build was made to move.
+      echo "gate: ''${#enforced[@]} enforced and ''${#excluded[@]} excluded checks in ''${SECONDS}s"
 
       if [ "''${#failed[@]}" -gt 0 ]; then
         {
@@ -219,4 +318,9 @@ lib.throwIf (stale != [ ]) ''
   nix/ci/flake-gate.nix excludes checks that do not exist: ${lib.concatStringsSep ", " stale}
   Delete them, or spell them the way `checks.${system}` does.
 ''
-  gate
+  (lib.throwIf (unquotable != [ ]) ''
+    nix/ci/flake-gate.nix writes each check's verdict into a json results file
+    with printf, which holds only for names that need no json escaping. These
+    do: ${lib.concatStringsSep ", " unquotable}
+    Rename them, or teach the gate to escape a name before it writes one.
+  '' gate)
