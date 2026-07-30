@@ -1027,8 +1027,8 @@
             outputHashes = {
               "git+https://github.com/nvzqz/divan#55ec68e31526c28c7825fa1bb884f326b619a879" =
                 "sha256-xL0b6ZGmG4lhVcBjbBpobODZye6MAIr/gGBwMIrxmwM=";
-              "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950" =
-                "sha256-3qUAXDHkeRFVfovZT+fW7VXW6aDteAiqCrLeCG/jd40=";
+              "git+https://github.com/andrewgazelka/Flecs-Rust?rev=f09dc5308d00c6a88c82b1195334b6ed2b2d2868#f09dc5308d00c6a88c82b1195334b6ed2b2d2868" =
+                "sha256-DlMOSY7NyoPoR8w4yswm3O97BegcNWcLl/fW3wOAmRs=";
               "git+https://github.com/TestingPlant/valence?branch=feat-bytes#fb792dcb6669b64c5dc2366eb3d074b293def046" =
                 "sha256-rpuJSz8KxEwG5qeT4HYVtTxHJ24nrYZJwDurv+mjPxM=";
             };

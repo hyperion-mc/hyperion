@@ -418,5 +418,276 @@ Stated plainly, because these are the parts a reader cannot see for themselves.
   duplicate entries, and this branch's lock differs from it only by the three new crates.
   The two hot-reload checks build and pass on their own:
   `nix build .#checks.<system>.hot-reload-demo .#checks.<system>.hot-reload-registry-guard`.
-- **Only tested on aarch64-darwin.** `build.rs` has a Linux branch using
-  `--export-dynamic` instead of ld64's `-exported_symbol`, and it has never been run.
+- **The deployment half is designed, not shipped.** Nothing here is wired to `ix apply`,
+  to a systemd unit, or to hyperion's own modules. See "Deploying a reload" below for the
+  shape and what is missing.
+
+## Linux, and the one copy of flecs everything depends on
+
+Verified on x86_64-linux (dev-compute-6, rustc 1.99.0-nightly `dc3f85158`). It did not
+work there before, in two separate ways, and both failures are quiet enough to be worth
+naming.
+
+### Exports: `--export-dynamic` cannot undo what rustc does to a dylib
+
+rustc links a `dylib` with its own anonymous version script ending in `local: *`, which
+demotes every symbol it did not generate. flecs's C symbols arrive with `DEFAULT`
+visibility and `LOCAL` binding — physically present, dynamically unreachable:
+
+```
+$ nm -D --defined-only libhyperion_hot_reload.so | wc -l
+9001
+$ nm -D --defined-only libhyperion_hot_reload.so | grep -c " ecs_"
+0
+$ readelf -sW libhyperion_hot_reload.so | grep -w ecs_init
+  5905: ... FUNC    LOCAL  DEFAULT   14 ecs_init
+```
+
+Neither `-Wl,--export-dynamic` nor `-Wl,--export-dynamic-symbol=ecs_*` helps; a
+version-script demotion is not something either flag can reverse. Both were tried and both
+left the count at 0. The fix is a *second* version script naming the flecs globs with no
+`local:` clause — ld merges version scripts and an explicit pattern beats a `*` wildcard,
+so it promotes exactly those and leaves rustc's own exports alone. After: 10717 exported,
+666 of them `ecs_*`, `ecs_init` `GLOBAL`.
+
+Note that `-all_load` was never the load-bearing half on macOS either. `flecs_ecs_sys`
+compiles `src/flecs_rust.c`, which `#include`s `flecs.c`, so `libflecs.a` has exactly one
+member and any reference drags the whole thing in on both platforms. The platforms differ
+only in export visibility.
+
+**Where the script goes matters and the wrong placement is silent.** A build script's
+`rustc-link-arg` applies to its own crate's artifacts. Putting it in `flecs_ecs_sys` — the
+crate flecs's C actually lives in — does nothing, because that crate is an rlib absorbed
+into a dylib rather than linked itself. Measured: 0 exported `ecs_*`, no warning. It
+belongs in whichever crate *produces the dylib*.
+
+### One pool, or the world is indexed two different ways
+
+`flecs_ecs`'s derive emits, per component type, a `static INDEX` initialised from a
+process-global `INDEX_POOL`, and that index is a slot in the world's component array. The
+`flecs_manual_registration` note earlier in this document is about the *id* being
+per-world; the *index* is not. Two copies of `flecs_ecs` in one process is two pools, and
+a module then writes into a slot the host never filled.
+
+Nothing in the reload path detects this. `AbiToken` passes, no error is raised, and both
+sides are internally consistent — they simply disagree about which slot is which.
+
+`demo/index-probe-{host,module}` measures it. Two things about how, because the obvious
+approaches both give the wrong answer:
+
+- **Do not compare `ecs_init as usize` across the boundary.** An executable taking the
+  address of a dynamically-linked function gets its own PLT stub, so the addresses differ
+  whether or not the copy is shared. Measured both cases; both printed a mismatch.
+- **Do not compare one type's index for equality.** Two independent pools each start at 1,
+  so the first type registered on each side reads `1` and `1` and looks shared when nothing
+  is. This is what the probe reported before the module referenced the runtime crate at all.
+
+What works is allocation order, which cannot coincide: with one pool, an index taken in the
+module is strictly greater than every index the host took first.
+
+With `hyperion` as a plain rlib:
+
+```
+host indices: [1, 2, 3, 4] (max 4)
+module's own type index: 1
+hyperion::simulation::Position index: host 4, module 2
+SHARED_POOL=false
+```
+
+The *host* is what creates the second copy — it pulls `flecs_ecs` in through hyperion's
+rlib while the module resolves it from the runtime dylib. A module that touches no hyperion
+component does not avoid this; the host's own linkage is enough.
+
+With `flecs_ecs` and `hyperion` both dylibs:
+
+```
+host indices: [1, 2, 3, 4] (max 4)
+module's own type index: 5
+hyperion::simulation::Position index: host 4, module 4
+SHARED_POOL=true
+SHARED_HYPERION_INDEX=true
+PROBE_OK
+```
+
+### A behaviour-only module does not avoid this
+
+There is an appealing argument that it should. `CLAUDE.md` splits every flecs module into a
+registration module that only declares components and a behaviour module that only installs
+systems and observers, and notes that this lets a consumer import the types without the
+systems. Put only behaviour modules in the reloadable library, keep every registration
+module in the host, and the manual-registration problem does look like it disappears: a
+library that registers nothing cannot collide with anything.
+
+That much is true, and it is the right split for a different reason given below. **It does
+not make the shared pool optional.** Registering a component and *looking one up* are
+different operations and only the first is avoided. A system's query still resolves `T` to
+an id through `T::index()`, so a behaviour module reading `Position` needs the same index
+the host filled.
+
+Measured, not argued. `demo/index-probe-module` registers nothing at all — it declares one
+marker type and calls `index()` — and in the unshared configuration it read
+`hyperion::simulation::Position` as index **2** where the host had it at **4**. A pure
+behaviour module querying `Position` would have read a slot the host never wrote.
+
+So the registration/behaviour split is worth keeping, but for the hazard it actually
+addresses: **component layout**. A system compiled against one struct layout reading a world
+that holds another is silent memory corruption. Keeping component definitions in the host
+and having the library depend on them rather than declare them means there is exactly one
+definition of each layout in the process. The gate on top of that turns a layout change into
+a refusal rather than a corruption.
+
+The honest boundary that falls out, and which belongs in front of anyone using this:
+**changing what a system does is a reload; adding or changing a component type is a host
+rebuild and a restart.**
+
+### The build recipe
+
+1. `flecs_ecs` needs `crate-type = ["dylib", "rlib"]` and a `build.rs` emitting the version
+   script above. Without the dylib you get
+   `error: cannot satisfy dependencies so 'flecs_ecs' only shows up once`, because two
+   dylibs each bundle their own copy.
+2. `hyperion` needs `crate-type = ["dylib", "rlib"]`.
+
+   Both crates now emit two artifacts on every build rather than one -- `flecs_ecs`'s
+   dylib is about 37 MB next to a 45 MB rlib. Whether that costs meaningful build time is
+   **not established**: a clean `cargo build -p flecs_ecs` measured 8875 ms with both and
+   8817 ms with the rlib alone, which is within noise, but a stale dylib in the target
+   directory means the second configuration may not have taken effect. Treat the build-time
+   cost as unmeasured rather than as shown to be zero, and measure it properly if CI wall
+   time matters.
+3. Host and every module build with
+   `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
+   plus rpaths to the rust sysroot and to wherever the dylibs land.
+
+What makes the pool shared is step 1 and nothing else. It is tempting to think a module has
+to *reference* `hyperion-hot-reload` to end up on the shared runtime — an earlier version of
+the probe carried a call to `AbiToken::current()` with a comment claiming exactly that.
+Removing the dependency entirely leaves the probe passing. The dependency being a dylib is
+what shares it; a consumer's import list has nothing to do with it.
+
+`--allow-shlib-undefined` is not a shrug. `simulation/metadata/mod.rs` hand-writes
+`impl PartialOrd for $name where $type: PartialOrd`, and for 7 metadata types that bound is
+unsatisfiable because glam's `Quat` and `Vec3` have no `PartialOrd`. rustc never codegens
+those `partial_cmp` bodies but still lists them in the dylib's export list. They cannot be
+called — calling one fails to compile on the same unsatisfiable bound — so allowing them
+undefined is sound. Removing the blanket impl from that macro would remove the need for the
+flag, and is the better fix.
+
+**Steps 1 and 2 are not landed.** They were verified through a local `[patch]` against a
+copy of the fork checkout. Landing them means a commit in `andrewgazelka/Flecs-Rust` and a
+repin here.
+
+## Deploying a reload
+
+The mechanism a running server needs is not a file watcher. It is systemd's, and NixOS
+already exposes it.
+
+`nixos/doc/manual/development/unit-handling.section.md` in nixpkgs: *"If they are different
+but only `X-Reload-Triggers` in the `[Unit]` section is changed, **reload** the unit."* So a
+game-logic-only change can reach a running server as a `systemctl reload` rather than a
+restart, which means the process never exits, the proxy's backend socket never closes, and
+no player is disturbed.
+
+Three pieces make that hold:
+
+- `reloadTriggers = [ gameModuleDylib ]`, so the dylib's store path lands in
+  `X-Reload-Triggers` **and nowhere else**. If it also appeared in `ExecStart` or
+  `Environment` the `[Service]` section would differ and the whole scheme degrades to a
+  restart.
+- The process reaches the dylib through a stable path — `environment.etc` — since `/etc` is
+  rebuilt during activation, before units are acted on, and changing a symlink there is not
+  a unit change at all.
+- `ExecReload` is a fixed string: a client that asks the running process to reload and
+  **exits non-zero when the gate refuses**, printing the refusal and its `migration!` stub.
+  A refused reload then surfaces as a failed activation with the reason in the deploy
+  output, rather than as a silent no-op, and the world keeps running on the old build.
+
+Not built. `app.run()` in an event's `init_game` is flecs's own main loop and offers no
+per-tick Rust hook; it would become an explicit `while world.progress()` so reloads land
+between ticks, which is also what the "reloads must happen between ticks" gap above needs.
+
+### What a reload costs
+
+Measured, debug profile, three runs each. The Linux figures are dev-compute-6 (32 cores);
+the smash figure is aarch64-darwin.
+
+| | |
+| --- | --- |
+| rules-only rebuild and link (`smash`, 9756 lines of rules code, one line edited) | 1.76 / 1.85 / 2.07 s |
+| minimal module rebuild and link (165 KB dylib) | 282 / 285 / 283 ms |
+| process start **and** `dlopen` — an upper bound on the reload | 31 ms |
+| touching the engine instead: host and engine rebuild | 4.42 s |
+| unit restart | zero, by construction |
+| world rebuild, chunk resend, re-join | zero, by construction |
+
+The last two rows are the point. An engine change costs 2.4x the compile *and* loses the
+process, the world and every connected player. A rules change costs neither.
+
+Three things these numbers are not:
+
+- **Not the release profile.** A deployment builds release, which compiles slower. Treat
+  these as the shape of the cost, not the deployed figure.
+- **Not a rules dylib.** The rules are not a separate crate yet, so the smash row is
+  `-p smash` relinking the whole binary. A rules dylib links strictly less, so this
+  over-estimates rather than under-estimates.
+- **Not smash's reload.** The 31 ms is a 165 KB probe module and includes process startup,
+  so the in-process reload is strictly less — but a larger dylib takes longer to `dlopen`,
+  and the schema diff scales with component count. The demo separately reports
+  `instances rewritten: 0` for a code-only change, which is the case that does no archetype
+  moves at all.
+
+For the deployment as a whole, the game server is not the slow part. Most of an `ix apply`
+is working out what to deploy rather than deploying it, and that cost is unrelated to
+anything here.
+
+## Handing this off: what is left, in order
+
+The mechanism is proven and the deployment is not built. Four steps remain. The third is
+the risky one; the rest are known work.
+
+**1. Make `hyperion` a dylib and settle the build flags.** `crate-type = ["dylib", "rlib"]`
+plus `-C prefer-dynamic -C link-arg=-Wl,--undefined-version
+-C link-arg=-Wl,--allow-shlib-undefined` everywhere. Small edit, wide blast radius: it
+changes how every consumer links, and a plain `cargo test` without those flags will not
+link the result. Confirm by running `demo/index-probe-host`, which should print `PROBE_OK`.
+
+**2. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
+`export_module!`.** The rules already avoid the host seam by design, but they reach into
+`crate::server`, `crate::flecs_ext` and about fifteen `hyperion::` items, so this is a real
+refactor rather than a file move. Registration modules stay in the host per the section
+above.
+
+**3. Package it. This is the risky step.** The game server binary and the module dylib have
+to be separate store paths, both built with the flags from step 1, with rpaths that resolve
+in the nix store rather than in `target/debug`. Nothing here is verified — every
+measurement in this document was taken from a cargo build, not a nix one. Expect the
+surprises to be here.
+
+**4. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
+`reloadTriggers`, the stable `/etc` path, and an `ExecReload` client that exits non-zero on
+a refusal. Small, and the design is settled.
+
+### Adopting it costs no scheduled restart
+
+Step 1 changes the host binary, so the running game server has to restart once to pick it
+up — but that restart never has to be scheduled *for this*. The fleet already restarts for
+version bumps, and the proxy and the game are built from the same repository, so those
+move every node anyway. The split host can sit in the tree and take effect on the next
+apply that was happening regardless.
+
+Design for that: none of this should want its own window. The claim is then not "one
+restart, then none" but that no restart was ever scheduled for it, including the first.
+
+### Reproducing the measurements
+
+Everything in this document was measured on dev-compute-6 (x86_64-linux, 32 cores,
+rustc 1.99.0-nightly `dc3f85158`) and on aarch64-darwin, through `nix develop` and cargo.
+The build tree under `/tmp/hotreload-elf` on that host **was deleted** when the node was
+released, so reproducing means a fresh clone and a warm toolchain fetch — roughly twenty
+seconds for the devShell once the store is warm, and a couple of minutes for the first
+`cargo build -p hyperion-hot-reload`.
+
+Note that `cargo build -p smash` does **not** work in the devShell on Linux, for reasons
+unrelated to any of this: jemalloc 5.3.1's configure cannot survive GCC 15
+(`cannot determine return type of strerror_r`). The nix package path is unaffected.
+ENG-11279. Until it is fixed, iterate on darwin and use nix for Linux artifacts.

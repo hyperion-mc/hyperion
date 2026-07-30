@@ -1318,7 +1318,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs"
 version = "0.2.2"
-source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950"
+source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=f09dc5308d00c6a88c82b1195334b6ed2b2d2868#f09dc5308d00c6a88c82b1195334b6ed2b2d2868"
 dependencies = [
  "bitflags 2.13.1",
  "compact_str",
@@ -1332,7 +1332,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs_derive"
 version = "0.2.0"
-source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950"
+source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=f09dc5308d00c6a88c82b1195334b6ed2b2d2868#f09dc5308d00c6a88c82b1195334b6ed2b2d2868"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1342,7 +1342,7 @@ dependencies = [
 [[package]]
 name = "flecs_ecs_sys"
 version = "0.2.1"
-source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=252944dedbc80741b7cca30dea67c5be95638950#252944dedbc80741b7cca30dea67c5be95638950"
+source = "git+https://github.com/andrewgazelka/Flecs-Rust?rev=f09dc5308d00c6a88c82b1195334b6ed2b2d2868#f09dc5308d00c6a88c82b1195334b6ed2b2d2868"
 dependencies = [
  "bindgen",
  "cc",
@@ -2020,6 +2020,23 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "hyperion-hot-reload",
+]
+
+[[package]]
+name = "hyperion-hot-reload-index-probe"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion",
+ "libloading 0.9.0",
+]
+
+[[package]]
+name = "hyperion-hot-reload-index-probe-module"
+version = "0.1.0"
+dependencies = [
+ "flecs_ecs",
+ "hyperion",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-hot-reload-index-probe-module"
+publish = false
+repository.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+flecs_ecs.workspace = true
+hyperion.workspace = true
+
+[lints]
+workspace = true
