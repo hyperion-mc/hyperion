@@ -79,9 +79,12 @@ jobs:
   flake:
     name: Flake
     runs-on: ubuntu-latest
-    # A runner-level guard, not a target. The gate builds every check serially
-    # from a cold hosted store; the bedwars binary alone measured 620 to 670
-    # seconds across four runs on 2026-07-28 and everything else is minutes.
+    # A runner-level guard, not a target. The gate realises every check from a
+    # cold hosted store in one `nix build --keep-going`, so nix schedules them
+    # up to `max-jobs` (auto, four here) rather than one at a time. The floor is
+    # the release compile plus the longest single gate behind it: on run
+    # 30500640846 that was roughly 500 seconds of crate graph and then
+    # `smash-e2e` at 639.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
