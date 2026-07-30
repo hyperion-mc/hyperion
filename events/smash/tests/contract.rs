@@ -29,6 +29,7 @@ use smash::{
     module::{
         ability::AbilityModule,
         arena::{Arena, ArenaModule},
+        build_stamp::{BuildStampModule, StampShown},
         damage::{Armor, DamageKind, DamageModule, Damaged, hurt},
         effect::{self, EffectModule},
         hud::HudModule,
@@ -515,6 +516,25 @@ fn contracts() -> Vec<Contract> {
                 assert!(
                     smash::module::kit::registry(world).len() >= 10,
                     "the stock kits did not register"
+                );
+            },
+        },
+        Contract {
+            name: "BuildStamp",
+            import: |world| {
+                world.import::<BuildStampModule>();
+            },
+            // Its one system matches `Player` and reads `PlayerId`, which is
+            // the seam's. Everything else it touches -- `BuildStamp` itself and
+            // the `StampShown` tag -- it registers, in its own registration
+            // module, which it imports.
+            requires: &["Player"],
+            runtime_requires: &[],
+            exercise: |world, player| {
+                world.progress_time(0.05);
+                assert!(
+                    player.has(StampShown::id()),
+                    "the stamp was never put on the player's screen"
                 );
             },
         },

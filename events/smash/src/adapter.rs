@@ -53,7 +53,7 @@ use valence_nbt::{Compound, List, Value};
 use crate::{
     module::kit::{self, Playing},
     server::{
-        BarColour, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server,
+        BarColour, BarSlot, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server,
         SidebarLine, Sound, SoundCategory, Status, Text, Title,
     },
 };
@@ -117,6 +117,7 @@ enum Op {
     },
     SetBossBar {
         player: Entity,
+        slot: BarSlot,
         bar: BossBar,
     },
     ShowTitle {
@@ -243,9 +244,10 @@ impl Server for HyperionServer {
         });
     }
 
-    fn set_boss_bar(&self, player: PlayerId, bar: BossBar) {
+    fn set_boss_bar(&self, player: PlayerId, slot: BarSlot, bar: BossBar) {
         self.push(Op::SetBossBar {
             player: entity_of(player),
+            slot,
             bar,
         });
     }
@@ -272,7 +274,7 @@ impl Module for SmashAdapterModule {
         world.import::<crate::SmashModule>();
 
         world.component::<OpQueue>().add_trait::<flecs::Singleton>();
-        world.component::<HudBar>();
+        world.component::<PlayerBars>();
 
         let ops = Arc::new(Mutex::new(Vec::new()));
         world.set(OpQueue(Arc::clone(&ops)));
@@ -324,22 +326,37 @@ impl Module for SmashAdapterModule {
                 let world = it.world();
                 let drained =
                     std::mem::take(&mut *queue.0.lock().expect("server op queue poisoned"));
-                // Every player's bar, resolved before any op is applied.
+                // Every player's bars, resolved before any op is applied.
                 //
                 // `world.entity()` hands back its id at once but the
-                // `set(HudBar)` that records it is deferred to the merge, so
-                // two `SetBossBar` ops for one player in one drain would each
-                // see no bar and mint one. Resolving them up front, in one
-                // map, is what makes a second bar impossible rather than
-                // merely unlikely.
-                let mut bars = HashMap::new();
+                // `set(PlayerBars)` that records it is deferred to the merge,
+                // so a second `SetBossBar` for the same player in one drain
+                // still reads the component as it stood at the start of the
+                // tick. Resolving every slot into one map first, and writing
+                // the component back once per player, is what makes a
+                // duplicate bar impossible rather than merely unlikely. Doing
+                // it per slot instead loses the other slot's entity to the
+                // last write, and the tick after that mints a second bar for
+                // it -- two match bars stacked on one screen.
+                let mut bars: HashMap<Entity, PlayerBars> = HashMap::new();
                 for op in &drained {
-                    if let Op::SetBossBar { player, .. } = op
-                        && let Entry::Vacant(slot) = bars.entry(*player)
-                        && let Some(bar) = hud_bar(world, *player)
-                    {
-                        slot.insert(bar);
-                    }
+                    let Op::SetBossBar { player, slot, .. } = op else {
+                        continue;
+                    };
+                    let resolved = match bars.entry(*player) {
+                        Entry::Occupied(held) => held.into_mut(),
+                        Entry::Vacant(empty) => match bars_of(world, *player) {
+                            Some(held) => empty.insert(held),
+                            None => continue,
+                        },
+                    };
+                    resolved.0[slot.index()] = Some(match resolved.0[slot.index()] {
+                        Some(bar) if world.entity_from_id(bar).is_alive() => bar,
+                        _ => mint_bar(world, *player),
+                    });
+                }
+                for (player, resolved) in &bars {
+                    world.entity_from_id(*player).set(*resolved);
                 }
                 for op in drained {
                     apply(world, compose, op, &bars);
@@ -348,7 +365,7 @@ impl Module for SmashAdapterModule {
     }
 }
 
-fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, Entity>) {
+fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, PlayerBars>) {
     match op {
         Op::AddVelocity { player, delta } => {
             let entity = world.entity_from_id(player);
@@ -511,8 +528,11 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
                 &packet,
             );
         }
-        Op::SetBossBar { player, bar } => {
-            let Some(entity) = bars.get(&player) else {
+        Op::SetBossBar { player, slot, bar } => {
+            let Some(entity) = bars
+                .get(&player)
+                .and_then(|held| held.0[slot.index()].as_ref())
+            else {
                 return;
             };
             world
@@ -545,13 +565,31 @@ fn connection_of(world: WorldRef<'_>, player: Entity) -> Option<ConnectionId> {
     entity.try_get::<&ConnectionId>(|id| *id)
 }
 
-/// Which boss bar entity is this player's, making it if they have none.
+/// The bars a player already has, or nothing when they have left.
 ///
-/// The bar this game draws is per player -- it carries a percentage that is
-/// only true of the person reading it -- so its audience is one edge,
+/// An empty set for a player who has never been drawn one, which is the same
+/// answer as "every slot is still to be minted".
+fn bars_of(world: WorldRef<'_>, player: Entity) -> Option<PlayerBars> {
+    let player = world.entity_from_id(player);
+    if !player.is_alive() {
+        return None;
+    }
+    Some(
+        player
+            .try_get::<&PlayerBars>(|bars| *bars)
+            .unwrap_or_default(),
+    )
+}
+
+/// A fresh boss bar entity, shown to `player` alone.
+///
+/// Every bar this game draws is per player -- the match bar carries a
+/// percentage that is only true of the person reading it, and the build stamp
+/// has to reach whoever connects next -- so each one's audience is one edge,
 /// `(ShownTo, player)`. Everything after that is `egress::boss_bar`'s: the
 /// `Add` on the first push, one operation per field that moves after it, and
-/// the `Remove` when the player leaves.
+/// the `Remove` when the player leaves. A slot nobody ever writes to costs no
+/// entity, because this is only called for a slot that is being written.
 ///
 /// A child of the player, so it dies with them under flecs's own
 /// `(ChildOf, OnDeleteTarget, Delete)`. Without that the bar entity would
@@ -559,31 +597,28 @@ fn connection_of(world: WorldRef<'_>, player: Entity) -> Option<ConnectionId> {
 /// nobody restarts is a leak measured in players seen.
 ///
 /// No fog, no darkened sky and no boss music, which is the default `Effects`:
-/// each of them changes how the arena looks or sounds, and this bar is a
-/// readout rather than an event.
-fn hud_bar(world: WorldRef<'_>, player: Entity) -> Option<Entity> {
-    let player = world.entity_from_id(player);
-    if !player.is_alive() {
-        return None;
-    }
-    if let Some(bar) = player.try_get::<&HudBar>(|bar| bar.0)
-        && world.entity_from_id(bar).is_alive()
-    {
-        return Some(bar);
-    }
-    let bar = world
+/// each of them changes how the arena looks or sounds, and these bars are
+/// readouts rather than events.
+fn mint_bar(world: WorldRef<'_>, player: Entity) -> Entity {
+    world
         .entity()
         .child_of(player)
         .add(id::<boss_bar::BossBar>())
         .add((id::<boss_bar::ShownTo>(), player))
-        .id();
-    player.set(HudBar(bar));
-    Some(bar)
+        .id()
 }
 
-/// The boss bar entity a player's HUD writes to.
-#[derive(Component, Debug, Copy, Clone)]
-struct HudBar(Entity);
+/// The boss bar entities a player is being drawn, one per [`BarSlot`].
+///
+/// An array and not a component per slot, so a new slot is an entry in
+/// [`BarSlot::ALL`] rather than a new component nobody remembers to register.
+/// The width is `BarSlot::COUNT`, which is that list's length, and every index
+/// written here comes from [`BarSlot::index`], which is a position in the same
+/// list -- so this cannot be indexed out of bounds by a slot the list knows
+/// about. A slot the list does not know about panics in `index` by name
+/// instead, which is the only remaining way to get this wrong and it says so.
+#[derive(Component, Debug, Copy, Clone, Default)]
+struct PlayerBars([Option<Entity>; BarSlot::COUNT]);
 
 const fn colour(colour: BarColour) -> BossBarColor {
     match colour {

@@ -32,7 +32,9 @@ use smash::{
         lobby::{Lobby, LobbyConfig, Phase},
         player::{Health, SelectedSlot},
     },
-    server::{BarColour, Experience, NamedColor, PlayerId, TextColor, TitleTimes, mock::Call},
+    server::{
+        BarColour, BarSlot, Experience, NamedColor, PlayerId, TextColor, TitleTimes, mock::Call,
+    },
 };
 
 const EPS: f32 = 1e-5;
@@ -780,13 +782,20 @@ fn an_unchanged_screen_sends_nothing() {
             .filter(|call| matches!(call, Call::Experience(..) | Call::BossBar(..)))
             .count()
     };
-    // One, not two. A player with no kit holds an empty slot, whose meter is
+    // Two, not three. A player with no kit holds an empty slot, whose meter is
     // the empty bar a fresh client already draws, so there is nothing to
-    // correct; the boss bar is the only thing the client does not already have.
+    // correct. The two bars are the only things the client does not already
+    // have: the match bar, and the build stamp under it.
     assert_eq!(
         hud_calls(&game),
+        2,
+        "a joining player with no kit needs two pushes: {:?}",
+        game.server.calls()
+    );
+    assert_eq!(
+        game.server.boss_bars_of(PlayerId(1), BarSlot::Build).len(),
         1,
-        "a joining player with no kit needs one push: {:?}",
+        "the build stamp is one of them: {:?}",
         game.server.calls()
     );
 
@@ -813,7 +822,7 @@ fn a_hit_moves_the_percentage_on_the_victims_bar() {
 
     let before = game
         .server
-        .boss_bars_of(PlayerId(2))
+        .boss_bars_of(PlayerId(2), BarSlot::Hud)
         .last()
         .cloned()
         .expect("a bar during a match");
@@ -831,7 +840,7 @@ fn a_hit_moves_the_percentage_on_the_victims_bar() {
 
     let after = game
         .server
-        .boss_bars_of(PlayerId(2))
+        .boss_bars_of(PlayerId(2), BarSlot::Hud)
         .last()
         .cloned()
         .expect("the hit moved the bar");
@@ -945,8 +954,8 @@ fn each_player_gets_their_own_percentage() {
     });
     game.advance(0.05, 2);
 
-    let hit = game.server.boss_bars_of(PlayerId(2));
-    let untouched = game.server.boss_bars_of(PlayerId(1));
+    let hit = game.server.boss_bars_of(PlayerId(2), BarSlot::Hud);
+    let untouched = game.server.boss_bars_of(PlayerId(1), BarSlot::Hud);
     assert_eq!(
         hit.last().map(|bar| bar.title.plain()),
         Some("100%".to_owned())
@@ -1013,7 +1022,10 @@ fn a_player_who_joins_late_gets_a_screen() {
     game.advance(0.05, 1);
 
     assert!(
-        !game.server.boss_bars_of(PlayerId(2)).is_empty(),
+        !game
+            .server
+            .boss_bars_of(PlayerId(2), BarSlot::Hud)
+            .is_empty(),
         "the late joiner got no bar"
     );
     assert_eq!(
@@ -1062,7 +1074,7 @@ fn elimination_switches_the_bar_to_spectating() {
 
     let bar = game
         .server
-        .boss_bars_of(PlayerId(1))
+        .boss_bars_of(PlayerId(1), BarSlot::Hud)
         .last()
         .cloned()
         .expect("a bar");
