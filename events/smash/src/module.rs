@@ -1,5 +1,6 @@
 pub mod ability;
 pub mod arena;
+pub mod build_stamp;
 pub mod damage;
 pub mod effect;
 pub mod hud;

@@ -10,8 +10,8 @@ use std::sync::Mutex;
 use glam::Vec3;
 
 use super::{
-    BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server, SidebarLine, Sound,
-    Status, Text, Title,
+    BarSlot, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server, SidebarLine,
+    Sound, Status, Text, Title,
 };
 
 /// One thing the game asked the server to do.
@@ -33,7 +33,7 @@ pub enum Call {
     /// A sound only one player hears.
     SoundTo(PlayerId, Sound),
     Experience(PlayerId, Experience),
-    BossBar(PlayerId, BossBar),
+    BossBar(PlayerId, BarSlot, BossBar),
     Title(PlayerId, Title),
     BroadcastTitle(Title),
 }
@@ -152,13 +152,19 @@ impl MockServer {
             .collect()
     }
 
-    /// Every boss bar pushed to `player`, oldest first.
+    /// Every boss bar pushed to `player` in one slot, oldest first.
+    ///
+    /// Per slot rather than all of them, because the two slots are asserted
+    /// about in opposite directions: a test of the match bar wants the run of
+    /// values it moved through, and a test of the build stamp wants there to
+    /// be exactly one for the life of the process. Merging them would make
+    /// each of those quietly depend on the other.
     #[must_use]
-    pub fn boss_bars_of(&self, player: PlayerId) -> Vec<BossBar> {
+    pub fn boss_bars_of(&self, player: PlayerId, slot: BarSlot) -> Vec<BossBar> {
         self.calls()
             .iter()
             .filter_map(|call| match call {
-                Call::BossBar(id, bar) if *id == player => Some(bar.clone()),
+                Call::BossBar(id, at, bar) if *id == player && *at == slot => Some(bar.clone()),
                 _ => None,
             })
             .collect()
@@ -253,8 +259,8 @@ impl Server for MockServer {
         self.push(Call::Experience(player, experience));
     }
 
-    fn set_boss_bar(&self, player: PlayerId, bar: BossBar) {
-        self.push(Call::BossBar(player, bar));
+    fn set_boss_bar(&self, player: PlayerId, slot: BarSlot, bar: BossBar) {
+        self.push(Call::BossBar(player, slot, bar));
     }
 
     fn show_title(&self, player: PlayerId, title: Title) {

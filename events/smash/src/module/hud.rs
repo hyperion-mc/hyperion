@@ -45,7 +45,8 @@ use crate::{
         player::{Health, Player, SelectedSlot},
     },
     server::{
-        BarColour, BossBar, Experience, NamedColor, PlayerId, ServerHandle, Text, Title, TitleTimes,
+        BarColour, BarSlot, BossBar, Experience, NamedColor, PlayerId, ServerHandle, Text, Title,
+        TitleTimes,
     },
 };
 
@@ -591,7 +592,9 @@ impl Module for HudModule {
                             Push::Experience(id, experience) => {
                                 server.set_experience(id, experience);
                             }
-                            Push::Bar(id, bar) => server.set_boss_bar(id, *bar),
+                            Push::Bar(id, bar) => {
+                                server.set_boss_bar(id, BarSlot::Hud, *bar);
+                            }
                         }
                     }
                 });

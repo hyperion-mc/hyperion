@@ -247,6 +247,72 @@ pub struct BossBar {
     pub colour: BarColour,
 }
 
+/// Which of a player's bars a [`BossBar`] is written to.
+///
+/// A client draws as many bars as it is sent, stacked, and the two this game
+/// puts up answer questions on completely different clocks: [`Self::Hud`]
+/// changes several times a second, and [`Self::Build`] is written once and is
+/// then true until the process exits. Naming the slot is what lets the second
+/// one exist without the first one overwriting it every tick, and what lets a
+/// test say which bar it is asserting about.
+///
+/// Closed and small on purpose. A slot is a strip of a player's screen, and
+/// this game is a fighting game: adding a variant here is a permanent decision
+/// about how much of the screen is not the arena.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum BarSlot {
+    /// The match bar: knockback percentage, the lobby's state, the result.
+    /// See [`crate::module::hud::boss_bar`].
+    Hud,
+    /// What build the server is running. See
+    /// [`crate::module::build_stamp`].
+    Build,
+}
+
+impl BarSlot {
+    /// Every slot, in the order they are laid out.
+    ///
+    /// The one list. [`Self::COUNT`] is its length and [`Self::index`] is a
+    /// position in it, so neither can drift from it -- an earlier version wrote
+    /// `COUNT = 2` and matched out the indices by hand, which a third variant
+    /// would have left at 2 while `index` returned 2, and the array in the
+    /// adapter would then have panicked out of bounds inside the server's
+    /// `PostUpdate` on the first tick anybody wrote that slot.
+    ///
+    /// Adding a variant still has to add it here; Rust cannot enumerate an
+    /// enum's variants on its own. What is different is the failure: a slot
+    /// missing from this list has no index and says so by name, and
+    /// `every_slot_is_in_all_and_indexes_into_it` in `tests/build_stamp.rs`
+    /// fails before any of that reaches a player.
+    pub const ALL: &'static [Self] = &[Self::Hud, Self::Build];
+    /// How many slots there are, so an adapter can hold one entity per slot in
+    /// an array rather than a map.
+    pub const COUNT: usize = Self::ALL.len();
+
+    /// This slot's place in such an array.
+    ///
+    /// A search of [`Self::ALL`] rather than a second list written as a match,
+    /// which is what makes the result `< COUNT` by construction instead of by
+    /// somebody remembering.
+    ///
+    /// # Panics
+    /// A variant that is not in [`Self::ALL`], which is a bug in this file and
+    /// not a runtime condition. Const-evaluated wherever the caller is const.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        let mut at = 0;
+        // `as u8` and not `==`: a fieldless enum casts in a const fn, and
+        // `PartialEq` is not const.
+        while at < Self::ALL.len() {
+            if Self::ALL[at] as u8 == self as u8 {
+                return at;
+            }
+            at += 1;
+        }
+        panic!("a BarSlot that is missing from BarSlot::ALL has no place in a per-slot array")
+    }
+}
+
 /// How long a title spends fading in, on screen, and fading out, in ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TitleTimes {
@@ -378,11 +444,11 @@ pub trait Server: Send + Sync + 'static {
     /// Move `player`'s experience bar. See [`Experience`].
     fn set_experience(&self, player: PlayerId, experience: Experience);
 
-    /// Put the bar across the top of `player`'s screen, replacing whatever is
-    /// there. There is no way to take it away, because there is no state of
-    /// the game with nothing worth putting on it: see
-    /// [`crate::module::hud::boss_bar`].
-    fn set_boss_bar(&self, player: PlayerId, bar: BossBar);
+    /// Put a bar across the top of `player`'s screen, replacing whatever is in
+    /// that [`BarSlot`]. There is no way to take one away, because neither
+    /// slot has a state with nothing worth putting on it: see
+    /// [`crate::module::hud::boss_bar`] and [`crate::module::build_stamp`].
+    fn set_boss_bar(&self, player: PlayerId, slot: BarSlot, bar: BossBar);
 
     /// Put a title across the middle of `player`'s screen.
     fn show_title(&self, player: PlayerId, title: Title);

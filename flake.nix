@@ -1078,7 +1078,10 @@
 
           # Named once and used by both `packages` and the sandboxed checks, so
           # a gate runs the same binary the flake publishes rather than a second
-          # build of it.
+          # build of it. `packages.smash` wraps this one in the build stamp's
+          # environment rather than replacing it: the executable a gate runs and
+          # the executable a host runs are the same file, and what differs is
+          # three variables. See `stamped` for why the gates are left unwrapped.
           gameBinaries = {
             bedwars = named "bedwars" workspace.binaries.bedwars;
             smash = named "smash" workspace.binaries.smash;
@@ -1092,6 +1095,101 @@
             bedwars = named "bedwars" devWorkspace.binaries.bedwars;
             smash = named "smash" devWorkspace.binaries.smash;
           };
+
+          # What build this is, for the strip across a player's screen. Read by
+          # `events/smash/src/module/build_stamp.rs`.
+          buildStamp =
+            let
+              # `self.shortRev` exists only on a clean tree and
+              # `self.dirtyShortRev` only on a dirty one, and a source with no
+              # git in it -- a plain directory, a tarball -- has neither.
+              # Dirtiness is carried by its own variable rather than by the
+              # `-dirty` suffix nix appends, so the game states the fact instead
+              # of parsing a string for it, and so the rev on screen is a hash a
+              # person can paste into `git show`.
+              rev = self.shortRev or (lib.removeSuffix "-dirty" (self.dirtyShortRev or ""));
+            in
+            {
+              inherit rev;
+
+              # `self.lastModified` is the commit's COMMITTER date, and it is
+              # the same number on a dirty tree as on a clean one: nix asks git
+              # for the commit either way rather than falling back to a file
+              # mtime. Measured on this repo at d55a336 -- 1785386760 clean,
+              # 1785386760 dirty, `git log -1 --format=%ct` 1785386760.
+              #
+              # Committer and not author, which are 1785385579 and 1785386760 on
+              # that same commit because it was amended. So a rebased commit's
+              # bar reads when the rebase landed rather than when the work was
+              # written. That is the right answer for the question this bar
+              # exists for -- which build is deployed, and how long ago did that
+              # build come into being -- and it is the wrong answer for "when
+              # was this change authored", which the bar does not claim.
+              #
+              # Nothing at all when there is no rev, and that is the point of
+              # the conditional rather than a nicety. `lastModified` on a
+              # non-git source is the directory's mtime, so without this the bar
+              # renders `build unpackaged build · 2026-07-29 20:41 UTC`: a stamp
+              # that has just admitted it does not know what it is, timed to the
+              # minute. An empty string parses as absent in `BuildStamp::parse`
+              # and the bar drops the whole clause.
+              time = if rev == "" then "" else toString (self.lastModified or 0);
+
+              dirty = if self ? dirtyShortRev then "1" else "0";
+            };
+
+          # The stamp, as an environment a binary is started in.
+          #
+          # A wrapper and not `env!` in a build script, and the difference is
+          # the whole reason this exists: a commit hash compiled into a crate
+          # invalidates that crate and everything downstream on every commit, so
+          # every push would rebuild the workspace. This derivation is a symlink
+          # and three assignments, and it is the only thing a new commit
+          # rebuilds.
+          #
+          # Applied to `packages` and deliberately NOT to the binaries the e2e
+          # gates run. cargoUnit content-addresses every crate unit, so a commit
+          # that changes no smash source leaves the gate's binary bit for bit
+          # identical and the whole gate is reused from the store. Stamping it
+          # would move its path on every commit and re-run all fourteen e2e
+          # gates for a string none of them reads. The gates cover the *reading*
+          # of these variables instead, which is the half that can be wrong in
+          # Rust; `checks.build-stamp` below covers the writing.
+          #
+          # THE COST, AND IT LANDS ON PLAYERS RATHER THAN ON CI. This wrapper's
+          # store path moves on every commit, `packages.smash` is it, and
+          # `nix/modules/game-server.nix` builds `ExecStart` out of
+          # `packages.smash`. So the unit file changes on every commit and
+          # `switch-to-configuration` restarts `hyperion-game-server` on every
+          # deploy -- including deploys of commits that touch nothing in smash,
+          # which used to leave `ExecStart` byte-identical and the running
+          # server alone. A restart drops every connected player.
+          #
+          # The restart is required by the feature: a server cannot report a
+          # commit it was not started with. The SCOPE is not. Narrowing it means
+          # decoupling the stamp from the unit -- an `EnvironmentFile` the
+          # deploy writes, or a stamp read from a path rather than baked into
+          # `ExecStart` -- and that is a different change with its own failure
+          # mode, namely a stamp that can disagree with the binary beside it.
+          # Written down here rather than left to be discovered, because with
+          # continuous apply on, "redeployed as main moves" now means every
+          # player is dropped as main moves.
+          stamped = drv:
+            let
+              main = drv.meta.mainProgram;
+            in
+            pkgs.runCommand "${drv.name}-stamped"
+              {
+                inherit (drv) meta;
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+                passthru = (drv.passthru or { }) // { unstamped = drv; };
+              }
+              ''
+                makeWrapper ${drv}/bin/${main} "$out/bin/${main}" \
+                  --set HYPERION_BUILD_REV ${lib.escapeShellArg buildStamp.rev} \
+                  --set HYPERION_BUILD_TIME ${lib.escapeShellArg buildStamp.time} \
+                  --set HYPERION_BUILD_DIRTY ${lib.escapeShellArg buildStamp.dirty}
+              '';
 
           # `nix flake check` builds every app, which is what proves each one
           # passes shellcheck and that its tools resolve. What CI enforces of
@@ -1396,6 +1494,78 @@
             # No two end to end gates may claim one port. See `e2eOffsets`.
             e2e-ports-distinct = e2ePortsDistinct;
 
+            # The deployed smash binary starts in an environment that says what
+            # build it is. See `stamped` and
+            # `events/smash/src/module/build_stamp.rs`.
+            #
+            # The Rust half is covered by `cargo test -p smash --test
+            # build_stamp`, which pins what each of these three values turns
+            # into on screen. Nothing covered that half's *input* until this:
+            # a rename, a dropped `--set`, or a `buildStamp` attribute that
+            # stopped being threaded all read as a server quietly saying
+            # "unpackaged build" to every player, which is exactly the state
+            # this whole change exists to end and is invisible from any test
+            # that does not look at the wrapper.
+            build-stamp =
+              pkgs.runCommand "hyperion-build-stamp"
+                {
+                  wrapper = lib.getExe (stamped gameBinaries.smash);
+                  binary = lib.getExe gameBinaries.smash;
+                  inherit (buildStamp) rev time dirty;
+                }
+                ''
+                  fail() { echo "FAIL: $1" >&2; exit 1; }
+
+                  # The control. Everything below is a grep, and a grep against
+                  # a file that is not there, or is a binary, or is empty,
+                  # fails for reasons that have nothing to do with the stamp.
+                  [ -f "$wrapper" ] || fail "no wrapper at $wrapper"
+                  grep -qF -- "$binary" "$wrapper" \
+                    || fail "the wrapper does not exec $binary"
+
+                  for name in REV TIME DIRTY; do
+                    grep -q "HYPERION_BUILD_$name=" "$wrapper" \
+                      || fail "the wrapper sets no HYPERION_BUILD_$name"
+                  done
+
+                  # A rev is empty exactly when nix had no git to ask, which is
+                  # true of a tarball and of a plain directory, and is not a
+                  # failure.
+                  if [ -n "$rev" ]; then
+                    # Hex and nothing else. Every other assertion here compares
+                    # the wrapper against the same expression that built it, so
+                    # on VALUES they are tautologies -- if nix changed the
+                    # suffix `removeSuffix` strips, both sides would move
+                    # together and this file would stay green while the bar read
+                    # `abc1234-dirty + uncommitted changes`. What a short commit
+                    # hash looks like is the one property of the value that does
+                    # not come from the expression, so it is the only thing here
+                    # that can catch a wrong one.
+                    case "$rev" in
+                      *[!0-9a-f]*)
+                        fail "the rev is not a short commit hash: $rev" ;;
+                    esac
+                    [ -n "$time" ] \
+                      || fail "there is a rev but no timestamp beside it"
+                    grep -q "HYPERION_BUILD_REV=.*$rev" "$wrapper" \
+                      || fail "the wrapper does not carry the rev $rev"
+                    grep -q "HYPERION_BUILD_TIME=.*$time" "$wrapper" \
+                      || fail "the wrapper does not carry the timestamp $time"
+                  else
+                    # And no timestamp either. A precise minute next to a stamp
+                    # that has just said it does not know what build it is comes
+                    # from `lastModified` falling back to a directory mtime, and
+                    # is worse than saying nothing.
+                    [ -z "$time" ] \
+                      || fail "no rev, but a timestamp of $time: that is a directory mtime dressed as a commit"
+                    echo "no rev: this flake source is not a git tree" >&2
+                  fi
+                  grep -q "HYPERION_BUILD_DIRTY=.*'$dirty'" "$wrapper" \
+                    || fail "the wrapper does not carry dirty=$dirty"
+
+                  echo "rev=$rev time=$time dirty=$dirty" > "$out"
+                '';
+
             # A colour reaches a client as a component field or not at all.
             smash-text-no-legacy-formatting = textGate;
 
@@ -1532,7 +1702,12 @@
 
           packages = {
             default = gameBinaries.bedwars;
-            inherit (gameBinaries) bedwars smash hyperion-proxy;
+            # smash is stamped and the other two are not, because smash is the
+            # only one that reads the stamp: `nix/modules/game-server.nix`
+            # builds its ExecStart out of this package, so this is what puts a
+            # commit on a player's screen on the deployed server.
+            smash = stamped gameBinaries.smash;
+            inherit (gameBinaries) bedwars hyperion-proxy;
             rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
 
             minecraft-server-jar = minecraft.serverJar;
