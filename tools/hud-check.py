@@ -587,6 +587,10 @@ class Run:
                 % sorted({bar["colour"] for bar in counting_bars}),
             )
 
+        # Where the countdown's own packets begin, so the retitle claim below
+        # counts seconds passing and not the lobby's player count moving.
+        first_countdown_op = len(narrator.bar_ops)
+
         # The last three seconds, then the word that starts the match.
         started = self.until(lambda: "GO!" in narrator.titles, 120.0, "the match to start")
         if not self.check(started, "the start of the match is a title: %s" % narrator.titles):
@@ -606,6 +610,47 @@ class Run:
             len(drained) > 4 and drained == sorted(drained, reverse=True) and drained[-1] < 0.3,
             "the countdown bar drains towards the start rather than filling: %s"
             % [round(value, 3) for value in drained],
+        )
+
+        # An update sends only the update, read off the one bar in the game
+        # whose label moves to a clock the server owns. `whole_seconds` is a
+        # `ceil`, so the title changes on the tick the timer crosses a whole
+        # second, while the fill is quantised to sixty-fourths of the span and
+        # steps at its own rate: most of those seconds move the title and
+        # nothing else, and each has to cost one `UpdateName` carrying one
+        # field. The seconds where a fill step lands on the same tick are a
+        # two-field change and are allowed to be an `Add`, which is why this
+        # counts the label-only ones rather than requiring every second to be
+        # one.
+        #
+        # This claim used to be read off the CPU bar, where it needed the
+        # *host* to move a whole percent of a core inside twenty seconds. See
+        # `load_check` for why that made the gate a measurement of the builder.
+        #
+        # Not redundant with `diff_check`, though the two overlap on one
+        # failure and it is worth saying why before somebody deletes this as a
+        # duplicate. `diff_check` is four rules of the form "no packet did X",
+        # so it can only judge packets that exist; a packet that was never sent
+        # is invisible to every one of them. Measured, by making `operation`
+        # return `None` for a title-only change: every countdown froze on every
+        # screen, and `diff_check` passed all four rules over 780 packets
+        # (0 empty, 0 wasteful, 0 orphaned) while this check was the only thing
+        # in the suite that went red. The two claims are opposites -- that one
+        # says no packet carried a field that did not move, this one says a
+        # field that moved did get a packet -- and each is blind exactly where
+        # the other looks.
+        countdown = {bar["uuid"] for bar in counting_bars}
+        retitles = [
+            moved
+            for uuid, operation, moved, _ in narrator.bar_ops[first_countdown_op:]
+            if uuid in countdown and operation == "update_name"
+        ]
+        label_only = [moved for moved in retitles if moved == {"title"}]
+        self.check(
+            len(label_only) >= 3 and len(label_only) == len(retitles),
+            "a second passing that moves only the countdown's label costs one "
+            "packet carrying only the label: %d of %d retitle(s) carried the "
+            "title and nothing else" % (len(label_only), len(retitles)),
         )
 
         digits = [text for text in narrator.titles if text in COUNTDOWN_DIGITS]
@@ -790,15 +835,8 @@ class Run:
             "against %.2f/%.1f" % (admin.bar_state[memory]["progress"], resident, total),
         )
 
-        # An update sends only the update. The CPU label is rewritten every
-        # second while its fill, quantised against every core the machine has,
-        # usually does not move at all, so a label-only second is an
-        # `UpdateName` on its own and nothing else. The colour and the effects
-        # never move, and after the `Add` that carried them they are never on
-        # the wire again.
-        self.until(
-            lambda: admin.ops_for(cpu).count("update_name") >= 3, 20.0, "three CPU readings"
-        )
+        # The colour and the effects never move, so after the `Add` that
+        # carried them they are never on the wire again.
         for name, uuid in (("CPU", cpu), ("memory", memory)):
             operations = admin.ops_for(uuid)
             self.check(
@@ -812,17 +850,21 @@ class Run:
                 "and its colour and effects, which never move, are never on "
                 "the wire again after it: %s" % operations,
             )
-        self.check(
-            admin.ops_for(cpu).count("update_name") >= 2,
-            "a new CPU reading that moves only the label costs one packet "
-            "carrying only the label: %s" % admin.ops_for(cpu),
-        )
-        # And the memory bar, whose reading did not move far enough to change
-        # either the two decimals on its label or a sixty-fourth of the
-        # machine, says nothing at all. There is no assertion on how many
-        # packets that is, because it depends on how much memory the box has:
-        # what is checked is that whatever it sent obeyed the rule, which
-        # `diff_check` does over every packet of the whole run.
+        # Neither bar is asserted on for how many packets it sent, because
+        # neither count is a property of the software. The CPU label is a whole
+        # percent of one core, so whether this second's reading differs from
+        # the last one is a fact about the host: this check used to wait twenty
+        # seconds for two of them and went red on a 128-core builder that idled
+        # at `CPU 1% of 12800%` and held that label the whole time, which is
+        # the gate measuring the machine. The memory bar is the same shape
+        # against how much memory the box has. What is checked instead is that
+        # whatever they sent obeyed the rule, which `diff_check` does over
+        # every packet of the whole run, and that a label-only change costs one
+        # `UpdateName`, which `match_check` reads off the countdown bar because
+        # the server's own clock moves that label rather than the host's load.
+        # What that gives up is a wire-level witness for these two bars
+        # specifically; `egress::boss_bar`'s own truth-table test covers the
+        # transition itself.
         self.log(
             "the memory bar sent %d packet(s) against the CPU bar's %d"
             % (len(admin.ops_for(memory)), len(admin.ops_for(cpu)))
@@ -891,17 +933,61 @@ class Run:
         self.until(lambda: cpu in leaver.bar_state, 20.0, "the leaver's own load bars")
         leaver.sock.close()
         leaver.alive = False
+        # Carrying on is proved by a change this check causes rather than by
+        # one it waits for. Waiting was what this did -- two more CPU readings
+        # inside twenty seconds -- and a reading only reaches the wire when the
+        # host's load crosses a whole percent of a core, so on a quiet builder
+        # the survivor's screen was correct and silent and the gate read that
+        # as the server having stopped. Toggling the audience puts the same
+        # drive system through the same work on demand.
+        #
+        # What that gives up is the unprompted case: this no longer notices a
+        # server that draws only when asked. Nothing else here can, without
+        # asking the machine to be busy.
+        #
+        # STATUS: UNPROVEN. Read this before deleting it as redundant, and
+        # before trusting it. It is deterministic and it is green, which is
+        # more than the assertion it replaced could say, but nobody has yet
+        # shown it catches anything the three earlier toggle checks do not.
+        # Two attempts to break the game so that only this check notices:
+        #
+        #  1. Breaking `/serverload`'s re-add. The gate died at the *first*
+        #     `/serverload` and `load_check` returned before reaching here, so
+        #     this check never ran. Too blunt.
+        #  2. `add_if_new` matching `(Sent, Wildcard)` instead of
+        #     `(Sent, viewer)`, so a bar anybody holds is never sent to anyone
+        #     else. Two neighbouring checks went red and this one PASSED: the
+        #     admin already held the bars, so their toggle still worked.
+        #
+        # The defect only this could catch is one that needs a stale
+        # `(Sent, dead_viewer)` pair to exist before it shows, because this is
+        # the only bar check that runs after a socket has died -- the earlier
+        # toggle checks all run while every viewer is still connected. That is
+        # an argument, not evidence, and it is labelled as one deliberately.
+        # If you want to finish the job, that is the defect to build.
         admin.bar_ops.clear()
-        survived = self.until(
-            lambda: admin.ops_for(cpu).count("update_name") >= 2,
+        admin.command("serverload")
+        off = self.until(
+            lambda: cpu not in admin.bar_state and memory not in admin.bar_state,
             20.0,
-            "the load bars to keep updating after a viewer vanished",
+            "the surviving viewer's bars to come off",
         )
+        admin.command("serverload")
+        on = self.until(
+            lambda: cpu in admin.bar_state and memory in admin.bar_state,
+            20.0,
+            "and to come back",
+        )
+        # Only the lifecycle operations, because a CPU reading that did happen
+        # to move in between is a packet this check has no opinion about.
+        lifecycle = {
+            name: [op for op in admin.ops_for(uuid) if op in ("remove", "add")]
+            for name, uuid in (("CPU", cpu), ("memory", memory))
+        }
         self.check(
-            survived,
+            off and on and all(ops == ["remove", "add"] for ops in lifecycle.values()),
             "a viewer disconnecting with a bar on their screen leaves the "
-            "server drawing everybody else's: %d further packet(s)"
-            % len(admin.bar_ops),
+            "server drawing everybody else's: %s" % lifecycle,
         )
 
     # --- a player who arrives after the match started --------------------
