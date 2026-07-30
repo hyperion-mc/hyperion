@@ -16,3 +16,4 @@ pub mod scoreboard;
 pub mod selector;
 pub mod sound;
 pub mod visuals;
+pub mod vitals;

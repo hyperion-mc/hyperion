@@ -30,7 +30,7 @@ use crate::module::{
     damage::DamageModule, effect::EffectModule, hud::HudModule, jump::JumpModule, kit::KitModule,
     kits::StockKits, knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule,
     player::PlayerModule, projectile::ProjectileModule, scoreboard::ScoreboardModule,
-    selector::SelectorModule, sound::SoundModule,
+    selector::SelectorModule, sound::SoundModule, vitals::VitalsModule,
 };
 
 /// The whole game.
@@ -61,6 +61,9 @@ impl Module for SmashModule {
         // whose `MatchClock` every effect's deadline is measured against.
         world.import::<EffectModule>();
         world.import::<KitModule>();
+        // After the kits, whose `apply` is what puts a regeneration rate and a
+        // hunger interval on a player in the first place.
+        world.import::<VitalsModule>();
         world.import::<ArenaModule>();
         world.import::<LivesModule>();
         // After `Lives`: the double jump reads the two components that say a

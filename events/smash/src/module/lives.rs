@@ -369,14 +369,26 @@ impl Module for LivesModule {
 
                 world.get::<&ServerHandle>(|server| {
                     server.particles(visuals::death(at));
-                    match killer_name.as_deref() {
-                        Some(killer_name) => server.broadcast(
+                    // On the *cause* and not merely on whether somebody gets
+                    // the kill, which is how `hud::death_title` has always read
+                    // it. Branching on the killer alone announced every
+                    // unattributed death as a fall, so a player who starved was
+                    // told "nobody to blame but yourself" on their own screen
+                    // while the arena was told they fell off the map. The third
+                    // arm was unreachable until hunger shipped and is routine
+                    // now.
+                    match (killer_name.as_deref(), cause) {
+                        (Some(killer_name), _) => server.broadcast(
                             Channel::Chat,
                             Text::text(format!("{name} was smashed by {killer_name}!")),
                         ),
-                        None => server.broadcast(
+                        (None, DeathCause::Void) => server.broadcast(
                             Channel::Chat,
                             Text::text(format!("{name} fell out of bounds!")),
+                        ),
+                        (None, DeathCause::Damage) => server.broadcast(
+                            Channel::Chat,
+                            Text::text(format!("{name} had nobody to blame but themselves!")),
                         ),
                     }
                     server.set_spectating(*player, true);

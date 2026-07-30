@@ -451,6 +451,25 @@ pub trait Server: Send + Sync + 'static {
     /// Push the game's authoritative health onto the client's health bar.
     fn set_health(&self, player: PlayerId, health: f32, max: f32);
 
+    /// Push the game's food bar, in vanilla food points (`0..=20`).
+    ///
+    /// # Why this is a second method and not a fourth argument on `set_health`
+    ///
+    /// Vanilla carries health, food and saturation in one `SetHealth` packet,
+    /// so a fourth argument is the obvious shape and it is the wrong one: the
+    /// shape of the packet is not the shape of the domain. The two quantities
+    /// move on unrelated clocks -- health on every hit, food once every seven
+    /// seconds -- and no caller ever has both to hand. Damage, a respawn,
+    /// Spider's lifesteal and Cow's two Mooshroom paths would each have had to
+    /// supply a food level they have no opinion about, and a seam whose callers
+    /// invent arguments to satisfy it is a seam that has started lying about
+    /// what it knows.
+    ///
+    /// So each caller says the one thing it actually knows, and reassembling
+    /// the packet is the adapter's job, next to the packet. See
+    /// `adapter::Vitals`, which holds the other half.
+    fn set_food(&self, player: PlayerId, food: u8);
+
     /// Apply a potion effect to `player`, broadcast to everyone near them --
     /// including the player's own client. That inclusion is the whole point of
     /// a status over a faked impulse: the client owns its movement prediction,

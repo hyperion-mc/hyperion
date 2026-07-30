@@ -24,8 +24,9 @@ use crate::{
         knockback::KnockbackTaken,
         player::{Energy, Health, JumpsLeft},
         sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt, PlaysOnSelect},
+        vitals::{FULL, Hunger, Regen, VitalsComponentsModule},
     },
-    server::HotbarItem,
+    server::{HotbarItem, PlayerId, ServerHandle},
 };
 
 /// Tag on kit prefabs.
@@ -498,7 +499,19 @@ pub fn apply(world: &World, player: EntityView<'_>, kit: EntityView<'_>) {
         .set(Armor(stats.armor))
         .set(KnockbackTaken(stats.knockback_taken))
         .set(Health::full(stats.max_health))
+        .set(Regen(stats.regen))
+        // A fresh bar, because choosing a kit is choosing its drain rate and
+        // half an old kit's clock is nobody's number.
+        .set(Hunger::full(stats.hunger_interval))
         .set(JumpsLeft(stats.jump_count));
+
+    // The bar the line above just replaced, told to the player whose bar it is.
+    // `Health` reaches the client on its own through the adapter's `OnSet`
+    // mirror; food has no such mirror, so every write that replaces the whole
+    // bar says so here. `tests/kit_stats.rs` holds both of them to it.
+    if let Some(id) = player.try_get::<&PlayerId>(|id| *id) {
+        world.get::<&ServerHandle>(|server| server.set_food(id, FULL));
+    }
 
     if let Some((max, regen)) = stats.energy {
         player.set(Energy::full(max, regen));
@@ -702,6 +715,12 @@ pub struct KitModule;
 impl Module for KitModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Kit");
+
+        // `apply` copies the kit's regeneration rate and hunger interval onto
+        // the player, so the components those land in have to exist before
+        // anybody chooses a kit. Registration only: which systems tick them is
+        // `VitalsModule`'s business and not a kit's.
+        world.import::<VitalsComponentsModule>();
 
         // A `/kit` completion is a query over whatever carries this tag, and
         // this is the one place that says what a kit's name is. Nothing else
