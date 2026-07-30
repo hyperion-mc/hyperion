@@ -18,6 +18,7 @@ use crate::module::{
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     projectile::{Flight, Payload, Visual, fire},
+    visuals,
 };
 
 /// `[VERIFIED]`: "you will slowly gain speed levels (up to 4)".
@@ -98,6 +99,12 @@ impl Module for Cow {
 /// `[VERIFIED]` five cows; `[APPROXIMATED]` damage.
 fn angry_herd(cast: &Cast<'_>) {
     const COWS: usize = 5;
+
+    // Once for the charge rather than once per cow: five bursts 0.6 apart read
+    // as one cloud anyway, and how many cows there are is already legible from
+    // the five cows.
+    cast.server.particles(visuals::hooves(cast.position.0));
+
     let forward = cast.facing.0.normalize_or_zero();
     let side = Vec3::new(-forward.z, 0.0, forward.x);
     for index in 0..COWS {
@@ -120,16 +127,17 @@ fn angry_herd(cast: &Cast<'_>) {
 
 /// `[APPROXIMATED]` damage; the "carries you along" part is the wiki's.
 fn milk_spiral(cast: &Cast<'_>) {
+    const RADIUS: f32 = 1.8;
+
     let forward = cast.facing.0.normalize_or_zero();
     cast.server.add_velocity(cast.player, forward * 1.3);
     for step in 1..=6 {
-        splash_at(
-            cast,
-            cast.position.0 + forward * (step as f32 * 1.5),
-            1.8,
-            3.0,
-            0.9,
-        );
+        let at = cast.position.0 + forward * (step as f32 * 1.5);
+        // One turn of the helix per splash, at the radius that splash hits.
+        // A single ring on the caster would draw a spiral that reaches nine
+        // blocks as a thing happening where the caster is standing.
+        cast.server.particles(visuals::milk(at, RADIUS));
+        splash_at(cast, at, RADIUS, 3.0, 0.9);
     }
 }
 
@@ -144,6 +152,24 @@ pub const MOOSHROOM_BONUS_DAMAGE: f32 = 1.0;
 /// arriving on a beat -- which is what a Cow whose abilities are coming faster
 /// than usual looks like from the outside.
 const MOOSHROOM_INTERVAL: f32 = 2.0;
+
+/// `[APPROXIMATED]`. The ultimate has no area of its own -- it acts through the
+/// herd and through the caster's own melee -- so there is no radius in the
+/// ability to reuse. This one is sized to sit on the caster, because what the
+/// cloud has to say is which player is the mooshroom.
+const MOOSHROOM_SPORE_RADIUS: f32 = 1.5;
+
+/// One beat of the mode: the herd, and the spores that mark who sent it.
+///
+/// Drawn on the beat rather than at the cast because the mode stands for twenty
+/// seconds, and a single burst would leave nineteen of them looking like a Cow
+/// with a full health bar for no visible reason. The first beat lands
+/// immediately (see [`Affliction::mode`]), so the cast is covered too.
+fn mooshroom_beat(cast: &Cast<'_>) {
+    cast.server
+        .particles(visuals::spores(cast.position.0, MOOSHROOM_SPORE_RADIUS));
+    angry_herd(cast);
+}
 
 /// The kit's own maximum health, which the bonus is measured against.
 ///
@@ -191,7 +217,7 @@ fn mooshroom_madness(cast: &Cast<'_>) {
         cast.world,
         cast.caster,
         effect::Blame::cast(cast),
-        Affliction::mode(ability::ULTIMATE_SECONDS, MOOSHROOM_INTERVAL, angry_herd)
+        Affliction::mode(ability::ULTIMATE_SECONDS, MOOSHROOM_INTERVAL, mooshroom_beat)
             .undone_by(shrink_back),
     );
 }

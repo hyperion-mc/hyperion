@@ -15,6 +15,7 @@ use crate::module::{
     effect::{self, Affliction},
     kit::{self, AbilitySpec, KitSounds, KitStats},
     projectile::{Flight, Payload, Visual, fire},
+    visuals,
 };
 
 /// `[VERIFIED]`: "You also deal 1 more damage to mobs who are on your snow."
@@ -109,22 +110,35 @@ fn blizzard(cast: &Cast<'_>) {
         },
         Payload::new(1.5, 0.9),
     );
+    cast.server.particles(visuals::frost(cast.position.0));
 }
 
 /// `[VERIFIED]`: "you will bounce 1 block into the air to avoid falling through
 /// the path when it is made". The ice blocks themselves need host block writes,
-/// which is the one thing the seam does not carry; the hop is what lands.
+/// which is the one thing the seam does not carry; the hop is what lands, and
+/// the drawn path is all that is left saying where the ice would have gone.
 fn ice_path(cast: &Cast<'_>) {
-    cast.server.add_velocity(
-        cast.player,
-        Vec3::Y * 0.42 + cast.facing.0.normalize_or_zero() * 0.6,
-    );
+    // The hop and the path take the same heading, so the snow lands where the
+    // caster is about to be rather than wherever they happen to be looking a
+    // frame later.
+    let heading = cast.facing.0.normalize_or_zero();
+
+    cast.server
+        .add_velocity(cast.player, Vec3::Y * 0.42 + heading * 0.6);
+    cast.server
+        .particles(visuals::frost_path(cast.position.0, heading));
 }
 
 /// `[APPROXIMATED]`: the aura is modelled as a pulse rather than as placed snow,
-/// because "who is standing on my snow" needs the host's blocks.
+/// because "who is standing on my snow" needs the host's blocks. The ring is
+/// drawn at the pulse's own radius, so the edge a victim has to stay outside is
+/// the edge the damage actually uses.
 fn arctic_aura(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 5.0, AURA_BONUS_DAMAGE, 0.2);
+    const AURA_RADIUS: f32 = 5.0;
+
+    splash_at(cast, cast.position.0, AURA_RADIUS, AURA_BONUS_DAMAGE, 0.2);
+    cast.server
+        .particles(visuals::frost_ring(cast.position.0, AURA_RADIUS));
 }
 
 /// Twenty seconds of a six-snowball ring, the first one down the barrel.
@@ -183,4 +197,8 @@ fn turret_ring(cast: &Cast<'_>) {
             Payload::new(2.0, 0.8),
         );
     }
+    // One burst for the ring and not one per snowball: this beat runs twenty
+    // times, and six bursts a second stops reading as a turret and starts
+    // reading as weather.
+    cast.server.particles(visuals::frost(cast.position.0));
 }

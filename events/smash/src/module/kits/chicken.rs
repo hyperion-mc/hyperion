@@ -101,6 +101,13 @@ fn egg_blaster(cast: &Cast<'_>) {
     const EGGS: usize = 5;
     let forward = cast.facing.0.normalize_or_zero();
     let side = Vec3::new(-forward.z, 0.0, forward.x);
+    // Above the volley, so the press draws before anything that could branch.
+    // The eggs render as egg entities, so what was missing is the stream
+    // having a direction anybody could read before the first one lands. Drawn
+    // here and not in the ultimate as well: Aerial Gunner beats through this
+    // function, so a volley looks the same either way it was fired.
+    cast.server
+        .particles(visuals::egg_burst(cast.position.0, forward));
     for index in 0..EGGS {
         let offset = (index as f32 - (EGGS as f32 - 1.0) / 2.0) * 0.1;
         fire(
@@ -170,6 +177,11 @@ fn refund(impact: &Impact<'_>) {
 /// for as long as the crystal lasts, which is what the sentence describes from
 /// the ground.
 fn aerial_gunner(cast: &Cast<'_>) {
+    // A mode's first beat is next frame at the earliest, and the press is the
+    // one moment the player who pressed it is looking. Feathers rather than a
+    // volley, because the eggs already have Egg Blaster's picture and the
+    // flight is the half of the sentence nothing else draws.
+    cast.server.particles(visuals::feathers(cast.position.0));
     effect::afflict(
         cast.world,
         cast.caster,
@@ -188,5 +200,9 @@ const GUNNER_LIFT: f32 = 0.4;
 
 fn gunner_beat(cast: &Cast<'_>) {
     cast.server.add_velocity(cast.player, Vec3::Y * GUNNER_LIFT);
+    // On every beat and not only at the press: twenty seconds of a chicken
+    // hanging in the air with no visible reason is twenty seconds of the
+    // ultimate looking like a bug in the jump code.
+    cast.server.particles(visuals::feathers(cast.position.0));
     egg_blaster(cast);
 }

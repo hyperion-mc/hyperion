@@ -86,6 +86,13 @@ fn bile_blaster(cast: &Cast<'_>) {
     const BLOBS: usize = 4;
     let forward = cast.facing.0.normalize_or_zero();
     let side = Vec3::new(-forward.z, 0.0, forward.x);
+    // Before the blobs and before anything that could branch. The blobs are
+    // snowballs the instant they are airborne, and the only particle the
+    // ability had was the one drawn where one of them connects, so which of
+    // two runs of `tools/smash-match.py` passed came down to whether anybody
+    // was standing there. Bile that misses is most of the bile.
+    cast.server
+        .particles(visuals::bile(cast.position.0, forward));
     for index in 0..BLOBS {
         let offset = (index as f32 - (BLOBS as f32 - 1.0) / 2.0) * 0.14;
         fire(
@@ -107,13 +114,19 @@ fn bile_blaster(cast: &Cast<'_>) {
 }
 
 fn deaths_grasp(cast: &Cast<'_>) {
+    let forward = cast.facing.0.normalize_or_zero();
+    // Above the shot, for `bile_blaster`'s reason: everything else this
+    // ability does happens to somebody else later, so a release that connects
+    // with nothing has to look like a release all the same.
+    cast.server
+        .particles(visuals::grasp(cast.position.0, forward));
     fire(
         cast.world,
         cast.caster,
         Visual(EntityKind::Arrow),
         Flight {
             position: cast.position.0,
-            velocity: cast.facing.0.normalize_or_zero() * 16.0f32.mul_add(cast.charge, 24.0),
+            velocity: forward * 16.0f32.mul_add(cast.charge, 24.0),
             gravity: 6.0,
             seconds_left: 2.0,
             radius: 0.6,

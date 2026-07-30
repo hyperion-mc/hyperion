@@ -312,23 +312,23 @@ fn probe_hit(bench: &Bench) -> bool {
 }
 
 /// What one melee swing at the near victim takes off, right now.
+///
+/// The amount comes from [`smash::input::melee_damage`], which is the function
+/// a real attack packet goes through, and not from a copy of it written out
+/// here. That distinction is the whole value of this helper. It used to read
+/// the kit's base damage, read [`MeleeBonus`], add them, and deal exactly that
+/// -- which compares the formula against itself and passes whatever the game
+/// does. Under that version, deleting the bonus lookup from the swing path
+/// would have left every `buffs_melee` assertion green and the failure would
+/// have surfaced only in `nix run .#smash-e2e`, where a real client swings.
 fn melee_damage(bench: &Bench, now: f32) -> f32 {
-    use smash::module::{damage::MeleeBonus, kit::KitStats};
-
-    let caster = bench.caster();
-    let base = caster
-        .target(Playing, 0)
-        .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.melee_damage))
-        .unwrap_or(1.0);
-    let bonus = caster
-        .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(bench.near, now))
-        .unwrap_or(0.0);
+    let amount = smash::input::melee_damage(bench.caster(), bench.near, now);
 
     let victim = bench.game.world.entity_from_id(bench.near);
     let before = victim.cloned::<&Health>().current;
     hurt(victim, Damaged {
         attacker: Some(bench.caster),
-        amount: base + bonus,
+        amount,
         knockback: Knockback::from(Vec3::ZERO),
         kind: DamageKind::Melee,
     });

@@ -162,6 +162,10 @@ fn whirlpool_axe(cast: &Cast<'_>) {
         },
         Payload::new(3.0, 0.8).then(reel),
     );
+    // Where the axe leaves the caster. The shard renders as a spectral arrow
+    // once it is airborne, so the water thrown off it on the way out is the
+    // only part of the throw that says which kit threw it.
+    cast.server.particles(visuals::spray(cast.position.0));
 }
 
 fn reel(impact: &Impact<'_>) {
@@ -187,9 +191,16 @@ fn water_splash(cast: &Cast<'_>) {
 }
 
 fn target_laser(cast: &Cast<'_>) {
+    // First, above the target lookup, because the lookup can fail: press the
+    // button with nobody inside `LASER_RANGE` and the `else { return }` below
+    // spends the ability and leaves. Anything drawn after that point is drawn
+    // only when the ability worked, which is a visual whose presence depends
+    // on the game state rather than on the press.
+    cast.server.particles(visuals::laser_eye(cast.position.0));
+
     let now = cast.world.get::<&MatchClock>(|clock| clock.0);
     let caster = cast.caster.id();
-    let mut nearest: Option<(f32, Entity)> = None;
+    let mut nearest: Option<(f32, Entity, Vec3)> = None;
     cast.world
         .query::<&Position>()
         .with(Player::id())
@@ -199,12 +210,12 @@ fn target_laser(cast: &Cast<'_>) {
                 return;
             }
             let distance = position.0.distance(cast.position.0);
-            if distance <= LASER_RANGE && nearest.is_none_or(|(best, _)| distance < best) {
-                nearest = Some((distance, entity.id()));
+            if distance <= LASER_RANGE && nearest.is_none_or(|(best, ..)| distance < best) {
+                nearest = Some((distance, entity.id(), position.0));
             }
         });
 
-    let Some((_, victim)) = nearest else {
+    let Some((_, victim, marked_at)) = nearest else {
         return;
     };
     cast.caster.set(Marked {
@@ -218,6 +229,58 @@ fn target_laser(cast: &Cast<'_>) {
         against: Some(victim),
         until: now + LASER_SECONDS,
     });
+
+    // The beam on top of the flare above, and then again every beat until the
+    // mark lapses. Everything the ability does is invisible -- a component on
+    // the caster and a number on somebody else's incoming damage -- so without
+    // this the one ability the kit is named for is the one nobody can see. A
+    // line between the two players rather than a second puff at the caster,
+    // because *who* it landed on is the whole of what the ability says, and it
+    // is the only part the flare cannot carry.
+    //
+    // Off the position the query above already read, not off `Marked`:
+    // `activate` runs inside an observer, so the `set` a few lines up is
+    // queued until the frame ends and reading it back here would find nothing
+    // on a first cast and the previous victim on a second. `laser_beam` is a
+    // beat, which is a frame later at the earliest, so there it is committed.
+    //
+    // What a line of particles gives up against vanilla's guardian beam is
+    // continuity: a real beam is one unbroken thing and this one blinks twice
+    // a second, because the seam cannot spawn the beam entity that draws the
+    // unbroken version.
+    cast.server
+        .particles(visuals::mark_beam(cast.position.0, marked_at));
+    effect::afflict(
+        cast.world,
+        cast.caster,
+        effect::Blame::cast(cast),
+        Affliction::mode(LASER_SECONDS, LASER_BEAM_INTERVAL, laser_beam),
+    );
+}
+
+/// `[APPROXIMATED]`. Fast enough that the mark never vanishes for long enough
+/// to be missed, slow enough that eight seconds of it is sixteen lines rather
+/// than a line every frame.
+const LASER_BEAM_INTERVAL: f32 = 0.5;
+
+/// Redraw the mark between wherever the two of them have got to.
+///
+/// Reads [`Marked`] back off the caster rather than closing over the victim,
+/// for two reasons: both ends move, and the mark can end early, in which case
+/// the component is gone and this draws nothing.
+fn laser_beam(cast: &Cast<'_>) {
+    let Some(marked) = cast.caster.try_get::<&Marked>(|marked| *marked) else {
+        return;
+    };
+    let victim = cast.world.entity_from_id(marked.victim);
+    if !victim.is_alive() {
+        return;
+    }
+    let Some(at) = victim.try_get::<&Position>(|position| position.0) else {
+        return;
+    };
+    cast.server
+        .particles(visuals::mark_beam(cast.position.0, at));
 }
 
 /// `[APPROXIMATED]` throughout; the wiki describes the ultimate and gives no
@@ -238,6 +301,14 @@ const TIDE_INTERVAL: f32 = 1.5;
 /// Per wave, and there are thirteen.
 const TIDE_DAMAGE: f32 = 3.0;
 
+/// `[APPROXIMATED]`, as the rest of the ultimate is. Named rather than written
+/// twice, so the ring a player backs away from is the ring that hits them.
+const TIDE_RADIUS: f32 = 10.0;
+
 fn tide(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 10.0, TIDE_DAMAGE, 2.2);
+    splash_at(cast, cast.position.0, TIDE_RADIUS, TIDE_DAMAGE, 2.2);
+    // On the beat rather than at the cast: the ultimate is thirteen waves over
+    // twenty seconds, and one ring at the start leaves the other twelve unseen.
+    cast.server
+        .particles(visuals::tide(cast.position.0, TIDE_RADIUS));
 }
