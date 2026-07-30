@@ -228,7 +228,8 @@ fn wolf_strike(cast: &Cast<'_>) {
     // until they stop, and the picture would arrive a beat after the ability.
     // `ahead` is the centre of the splash below, so the line already ends where
     // the damage does, which is the fact a victim needs.
-    cast.server.particles(visuals::pounce(cast.position.0, ahead));
+    cast.server
+        .particles(visuals::pounce(cast.position.0, ahead));
 
     let caster = cast.caster.id();
     let mut combo = false;
