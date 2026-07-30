@@ -158,6 +158,26 @@
             ];
           };
 
+          # Every Rust source, every manifest, and the formatting rules. Narrow
+          # on purpose: `cargo fmt` reads nothing else, so a change to a world,
+          # a document or a nix file must not rerun it.
+          rustfmtSource =
+            let
+              formatted =
+                dir:
+                lib.fileset.fileFilter (file: file.hasExt "rs" || file.name == "Cargo.toml") dir;
+            in
+            lib.fileset.toSource {
+              root = ./.;
+              fileset = lib.fileset.unions [
+                (formatted ./crates)
+                (formatted ./events)
+                (formatted ./tools)
+                ./Cargo.toml
+                ./rustfmt.toml
+              ];
+            };
+
           # Every kit's skin image, fetched from the url its signed payload names
           # and pinned by hash in textures.lock.json. Fixed-output so the image
           # gate stays offline and store-cached: the fetch happens once, here,
@@ -1191,10 +1211,71 @@
                   --set HYPERION_BUILD_DIRTY ${lib.escapeShellArg buildStamp.dirty}
               '';
 
+          # `nix run .#fmt -- --check` and `nix run .#lint`, as derivations the
+          # gate realises. ENG-11424.
+          #
+          # `checks` is `scripts // ...`, so `checks.fmt` and `checks.lint`
+          # already existed -- as the SCRIPTS. Building one runs shellcheck over
+          # the text of a cargo command and never runs cargo, so the gate was
+          # green on a tree that both reject. `cargo clippy -p smash --lib`
+          # exited 101 on main at ee1139e for about four hours and nothing said
+          # so: #1088 left every workflow `workflow_dispatch`, and clippy only
+          # ever ran there.
+          #
+          # Each check runs the script rather than restating its command, so the
+          # gate and what a contributor runs by hand cannot say different things
+          # about the same tree. Flags, lints and their configuration stay where
+          # they already are: `clippyArgs` above, `[workspace.lints]` in
+          # Cargo.toml, `clippy.toml` and `rustfmt.toml`.
+          lintChecks = {
+            rustfmt = pkgs.runCommand "hyperion-rustfmt" { } ''
+              cp -r ${rustfmtSource}/. .
+              chmod -R u+w .
+              # cargo-fmt finds the members with `cargo metadata --no-deps`,
+              # which resolves nothing, so this needs neither the vendor dir nor
+              # a network -- but cargo still insists on a writable CARGO_HOME.
+              export CARGO_HOME="$PWD/.cargo-home"
+              ${lib.getExe checkScripts.fmt} --check
+              touch $out
+            '';
+
+            # Whole workspace, `--all-targets --all-features`, which is what
+            # `clippyArgs` says and therefore covers `crates/*` and `tools/*` as
+            # well as the two events.
+            #
+            # Source is the whole tree rather than a fileset, because clippy
+            # compiles: a kit's arena is `include_str!`, so narrowing the input
+            # would be narrowing what compiles. Reusing `workspaceArgs.src`
+            # keeps it one store copy shared with the release build.
+            #
+            # Cost, measured cold with an empty CARGO_TARGET_DIR on an M-series
+            # mac: 63 s wall, 429 s CPU. It shares nothing with the release
+            # build and cannot -- clippy reads dev-profile metadata produced by
+            # `clippy-driver`, not release rlibs produced by `rustc` -- but at
+            # 429 CPU-seconds against the gate's ~8400 (2102 s over four cores,
+            # run 30500640846) it is about 5% more work, overlapped by
+            # `--keep-going` with e2e gates that are waiting on a server to boot
+            # rather than on a core.
+            # `runCommandCC`, not `runCommand`: the latter is `stdenvNoCC` and
+            # several build scripts in the graph are C. Without it the check
+            # fails at `linker `cc` not found` rather than at a lint.
+            clippy = pkgs.runCommandCC "hyperion-clippy" { inherit nativeBuildInputs; } ''
+              cp -r ${./.}/. .
+              chmod -R u+w .
+              # Points CARGO_HOME at the vendored crates cargoUnit already
+              # fetched for the release build, so this resolves the same lock
+              # from the same sources with no second set of hashes to drift.
+              ${workspace.cargoConfigScript}
+              ${lib.getExe checkScripts.lint}
+              touch $out
+            '';
+          };
+
           # `nix flake check` builds every app, which is what proves each one
           # passes shellcheck and that its tools resolve. What CI enforces of
           # this set, and the named exceptions, live in nix/ci/flake-gate.nix.
-          baseChecks = scripts // {
+          baseChecks = scripts // lintChecks // {
+
             # The two gates that read the wire the way a player does, as
             # derivations: nix builds the binaries, the sandbox boots them on
             # loopback, and the scripted client's verdict is the build result.
