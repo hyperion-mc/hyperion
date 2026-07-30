@@ -20,8 +20,10 @@ use glam::Vec3;
 use harness::{Game, TICK};
 use smash::{
     module::{
+        damage::MatchClock,
         jump,
         kit::{self, KitStats},
+        lives::{DeathCause, RespawnAt, kill},
         player::{Flying, JumpsLeft, MayFly, OnGround, Position},
     },
     server::{Flight, PlayerId, mock::Call},
@@ -403,5 +405,71 @@ fn a_dead_player_is_not_armed() {
         view.cloned::<&Position>().0,
         Vec3::new(0.0, 64.0, 0.0),
         "nothing should have moved them"
+    );
+}
+
+/// Dying in mid-air must not carry the jump you had, or the press you made,
+/// across the respawn.
+///
+/// Both halves of this are the same root cause and neither is visible from
+/// `a_dead_player_is_not_armed` above, which asserts a spectator is left alone
+/// and then stops. `MayFly` is a write-cache and `Flying` is a mirror, and
+/// while a player is dead the two systems that maintain them are filtered out
+/// by `RespawnAt`, so whatever was true at the moment of death is still there
+/// at the moment of return:
+///
+/// * The client resets its own abilities on the gamemode change respawning
+///   causes -- `GameType.updatePlayerAbilities` sets `mayfly = false`, out of
+///   band and without telling the server. A cache that still says `true` means
+///   `arm_double_jump` compares equal and sends nothing, and the player has a
+///   `JumpsLeft` their client will not spend. That is the mechanic failing in
+///   exactly the situation it exists for, because the normal way to die here is
+///   in mid-air and the first thing that happens to a fresh respawn is being
+///   knocked off again.
+/// * A press made on the tick of death is still `true` on the host, so the
+///   first tick the filter stops applying it is spent as a real jump, at the
+///   spawn point, from a keypress made before the player died.
+///
+/// The real-client leg cannot see either: `Match.prove_double_jump` runs in the
+/// hub before anybody has died.
+#[test]
+fn respawning_in_mid_air_hands_back_a_jump_the_client_can_actually_take() {
+    let mut game = Game::new();
+    let player = game.player("recovering", Vec3::new(0.0, 64.0, 0.0));
+    let id = game.world.entity_from_id(player).cloned::<&PlayerId>();
+    let view = game.world.entity_from_id(player);
+
+    // Airborne with a jump in hand, and a press in flight on the tick they die.
+    airborne(&game, player);
+    assert!(view.cloned::<&MayFly>().0, "should be armed before dying");
+    view.set(Flying(true));
+    kill(view, DeathCause::Void);
+
+    // The respawn is gated on the match clock, which only advances while the
+    // lobby says the game is running.
+    game.world.get::<&mut MatchClock>(|clock| clock.0 = 10.0);
+    game.world.progress_time(TICK);
+    assert!(
+        view.try_get::<&RespawnAt>(|r| r.0).is_none(),
+        "the respawn should have landed"
+    );
+
+    game.server.take();
+    // hyperion reaches the host through a teleport the client has to confirm,
+    // so `is_grounded` still reports the pre-death airborne position for a few
+    // ticks. This is the window the bug lives in, not an edge case.
+    view.set(OnGround(false));
+    game.advance(TICK * 3.0, 3);
+
+    assert!(
+        impulses(&game, id).is_empty(),
+        "a press made before dying was replayed at the spawn point: {:?}",
+        impulses(&game, id)
+    );
+    assert_eq!(
+        game.server.flight_of(id),
+        vec![Flight::Armed],
+        "a player who respawned in mid-air was never told they may jump, so the JumpsLeft they \
+         were handed is one the client cannot spend"
     );
 }
