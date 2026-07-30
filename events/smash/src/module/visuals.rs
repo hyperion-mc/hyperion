@@ -594,3 +594,43 @@ pub fn laser_eye(at: Vec3) -> Particles {
     .speed(DRIFT)
     .long_distance(true)
 }
+
+/// A jet of fire out of somebody's hands.
+///
+/// Drawn as a line with a wide scatter at every sampled point rather than as a
+/// cone, because `Particles` has no cone and a flamethrower is the only thing
+/// in the game that wants one. What that gives up is the widening: the jet is
+/// as broad at the caster's hands as it is five blocks out, so it reads as a
+/// column of fire rather than a spray. The alternative was a new shape in the
+/// engine's effect builder for a single call site, which is the trade being
+/// refused here; if a second kit ever wants a cone, add the shape rather than a
+/// second copy of this.
+pub fn flamethrower(from: Vec3, toward: Vec3, reach: f32) -> Particles {
+    let eye = from + Vec3::Y * CHEST;
+    Particles::line(
+        Particle::Flame,
+        eye,
+        eye + toward.normalize_or_zero() * reach,
+    )
+    .points(24)
+    .count(2)
+    .offset(Vec3::splat(0.35))
+    .speed(0.05)
+    .long_distance(true)
+}
+
+/// A standing copy of a player, left behind where they were.
+///
+/// A column of `minecraft:soul_fire_flame` about a player tall, so what is
+/// drawn is the shape of the thing left rather than a puff at the place it was
+/// left. Deliberately unlike [`teleport`]: planting an image and swapping onto
+/// it are two presses of one button, and a player who cannot tell the two
+/// apart at a glance cannot tell whether their opponent still has the escape.
+/// So the plant is a figure in the Wither Skeleton's own soul fire and the
+/// arrival stays the portal shell every teleport in the game uses.
+pub fn effigy(at: Vec3) -> Particles {
+    Particles::line(Particle::SoulFireFlame, at, at + Vec3::Y * 1.8)
+        .points(14)
+        .speed(DRIFT)
+        .long_distance(true)
+}

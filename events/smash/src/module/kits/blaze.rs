@@ -150,6 +150,15 @@ fn inferno(cast: &Cast<'_>) {
     const REACH: f32 = 5.0;
     const DAMAGE: f32 = 1.5;
 
+    // Above the search, because the search is what can come up empty. Inferno
+    // is a half-second-cooldown cone the Blaze holds down, and it drew nothing
+    // at all: the only fire on screen came from `BURNING` on a victim, so
+    // spewing at open air was silent and a player could not see where their
+    // own flame reached. Every other ability in the game now draws on the
+    // press; this was the last one that did not.
+    cast.server
+        .particles(visuals::flamethrower(cast.position.0, cast.facing.0, REACH));
+
     let ahead = cast.position.0 + cast.facing.0.normalize_or_zero() * (REACH * 0.5);
     let caster = cast.caster.id();
     let mut victims = Vec::new();
