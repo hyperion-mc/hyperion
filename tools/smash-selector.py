@@ -561,6 +561,31 @@ class Run:
             self.fail("timed out after %.0fs waiting for %s" % (seconds, why))
         return False
 
+    def must_become(self, predicate, seconds, message):
+        """Wait for `predicate`, and fail with `message` if it never holds.
+
+        The predicate is the assertion, which is the whole point: waiting on
+        one packet and asserting on another is how `smash-selector-e2e` came
+        to report an action bar the server had already sent. See
+        nix/verify-wire-assertions.py, which refuses that shape.
+        """
+        if self.wait_until(predicate, seconds):
+            return True
+        self.fail(message() if callable(message) else message)
+        return False
+
+    def must_not_become(self, predicate, seconds, message):
+        """Fail if `predicate` ever holds inside the window.
+
+        The other polarity, and it is not `settle` then look: this fails the
+        instant the bad thing happens rather than only if it is still true at
+        the end, and it still waits the full window before passing.
+        """
+        if self.wait_until(predicate, seconds):
+            self.fail(message() if callable(message) else message)
+            return False
+        return True
+
     def settle(self, seconds):
         deadline = time.time() + seconds
         while time.time() < deadline:
@@ -1158,20 +1183,17 @@ class Run:
         # across two reads satisfies the wait above while the action bar is
         # still on its way. Run 30500640846 recorded the failure at
         # 00:21:41.7509285 and logged the line it was waiting for at
-        # 00:21:41.7511018. Waiting on the packet the claim is about, rather
-        # than on the one that happens to precede it, is the whole fix: the
-        # bytes had not reached the client, so no amount of draining harder
-        # would have found them.
-        self.wait_until(
-            lambda: any(entry["kit"] in line for line in client.action_bar), 10.0
-        )
-        told = [line for line in client.action_bar if entry["kit"] in line]
-        if not told:
-            self.fail(
-                "%s picked the %s and the action bar never said so: %r"
-                % (client.name, entry["kit"], client.action_bar)
-            )
+        # 00:21:41.7511018. The bytes had not reached the client, so no amount
+        # of draining harder would have found them; the only fix is to wait on
+        # the packet the claim is about.
+        if not self.must_become(
+            lambda: any(entry["kit"] in line for line in client.action_bar),
+            10.0,
+            lambda: "%s picked the %s and the action bar never said so: %r"
+            % (client.name, entry["kit"], client.action_bar),
+        ):
             return entry
+        told = [line for line in client.action_bar if entry["kit"] in line]
         self.prove(
             "a right-click on a podium picks that mob",
             "%s right-clicked %s and the server answered %r"
@@ -1323,6 +1345,9 @@ class Run:
         podiums = self.ask_podiums(self.live()[0])
         free = [entry for entry in podiums if entry["held_by"] is None]
         if len(free) < len(waiting):
+            # not-a-wire-assertion: this counts the lobby against the ring.
+            # `kit` is only how "has not picked yet" is spelled here, and no
+            # packet arriving a moment later can make the count wrong.
             self.fail(
                 "a lobby of %d has only %d free mobs left"
                 % (len(self.live()), len(free))
@@ -1415,20 +1440,27 @@ class Run:
         # about the phase rule rather than about reach, so the click is sent
         # from wherever the scatter put the player.
         client.right_click(self.click_at(other), "(%s, mid-match)" % other["kit"])
-        self.settle(1.0)
-        if client.kit != held:
-            self.fail(
-                "%s clicked a podium mid-match and changed from %s to %s"
-                % (client.name, held, client.kit)
-            )
+        # Both halves waited for rather than slept on. `settle(1.0)` guessed a
+        # second, and a second was generous enough that this never failed; the
+        # same guess at zero is what made the selection announcement flaky.
+        # The kit one is the negative polarity, which is not "sleep and look":
+        # it fails the instant the kit changes and still waits the full second
+        # before believing it did not.
+        if not self.must_not_become(
+            lambda: client.kit != held,
+            1.0,
+            lambda: "%s clicked a podium mid-match and changed from %s to %s"
+            % (client.name, held, client.kit),
+        ):
+            return
+        if not self.must_become(
+            lambda: any("cannot change kit" in line for line in client.action_bar),
+            10.0,
+            lambda: "a mid-match click was ignored rather than refused: %r"
+            % client.action_bar,
+        ):
             return
         told = [line for line in client.action_bar if "cannot change kit" in line]
-        if not told:
-            self.fail(
-                "a mid-match click was ignored rather than refused: %r"
-                % client.action_bar
-            )
-            return
         self.prove(
             "a click after the match commits is refused",
             "%s clicked the %s while playing the %s and was told %r"
