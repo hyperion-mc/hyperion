@@ -257,6 +257,7 @@ pub(crate) fn hotbar_slot(cursor: u16) -> Option<u8> {
 /// formula, so the day this function stops reading [`MeleeBonus`] every
 /// `buffs_melee` assertion in the suite goes on passing and only a real client
 /// notices.
+#[must_use]
 pub fn melee_damage(attacker: EntityView<'_>, victim: Entity, now: f32) -> f32 {
     let base = attacker
         .find_target(Playing, |_| true)

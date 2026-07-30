@@ -135,6 +135,14 @@ fn wither_image(cast: &Cast<'_>) {
         return;
     }
 
+    // Both arms of the branch draw, because both are a real outcome of the
+    // press and not a lookup that can come up empty: the swap arrives, and this
+    // one plants. Only the swap used to draw, so the press that puts the image
+    // down was silent, and the ability's whole threat -- that an opponent can
+    // see the escape is armed and play around it -- was invisible to everyone
+    // including the caster.
+    cast.server.particles(visuals::effigy(cast.position.0));
+
     cast.caster.set(Image {
         at: cast.position.0,
         until: now + IMAGE_SECONDS,

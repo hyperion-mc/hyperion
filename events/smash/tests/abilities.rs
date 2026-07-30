@@ -469,6 +469,87 @@ fn every_declared_effect_actually_happens() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// Every ability draws something on the press that fires it.
+///
+/// [`every_declared_effect_actually_happens`] gives an ability [`ATTEMPTS`]
+/// presses, which is right for the question it asks and is exactly why it
+/// cannot ask this one. Wither Image plants a decoy on the first press and
+/// swaps you onto it on the second; only the swap drew, so the sweep's second
+/// press supplied the particles and the first press's silence was invisible to
+/// every gate we had. The real-client sweep in `tools/smash-match.py` presses
+/// more than once too, and missed it for the same reason.
+///
+/// So this presses once, and once only. A visual that needs a second press, a
+/// landed projectile or a victim in range is a visual the player does not get
+/// for the button they pushed.
+///
+/// "Draws something" is deliberately wider than "sends particles". Seven
+/// abilities answer the press by putting a *drawn entity* in the world -- a
+/// wither skull, an egg, a thrown block -- and for those the projectile is the
+/// picture and a puff would be noise. Writing this against particles alone
+/// named all seven as defects, which is a check calling correct code wrong: as
+/// bad as the silence it was written to catch, and harder to spot, because
+/// somebody would have "fixed" seven working abilities to satisfy it. So the
+/// question is whether the press put anything on a screen, by either route.
+///
+/// It stays one test rather than two because "which abilities are the
+/// projectile kind" is not a list anybody should maintain;
+/// [`every_projectile_that_flies_can_be_seen`] separately holds those
+/// projectiles to carrying a `Visual`, so an entity counted here is an entity
+/// the host really draws.
+#[test]
+fn every_ability_draws_on_the_press_that_fires_it() {
+    use smash::module::projectile::{Projectile, Visual};
+
+    let manifest = ability::manifest(&Game::new().world);
+    let mut silent = Vec::new();
+
+    for entry in manifest {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(&entry);
+        // `reset` clears the log; `arm` runs after it and grants the Smash
+        // Crystal, which is entitled to draw. Clear again so what is counted
+        // below is the press and nothing else.
+        bench.game.server.take();
+
+        bench.press(&entry);
+        // One tick, because an ability whose visual comes from a system rather
+        // than from the cast function has not had a frame yet. Not `settle`,
+        // which flies the projectiles into the victims and lets an impact
+        // effect stand in for the cast effect -- the substitution this test
+        // exists to refuse.
+        bench.game.advance(TICK, 1);
+
+        let sent_particles = bench
+            .game
+            .server
+            .take()
+            .iter()
+            .any(|call| matches!(call, Call::Particles(_)));
+
+        let mut drew_entity = false;
+        bench
+            .game
+            .world
+            .query::<()>()
+            .with(Projectile::id())
+            .with(Visual::id())
+            .build()
+            .each(|()| drew_entity = true);
+
+        if !sent_particles && !drew_entity {
+            silent.push(format!("{} / {}", entry.kit, entry.name));
+        }
+    }
+
+    assert!(
+        silent.is_empty(),
+        "these abilities put nothing on a screen on the press that fires them -- no particles and \
+         no drawn projectile -- so the player pushed a button and saw nothing: {silent:#?}"
+    );
+}
+
 /// The declaration is exhaustive for movement, not just a lower bound.
 ///
 /// An ability that launches somebody without saying so is the same defect as one
