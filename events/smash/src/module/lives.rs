@@ -12,7 +12,7 @@ use crate::{
     module::{
         arena::Arena,
         damage::{KILL_CREDIT_WINDOW, LastHitAt, LastHitBy, MatchClock},
-        hud, kit,
+        hud, jump, kit,
         player::{self, Health, JumpsLeft, Player, Position},
         sound::{self, PlaysOnDeath},
         visuals,
@@ -430,7 +430,11 @@ impl Module for LivesModule {
                 // deadline with it and would otherwise delete this one.
                 crate::module::effect::clear(world, player.id());
                 player.set(InvulnerableUntil(clock + RESPAWN_INVULNERABLE_SECS));
-                player.set(JumpsLeft(1));
+                // The kit's count and not one: a Chicken that respawned with a
+                // single jump would be the lightest kit in the game with the
+                // recovery of the heaviest, which is the one thing its 200%
+                // knockback taken is balanced against.
+                player.set(JumpsLeft(jump::allowance(player)));
 
                 let hotbar = kit::hotbar(player);
                 world.get::<&ServerHandle>(|server| {

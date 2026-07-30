@@ -10,8 +10,8 @@ use std::sync::Mutex;
 use glam::Vec3;
 
 use super::{
-    BarSlot, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server, SidebarLine,
-    Sound, Status, Text, Title,
+    BarSlot, BossBar, Channel, Experience, Flight, HotbarItem, Particles, PlayerId, Server,
+    SidebarLine, Sound, Status, Text, Title,
 };
 
 /// One thing the game asked the server to do.
@@ -19,6 +19,8 @@ use super::{
 pub enum Call {
     AddVelocity(PlayerId, Vec3),
     Teleport(PlayerId, Vec3),
+    /// Whether the client may take a mid-air jump.
+    Flight(PlayerId, Flight),
     SetHealth(PlayerId, f32, f32),
     /// A potion effect applied to a player.
     Status(PlayerId, Status),
@@ -76,6 +78,23 @@ impl MockServer {
                 _ => None,
             })
             .sum()
+    }
+
+    /// Every flight state pushed to `player`, oldest first.
+    ///
+    /// The whole series and not the last one, because what the double jump has
+    /// to get right is the *sequence*: armed on leaving the ground, disarmed
+    /// once the jumps are spent, and one push per change rather than one a
+    /// tick. A final-state assertion cannot tell those apart.
+    #[must_use]
+    pub fn flight_of(&self, player: PlayerId) -> Vec<Flight> {
+        self.calls()
+            .iter()
+            .filter_map(|call| match call {
+                Call::Flight(id, flight) if *id == player => Some(*flight),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Every status effect applied to `player`, oldest first.
@@ -213,6 +232,10 @@ impl Server for MockServer {
 
     fn teleport(&self, player: PlayerId, to: Vec3) {
         self.push(Call::Teleport(player, to));
+    }
+
+    fn set_flight(&self, player: PlayerId, flight: Flight) {
+        self.push(Call::Flight(player, flight));
     }
 
     fn set_health(&self, player: PlayerId, health: f32, max: f32) {

@@ -4,6 +4,7 @@ pub mod build_stamp;
 pub mod damage;
 pub mod effect;
 pub mod hud;
+pub mod jump;
 pub mod kit;
 pub mod kits;
 pub mod knockback;

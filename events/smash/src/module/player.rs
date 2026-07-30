@@ -116,8 +116,40 @@ impl Energy {
 }
 
 /// How many double jumps remain before touching ground again.
+///
+/// How many a player starts with is the kit's, not a constant: the Chicken has
+/// eight and everybody else has one. [`crate::module::jump`] is what spends
+/// them and what puts them back.
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct JumpsLeft(pub u8);
+
+/// Mirror of the host seeing a client ask to take off.
+///
+/// True for the one tick a serverbound abilities packet turned flight on, and
+/// false every other tick. A vanilla client sends that packet when the player
+/// double-taps the jump key with flight permitted, so this is the mid-air jump
+/// press and there is no other input that produces one.
+///
+/// An edge and not the flying bit itself, which is the difference that makes
+/// it safe to read: the bit stays on for as long as the client is flying, and
+/// a system reading the level would spend a jump every tick until something
+/// cleared it.
+///
+/// The one mirror the game writes back to, and only ever to clear: whoever
+/// spends the press marks it spent. See `smash::Jump::spend_double_jump`.
+#[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub struct JumpPressed(pub bool);
+
+/// What the client was last told about flight, so the arming system sends a
+/// packet when the answer changes rather than twenty times a second.
+///
+/// The game's own memory of a write it made across the seam. It is not a
+/// mirror: nothing reads it back off the host, because [`crate::server`]
+/// deliberately has no reads. Both halves of that are load-bearing -- a
+/// clientbound abilities packet per airborne player per tick is a fifth of the
+/// game's whole packet budget spent saying nothing changed.
+#[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub struct MayFly(pub bool);
 
 /// Mirror of which of the nine hotbar slots the player is holding.
 ///
@@ -153,6 +185,8 @@ impl Module for PlayerModule {
         world.component::<Health>();
         world.component::<Energy>();
         world.component::<JumpsLeft>();
+        world.component::<JumpPressed>();
+        world.component::<MayFly>();
         world.component::<SelectedSlot>();
 
         // A player is never meaningfully without these, and forgetting one is
@@ -166,15 +200,9 @@ impl Module for PlayerModule {
             .add_trait::<(flecs::With, OnGround)>()
             .add_trait::<(flecs::With, Health)>()
             .add_trait::<(flecs::With, JumpsLeft)>()
+            .add_trait::<(flecs::With, JumpPressed)>()
+            .add_trait::<(flecs::With, MayFly)>()
             .add_trait::<(flecs::With, SelectedSlot)>();
-
-        world
-            .system_named::<(&OnGround, &mut JumpsLeft)>("restore_double_jump")
-            .each(|(ground, jumps)| {
-                if ground.0 {
-                    jumps.0 = 1;
-                }
-            });
 
         world
             .system_named::<&mut Energy>("regen_energy")

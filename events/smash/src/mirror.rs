@@ -8,12 +8,12 @@
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
-use hyperion::simulation::{MovementTracking, Pitch, Yaw};
+use hyperion::simulation::{Flight, MovementTracking, Pitch, Yaw};
 use hyperion_inventory::PlayerInventory;
 
 use crate::{
     input::hotbar_slot,
-    module::player::{Facing, OnGround, Player, Position, SelectedSlot, Velocity},
+    module::player::{Facing, JumpPressed, OnGround, Player, Position, SelectedSlot, Velocity},
 };
 
 #[derive(Component)]
@@ -29,11 +29,13 @@ impl Module for MirrorModule {
                 &Yaw,
                 &Pitch,
                 &MovementTracking,
+                &Flight,
                 &PlayerInventory,
                 &mut Position,
                 &mut Facing,
                 &mut OnGround,
                 &mut Velocity,
+                &mut JumpPressed,
                 &mut SelectedSlot,
             )>("mirror_player_state")
             .kind(id::<flecs::pipeline::OnLoad>())
@@ -44,11 +46,13 @@ impl Module for MirrorModule {
                     yaw,
                     pitch,
                     tracking,
+                    flight,
                     inventory,
                     position,
                     facing,
                     ground,
                     velocity,
+                    jump_pressed,
                     selected,
                 )| {
                     position.0 = **source;
@@ -60,6 +64,15 @@ impl Module for MirrorModule {
                     // and it is what abilities that scale with speed -- Block
                     // Toss, Iron Hook -- are asking for.
                     velocity.0 = tracking.server_velocity.as_vec3();
+                    // The rising edge, not the bit. `sync_player_entity`
+                    // copies `is_flying` into `last_tick_flying` in PreStore,
+                    // which is after every game system has run, so comparing
+                    // the two here is exactly "the client asked to take off
+                    // during the last tick" and is true for one tick per
+                    // press. Mirroring the level instead would be true for as
+                    // long as the client kept flying, and the game would spend
+                    // a jump on each of those ticks.
+                    jump_pressed.0 = flight.is_flying && !tracking.last_tick_flying;
                     // A cursor outside the hotbar leaves the last slot standing
                     // rather than resetting to zero: the alternative reads as
                     // "you are holding slot 0" and would put slot 0's cooldown

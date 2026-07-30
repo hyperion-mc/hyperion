@@ -138,6 +138,7 @@ fn every_sound_id_is_one_a_vanilla_client_owns() {
     for (what, id) in [
         ("selection refused", sound::SELECTION_REFUSED),
         ("impact", sound::IMPACT),
+        ("double jump", sound::DOUBLE_JUMP),
         ("projectile hit", sound::PROJECTILE_HIT),
         ("ranged hitmarker", sound::RANGED_HITMARKER),
         ("countdown tick", sound::COUNTDOWN_TICK),

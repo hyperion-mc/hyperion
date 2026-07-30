@@ -39,7 +39,7 @@ use hyperion::{
     },
     net::{Compose, ConnectionId, agnostic, protocol, protocol::Clientbound},
     simulation::{
-        PendingTeleportation, Velocity,
+        Flight as HostFlight, PendingTeleportation, Velocity,
         gamemode::{DefaultGamemode, Gamemode},
         metadata::living_entity::Health,
         skin::PlayerSkin,
@@ -53,8 +53,8 @@ use valence_nbt::{Compound, List, Value};
 use crate::{
     module::kit::{self, Playing},
     server::{
-        BarColour, BarSlot, BossBar, Channel, Experience, HotbarItem, Particles, PlayerId, Server,
-        SidebarLine, Sound, SoundCategory, Status, Text, Title,
+        BarColour, BarSlot, BossBar, Channel, Experience, Flight, HotbarItem, Particles, PlayerId,
+        Server, SidebarLine, Sound, SoundCategory, Status, Text, Title,
     },
 };
 
@@ -70,6 +70,10 @@ enum Op {
     Teleport {
         player: Entity,
         to: Vec3,
+    },
+    SetFlight {
+        player: Entity,
+        flight: Flight,
     },
     SetHealth {
         player: Entity,
@@ -170,6 +174,13 @@ impl Server for HyperionServer {
         self.push(Op::Teleport {
             player: entity_of(player),
             to,
+        });
+    }
+
+    fn set_flight(&self, player: PlayerId, flight: Flight) {
+        self.push(Op::SetFlight {
+            player: entity_of(player),
+            flight,
         });
     }
 
@@ -383,6 +394,27 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
                 return;
             }
             entity.set(PendingTeleportation::new(to));
+        }
+        Op::SetFlight { player, flight } => {
+            let entity = world.entity_from_id(player);
+            if !entity.is_alive() {
+                return;
+            }
+            // `set` and not `get::<&mut _>`: hyperion sends the abilities
+            // packet from an `OnSet` observer on this component, so a mutation
+            // that skipped the hook would change what the server believes and
+            // tell the client nothing.
+            //
+            // `is_flying` is false in both branches. The serverbound half of
+            // this exchange is the only thing that ever turns it on, and
+            // clearing it here is what ends a take-off the tick it starts:
+            // without it the client stays in creative flight and the double
+            // tap that starts the next jump never happens, because it is
+            // already flying.
+            entity.set(HostFlight {
+                allow: flight.is_armed(),
+                is_flying: false,
+            });
         }
         Op::SetHealth {
             player,

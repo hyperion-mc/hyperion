@@ -59,11 +59,24 @@ pub struct KitStats {
     /// Seconds between losing half a hunger shank.
     pub hunger_interval: f32,
     pub max_health: f32,
-    /// Impulse of the double jump.
+    /// Impulse of the double jump, in blocks per tick.
+    ///
+    /// Minecraft's own velocity unit, which is the one Mineplex's sheet was
+    /// written in too: `UtilAction.velocity` scales a unit vector by this and
+    /// hands the result to `setVelocity`. Vanilla's ordinary jump leaves the
+    /// ground at 0.42, so every kit's mid-air jump is more than twice one --
+    /// which is the point, because recovering from a launch is what it is for.
     pub jump_power: f32,
-    /// Whether the double jump goes where you look (Wolf, Spider) or straight
-    /// up (everyone else).
+    /// Whether the double jump goes where you look (Wolf, Spider, Chicken) or
+    /// straight up (everyone else).
     pub jump_control: bool,
+    /// How many mid-air jumps the kit gets before touching ground again.
+    ///
+    /// One for everybody except the Chicken, which has eight. Carried per kit
+    /// rather than as a constant because it is the Chicken's whole identity:
+    /// the lightest kit in the game, launched further by every hit than anyone
+    /// else, and able to fly back from it.
+    pub jump_count: u8,
     /// Present only on kits with an energy bar.
     pub energy: Option<(f32, f32)>,
 }
@@ -79,6 +92,7 @@ impl Default for KitStats {
             max_health: 20.0,
             jump_power: 1.0,
             jump_control: false,
+            jump_count: 1,
             energy: None,
         }
     }
@@ -484,7 +498,7 @@ pub fn apply(world: &World, player: EntityView<'_>, kit: EntityView<'_>) {
         .set(Armor(stats.armor))
         .set(KnockbackTaken(stats.knockback_taken))
         .set(Health::full(stats.max_health))
-        .set(JumpsLeft(1));
+        .set(JumpsLeft(stats.jump_count));
 
     if let Some((max, regen)) = stats.energy {
         player.set(Energy::full(max, regen));

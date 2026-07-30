@@ -27,10 +27,10 @@ use hyperion_clap::hyperion_command::CommandRegistry;
 
 use crate::module::{
     ability::AbilityModule, arena::ArenaModule, build_stamp::BuildStampModule,
-    damage::DamageModule, effect::EffectModule, hud::HudModule, kit::KitModule, kits::StockKits,
-    knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule, player::PlayerModule,
-    projectile::ProjectileModule, scoreboard::ScoreboardModule, selector::SelectorModule,
-    sound::SoundModule,
+    damage::DamageModule, effect::EffectModule, hud::HudModule, jump::JumpModule, kit::KitModule,
+    kits::StockKits, knockback::KnockbackModule, lives::LivesModule, lobby::LobbyModule,
+    player::PlayerModule, projectile::ProjectileModule, scoreboard::ScoreboardModule,
+    selector::SelectorModule, sound::SoundModule,
 };
 
 /// The whole game.
@@ -63,6 +63,10 @@ impl Module for SmashModule {
         world.import::<KitModule>();
         world.import::<ArenaModule>();
         world.import::<LivesModule>();
+        // After `Lives`: the double jump reads the two components that say a
+        // player is spectating rather than playing, so that it can leave them
+        // alone.
+        world.import::<JumpModule>();
         world.import::<ProjectileModule>();
         world.import::<LobbyModule>();
         world.import::<ScoreboardModule>();
