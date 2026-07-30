@@ -69,6 +69,16 @@ valence_registry = { workspace = true }
 valence_server = { workspace = true }
 ordered-float = { workspace = true }
 
+[features]
+# Test-only helpers for building a `Compose` a downstream crate can read back:
+# see `hyperion::net::test_util`. Off by default and enabled by `smash` only
+# under `[dev-dependencies]`, so it is in no published surface for a normal
+# build. `nix/checks/test-util-is-dev-only.nix` fails the build if any
+# non-dev dependency turns it on -- a feature that exists for tests is one
+# careless `features = [..]` away from being load-bearing in production, and
+# by then removing it is a breaking change.
+test-util = []
+
 [dev-dependencies]
 approx = { workspace = true }
 divan = { workspace = true }

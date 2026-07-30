@@ -726,13 +726,68 @@ impl IoBuf {
     }
 }
 
-#[cfg(test)]
+/// Helpers for driving this crate's egress from a downstream crate's tests.
+///
+/// Behind the off-by-default `test-util` feature, because everything here
+/// exists to be called from a `#[cfg(test)]` block and nothing in a running
+/// server should reach it.
+///
+/// # Why this is a feature and not four dependencies
+///
+/// Building a readable [`Compose`] from outside `hyperion` needs
+/// [`IoBuf::add_proxy`] (crate-private, and a real API this should not widen),
+/// `libdeflater::CompressionLvl`, `valence_protocol::CompressionThreshold` and
+/// a `tokio` channel; reading a frame back needs `rkyv` and
+/// `hyperion_proxy_proto`. That is six things a consumer would have to depend
+/// on and keep in step to assert on one packet. Two functions behind a flag is
+/// the smaller surface.
+#[cfg(feature = "test-util")]
+pub mod test_util {
+    use bytes::Bytes;
+    use hyperion_proxy_proto::ArchivedServerToProxyMessage;
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    use super::Compose;
+
+    /// A [`Compose`] wired to one proxy, and that proxy's receiving end.
+    ///
+    /// Everything the game sends to this player lands on the returned channel
+    /// instead of a socket, so a test can read what a client would have been
+    /// told rather than what the game intended to tell them.
+    #[must_use]
+    pub fn compose_with_proxy() -> (Compose, UnboundedReceiver<Bytes>) {
+        let (compose, zero, _one) = super::tests::two_proxies();
+        (compose, zero)
+    }
+
+    /// The raw packet bytes of the next unicast frame, or `None` when the
+    /// channel is empty or the next frame is not a unicast.
+    ///
+    /// The rkyv step lives here rather than in the caller so a consumer needs
+    /// no `rkyv` or `hyperion_proxy_proto` dependency of its own.
+    #[must_use]
+    pub fn next_unicast(rx: &mut UnboundedReceiver<Bytes>) -> Option<Vec<u8>> {
+        let bytes = rx.try_recv().ok()?;
+        // `encode_proxy_message` writes an eight-byte big-endian length before
+        // the rkyv body; see `tests::next_variant` for the alignment argument.
+        let body = &bytes[size_of::<u64>()..];
+        let message = unsafe { rkyv::access_unchecked::<ArchivedServerToProxyMessage<'_>>(body) };
+        match message {
+            ArchivedServerToProxyMessage::Unicast(unicast) => Some(unicast.data.to_vec()),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-util"))]
 pub(crate) mod tests {
     use std::sync::Arc;
 
     use hyperion_proxy_proto::ArchivedServerToProxyMessage;
 
-    use super::*;
+    // Named rather than a glob: `test-util` compiles this module outside
+    // `cfg(test)`, where the workspace's pedantic `wildcard_imports` applies.
+    use super::{ChannelId, Compose, CompressionLvl, ConnectionId, IoBuf, ProxyId};
     use crate::{CompressionThreshold, Global, common::Shared, simulation::EgressComm};
 
     /// A [`Compose`] with two proxies registered, and the receiving end of each proxy's channel.

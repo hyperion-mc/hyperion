@@ -570,6 +570,99 @@
                 ''
             );
 
+          # `hyperion`'s `test-util` feature stays a test-only feature.
+          #
+          # It exists so `smash`'s adapter tests can build a readable `Compose`
+          # (ENG-11475). Off by default and enabled by `smash` under
+          # `[dev-dependencies]`, which keeps it out of every normal build --
+          # but nothing about a cargo feature *enforces* that, and one careless
+          # `features = [ "test-util" ]` in a real `[dependencies]` entry makes
+          # it load-bearing in production, after which removing it is a
+          # breaking change. A convention nobody checks is a convention that
+          # has already been broken somewhere.
+          #
+          # Read off the raw manifests rather than `cargo metadata`, so this
+          # answers from the source of truth and needs no build to evaluate.
+          testUtilIsDevOnly =
+            let
+              members = (lib.importTOML ./Cargo.toml).workspace.members;
+              # Everything a normal `cargo build` would consult. `dev-dependencies`
+              # is deliberately absent: that is the one table allowed to ask.
+              shippingTables = [
+                "dependencies"
+                "build-dependencies"
+              ];
+              manifestOf = member: lib.importTOML (./. + "/${member}/Cargo.toml");
+              # `[target.'cfg(..)'.dependencies]` ships too, so it is folded in
+              # rather than trusted to be empty.
+              # Flattened *before* the null filter, not after: the target branch
+              # produces a list per target, so filtering first leaves nulls
+              # nested inside and hands `mapAttrsToList` a null.
+              tablesOf =
+                manifest:
+                lib.filter (table: table != null) (
+                  lib.flatten (
+                    map (name: manifest.${name} or null) shippingTables
+                    ++ lib.mapAttrsToList (
+                      _: target: map (name: target.${name} or null) shippingTables
+                    ) (manifest.target or { })
+                  )
+                );
+              # `hyperion = { workspace = true, features = [..] }` is a set;
+              # `hyperion = "1.0"` is a string and cannot ask for a feature.
+              asksFor = entry: lib.isAttrs entry && lib.elem "test-util" (entry.features or [ ]);
+              offendersIn =
+                member:
+                let
+                  named = lib.flatten (
+                    map (table: lib.mapAttrsToList (name: entry: { inherit name entry; }) table) (
+                      tablesOf (manifestOf member)
+                    )
+                  );
+                in
+                map (found: "${member} -> ${found.name}") (lib.filter (found: asksFor found.entry) named);
+              offenders = lib.flatten (map offendersIn members);
+              # The other half of the guarantee, and the half a manifest scan
+              # cannot see. Under resolver 1 a dev-dependency's features are
+              # unified into the normal build too, so `smash`'s
+              # `[dev-dependencies]` entry would put `test-util` in the server
+              # binary with every manifest above still reading correctly --
+              # this check green, the thing it protects broken. Verified as
+              # well as asserted: `cargo tree -p smash -e features
+              # --no-dev-dependencies` mentions test-util zero times, and with
+              # dev-dependencies once.
+              resolver = (lib.importTOML ./Cargo.toml).workspace.resolver or "1";
+              resolverIsFine = resolver == "2" || resolver == "3";
+            in
+            pkgs.runCommand "hyperion-test-util-is-dev-only" { } (
+              if !resolverIsFine then
+                ''
+                  echo "FAIL: workspace.resolver is ${resolver}." >&2
+                  echo "Resolver 1 unifies dev-dependency features into the normal" >&2
+                  echo "build, so smash's test-only hyperion feature would land in" >&2
+                  echo "the server binary and the manifest scan below would still" >&2
+                  echo "pass. Keep it at 2 or later." >&2
+                  exit 1
+                ''
+              else if offenders == [ ] then
+                ''
+                  echo "ok: ${
+                    toString (lib.length members)
+                  } workspace members, no shipping dependency enables test-util, resolver ${resolver}"
+                  touch "$out"
+                ''
+              else
+                ''
+                  echo "FAIL: test-util is enabled outside [dev-dependencies]:" >&2
+                  ${lib.concatMapStringsSep "\n" (o: ''echo "  ${o}" >&2'') offenders}
+                  echo "" >&2
+                  echo "That feature exists for tests and is off by default. Enabling" >&2
+                  echo "it from a shipping table puts test-only helpers in the server" >&2
+                  echo "binary and makes removing them a breaking change." >&2
+                  exit 1
+                ''
+            );
+
           # Every directory under events/ is a game server crate, so the set of
           # events is read from the tree rather than listed here. A new event
           # directory becomes a `nix run .#<event>` app with no flake edit.
@@ -1594,6 +1687,7 @@
 
             # No two end to end gates may claim one port. See `e2eOffsets`.
             e2e-ports-distinct = e2ePortsDistinct;
+            test-util-is-dev-only = testUtilIsDevOnly;
 
             # The deployed smash binary starts in an environment that says what
             # build it is. See `stamped` and
