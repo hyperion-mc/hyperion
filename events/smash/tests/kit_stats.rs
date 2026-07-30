@@ -594,6 +594,125 @@ fn landing_a_hit_feeds_the_attacker() {
     );
 }
 
+/// Every write to the food bar reaches the client.
+///
+/// The failure mode this is here for is the one #1096 was blocked on, one
+/// domain over: game state changes, the seam's cached copy is never told, and
+/// the client goes on drawing the old value. `drain_hunger` and
+/// `feed_the_attacker` push because they are the paths somebody thought about;
+/// the two that *replace* the whole bar -- choosing a kit, and the reset
+/// between matches -- are the ones easy to miss, because neither is a hunger
+/// mechanic and both look like plain state initialisation.
+///
+/// Asserted against the seam and not the component. `Hunger::full` obviously
+/// sets the component; the question is whether anybody told the player.
+#[test]
+fn resetting_the_bar_between_matches_tells_the_client() {
+    let gate = Gate::new(|stats| stats.hunger_interval = base().hunger_interval / 8.0);
+
+    // Drain both bars well below full, so a refill is a change worth sending.
+    gate.advance(8.0);
+    let drained = gate.view(gate.sides[1].player).cloned::<&Hunger>().food;
+    assert!(drained < smash::module::vitals::FULL, "nothing drained");
+
+    gate.game.server.take();
+    // The reset hangs off the transition into `Waiting`, which is where a
+    // finished match sends everybody.
+    gate.game.world.set(Lobby {
+        phase: Phase::Ended,
+        timer: 0.0,
+    });
+    gate.advance(1.0);
+
+    for side in &gate.sides {
+        let id = gate.id(side.player);
+        assert_eq!(
+            gate.view(side.player).cloned::<&Hunger>().food,
+            smash::module::vitals::FULL,
+            "the reset did not refill the bar"
+        );
+        assert!(
+            gate.game
+                .server
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::SetFood(told, food)
+                    if *told == id && *food == smash::module::vitals::FULL)),
+            "the bar was refilled and the client was never told, so it goes on drawing the \
+             drained one until the next drain tick"
+        );
+    }
+}
+
+/// Choosing a kit tells the client about the bar it just replaced.
+///
+/// The other half of the invariant, and honestly labelled: unlike the reset
+/// above, this is **not** fixing a divergence that is reachable today.
+/// `kit::apply` has one production caller, `lobby::choose`, which refuses a kit
+/// change outside `Waiting | Countdown` -- and in those phases the bar is
+/// always full, because the clocks only run in `Playing` and the reset refills
+/// on the way out. So the push is redundant with the reset right now.
+///
+/// It is here rather than deleted because "every write that replaces the whole
+/// bar tells the client" is the invariant, and an invariant with one exception
+/// is a rule nobody can apply. It is tested rather than left as unexercised
+/// defence, which is the other way this would have been wrong: the day
+/// somebody allows a mid-match kit change, this is already right and this test
+/// already covers it.
+#[test]
+fn choosing_a_kit_tells_the_client_about_the_fresh_bar() {
+    let gate = Gate::new(|stats| stats.hunger_interval = base().hunger_interval / 2.0);
+
+    // `Gate::new` applied a kit to all four players as it built the world.
+    for side in &gate.sides {
+        let id = gate.id(side.player);
+        assert!(
+            gate.game
+                .server
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::SetFood(told, food)
+                    if *told == id && *food == smash::module::vitals::FULL)),
+            "choosing a kit replaced the food bar without telling the client"
+        );
+    }
+}
+
+/// Dying does not refill the food bar.
+///
+/// A deliberate balance decision and therefore exactly the kind that regresses
+/// silently, so it is pinned rather than left in a comment. Hunger is what
+/// Super Smash Mobs has instead of sudden death; an anti-stall clock a player
+/// can reset by throwing away one of four lives is not a clock. The only two
+/// things that refill it are landing a hit and the end of the match.
+#[test]
+fn dying_does_not_refill_the_food_bar() {
+    let gate = Gate::new(|stats| stats.hunger_interval = base().hunger_interval / 8.0);
+    let subject = gate.sides[1].player;
+
+    gate.advance(8.0);
+    let before = gate.view(subject).cloned::<&Hunger>().food;
+    assert!(
+        before < smash::module::vitals::FULL,
+        "nothing drained, so this would pass with hunger deleted"
+    );
+
+    smash::module::lives::kill(gate.view(subject), smash::module::lives::DeathCause::Void);
+    // Through the spectate window and back onto a platform.
+    gate.advance(smash::module::lives::DEATH_SPECTATE_SECS + 1.0);
+    assert!(
+        !gate
+            .view(subject)
+            .has(smash::module::lives::RespawnAt::id()),
+        "never respawned, so this says nothing about what a respawn does"
+    );
+
+    assert!(
+        gate.view(subject).cloned::<&Hunger>().food <= before,
+        "dying refilled the food bar, which makes the starve timer optional"
+    );
+}
+
 /// Neither clock runs outside a match.
 ///
 /// A food bar that drained while a lobby waited for a second player would have

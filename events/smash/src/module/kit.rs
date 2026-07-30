@@ -24,9 +24,9 @@ use crate::{
         knockback::KnockbackTaken,
         player::{Energy, Health, JumpsLeft},
         sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt, PlaysOnSelect},
-        vitals::{Hunger, Regen, VitalsComponentsModule},
+        vitals::{FULL, Hunger, Regen, VitalsComponentsModule},
     },
-    server::HotbarItem,
+    server::{HotbarItem, PlayerId, ServerHandle},
 };
 
 /// Tag on kit prefabs.
@@ -504,6 +504,14 @@ pub fn apply(world: &World, player: EntityView<'_>, kit: EntityView<'_>) {
         // half an old kit's clock is nobody's number.
         .set(Hunger::full(stats.hunger_interval))
         .set(JumpsLeft(stats.jump_count));
+
+    // The bar the line above just replaced, told to the player whose bar it is.
+    // `Health` reaches the client on its own through the adapter's `OnSet`
+    // mirror; food has no such mirror, so every write that replaces the whole
+    // bar says so here. `tests/kit_stats.rs` holds both of them to it.
+    if let Some(id) = player.try_get::<&PlayerId>(|id| *id) {
+        world.get::<&ServerHandle>(|server| server.set_food(id, FULL));
+    }
 
     if let Some((max, regen)) = stats.energy {
         player.set(Energy::full(max, regen));

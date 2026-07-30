@@ -532,17 +532,29 @@ fn scatter(world: &WorldRef<'_>) {
 /// had left, and somebody spawns already starving.
 fn reset(world: &WorldRef<'_>) {
     world.get::<&mut MatchClock>(|clock| clock.0 = 0.0);
+    // Refilling the bar is half the job; the client draws whatever it was last
+    // sent, so a refill nobody is told about leaves everyone looking at the
+    // drained bar from the previous match until the next drain tick moves it.
+    // Collected here and pushed below rather than from inside the query, which
+    // is holding `Health` open for the damage path the seam can reach.
+    let mut refilled = Vec::new();
     world
-        .query::<(&mut Lives, &mut Health, &mut Hunger)>()
+        .query::<(&mut Lives, &mut Health, &mut Hunger, &PlayerId)>()
         .with(Player::id())
         .build()
-        .each_entity(|player, (lives, health, hunger)| {
+        .each_entity(|player, (lives, health, hunger, id)| {
             *lives = Lives::default();
             health.current = health.max;
             *hunger = Hunger::full(hunger.interval);
+            refilled.push((*id, hunger.food));
             player.remove(Eliminated::id());
             player.remove(Placement::id());
             player.remove(RespawnAt::id());
             player.remove(InvulnerableUntil::id());
         });
+    world.get::<&ServerHandle>(|server| {
+        for (id, food) in refilled {
+            server.set_food(id, food);
+        }
+    });
 }
