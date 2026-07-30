@@ -588,12 +588,12 @@ dg_render_summary() {
        "",
        "This verdict is **not a required status check**. Ruleset 566717 on `main` carries no",
        "`required_status_checks` rule at all, so nothing here blocks a merge; one approving",
-       "review is the only gate. Making it binding is one `required_status_checks` entry",
-       "naming this job, and it should not be added until: the flake rate is at or under 5%",
-       "over 20 consecutive runs (measured 61% on 2026-07-29), the instability record holds",
-       "at least 30 runs, at most 1 in 20 pull request runs is blocked by a verdict a re-run",
-       "then clears, and the p95 gate wall time is under 40 minutes against the merge queue'"'"'s",
-       "60 minute `check_response_timeout_minutes`."]
+       "review is the only gate (ENG-10827).",
+       "",
+       "The four measured criteria that should hold before it is made binding are in the",
+       "header of `nix/ci/flake-gate.nix`, not repeated here. One copy: this summary is only",
+       "read when the pipeline runs, and the pipeline is manual, so the file is where a",
+       "person actually meets them."]
     | .[]
   ' "${verdict_doc}"
 }
