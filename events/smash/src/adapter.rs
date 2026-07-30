@@ -443,14 +443,33 @@ impl Module for SmashAdapterModule {
                 for (player, resolved) in &bars {
                     world.entity_from_id(*player).set(*resolved);
                 }
+                // The same hazard as `bars` above, one type along, and the
+                // reason this is a map rather than a component read per op:
+                // `set(Vitals)` is deferred too, so a `SetHealth` and a
+                // `SetFood` for one player in one drain -- a player who traded
+                // hits, which is a tick that happens constantly -- would have
+                // the second read the component as it stood before the first.
+                // It would send the *default* full health beside the new food
+                // level and snap the client's health bar to full for a frame.
+                // Carried across the loop and written back once per player.
+                let mut vitals: HashMap<Entity, Vitals> = HashMap::new();
                 for op in drained {
-                    apply(world, compose, op, &bars);
+                    apply(world, compose, op, &bars, &mut vitals);
+                }
+                for (player, held) in &vitals {
+                    world.entity_from_id(*player).set(*held);
                 }
             });
     }
 }
 
-fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, PlayerBars>) {
+fn apply(
+    world: WorldRef<'_>,
+    compose: &Compose,
+    op: Op,
+    bars: &HashMap<Entity, PlayerBars>,
+    vitals: &mut HashMap<Entity, Vitals>,
+) {
     match op {
         Op::AddVelocity { player, delta } => {
             let entity = world.entity_from_id(player);
@@ -503,25 +522,22 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
             // component is what other players see over the victim's head, and
             // SetHealth is the only thing that moves the victim's own bar.
             entity.set(Health::new(health));
-            let scaled = if max > 0.0 { health * 20.0 / max } else { 0.0 };
-            let vitals = Vitals {
-                scaled_health: scaled,
-                ..vitals_of(entity)
+            let held = vitals.entry(player).or_insert_with(|| vitals_of(entity));
+            held.scaled_health = if max > 0.0 {
+                health * VANILLA_HEALTH / max
+            } else {
+                0.0
             };
-            entity.set(vitals);
-            send_vitals(entity, compose, vitals);
+            send_vitals(entity, compose, *held);
         }
         Op::SetFood { player, food } => {
             let entity = world.entity_from_id(player);
             if !entity.is_alive() {
                 return;
             }
-            let vitals = Vitals {
-                food,
-                ..vitals_of(entity)
-            };
-            entity.set(vitals);
-            send_vitals(entity, compose, vitals);
+            let held = vitals.entry(player).or_insert_with(|| vitals_of(entity));
+            held.food = food;
+            send_vitals(entity, compose, *held);
         }
         Op::Status { player, status } => {
             let entity = world.entity_from_id(player);
