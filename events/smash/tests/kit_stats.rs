@@ -28,7 +28,7 @@ use smash::{
         damage::{DamageKind, Damaged, hurt},
         kit::{self, KitStats},
         knockback::Knockback,
-        lobby::{Lobby, Phase},
+        lobby::{Lobby, LobbyConfig, Phase},
         player::{Energy, Flying, Health, OnGround, Position},
         vitals::Hunger,
     },
@@ -313,16 +313,97 @@ fn energy_changes_the_size_and_refill_rate_of_the_bar() {
 }
 
 /// `regen`: health comes back at the kit's rate. ENG-11450.
+///
+/// Read off the **seam call** and not the `Health` component, for the reason
+/// `knockback_taken_changes_how_far_a_hit_launches` already gives: health the
+/// game regenerated and never sent is a bug a state assertion cannot see. This
+/// test read the component in the first version of this file, and that is
+/// exactly the hole it left -- `regenerate_health` heals through a `&mut Health`
+/// query term, `OnSet` does not fire for those, so nothing queued a packet and
+/// the client's hearts never moved while the boss bar (which reads the
+/// component) said otherwise.
 #[test]
 fn regen_changes_how_fast_health_comes_back() {
     let gate = Gate::new(|stats| stats.regen = base().regen * 3.0);
 
     gate.each(|gate, side| gate.hit(side.player, 10.0, DamageKind::Ability));
+    gate.game.server.take();
     gate.advance(4.0);
 
     gate.differ(
-        "the health four seconds of regeneration put back",
-        |gate, side| observable(gate.health(side.player).current),
+        "the health four seconds of regeneration told the client about",
+        |gate, side| {
+            let id = gate.id(side.player);
+            gate.game
+                .server
+                .calls()
+                .iter()
+                .filter_map(|call| match call {
+                    Call::SetHealth(told, health, _) if *told == id => Some(observable(*health)),
+                    _ => None,
+                })
+                .next_back()
+        },
+    );
+}
+
+/// Regeneration sends a packet when the bar moves, not once a tick.
+///
+/// The obvious fix for "regen never reaches the client" is to heal through
+/// `.set(Health)` so the `OnSet` mirror fires, and that is twenty packets a
+/// second per player forever for a bar with twenty steps on it. This pins the
+/// other choice: push only when the half-heart the client draws actually
+/// changes.
+///
+/// The lower bound matters as much as the upper. A test that only capped the
+/// count would pass with regeneration sending nothing at all, which is the
+/// exact bug this whole thread is about.
+#[test]
+fn regeneration_sends_a_packet_per_half_heart_and_not_per_tick() {
+    let gate = Gate::new(|stats| stats.regen = 1.0);
+    // The *variant* side, which is the one `Gate::new` perturbed. Reading
+    // `sides[0]` measures the base kit's 0.25/s instead, and the first version
+    // of this test did exactly that -- it passed, on a number that meant
+    // something other than what this comment claimed.
+    let subject = gate.sides[1].player;
+    let id = gate.id(subject);
+
+    // `Environment`, so armour does not apply and the arithmetic is legible:
+    // ten health off a twenty-point bar is ten half-hearts to climb back.
+    gate.each(|gate, side| gate.hit(side.player, 10.0, DamageKind::Environment));
+    assert_eq!(
+        observable(gate.health(subject).current),
+        observable(10.0),
+        "the hit did not land for what this test's arithmetic assumes"
+    );
+    gate.game.server.take();
+
+    // Ten seconds at 1.0/s covers all ten, in 200 ticks.
+    let seconds = 10.0;
+    gate.advance(seconds);
+    assert_eq!(
+        observable(gate.health(subject).current),
+        observable(20.0),
+        "regeneration did not reach full, so the packet count is of a shorter climb"
+    );
+
+    let sent = gate
+        .game
+        .server
+        .calls()
+        .iter()
+        .filter(|call| matches!(call, Call::SetHealth(told, _, _) if *told == id))
+        .count();
+
+    assert!(
+        sent > 0,
+        "regeneration sent nothing, so the client's hearts never moved"
+    );
+    assert!(
+        sent <= 12,
+        "regeneration sent {sent} packets to climb ten half-hearts; it should send about one per \
+         half-heart, not one per tick over {seconds} seconds at {} Hz",
+        1.0 / harness::TICK
     );
 }
 
@@ -429,49 +510,55 @@ fn jump_count_changes_how_many_double_jumps_a_kit_gets() {
 /// check anywhere notices that nothing reads it.
 #[test]
 fn every_kit_stats_field_is_gated_by_a_test_in_this_file() {
-    // A slice and not a `[&str; 9]`. The nine is not load-bearing -- the
-    // destructure below is what refuses a tenth field -- and a second place
-    // holding the count is a second place to get it wrong. #1095 reached the
-    // same conclusion from the other direction with `BarSlot::COUNT =
-    // ALL.len()`.
-    const FIELDS: &[&str] = &[
-        "melee_damage",
-        "armor",
-        "knockback_taken",
-        "regen",
-        "hunger_interval",
-        "max_health",
-        "jump_power",
-        "jump_control",
-        "jump_count",
-        "energy",
+    // One list, two uses. The macro expands to *both* the exhaustive
+    // destructure and the name slice, so the two cannot disagree: adding a
+    // tenth field breaks compilation at the destructure, and the only edit
+    // that fixes it -- naming the field here -- also puts it in the slice and
+    // therefore demands a test.
+    //
+    // Two hand-written lists is what this replaced, and that version was a lie.
+    // Compilation broke at the destructure only, so a contributor could add
+    // `foo: _` and be green with `foo` ungated -- the same hand-maintained
+    // second copy as #1095's array length. The `jump_count` edit had to touch
+    // both lists for exactly that reason.
+    macro_rules! kit_stats_fields {
+        ($($field:ident),+ $(,)?) => {{
+            let KitStats { $($field: _),+ } = KitStats::default();
+            &[$(stringify!($field)),+]
+        }};
+    }
+
+    let fields: &[&str] = kit_stats_fields![
+        melee_damage,
+        armor,
+        knockback_taken,
+        regen,
+        hunger_interval,
+        max_health,
+        jump_power,
+        jump_control,
+        jump_count,
+        energy,
     ];
 
-    let KitStats {
-        melee_damage: _,
-        armor: _,
-        knockback_taken: _,
-        regen: _,
-        hunger_interval: _,
-        max_health: _,
-        jump_power: _,
-        jump_control: _,
-        jump_count: _,
-        energy: _,
-    } = KitStats::default();
-
     let source = include_str!("kit_stats.rs");
+    // `#[test]` functions only. The scan used to collect every `fn`, which put
+    // the `double_jump` helper in the list and would have let a helper named
+    // `armor_anything` satisfy the `armor` field without a test existing.
     let gated: Vec<&str> = source
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("fn "))
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter(|pair| pair[0] == "#[test]")
+        .filter_map(|pair| pair[1].strip_prefix("fn "))
         .filter_map(|line| line.split_once('('))
         .map(|(name, _)| name)
         .collect();
 
-    let missing: Vec<&str> = FIELDS
+    let missing: Vec<&&str> = fields
         .iter()
-        .copied()
-        .filter(|field| !gated.iter().any(|name| name.starts_with(field)))
+        .filter(|field| !gated.iter().any(|name| name.starts_with(*field)))
         .collect();
     assert!(
         missing.is_empty(),
@@ -744,6 +831,21 @@ fn dying_does_not_refill_the_food_bar() {
 #[test]
 fn the_two_clocks_are_off_in_the_hub() {
     let gate = Gate::new(|stats| stats.regen = base().regen * 3.0);
+    // More players required than the four this world has, so `Waiting` is
+    // stable for the whole run rather than a countdown that has not fired yet.
+    //
+    // Setting the phase alone was not enough and the assertion below is how
+    // that was found: the harness's default lobby calls four players a full
+    // house, so sixteen seconds took this to `Preparing`. The test still
+    // passed -- the clocks are gated on `Playing`, which is one phase further
+    // on -- so it was quietly asserting something about `Preparing` while
+    // claiming to be about the hub, and was one config change from asserting
+    // nothing at all.
+    gate.game.world.set(LobbyConfig {
+        min_players: 8,
+        full_players: 16,
+        ..LobbyConfig::default()
+    });
     gate.game.world.set(Lobby {
         phase: Phase::Waiting,
         timer: 0.0,
@@ -752,6 +854,11 @@ fn the_two_clocks_are_off_in_the_hub() {
     gate.each(|gate, side| gate.hit(side.player, 10.0, DamageKind::Ability));
     let hurt_to = gate.health(gate.sides[0].player).current;
     gate.advance(16.0);
+    assert_eq!(
+        gate.game.world.cloned::<&Lobby>().phase,
+        Phase::Waiting,
+        "the lobby left the hub, so this no longer tests what it says"
+    );
 
     assert_eq!(
         observable(gate.health(gate.sides[0].player).current),

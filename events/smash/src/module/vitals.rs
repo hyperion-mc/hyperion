@@ -126,6 +126,35 @@ impl Default for Hunger {
     }
 }
 
+/// The number of half-hearts a vanilla client draws for `health`.
+///
+/// The client is sent `current * 20 / max` and renders it on a twenty-step
+/// bar, so this is the finest change anybody can actually see whatever the
+/// kit's pool -- which makes it the right threshold for deciding whether a
+/// regeneration tick is worth a packet.
+///
+/// A whole number and not the float, because the caller compares two of these
+/// and comparing floats for equality is both a lint and a bad habit; rounding
+/// to the step the client draws is the entire point, so the integer is the
+/// honest type. Clamped rather than assumed in range: `Health::heal` caps at
+/// `max` today, and a helper that returns nonsense if that ever changes is a
+/// worse failure than one that saturates.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "clamped to 0..=20 on the line above, which is inside u8 by a wide margin"
+)]
+fn drawn(health: Health) -> u8 {
+    if health.max <= 0.0 {
+        return 0;
+    }
+    let steps = (health.current * VANILLA_BAR_STEPS / health.max).ceil();
+    steps.clamp(0.0, VANILLA_BAR_STEPS) as u8
+}
+
+/// Steps on a vanilla health bar: ten hearts of two.
+const VANILLA_BAR_STEPS: f32 = 20.0;
+
 /// Whether the match is running.
 ///
 /// Both clocks are gated on it. In the hub there is nothing to heal from, and a
@@ -171,11 +200,23 @@ impl Module for VitalsModule {
                     continue;
                 }
                 let dt = it.delta_time();
+                // Health healed here has to be *sent*, and this is the one
+                // `Health` writer in the crate that cannot rely on anything
+                // else to do it. `OnSet` does not fire for a `&mut` query
+                // term -- flecs reaches `flecs_notify_on_set` from `ecs_set`,
+                // `ecs_modified` and add-with-value only -- so
+                // `input::mirror_health_to_host` never sees this write and no
+                // packet is queued. Every other writer (`damage.rs`,
+                // `lives.rs`, Cow, Spider) pairs its write with an explicit
+                // push; this one did not, and the result was a boss bar that
+                // read the component and moved while the client's hearts,
+                // which only move on a packet, did not.
+                let mut told = Vec::new();
                 world
-                    .query::<(&Regen, &mut Health)>()
+                    .query::<(&Regen, &mut Health, &PlayerId)>()
                     .with(Player::id())
                     .build()
-                    .each(|(regen, health)| {
+                    .each(|(regen, health, id)| {
                         // A corpse does not heal, and this is not a
                         // cosmetic rule. Zero health is the kill plane's
                         // cue -- `arena::bounds_checks` eliminates anybody
@@ -187,8 +228,31 @@ impl Module for VitalsModule {
                         if health.is_dead() {
                             return;
                         }
+                        // Before and after, both in hand on this tick, which
+                        // is what lets the push be change-detected with **no
+                        // cached last-sent value anywhere**. A cache would be
+                        // the third instance of the class that has bitten this
+                        // PR twice already -- seam state that has to be
+                        // invalidated when a player dies, respawns or changes
+                        // kit -- and comparing two numbers from the same tick
+                        // needs no invalidating.
+                        let before = *health;
                         health.heal(regen.0 * dt);
+                        // Only when the client would draw something different.
+                        // A vanilla health bar has twenty steps however large
+                        // the kit's pool is, so anything finer is a packet per
+                        // player per tick for a change nobody can see -- the
+                        // same reason `hud::quantise` exists for the boss bar.
+                        if drawn(before) != drawn(*health) {
+                            told.push((*id, health.current, health.max));
+                        }
                     });
+
+                world.get::<&ServerHandle>(|server| {
+                    for (id, current, max) in told {
+                        server.set_health(id, current, max);
+                    }
+                });
             }
         });
 
