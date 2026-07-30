@@ -99,6 +99,7 @@ C2S_CHAT_COMMAND = 0x07
 C2S_KEEP_ALIVE = 0x1C
 C2S_MOVE_PLAYER_POS = 0x1E
 C2S_MOVE_PLAYER_POS_ROT = 0x1F
+C2S_PLAYER_ABILITIES = 0x28
 C2S_PLAYER_ACTION = 0x29
 C2S_SET_CARRIED_ITEM = 0x35
 C2S_SWING = 0x3F
@@ -117,6 +118,7 @@ S2C_DISCONNECT = 0x20
 S2C_KEEP_ALIVE = 0x2C
 S2C_LEVEL_PARTICLES = 0x2F
 S2C_LOGIN = 0x31
+S2C_PLAYER_ABILITIES = 0x40
 S2C_PLAYER_POSITION = 0x48
 S2C_SET_ACTION_BAR_TEXT = 0x57
 S2C_SET_ENTITY_MOTION = 0x65
@@ -128,6 +130,14 @@ S2C_SYSTEM_CHAT = 0x79
 # `ServerboundMovePlayerPacket` packs the ground flag into a bitfield; bit 0 is
 # `ON_GROUND`, which is the only bit hyperion reads.
 ON_GROUND = 1
+
+# `Abilities#FLAG_CAN_FLY` and `#FLAG_FLYING`, the two bits of the abilities
+# byte that the double jump is built out of. The server sets `CAN_FLY` while a
+# mid-air jump is available and the client answers a double tap of the jump key
+# by sending `FLYING` back, which is the whole input: a vanilla client has no
+# other way to tell a server it wants to leave the ground twice.
+ABILITY_CAN_FLY = 4
+ABILITY_FLYING = 2
 
 # Blocks per tick, quantised to 15 bits per component with a shared integer
 # scale. `net.minecraft.network.LpVec3`, and the Rust side of it is
@@ -533,6 +543,9 @@ class MatchClient(base.Client):
         self.sounds = []
         self.last_position_sent = 0.0
         self.alive = True
+        # Whether the server has told this client it may take off. The server
+        # half of the double jump; `double_jump` is the client half.
+        self.may_fly = False
 
     def _log(self, line):
         print("%s [%-3s] %s" % (stamp(self.started), self.name, line), flush=True)
@@ -645,6 +658,18 @@ class MatchClient(base.Client):
             ),
         )
 
+    def double_jump(self):
+        """Double-tap the jump key, which is one abilities packet.
+
+        A vanilla client sends exactly this when the player presses jump in
+        mid-air with flight permitted -- `LocalPlayer#tick` flips
+        `abilities.flying` and `updateAbilities` puts the byte on the wire --
+        and it is the only mid-air jump input a client without a mod can
+        produce. Nothing here fakes a keypress: this *is* the packet.
+        """
+        self.log("-> double jump (abilities, flying)")
+        self.send(C2S_PLAYER_ABILITIES, struct.pack(">b", ABILITY_FLYING))
+
     def aim(self, yaw, pitch=0.0):
         self.yaw = yaw
         self.pitch = pitch
@@ -704,6 +729,7 @@ class Match:
             self.proof["every declared ability was seen"] = None
             self.proof["a projectile was drawn"] = None
             self.proof["the hub shoves you back inside"] = None
+            self.proof["a mid-air jump launched a real client"] = None
             self.proof["cooldowns refused a second use"] = None
         self.proof.update({
             "four in play": None,
@@ -909,6 +935,15 @@ class Match:
             text, _ = take_nbt_string(payload, 0)
             client.action_bar.append(text)
             client.log("<- action bar: %s" % text)
+        elif packet_id == S2C_PLAYER_ABILITIES:
+            # `ClientboundPlayerAbilitiesPacket`: one flags byte, then the two
+            # speeds nothing here reads.
+            flags = payload[0]
+            client.may_fly = bool(flags & ABILITY_CAN_FLY)
+            client.log(
+                "<- abilities flags=0x%02X (may fly: %s)"
+                % (flags, "yes" if client.may_fly else "no")
+            )
         elif packet_id == S2C_SET_ENTITY_MOTION:
             entity, offset = take_var_int(payload)
             motion, _ = take_lp_vec3(payload, offset)
@@ -1168,6 +1203,103 @@ class Match:
             )
 
         self.prove_boundary()
+        self.prove_double_jump()
+
+    def prove_double_jump(self):
+        """Take a real client into the air and press jump.
+
+        The two links of the double jump no Rust test can reach. Everything
+        under `events/smash/tests/jump.rs` drives `Flying`, the component the
+        mirror writes; the packet that makes it true and the adapter's write
+        back onto hyperion's own `Flight` only exist when a real client is on
+        the other end of the socket. That is not a formality -- the first
+        version of the mirror could never fire, every Rust test passed, and
+        this is what said so.
+
+        Both halves are asserted and the order matters. The server offering
+        `CAN_FLY` while the player is airborne is what makes the press possible
+        at all, and a gate that only watched for the launch could not tell "the
+        jump does nothing" from "the client was never allowed to ask".
+        """
+        if not self.clients:
+            return
+        jumper = self.clients[0]
+        if jumper.entity_id is None:
+            return
+
+        # Level, before anything else. Three kits jump where the player is
+        # looking, and the sweep leaves whoever ran it aiming wherever its last
+        # ability wanted; a controlled jump taken looking at the floor is
+        # *supposed* to drive you into it, so a gate that inherited the sweep's
+        # aim would be red or green depending on which kit went last.
+        jumper.aim(SWEEP_YAW, 0.0)
+
+        # On the floor first: landing is what fills the counter, so a client
+        # that has spent the sweep in the air has nothing to spend.
+        jumper.on_ground = True
+        jumper.walk(
+            [(SWEEP_X, SWEEP_Y, SWEEP_Z)],
+            note="back on the ground before the jump",
+        )
+        self.wait_until(lambda: jumper.arrived(), 15.0)
+        self.wait(0.5)
+
+        # Up, and stay up. `is_grounded` is a block check on the server, so
+        # seven blocks over the hub floor is airborne by the server's own
+        # reckoning rather than by this client's claim.
+        jumper.on_ground = False
+        jumper.walk(
+            [(SWEEP_X, HUB_CLEAR_Y, SWEEP_Z)],
+            note="into the air for a double jump",
+        )
+        self.wait_until(lambda: jumper.arrived(), 15.0)
+
+        if not self.wait_until(lambda: jumper.may_fly, 5.0):
+            self.sweep_failures.append(
+                "%s was %.0f blocks off the hub floor with a jump in hand and "
+                "the server never sent ClientboundPlayerAbilities with CAN_FLY, "
+                "so a vanilla client would have no way to ask for the jump"
+                % (jumper.name, HUB_CLEAR_Y - SWEEP_Y)
+            )
+            self.land(jumper)
+            return
+
+        self.window_motions.clear()
+        jumper.double_jump()
+        # One tick to decode the packet, one for the game to answer it and one
+        # for the queued write to drain, with room to spare.
+        self.wait(1.0)
+
+        launch = self.window_motions.get(jumper.entity_id)
+        if launch is not None and launch[1] > 1e-4:
+            self.prove(
+                "a mid-air jump launched a real client",
+                "%s sent ServerboundPlayerAbilities(flying) %.0f blocks up and "
+                "the server answered with SetEntityMotion (%.3f, %.3f, %.3f)"
+                % ((jumper.name, HUB_CLEAR_Y - SWEEP_Y) + launch),
+            )
+        else:
+            self.sweep_failures.append(
+                "%s double-tapped jump in mid-air and the server sent no upward "
+                "velocity: motion=%r" % (jumper.name, launch)
+            )
+
+        # The jump is spent, so the permission has to come back off: a client
+        # left holding CAN_FLY is a client that can fly around the arena.
+        if not self.wait_until(lambda: not jumper.may_fly, 3.0):
+            self.sweep_failures.append(
+                "%s spent its only jump and the server left CAN_FLY set, so the "
+                "client can keep flying" % jumper.name
+            )
+
+        self.land(jumper)
+
+    def land(self, client):
+        """Put a client back on a sweep spot, so nothing after it reads one
+        stranded in the air."""
+        client.on_ground = True
+        client.walk([(SWEEP_X, SWEEP_Y, SWEEP_Z)])
+        self.wait_until(lambda: client.arrived(), 15.0)
 
     def prove_boundary(self):
         """Walk a client past the hub wall and prove it is shoved back.

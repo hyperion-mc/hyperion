@@ -116,8 +116,49 @@ impl Energy {
 }
 
 /// How many double jumps remain before touching ground again.
+///
+/// How many a player starts with is the kit's, not a constant: the Chicken has
+/// eight and everybody else has one. [`crate::module::jump`] is what spends
+/// them and what puts them back.
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct JumpsLeft(pub u8);
+
+/// Mirror of the host having this client in flight.
+///
+/// A vanilla client turns this on by double-tapping the jump key with flight
+/// permitted, which sends a serverbound abilities packet, and that is the only
+/// mid-air jump input a client without a mod can produce. So
+/// [`crate::module::jump`] reads a true here as a *press*.
+///
+/// Reading a level as an edge is sound only because of what the game does with
+/// it. Every press is answered by writing the flight state back across the
+/// seam, which clears the host's flying bit in the same tick, so the next
+/// mirror read is false and one double tap is one jump. Nothing in this game
+/// ever leaves anybody flying, and `smash::Jump::spend_double_jump` refusing a
+/// press from somebody standing on the ground is the other half of that.
+///
+/// An `is_flying && !was_flying_last_tick` edge computed in the mirror is the
+/// tempting alternative and it does not work: hyperion decodes packets in
+/// `OnUpdate` and copies `is_flying` into `MovementTracking::last_tick_flying`
+/// in `PreStore`, both of them after the mirror has run in `OnLoad`, so by the
+/// next mirror read the two are already equal and the edge is gone. Watched:
+/// a real client's double tap produced no impulse at all.
+#[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub struct Flying(pub bool);
+
+/// What the client was last told about flight, so the arming system sends a
+/// packet when the answer changes rather than twenty times a second.
+///
+/// The game's own memory of a write it made across the seam, and not a
+/// mirror: nothing reads it back off the host, because [`crate::server`]
+/// deliberately has no reads.
+///
+/// It exists so that a player falling off the map costs one packet rather than
+/// one every tick they are in the air. hyperion answers each write with a
+/// `ClientboundPlayerAbilities`, so without this the arming system would spend
+/// twenty of them a second per airborne player to say nothing had changed.
+#[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub struct MayFly(pub bool);
 
 /// Mirror of which of the nine hotbar slots the player is holding.
 ///
@@ -153,6 +194,8 @@ impl Module for PlayerModule {
         world.component::<Health>();
         world.component::<Energy>();
         world.component::<JumpsLeft>();
+        world.component::<Flying>();
+        world.component::<MayFly>();
         world.component::<SelectedSlot>();
 
         // A player is never meaningfully without these, and forgetting one is
@@ -166,15 +209,9 @@ impl Module for PlayerModule {
             .add_trait::<(flecs::With, OnGround)>()
             .add_trait::<(flecs::With, Health)>()
             .add_trait::<(flecs::With, JumpsLeft)>()
+            .add_trait::<(flecs::With, Flying)>()
+            .add_trait::<(flecs::With, MayFly)>()
             .add_trait::<(flecs::With, SelectedSlot)>();
-
-        world
-            .system_named::<(&OnGround, &mut JumpsLeft)>("restore_double_jump")
-            .each(|(ground, jumps)| {
-                if ground.0 {
-                    jumps.0 = 1;
-                }
-            });
 
         world
             .system_named::<&mut Energy>("regen_energy")

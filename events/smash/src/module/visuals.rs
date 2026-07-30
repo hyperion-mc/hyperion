@@ -67,6 +67,21 @@ pub fn teleport(at: Vec3) -> Particles {
         .long_distance(true)
 }
 
+/// Somebody pushing off nothing.
+///
+/// `minecraft:small_gust`, the particle vanilla throws off a wind charge going
+/// off: its one picture of air being shoved somewhere. A flat disc under the
+/// feet rather than a puff around the body, because the fiction of a mid-air
+/// jump is that the air below took the weight, and under the feet is also
+/// where it is legible to the player standing beneath deciding whether to
+/// contest the landing.
+pub fn updraft(at: Vec3) -> Particles {
+    Particles::disc(Particle::SmallGust, at + Vec3::Y * 0.1, 0.6)
+        .points(12)
+        .speed(0.05)
+        .long_distance(true)
+}
+
 /// A player dying here.
 pub fn death(at: Vec3) -> Particles {
     Particles::burst(Particle::Cloud, at + Vec3::Y)

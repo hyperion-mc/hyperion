@@ -12,12 +12,12 @@ use crate::{
     module::{
         arena::Arena,
         damage::{KILL_CREDIT_WINDOW, LastHitAt, LastHitBy, MatchClock},
-        hud, kit,
-        player::{self, Health, JumpsLeft, Player, Position},
+        hud, jump, kit,
+        player::{self, Flying, Health, JumpsLeft, MayFly, Player, Position},
         sound::{self, PlaysOnDeath},
         visuals,
     },
-    server::{Channel, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
+    server::{Channel, Flight, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
 
 /// Mineplex's `MAX_LIVES`.
@@ -430,13 +430,56 @@ impl Module for LivesModule {
                 // deadline with it and would otherwise delete this one.
                 crate::module::effect::clear(world, player.id());
                 player.set(InvulnerableUntil(clock + RESPAWN_INVULNERABLE_SECS));
-                player.set(JumpsLeft(1));
+                // The kit's count and not one: a Chicken that respawned with a
+                // single jump would be the lightest kit in the game with the
+                // recovery of the heaviest, which is the one thing its 200%
+                // knockback taken is balanced against.
+                player.set(JumpsLeft(jump::allowance(player)));
+                // And the flight state that jump count is spent through, all
+                // three of it, because a dead player is filtered out of both
+                // systems that would otherwise maintain them and so arrives
+                // here carrying whatever was true when they died.
+                //
+                // `MayFly` is a write-cache. Left `true` it makes
+                // `arm_double_jump` compare equal and send nothing, while the
+                // client has already reset its own abilities out of band --
+                // vanilla's `GameType.updatePlayerAbilities` sets
+                // `mayfly = false` on the gamemode change that leaving
+                // spectator causes, and does not tell the server. The player
+                // would hold a `JumpsLeft` their client refuses to spend, in
+                // the one situation the mechanic exists for: dying in mid-air
+                // is the normal way to die here, and a fresh respawn is about
+                // to be knocked off again.
+                //
+                // `Flying` is the mirror of the host's bit. A press made on
+                // the tick of death is still set on the host, nothing clears
+                // it while the player is filtered out, and the first tick the
+                // filter lifts spends it as a real jump at the spawn point.
+                player.set(MayFly(false));
+                player.set(Flying(false));
 
                 let hotbar = kit::hotbar(player);
                 world.get::<&ServerHandle>(|server| {
                     server.teleport(*id, at);
                     server.set_health(*id, health.current, health.max);
                     server.set_spectating(*id, false);
+                    // The host's own bit, which is the only thing the mirror
+                    // reads and the only thing that can clear it. Safe next to
+                    // `set_spectating` because both say the same: leaving
+                    // spectator puts the client back in the default gamemode,
+                    // whose abilities are `mayfly = false` too, so whichever
+                    // packet the client applies last it ends up agreeing with
+                    // this. That is not true at the *death* transition, where
+                    // the gamemode says a spectator may fly and this would say
+                    // it may not, so the reset lives here and not there.
+                    //
+                    // Unconditional, and do not make it conditional on
+                    // `MayFly`: that cache is exactly what stopped being
+                    // evidence of what the client believes, because the client
+                    // reset its own abilities on the gamemode change and told
+                    // nobody. Skipping the write when the cache already says
+                    // disarmed is the same bug in a new place.
+                    server.set_flight(*id, Flight::Disarmed);
                     server.set_hotbar(*id, &hotbar);
                 });
             });

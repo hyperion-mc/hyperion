@@ -39,6 +39,7 @@ impl Module for Chicken {
             regen: 0.20,
             jump_power: 0.7,
             jump_control: true,
+            jump_count: FLAPS,
             // Flap draws from the energy bar and "rapidly regenerates on the
             // ground".
             energy: Some((100.0, 25.0)),

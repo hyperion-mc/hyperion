@@ -147,6 +147,20 @@ pub const RANGED_HITMARKER: &str = "minecraft:entity.arrow.hit_player";
 /// dropped `Cue::Denied`.
 pub const SELECTION_REFUSED: &str = "minecraft:entity.villager.no";
 
+/// A mid-air jump.
+///
+/// `minecraft:entity.breeze.jump`, which vanilla plays when a Breeze shoves
+/// itself through the air off a burst of wind. That is a description of the
+/// mechanic rather than a resemblance to it, and it is the only sound in the
+/// registry that is one.
+///
+/// A constant and not a kit's voice, on [`IMPACT`]'s reasoning: the double
+/// jump is a rule every kit has, and fifteen timbres for it would say the kits
+/// jump differently when the only things that differ are how far and how
+/// often. The mob's own voice is still heard when the jump is not enough and
+/// they are hit on the way back.
+pub const DOUBLE_JUMP: &str = "minecraft:entity.breeze.jump";
+
 /// One second closer to the start of the match.
 pub const COUNTDOWN_TICK: &str = "minecraft:block.note_block.hat";
 

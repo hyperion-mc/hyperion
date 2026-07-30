@@ -33,12 +33,15 @@ use smash::{
         damage::{Armor, DamageKind, DamageModule, Damaged, hurt},
         effect::{self, EffectModule},
         hud::HudModule,
+        jump::JumpModule,
         kit::{self, KitModule, KitStats},
         kits::StockKits,
         knockback::{Knockback, KnockbackModel, KnockbackModule, KnockbackTaken, Smashed},
         lives::{DeathCause, Lives, LivesModule, kill},
         lobby::{Lobby, LobbyModule, Phase},
-        player::{self, Health, OnGround, Player, PlayerModule, Position},
+        player::{
+            self, Energy, Flying, Health, JumpsLeft, OnGround, Player, PlayerModule, Position,
+        },
         projectile::ProjectileModule,
         scoreboard::ScoreboardModule,
         selector::{self, SelectorModule, TAKEN_BLOCK},
@@ -102,12 +105,16 @@ fn contracts() -> Vec<Contract> {
             requires: &[],
             runtime_requires: &[],
             exercise: |world, player| {
-                // Ground state restores the double jump, and energy regenerates.
-                player.set(OnGround(false));
-                player.set(smash::module::player::JumpsLeft(0));
-                player.set(OnGround(true));
-                world.progress_time(0.05);
-                assert_eq!(player.cloned::<&smash::module::player::JumpsLeft>().0, 1);
+                // Energy regenerates. The double jump is `Jump`'s, below: this
+                // module owns the components it is played on and none of the
+                // rules.
+                player.set(Energy::full(10.0, 4.0));
+                player.get::<&mut Energy>(|energy| energy.current = 0.0);
+                world.progress_time(0.5);
+                assert!(
+                    player.cloned::<&Energy>().current > 0.0,
+                    "energy did not regenerate"
+                );
             },
         },
         Contract {
@@ -359,6 +366,49 @@ fn contracts() -> Vec<Contract> {
                 assert_eq!(
                     player.cloned::<&Lives>().0,
                     smash::module::lives::MAX_LIVES - 1
+                );
+            },
+        },
+        Contract {
+            name: "Jump",
+            import: |world| {
+                world.import::<JumpModule>();
+            },
+            // The counter and the mirrored press are `Player`'s, the jump
+            // power and the per-kit count are `Kit`'s, and the two components
+            // that say a player is spectating rather than playing are
+            // `Lives`'.
+            requires: &["Player", "Kit", "Lives"],
+            runtime_requires: &[],
+            exercise: |world, player| {
+                // A jump is spent and a jump is restored, in that order. Only
+                // the restore used to be checked here, and a restore passes
+                // with the whole mechanic absent -- which is exactly what it
+                // did until ENG-11440.
+                player.set(OnGround(true));
+                world.progress_time(0.05);
+                let allowance = player.cloned::<&JumpsLeft>().0;
+                assert!(allowance > 0, "landing did not hand back a jump");
+
+                player.set(OnGround(false));
+                player.set(Flying(true));
+                world.progress_time(0.05);
+                assert_eq!(
+                    player.cloned::<&JumpsLeft>().0,
+                    allowance - 1,
+                    "a mid-air press spent no jump"
+                );
+
+                // Cleared before landing, the way the mirror clears it once
+                // the game has answered the press, so the assertion below is
+                // about the restore and nothing else.
+                player.set(Flying(false));
+                player.set(OnGround(true));
+                world.progress_time(0.05);
+                assert_eq!(
+                    player.cloned::<&JumpsLeft>().0,
+                    allowance,
+                    "landing did not put the jump back"
                 );
             },
         },

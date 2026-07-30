@@ -84,6 +84,43 @@ pub struct SidebarLine {
     pub score: Score,
 }
 
+/// What a client is allowed to do about flying, and the whole of the game's
+/// half of the double jump.
+///
+/// Super Smash Mobs' mid-air jump is vanilla creative flight, abused. A player
+/// with permission to fly who double-taps the jump key sends a serverbound
+/// abilities packet asking to take off, and that packet is the only mid-air
+/// jump input a client without a mod can produce. So the game arms the
+/// permission while a jump is available, waits for the press, and answers it
+/// with an impulse instead of with flight.
+///
+/// Neither variant leaves the player flying, and that is the point of it being
+/// two states rather than the two booleans the protocol carries. A player who
+/// is actually allowed to fly in a Smash match is a player who has left the
+/// game, so "keep flying" is not a thing this seam can be asked for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum Flight {
+    /// A mid-air jump is available: the client may take off, and the press
+    /// that would is the input the game answers.
+    Armed,
+    /// No mid-air jump. On the ground, or out of them.
+    #[default]
+    Disarmed,
+}
+
+impl Flight {
+    /// Armed exactly when a jump is available.
+    #[must_use]
+    pub const fn armed(armed: bool) -> Self {
+        if armed { Self::Armed } else { Self::Disarmed }
+    }
+
+    #[must_use]
+    pub const fn is_armed(self) -> bool {
+        matches!(self, Self::Armed)
+    }
+}
+
 /// A player as the host server knows them.
 ///
 /// Opaque to the game. The adapter maps this onto whatever the host uses; for
@@ -401,6 +438,15 @@ pub trait Server: Send + Sync + 'static {
     fn add_velocity(&self, player: PlayerId, delta: Vec3);
 
     fn teleport(&self, player: PlayerId, to: Vec3);
+
+    /// Tell the client whether a mid-air jump is available to it. See
+    /// [`Flight`].
+    ///
+    /// Every call also says the player is not flying, which is what makes a
+    /// press a discrete input rather than a state a player can hold: the game
+    /// answers a take-off by putting them straight back on this seam's terms,
+    /// so the next press is a fresh one.
+    fn set_flight(&self, player: PlayerId, flight: Flight);
 
     /// Push the game's authoritative health onto the client's health bar.
     fn set_health(&self, player: PlayerId, health: f32, max: f32);
