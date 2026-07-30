@@ -452,6 +452,45 @@ LINGER_WINDOW = 1.5
 # window it is trying to measure and turn a working shield into a failure.
 SHIELD_PROBE_WINDOW = 0.4
 
+# The health the melee probe wants its victim standing on before it swings.
+#
+# `ClientboundSetHealth` is scaled to twenty whatever the kit's real maximum is,
+# so this number means the same thing for every kit in the roster.
+#
+# Not a full bar: the abilities that declare `buffs_melee` are the ones spending
+# the window hitting the same player the probe swings at, and demanding twenty
+# would mean never getting a reading during a Mooshroom Madness. What it has to
+# clear is one swing, so that health cannot hit the floor mid-reading and turn a
+# hard hit into a soft one -- and the hardest swing in the roster is under ten
+# on this scale, whatever the kit.
+MELEE_PROBE_HEADROOM = 12.0
+
+# How long the victim has to go without a health packet before the probe swings.
+#
+# Shorter than the fastest beat anything in the roster runs -- Cow's herd and
+# Wolf's Frenzy are both every two seconds -- or no window ever opens.
+MELEE_PROBE_QUIET = 0.3
+
+# How long to keep looking for that window before giving up on a reading.
+MELEE_PROBE_SETTLE = 1.5
+
+# How long after the swing to collect health packets before deciding which of
+# them was the swing. Every melee answer in the transcript came back inside
+# 70 ms; wider than that only lets more of somebody else's damage in.
+MELEE_PROBE_WINDOW = 0.25
+
+# How many swings the probe may take looking for one it can attribute.
+#
+# Bounded from above and not just for time. Every try is a real melee hit, and
+# Wolf's Ravage adds a stack to the attacker on every melee hit, so the probe's
+# own retries make the next swing harder -- which is the game working, but it
+# means a probe that retried indefinitely would saturate Ravage at its ceiling
+# and then read a baseline the ultimate cannot beat, because Frenzy's bonus is
+# exactly that same ceiling. Three tries leaves at most two stacks standing when
+# the last one is measured, one short of the ceiling, so the ultimate is still
+# visible above it.
+MELEE_PROBE_TRIES = 3
+
 
 def load_item_names():
     """`minecraft:item` registry ids to names, in network-id order.
@@ -521,6 +560,12 @@ class MatchClient(base.Client):
         self.yaw = 0.0
         self.pitch = 0.0
         self.health = None
+        # Every health this client has been sent, in order, and when the last
+        # one arrived. The melee probe needs both: it reads the *first* packet
+        # after its swing rather than where health ends up, and it waits for a
+        # gap in this stream before swinging at all. See `measure_melee`.
+        self.health_log = []
+        self.health_at = 0.0
         self.spawns = []
         self.kit = None
         self.hotbar = {}
@@ -722,6 +767,12 @@ class Match:
         # What the sweep found, one line per ability, for the report.
         self.sweep_results = []
         self.sweep_failures = []
+        # How many times `measure_melee` gave up on the ability being exercised
+        # right now. Counted so a `buffs_melee` failure can say which of the two
+        # things went wrong. Reporting "declares buffs_melee and did not do it"
+        # when the probe never managed a reading is how ENG-11399 got filed
+        # against the harness on a night when the game was also broken.
+        self.melee_unmeasured = 0
         # Failures found after the sweep has already reported, which is
         # everything the match phase notices. `sweep_failures` is folded
         # into a proof inside `sweep`, so anything appended to it later
@@ -869,6 +920,8 @@ class Match:
             # saturation nothing here reads.
             health = struct.unpack(">f", payload[:4])[0]
             client.health = health
+            client.health_log.append(health)
+            client.health_at = time.time()
             client.log("<- health %.2f/20" % health)
         elif packet_id == S2C_ADD_ENTITY:
             # `ClientboundAddEntityPacket`: entity id (varint), uuid (16 bytes),
@@ -1485,25 +1538,110 @@ class Match:
             return False
         return landed_before and not self.hit_caster()
 
-    def measure_melee(self):
-        """What one melee swing at the near victim takes off, right now."""
-        attacker, victim = self.clients[0], self.clients[1]
-        before = victim.health
-        attacker.attack(victim)
-        self.wait_until(
-            lambda: victim.health is not None
-            and before is not None
-            and victim.health < before - 0.05,
-            2.0,
+    def revive_near_victim(self):
+        """Stand the near victim back up, and say whether it landed.
+
+        Re-picking the kit they are already on, which is the game's own way of
+        saying "start of a life" and the only heal this harness has; `stage`
+        uses it for the same reason at the top of every attempt.
+
+        Needed a second time here because the melee probe runs *after* the
+        observation window, by which point the ability under test has had two
+        seconds to work on the very player the probe swings at. The sweep used
+        to swing at a corpse: Mooshroom Madness spends that window throwing cows
+        and had killed the victim outright, and Target Laser spends it standing
+        in the fallout of the two abilities tested before it, which had done the
+        same. A swing that lands on nought health takes nothing off, and reads
+        exactly like a swing that was never buffed.
+        """
+        victim = self.clients[1]
+        mob = victim.kit
+        if mob is None:
+            return False
+        victim.kit = None
+        victim.command("kit %s" % mob)
+        return self.wait_until(
+            lambda: victim.kit == mob
+            and victim.health is not None
+            and victim.health >= MELEE_PROBE_HEADROOM,
+            5.0,
         )
-        if before is None or victim.health is None:
+
+    def measure_melee(self):
+        """What one melee swing at the near victim takes off, right now.
+
+        `None` when no swing could be attributed, which the caller must not
+        round into zero: a probe that answers 0.0 because it could not measure
+        anything is a baseline every later swing beats, and `buffs_melee` would
+        then pass for an ability that does nothing at all.
+
+        This used to return "health the victim lost in the two seconds after the
+        swing", which is not the swing. It is the swing plus everything else in
+        flight, and during an ultimate it is mostly everything else. Wolf's
+        Frenzy passed the sweep on exactly that reading: 5.60, of which 4.48 was
+        the swing and 1.12 was a lunge that happened to arrive in the same pump.
+        Cow's and Guardian's failed on the other end of it, swinging at a victim
+        the ability under test had already killed.
+
+        So a reading is only taken when it can be told apart from everything
+        else: the victim is stood back up, given `MELEE_PROBE_QUIET` with
+        nothing landing on them, hit once, and then *exactly one* health packet
+        has to arrive inside `MELEE_PROBE_WINDOW`. Two packets means something
+        else landed alongside the swing and neither of them can be called the
+        swing -- which is not a guess to be resolved by taking the larger, it is
+        a reading to be taken again. The sweep's own leftovers are what make
+        that necessary: Zombie's Horde was still hitting the victim for 2.5 two
+        kits later, and landed in the same tick as a probe swing.
+        """
+        attacker, victim = self.clients[0], self.clients[1]
+        silent = 0
+
+        for _ in range(MELEE_PROBE_TRIES):
+            if (
+                victim.health is None or victim.health < MELEE_PROBE_HEADROOM
+            ) and not self.revive_near_victim():
+                self.log("the melee probe could not stand %s back up" % victim.name)
+                self.melee_unmeasured += 1
+                return None
+            if not self.wait_until(
+                lambda: time.time() - victim.health_at >= MELEE_PROBE_QUIET,
+                MELEE_PROBE_SETTLE,
+            ):
+                continue
+            before = victim.health
+            if before is None or before < MELEE_PROBE_HEADROOM:
+                continue
+
+            seen = len(victim.health_log)
+            attacker.attack(victim)
+            self.wait(MELEE_PROBE_WINDOW)
+            landed = victim.health_log[seen:]
+            if len(landed) == 1:
+                return before - landed[0]
+            if landed:
+                self.log(
+                    "%d health packets arrived with the melee probe's swing at %s, "
+                    "so none of them is the swing; probing again"
+                    % (len(landed), victim.name)
+                )
+            else:
+                silent += 1
+
+        if silent == MELEE_PROBE_TRIES:
+            # Every swing was answered with nothing at all. That is a real zero
+            # -- the swing takes nothing off -- and not a failed measurement.
             return 0.0
-        return before - victim.health
+        self.log(
+            "no melee swing at %s could be told apart from the damage around it"
+            % victim.name
+        )
+        self.melee_unmeasured += 1
+        return None
 
     def baseline(self, entry):
         # The melee probe is taken before the health snapshot, or the swing it
         # makes reads as the ability having hurt somebody.
-        melee = self.measure_melee() if "buffs_melee" in entry["proves"] else 0.0
+        melee = self.measure_melee() if "buffs_melee" in entry["proves"] else None
         self.window_motions.clear()
         self.window_particles.clear()
         for client in self.clients:
@@ -1574,7 +1712,14 @@ class Match:
 
         if "buffs_melee" in entry["proves"]:
             after = self.measure_melee()
-            if after > before["melee"] + 0.05:
+            # Both readings or neither. `measure_melee` answers `None` when it
+            # could not take an honest reading, and treating that as zero would
+            # give the after-probe a baseline it beats by standing still.
+            if (
+                before["melee"] is not None
+                and after is not None
+                and after > before["melee"] + 0.05
+            ):
                 found["buffs_melee"] = (
                     "a melee swing took %.2f health where the same swing took "
                     "%.2f before" % (after, before["melee"])
@@ -1664,6 +1809,7 @@ class Match:
     def exercise(self, entry):
         label = "%s / %s" % (entry["kit"], entry["name"])
         outstanding = list(entry["proves"])
+        self.melee_unmeasured = 0
         evidence = []
         heard = False
         seen = False
@@ -1713,8 +1859,17 @@ class Match:
                 self.wait(entry["cooldown"] + 0.5)
 
         if outstanding:
+            unreadable = ""
+            if "buffs_melee" in outstanding and self.melee_unmeasured:
+                unreadable = (
+                    "; the melee probe gave up %d times because it could not "
+                    "tell its own swing apart from the damage around the "
+                    "victim, so this may be the probe and not the ability"
+                    % self.melee_unmeasured
+                )
             self.sweep_failures.append(
-                "%s declares %s and did not do it" % (label, ", ".join(outstanding))
+                "%s declares %s and did not do it%s"
+                % (label, ", ".join(outstanding), unreadable)
             )
         if not heard:
             self.sound_failures.append(
