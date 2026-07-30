@@ -149,11 +149,14 @@ pub struct Flying(pub bool);
 /// What the client was last told about flight, so the arming system sends a
 /// packet when the answer changes rather than twenty times a second.
 ///
-/// The game's own memory of a write it made across the seam. It is not a
+/// The game's own memory of a write it made across the seam, and not a
 /// mirror: nothing reads it back off the host, because [`crate::server`]
-/// deliberately has no reads. Both halves of that are load-bearing -- a
-/// clientbound abilities packet per airborne player per tick is a fifth of the
-/// game's whole packet budget spent saying nothing changed.
+/// deliberately has no reads.
+///
+/// It exists so that a player falling off the map costs one packet rather than
+/// one every tick they are in the air. hyperion answers each write with a
+/// `ClientboundPlayerAbilities`, so without this the arming system would spend
+/// twenty of them a second per airborne player to say nothing had changed.
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct MayFly(pub bool);
 

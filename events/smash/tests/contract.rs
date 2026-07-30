@@ -399,6 +399,10 @@ fn contracts() -> Vec<Contract> {
                     "a mid-air press spent no jump"
                 );
 
+                // Cleared before landing, the way the mirror clears it once
+                // the game has answered the press, so the assertion below is
+                // about the restore and nothing else.
+                player.set(Flying(false));
                 player.set(OnGround(true));
                 world.progress_time(0.05);
                 assert_eq!(
