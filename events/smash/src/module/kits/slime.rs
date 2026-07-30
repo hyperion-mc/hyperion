@@ -150,9 +150,14 @@ fn slime_rocket(cast: &Cast<'_>) {
 fn slime_slam(cast: &Cast<'_>) {
     const DAMAGE: f32 = 7.0;
     const KNOCKBACK: f32 = 2.0;
+    const RADIUS: f32 = 2.0;
 
     let ahead = cast.position.0 + cast.facing.0.normalize_or_zero() * 3.0;
-    splash_at(cast, ahead, 2.0, DAMAGE, KNOCKBACK);
+    splash_at(cast, ahead, RADIUS, DAMAGE, KNOCKBACK);
+    // At the point the slam lands and at the radius it lands over, so the
+    // recoil that follows reads as the caster being thrown off a thing that
+    // happened over there rather than a second, separate hit.
+    cast.server.particles(visuals::slam(ahead, RADIUS));
 
     hurt(cast.caster, Damaged {
         attacker: None,

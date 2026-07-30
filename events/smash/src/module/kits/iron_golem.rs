@@ -161,9 +161,15 @@ fn reel_in(impact: &Impact<'_>) {
     // Mineplex's `velocity(2, yBase 0.8, yMax 1.5)`: hard pull with enough lift
     // to clear whatever the victim was standing behind.
     let pull = (to - from).normalize_or_zero() * 2.0 + Vec3::Y * 0.8;
-    impact
-        .world
-        .get::<&crate::server::ServerHandle>(|server| server.add_velocity(id, pull));
+    impact.world.get::<&crate::server::ServerHandle>(|server| {
+        server.add_velocity(id, pull);
+        // At the hit and not at the throw, because until the hook lands there
+        // is no second end to draw the line to, and a line laid down the
+        // throw would be drawn just as confidently on the throws that miss.
+        // Both endpoints are read before the pull applies, so the chain spans
+        // the gap the ability is about to close rather than the remains of it.
+        server.particles(visuals::chain(to, from));
+    });
 }
 
 /// The kit's panic button and its combo finisher.

@@ -248,7 +248,16 @@ pub(crate) fn hotbar_slot(cursor: u16) -> Option<u8> {
 
 /// The attacker's kit's melee damage, plus whatever their kit has stacked onto
 /// it, or a bare-handed default.
-fn melee_damage(attacker: EntityView<'_>, victim: Entity, now: f32) -> f32 {
+///
+/// Public so a test can ask the same question a swing asks. It
+/// used to be private, and `tests/abilities.rs` answered it by writing the
+/// same two lines out again: read the kit's base, read the bonus, add them,
+/// and then deal exactly that much damage. A test shaped like that cannot
+/// fail. It compares one copy of the formula against another copy of the same
+/// formula, so the day this function stops reading [`MeleeBonus`] every
+/// `buffs_melee` assertion in the suite goes on passing and only a real client
+/// notices.
+pub fn melee_damage(attacker: EntityView<'_>, victim: Entity, now: f32) -> f32 {
     let base = attacker
         .find_target(Playing, |_| true)
         .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.melee_damage))

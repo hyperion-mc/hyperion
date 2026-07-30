@@ -22,6 +22,7 @@ use crate::{
         kit::{self, AbilitySpec, KitName, KitSounds, KitStats, Playing},
         player::Player,
         projectile::{Flight, Impact, Payload, Visual, fire},
+        visuals,
     },
     server::{PlayerId, ServerHandle},
 };
@@ -168,6 +169,8 @@ fn plays(player: EntityView<'_>, kit: &str) -> bool {
 }
 
 fn cub_tackle(cast: &Cast<'_>) {
+    cast.server
+        .particles(visuals::tossed_mob(cast.position.0, cast.facing.0));
     fire(
         cast.world,
         cast.caster,
@@ -217,6 +220,16 @@ fn wolf_strike(cast: &Cast<'_>) {
     cast.server
         .add_velocity(cast.player, cast.facing.0.normalize_or_zero() * 1.6);
 
+    // The line ends at `ahead` rather than wherever the impulse above actually
+    // carries the caster. The other option was to draw it where the lunge
+    // resolves, which reads better and does not exist: the impulse is handed to
+    // the host and settled by physics over the ticks after this one, so the
+    // landing point would have to be recovered by a system watching the caster
+    // until they stop, and the picture would arrive a beat after the ability.
+    // `ahead` is the centre of the splash below, so the line already ends where
+    // the damage does, which is the fact a victim needs.
+    cast.server.particles(visuals::pounce(cast.position.0, ahead));
+
     let caster = cast.caster.id();
     let mut combo = false;
     cast.world
@@ -263,8 +276,26 @@ fn frenzy(cast: &Cast<'_>) {
         cast.world,
         cast.caster,
         effect::Blame::cast(cast),
-        Affliction::mode(ability::ULTIMATE_SECONDS, FRENZY_INTERVAL, wolf_strike),
+        Affliction::mode(ability::ULTIMATE_SECONDS, FRENZY_INTERVAL, frenzy_beat),
     );
+}
+
+/// One beat of Frenzy: the snarl, then the lunge.
+///
+/// The snarl is drawn here and not in [`frenzy`] because a picture drawn once
+/// at the cast leaves the twenty seconds after it looking exactly like a Wolf
+/// with no ultimate up, and the whole content of the ability is that window.
+/// [`Affliction::mode`] fires its first beat immediately, so this still draws
+/// on the press.
+///
+/// What that costs is the rate: the snarl rides the lunge's two seconds because
+/// that is the beat the effect already has, so a victim can be most of two
+/// seconds from the last one. A finer beat would mean a second effect entity
+/// existing only to carry the picture, which is a second expiry to keep in step
+/// with this one for no more information than a slower snarl gives.
+fn frenzy_beat(cast: &Cast<'_>) {
+    cast.server.particles(visuals::snarl(cast.position.0));
+    wolf_strike(cast);
 }
 
 /// `[WIKI]` Strength III, which vanilla scores at +3 damage.

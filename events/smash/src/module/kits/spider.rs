@@ -172,11 +172,23 @@ fn envenom(impact: &Impact<'_>) {
     );
 }
 
+/// How much floor the web left behind covers.
+///
+/// `[APPROXIMATED]`, and it had to be invented: Spin Web affects nobody but the
+/// caster, so unlike every other area here there is no gameplay radius to draw
+/// at. This is sized to read as a patch of floor rather than a puff, and it
+/// promises nothing, because standing in it does nothing.
+const WEB_RADIUS: f32 = 2.5;
+
 /// A leap that leaves web behind. `[APPROXIMATED]`: the recovery distance is
 /// tuned to "decent horizontal and vertical", not to a published number.
 fn spin_web(cast: &Cast<'_>) {
     let launch = cast.facing.0.normalize_or_zero() * 1.4 + Vec3::Y * 0.45;
     cast.server.add_velocity(cast.player, launch);
+    // At the spot the Spider left, which is the whole of what the ability did:
+    // the web is the trail, and the leap carries them off it immediately.
+    cast.server
+        .particles(visuals::web(cast.position.0, WEB_RADIUS));
 }
 
 /// `[APPROXIMATED]`: the dome traps, which needs block writes the game half

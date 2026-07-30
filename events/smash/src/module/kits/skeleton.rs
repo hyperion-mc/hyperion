@@ -23,6 +23,7 @@ use crate::{
         kit::{self, AbilitySpec, KitSounds, KitStats},
         player::Position,
         projectile::{Flight, Impact, Payload, Visual, fire},
+        visuals,
     },
 };
 
@@ -148,6 +149,13 @@ fn barrage(cast: &Cast<'_>) {
     for index in 0..arrows.min(MAX_BARRAGE_ARROWS) {
         arrow(cast, index as f32 * 0.02);
     }
+    // One line for the volley, along the aim rather than along each arrow. The
+    // jitter that separates the five is a fiftieth of a block at its widest, so
+    // five lines would sit on top of one another and cost five times the
+    // particles to say the same thing. What that gives up is any hint of how
+    // many arrows are in the air, which the arrows themselves already carry.
+    cast.server
+        .particles(visuals::bowshot(cast.position.0, cast.facing.0));
 }
 
 /// Damage 6 over radius 7 at a 2.5x knockback multiplier — the highest of any
@@ -176,6 +184,13 @@ fn roped_arrow(cast: &Cast<'_>) {
         },
         Payload::new(ARROW_DAMAGE, ARROW_KNOCKBACK).then(haul_shooter),
     );
+
+    // Before the pull, so the line starts where the caster was standing when
+    // they fired rather than trailing them. It doubles as the only warning
+    // anyone gets about where the Skeleton is going, the arrow's direction
+    // being theirs as well.
+    cast.server
+        .particles(visuals::bowshot(cast.position.0, cast.facing.0));
 
     let pull = cast.facing.0.normalize_or_zero() * 1.4 + Vec3::Y * 0.6;
     cast.server.add_velocity(cast.player, pull);
@@ -227,4 +242,10 @@ const ARROW_STORM_INTERVAL: f32 = 0.3;
 
 fn arrow_volley(cast: &Cast<'_>) {
     arrow(cast, 0.0);
+    // Per beat and not once at the press. Each beat is its own release, aimed
+    // wherever the caster is looking by then, so a single line at the press
+    // would say the Skeleton fired once and stopped rather than that they have
+    // not stopped.
+    cast.server
+        .particles(visuals::bowshot(cast.position.0, cast.facing.0));
 }

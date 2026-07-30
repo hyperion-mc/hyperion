@@ -186,6 +186,10 @@ fn firefly(cast: &Cast<'_>) {
         cast.player,
         cast.facing.0.normalize_or_zero() * (2.2 * cast.charge.max(0.4)),
     );
+    // One shove and not a mode: the charge ends, the ram happens, and the
+    // ability is over, so the wake is drawn once, where the flight leaves from.
+    // Phoenix is the sustained half of the kit and beats on its own.
+    cast.server.particles(visuals::ember_wake(cast.position.0));
     splash_at(cast, ahead, 3.0, 9.0 * cast.charge.max(0.4), 1.8);
 }
 

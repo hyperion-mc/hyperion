@@ -115,6 +115,10 @@ fn super_squid(cast: &Cast<'_>) {
         cast.player,
         cast.facing.0.normalize_or_zero() * 1.1 + Vec3::Y * 0.9,
     );
+    // One impulse and not a mode, so the wake is drawn once, where the dash
+    // starts. The second it lasts is the shield's, and the shield has its own
+    // look.
+    cast.server.particles(visuals::wake(cast.position.0));
     effect::afflict(
         cast.world,
         cast.caster,
@@ -148,6 +152,10 @@ fn ink_shotgun(cast: &Cast<'_>) {
             Payload::new(PELLET_DAMAGE, 0.6),
         );
     }
+    // Once for the press, not once per pellet: seven ink clouds down one cone
+    // is a smokescreen, and the one fact a victim needs is where the cone is.
+    cast.server
+        .particles(visuals::ink(cast.position.0, forward));
 }
 
 /// `[VERIFIED]` 5x5x5 area, 2 damage per fish, four seconds. Modelled as one

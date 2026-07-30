@@ -162,6 +162,10 @@ fn whirlpool_axe(cast: &Cast<'_>) {
         },
         Payload::new(3.0, 0.8).then(reel),
     );
+    // Where the axe leaves the caster. The shard renders as a spectral arrow
+    // once it is airborne, so the water thrown off it on the way out is the
+    // only part of the throw that says which kit threw it.
+    cast.server.particles(visuals::spray(cast.position.0));
 }
 
 fn reel(impact: &Impact<'_>) {
@@ -238,6 +242,14 @@ const TIDE_INTERVAL: f32 = 1.5;
 /// Per wave, and there are thirteen.
 const TIDE_DAMAGE: f32 = 3.0;
 
+/// `[APPROXIMATED]`, as the rest of the ultimate is. Named rather than written
+/// twice, so the ring a player backs away from is the ring that hits them.
+const TIDE_RADIUS: f32 = 10.0;
+
 fn tide(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0, 10.0, TIDE_DAMAGE, 2.2);
+    splash_at(cast, cast.position.0, TIDE_RADIUS, TIDE_DAMAGE, 2.2);
+    // On the beat rather than at the cast: the ultimate is thirteen waves over
+    // twenty seconds, and one ring at the start leaves the other twelve unseen.
+    cast.server
+        .particles(visuals::tide(cast.position.0, TIDE_RADIUS));
 }

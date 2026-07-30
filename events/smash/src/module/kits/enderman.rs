@@ -112,6 +112,11 @@ fn block_toss(cast: &Cast<'_>) {
     // `min(1.4, 1.4 * elapsed / chargeTime)`.
     let speed = 1.4f32.min(1.4 * cast.charge).max(0.4) * 24.0;
 
+    // At the caster's feet, where the block is ripped out of the floor. The
+    // block is a visible falling-block entity from the moment it is thrown, so
+    // the part that was never drawn is it coming loose.
+    cast.server.particles(visuals::torn_earth(cast.position.0));
+
     fire(
         cast.world,
         cast.caster,
@@ -172,6 +177,10 @@ fn dragon_pass(cast: &Cast<'_>) {
     // platform rather than stopping at it.
     cast.server
         .add_velocity(cast.player, forward * 1.6 + Vec3::Y * 0.3);
+    // On each pass rather than at the cast: the ultimate is twenty seconds of
+    // flight, and one puff at the start is nineteen seconds in which nobody
+    // underneath can see what is above them.
+    cast.server.particles(visuals::wingbeat(cast.position.0));
     crate::module::ability::splash_at(cast, cast.position.0 + forward * 8.0, 6.0, RIDE_DAMAGE, 4.0);
 }
 
