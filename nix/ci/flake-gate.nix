@@ -29,6 +29,55 @@
 # conditions and the reason the check attribute rather than the derivation hash
 # is the identity all live in nix/ci/delta-gate.sh, whose pure half
 # nix/ci/delta-gate-tests.sh exercises without a network or a nix store.
+#
+# ---------------------------------------------------------------------------
+# THIS VERDICT BLOCKS NOTHING, AND WHAT WOULD HAVE TO BE TRUE BEFORE IT DOES
+# ---------------------------------------------------------------------------
+#
+# Ruleset 566717 on `main` carries no `required_status_checks` rule at all, it
+# is the only ruleset, and `branches/main/protection` returns 404. So one
+# approving review is the whole gate, red pipeline or no pipeline (ENG-10827).
+# Every trigger is `workflow_dispatch` besides, as of #1088.
+#
+# Making this binding is ONE `required_status_checks` entry naming the `Flake`
+# job. It is written down here rather than only in the run summary because the
+# summary is only read when the pipeline runs, and the pipeline is manual, so
+# the header is the only place a person actually meets this.
+#
+# Four things should be true first. None of them was on 2026-07-30, and each is
+# a measurement rather than a judgement:
+#
+#   1. FLAKE RATE at or under 5% over 20 consecutive runs. Measured 0.611 over
+#      the 18 main runs of 2026-07-28/29: three checks fail at random
+#      (smash-hud-e2e 44%, differential-traces 39%, bedwars-bow-e2e 11%) and 11
+#      of 18 runs hit at least one, so a correct change needed 2.57 attempts.
+#      5% is not arbitrary: the merge_queue rule sets `grouping_strategy:
+#      ALLGREEN` with `max_entries_to_build: 5`, so a flake ejects a batch of up
+#      to five pull requests rather than costing one author a re-run, and the
+#      bisection retries carry the same rate. `delta-gate.sh flake-rate` reports
+#      this against the instability record.
+#
+#   2. AT LEAST 30 RUNS in the instability record. P(a check flaking at rate q
+#      is proven within n same-derivation samples) is 1 - q^n - (1-q)^n. At
+#      n=18 an 11% flake is still 12% likely to be unproven; n=30 puts anything
+#      at or above 10% over 97% likely to be proven. Below 5%, 30 is not enough
+#      and no claim should be made that it is.
+#
+#   3. AT MOST 1 IN 20 pull request runs blocked by a verdict that a re-run then
+#      clears, over at least 20 pull request runs. This is the only one of the
+#      four that measures the whole system rather than a part, and it can only
+#      be taken while the verdict is reporting rather than blocking.
+#
+#   4. p95 WALL TIME UNDER 40 MINUTES, measured over runs in which every check
+#      reached a verdict. Stated that way deliberately: the observed 31 to 41
+#      minute range is over RED runs only and no green run of this gate has ever
+#      been observed, so the green cost is unknown in both magnitude and
+#      direction. Satisfying this may need the concurrent gate first, simply to
+#      have green runs to measure. The ceiling is the merge queue's
+#      `check_response_timeout_minutes: 60`, which is also why `timeout-minutes`
+#      in ci.yml must stay strictly below it.
+#
+# The measurement, the method and the design in full are ENG-11433.
 {
   lib,
   writeShellApplication,
