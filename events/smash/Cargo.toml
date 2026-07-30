@@ -25,6 +25,13 @@ valence_nbt = { workspace = true }
 valence_protocol = { workspace = true }
 
 [dev-dependencies]
+# The same `hyperion` the `[dependencies]` entry above pulls in, with the
+# test-only egress helpers turned on. Cargo unifies the two into one build of
+# the crate, so this does *not* enable the feature for the server binary --
+# features are additive per build, and a dev-dependency's are only added to the
+# test build. `nix/checks/test-util-is-dev-only.nix` is what keeps that true
+# rather than merely intended.
+hyperion = { workspace = true, features = ["test-util"] }
 proptest = { workspace = true }
 
 [lints]

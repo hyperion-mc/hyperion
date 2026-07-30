@@ -408,58 +408,66 @@ impl Module for SmashAdapterModule {
             .system_named::<(&OpQueue, &Compose)>("apply_server_ops")
             .kind(id::<flecs::pipeline::PostUpdate>())
             .each_iter(|it, _, (queue, compose)| {
-                let world = it.world();
                 let drained =
                     std::mem::take(&mut *queue.0.lock().expect("server op queue poisoned"));
-                // Every player's bars, resolved before any op is applied.
-                //
-                // `world.entity()` hands back its id at once but the
-                // `set(PlayerBars)` that records it is deferred to the merge,
-                // so a second `SetBossBar` for the same player in one drain
-                // still reads the component as it stood at the start of the
-                // tick. Resolving every slot into one map first, and writing
-                // the component back once per player, is what makes a
-                // duplicate bar impossible rather than merely unlikely. Doing
-                // it per slot instead loses the other slot's entity to the
-                // last write, and the tick after that mints a second bar for
-                // it -- two match bars stacked on one screen.
-                let mut bars: HashMap<Entity, PlayerBars> = HashMap::new();
-                for op in &drained {
-                    let Op::SetBossBar { player, slot, .. } = op else {
-                        continue;
-                    };
-                    let resolved = match bars.entry(*player) {
-                        Entry::Occupied(held) => held.into_mut(),
-                        Entry::Vacant(empty) => match bars_of(world, *player) {
-                            Some(held) => empty.insert(held),
-                            None => continue,
-                        },
-                    };
-                    resolved.0[slot.index()] = Some(match resolved.0[slot.index()] {
-                        Some(bar) if world.entity_from_id(bar).is_alive() => bar,
-                        _ => mint_bar(world, *player),
-                    });
-                }
-                for (player, resolved) in &bars {
-                    world.entity_from_id(*player).set(*resolved);
-                }
-                // The same hazard as `bars` above, one type along, and the
-                // reason this is a map rather than a component read per op:
-                // `set(Vitals)` is deferred too, so a `SetHealth` and a
-                // `SetFood` for one player in one drain -- a player who traded
-                // hits, which is a tick that happens constantly -- would have
-                // the second read the component as it stood before the first.
-                // It would send the *default* full health beside the new food
-                // level and snap the client's health bar to full for a frame.
-                // Carried across the loop and written back once per player.
-                let mut vitals: HashMap<Entity, Vitals> = HashMap::new();
-                for op in drained {
-                    apply(world, compose, op, &bars, &mut vitals);
-                }
-                for (player, held) in &vitals {
-                    world.entity_from_id(*player).set(*held);
-                }
+                drain(it.world(), compose, drained);
             });
+    }
+}
+
+/// Apply one tick's worth of queued ops.
+///
+/// A named function and not the body of the system above, so a test can hand
+/// it a `Vec<Op>` and read what came out. That is not a cosmetic split: **both
+/// defects this drain has had were in this loop rather than in [`apply`]**, in
+/// how per-player state is carried from one op to the next, and a test that
+/// called `apply` directly while threading the maps by hand would have
+/// exercised the half that was never broken. See ENG-11475.
+fn drain(world: WorldRef<'_>, compose: &Compose, drained: Vec<Op>) {
+    // Every player's bars, resolved before any op is applied.
+    //
+    // `world.entity()` hands back its id at once but the `set(PlayerBars)`
+    // that records it is deferred to the merge, so a second `SetBossBar` for
+    // the same player in one drain still reads the component as it stood at
+    // the start of the tick. Resolving every slot into one map first, and
+    // writing the component back once per player, is what makes a duplicate
+    // bar impossible rather than merely unlikely. Doing it per slot instead
+    // loses the other slot's entity to the last write, and the tick after
+    // that mints a second bar for it -- two match bars stacked on one screen.
+    let mut bars: HashMap<Entity, PlayerBars> = HashMap::new();
+    for op in &drained {
+        let Op::SetBossBar { player, slot, .. } = op else {
+            continue;
+        };
+        let resolved = match bars.entry(*player) {
+            Entry::Occupied(held) => held.into_mut(),
+            Entry::Vacant(empty) => match bars_of(world, *player) {
+                Some(held) => empty.insert(held),
+                None => continue,
+            },
+        };
+        resolved.0[slot.index()] = Some(match resolved.0[slot.index()] {
+            Some(bar) if world.entity_from_id(bar).is_alive() => bar,
+            _ => mint_bar(world, *player),
+        });
+    }
+    for (player, resolved) in &bars {
+        world.entity_from_id(*player).set(*resolved);
+    }
+    // The same hazard as `bars` above, one type along, and the reason this is
+    // a map rather than a component read per op: `set(Vitals)` is deferred
+    // too, so a `SetHealth` and a `SetFood` for one player in one drain -- a
+    // player who traded hits, which is a tick that happens constantly --
+    // would have the second read the component as it stood before the first.
+    // It would send the *default* full health beside the new food level and
+    // snap the client's health bar to full for a frame. Carried across the
+    // loop and written back once per player.
+    let mut vitals: HashMap<Entity, Vitals> = HashMap::new();
+    for op in drained {
+        apply(world, compose, op, &bars, &mut vitals);
+    }
+    for (player, held) in &vitals {
+        world.entity_from_id(*player).set(*held);
     }
 }
 
@@ -1008,4 +1016,189 @@ fn json_text(text: &str, color: Option<&str>) -> String {
 #[must_use]
 pub fn minecraft_id(entity: EntityView<'_>) -> i32 {
     entity.minecraft_id()
+}
+
+/// What the drain actually put on the wire.
+///
+/// The gap ENG-11475 exists for: `tests/` drives `MockServer`, which is the
+/// other side of the `Server` trait, so everything from [`Op`] onwards -- the
+/// drain, its per-player maps, and the packets they produce -- was exercised
+/// only by the e2e gates. Those count packets by id, and **both defects this
+/// drain has had emitted exactly the right packet with the wrong contents**.
+///
+/// # The offsets are a known limit, and they are why the layout is spelled out
+///
+/// These read fixed byte offsets into `SetHealth`. That is fine for this packet
+/// -- fixed layout, three fields, no counts -- and it is wrong as a general
+/// approach: a variable-length field earlier in a packet moves everything after
+/// it. **If you are here to add a third case with such a packet, decode it
+/// properly rather than extending the offsets.**
+///
+/// The layout is written out below rather than assumed for a specific reason.
+/// The first version of this hand-guessed the offsets and read `3.6e24`, and
+/// because a wrong offset reads plausible garbage *identically for both frames*
+/// a check shaped as "the two differ" would have passed on a completely misread
+/// packet. An assertion whose verdict is about bytes it is not actually reading
+/// is the same defect one level in.
+#[cfg(test)]
+mod drain_tests {
+    use flecs_ecs::prelude::*;
+    use hyperion::net::{
+        ConnectionId, ProxyId,
+        test_util::{compose_with_proxy, next_unicast},
+    };
+
+    use super::{Op, PlayerBars, Vitals, drain};
+
+    /// `[varint len][00 uncompressed][0x68 SetHealth][f32 BE health][varint food][f32 BE sat]`
+    ///
+    /// Verified against a real frame: `0b 00 68 40e00000 0b 40a00000` is eleven
+    /// bytes of uncompressed `SetHealth` carrying 7.0 health, 11 food and 5.0
+    /// saturation. The `00` is the compression prefix -- zero means the body is
+    /// not compressed, which it never is here because the packet is far under
+    /// the 256-byte threshold.
+    const PACKET_ID: usize = 2;
+    const HEALTH: usize = 3;
+    const FOOD: usize = 7;
+    const SET_HEALTH: u8 = 0x68;
+
+    fn decode_set_health(frame: &[u8]) -> (f32, u8) {
+        assert_eq!(
+            frame[PACKET_ID], SET_HEALTH,
+            "not a SetHealth frame, so the offsets below are reading something else: {frame:02x?}"
+        );
+        let health = f32::from_be_bytes([
+            frame[HEALTH],
+            frame[HEALTH + 1],
+            frame[HEALTH + 2],
+            frame[HEALTH + 3],
+        ]);
+        (health, frame[FOOD])
+    }
+
+    // Every test here runs the drain inside `World::defer`, and that is not
+    // decoration. In production `drain` is the body of a system, where flecs
+    // queues every `set` until the merge -- which is the entire mechanism
+    // behind both defects below. Calling `drain` straight from a test applies
+    // each `set` immediately, so the second op reads what the first one wrote
+    // and *both tests pass against both the fixed and the broken
+    // implementation*. Found by watching them pass on code un-fixed on
+    // purpose. Wrap the drain, or the test is theatre.
+
+    /// A world with the components the drain touches, and one connected player.
+    fn world_with_player() -> (World, Entity) {
+        let world = World::new();
+        world.component::<Vitals>();
+        world.component::<PlayerBars>();
+        world.component::<ConnectionId>();
+        world.component::<hyperion::simulation::metadata::living_entity::Health>();
+        // `mint_bar` builds a bar entity out of these. A bare world registers
+        // nothing, and the workspace's `flecs_manual_registration` turns first
+        // use of an unregistered component into an abort rather than a lazy
+        // registration -- which is ENG-11000's assert doing its job on a test
+        // world instead of a server.
+        world.component::<hyperion::egress::boss_bar::BossBar>();
+        world.component::<hyperion::egress::boss_bar::ShownTo>();
+        world.component::<hyperion::egress::boss_bar::Title>();
+        world.component::<hyperion::egress::boss_bar::Progress>();
+        world.component::<hyperion::egress::boss_bar::Style>();
+        let player = world
+            .entity()
+            .set(ConnectionId::new(1, ProxyId::new(0)))
+            .id();
+        (world, player)
+    }
+
+    /// A `SetFood` after a `SetHealth` in one drain carries the health the
+    /// `SetHealth` set, not the default.
+    ///
+    /// The bug: `set(Vitals)` from inside `apply` is deferred, so reading the
+    /// component per op had the second op see the state from before the first
+    /// and send a full-health bar beside the new food level. A player who takes
+    /// a hit and lands one in the same tick is most exchanges in a fighting
+    /// game.
+    #[test]
+    fn a_food_push_after_a_health_push_keeps_the_health() {
+        let (world, player) = world_with_player();
+        let (compose, mut rx) = compose_with_proxy();
+
+        world.defer(|| {
+            drain((&world).into(), &compose, vec![
+                Op::SetHealth {
+                    player,
+                    health: 7.0,
+                    max: 20.0,
+                },
+                Op::SetFood { player, food: 11 },
+            ]);
+        });
+
+        let mut frames = Vec::new();
+        while let Some(frame) = next_unicast(&mut rx) {
+            frames.push(decode_set_health(&frame));
+        }
+
+        assert_eq!(frames.len(), 2, "expected one frame per op, got {frames:?}");
+        assert_eq!(
+            frames[0],
+            (7.0, 20),
+            "the health push should carry the new health and the untouched full food bar"
+        );
+        assert_eq!(
+            frames[1],
+            (7.0, 11),
+            "the food push should carry the new food beside the health the previous op set, not \
+             the default"
+        );
+    }
+
+    /// Two `SetBossBar` ops for different slots in one drain get two entities.
+    ///
+    /// #1095's half of the same class, and the reason `drain` is a named
+    /// function: resolving slots per op instead of in one pass loses the other
+    /// slot's entity to the last write, and the next tick mints a second bar
+    /// for it -- two match bars stacked on one screen.
+    #[test]
+    fn two_bar_slots_in_one_drain_get_two_entities() {
+        use crate::server::{BarColour, BarSlot, BossBar, Text};
+
+        let (world, player) = world_with_player();
+        let (compose, _rx) = compose_with_proxy();
+
+        let bar = |title: &str| BossBar {
+            title: Text::text(title.to_owned()),
+            progress: 0.5,
+            colour: BarColour::Green,
+        };
+        world.defer(|| {
+            drain((&world).into(), &compose, vec![
+                Op::SetBossBar {
+                    player,
+                    slot: BarSlot::Hud,
+                    bar: bar("hud"),
+                },
+                Op::SetBossBar {
+                    player,
+                    slot: BarSlot::Build,
+                    bar: bar("build"),
+                },
+            ]);
+        });
+
+        let held = world
+            .entity_from_id(player)
+            .try_get::<&PlayerBars>(|bars| *bars)
+            .expect("the drain records the bars it resolved");
+        let hud = held.0[BarSlot::Hud.index()];
+        let build = held.0[BarSlot::Build.index()];
+        assert!(
+            hud.is_some() && build.is_some(),
+            "a slot written in this drain has no entity: {held:?}"
+        );
+        assert_ne!(
+            hud, build,
+            "both slots resolved to the same bar entity, so one of the two bars is drawn over the \
+             other and the next tick mints a duplicate"
+        );
+    }
 }
