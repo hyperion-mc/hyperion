@@ -80,6 +80,10 @@ enum Op {
         health: f32,
         max: f32,
     },
+    SetFood {
+        player: Entity,
+        food: u8,
+    },
     Status {
         player: Entity,
         status: Status,
@@ -138,6 +142,68 @@ enum Op {
 #[derive(Component)]
 pub struct OpQueue(Arc<Mutex<Vec<Op>>>);
 
+/// Both halves of the client's `SetHealth` packet, as last sent.
+///
+/// Vanilla carries health, food and saturation in one message, and the game
+/// moves health and food on unrelated clocks -- health on every hit, food once
+/// every seven seconds -- so whichever half is not changing has to be
+/// remembered to be re-sent alongside the half that is. On the player entity
+/// because that is where the rest of a player's mirrored state already lives.
+///
+/// The defaults are what a client that has never been told anything is already
+/// drawing, so the first push of either half sends the other one unchanged
+/// rather than blanking it.
+#[derive(Component, Debug, Copy, Clone)]
+struct Vitals {
+    /// Health on vanilla's twenty-point bar, which is the only scale the
+    /// packet has. The game's own maximum is a kit stat and can be anything.
+    scaled_health: f32,
+    /// Food points, `0..=20`.
+    food: u8,
+}
+
+impl Default for Vitals {
+    fn default() -> Self {
+        Self {
+            scaled_health: VANILLA_HEALTH,
+            food: VANILLA_FOOD,
+        }
+    }
+}
+
+/// A full vanilla health bar, and the scale everything is sent on.
+const VANILLA_HEALTH: f32 = 20.0;
+
+/// A full vanilla food bar.
+const VANILLA_FOOD: u8 = 20;
+
+/// Saturation, which this game has no mechanic for.
+///
+/// Sent as a constant because the field is not optional and a client uses it
+/// only to decide how fast the food bar wobbles. Below the drain rate of any
+/// kit, so it never delays a hunger tick.
+const VANILLA_SATURATION: f32 = 5.0;
+
+/// What was last sent to `entity`, or the defaults if nothing has been.
+fn vitals_of(entity: EntityView<'_>) -> Vitals {
+    entity
+        .try_get::<&Vitals>(|vitals| *vitals)
+        .unwrap_or_default()
+}
+
+/// Send the whole packet after one half of it changed.
+fn send_vitals(entity: EntityView<'_>, compose: &Compose, vitals: Vitals) {
+    let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
+        return;
+    };
+    let packet = SetHealth {
+        health: vitals.scaled_health,
+        food: i32::from(vitals.food),
+        saturation: VANILLA_SATURATION,
+    };
+    let _unused = protocol::send(compose, connection, PacketId::SetHealth.to_raw(), &packet);
+}
+
 /// hyperion's implementation of the game's seam.
 pub struct HyperionServer {
     ops: Arc<Mutex<Vec<Op>>>,
@@ -189,6 +255,13 @@ impl Server for HyperionServer {
             player: entity_of(player),
             health,
             max,
+        });
+    }
+
+    fn set_food(&self, player: PlayerId, food: u8) {
+        self.push(Op::SetFood {
+            player: entity_of(player),
+            food,
         });
     }
 
@@ -286,6 +359,7 @@ impl Module for SmashAdapterModule {
 
         world.component::<OpQueue>().add_trait::<flecs::Singleton>();
         world.component::<PlayerBars>();
+        world.component::<Vitals>();
 
         let ops = Arc::new(Mutex::new(Vec::new()));
         world.set(OpQueue(Arc::clone(&ops)));
@@ -429,17 +503,25 @@ fn apply(world: WorldRef<'_>, compose: &Compose, op: Op, bars: &HashMap<Entity, 
             // component is what other players see over the victim's head, and
             // SetHealth is the only thing that moves the victim's own bar.
             entity.set(Health::new(health));
-            let Some(connection) = entity.try_get::<&ConnectionId>(|id| *id) else {
-                return;
-            };
             let scaled = if max > 0.0 { health * 20.0 / max } else { 0.0 };
-            let packet = SetHealth {
-                health: scaled,
-                food: 20,
-                saturation: 5.0,
+            let vitals = Vitals {
+                scaled_health: scaled,
+                ..vitals_of(entity)
             };
-            let _unused =
-                protocol::send(compose, connection, PacketId::SetHealth.to_raw(), &packet);
+            entity.set(vitals);
+            send_vitals(entity, compose, vitals);
+        }
+        Op::SetFood { player, food } => {
+            let entity = world.entity_from_id(player);
+            if !entity.is_alive() {
+                return;
+            }
+            let vitals = Vitals {
+                food,
+                ..vitals_of(entity)
+            };
+            entity.set(vitals);
+            send_vitals(entity, compose, vitals);
         }
         Op::Status { player, status } => {
             let entity = world.entity_from_id(player);

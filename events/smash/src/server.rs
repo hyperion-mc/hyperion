@@ -451,6 +451,15 @@ pub trait Server: Send + Sync + 'static {
     /// Push the game's authoritative health onto the client's health bar.
     fn set_health(&self, player: PlayerId, health: f32, max: f32);
 
+    /// Push the game's food bar, in vanilla food points (`0..=20`).
+    ///
+    /// Separate from [`Server::set_health`] even though vanilla carries the two
+    /// in one `SetHealth` packet, because the two change on entirely different
+    /// clocks: health moves on every hit, food moves once every seven seconds.
+    /// Reassembling the packet is the adapter's problem and not something
+    /// fifteen callers should have to hold a spare food level for.
+    fn set_food(&self, player: PlayerId, food: u8);
+
     /// Apply a potion effect to `player`, broadcast to everyone near them --
     /// including the player's own client. That inclusion is the whole point of
     /// a status over a faked impulse: the client owns its movement prediction,

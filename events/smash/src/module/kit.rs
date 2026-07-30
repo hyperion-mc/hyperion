@@ -24,6 +24,7 @@ use crate::{
         knockback::KnockbackTaken,
         player::{Energy, Health, JumpsLeft},
         sound::{self, Levels, PlaysOnCast, PlaysOnDeath, PlaysOnHurt, PlaysOnSelect},
+        vitals::{Hunger, Regen, VitalsComponentsModule},
     },
     server::HotbarItem,
 };
@@ -498,6 +499,10 @@ pub fn apply(world: &World, player: EntityView<'_>, kit: EntityView<'_>) {
         .set(Armor(stats.armor))
         .set(KnockbackTaken(stats.knockback_taken))
         .set(Health::full(stats.max_health))
+        .set(Regen(stats.regen))
+        // A fresh bar, because choosing a kit is choosing its drain rate and
+        // half an old kit's clock is nobody's number.
+        .set(Hunger::full(stats.hunger_interval))
         .set(JumpsLeft(stats.jump_count));
 
     if let Some((max, regen)) = stats.energy {
@@ -702,6 +707,12 @@ pub struct KitModule;
 impl Module for KitModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Kit");
+
+        // `apply` copies the kit's regeneration rate and hunger interval onto
+        // the player, so the components those land in have to exist before
+        // anybody chooses a kit. Registration only: which systems tick them is
+        // `VitalsModule`'s business and not a kit's.
+        world.import::<VitalsComponentsModule>();
 
         // A `/kit` completion is a query over whatever carries this tag, and
         // this is the one place that says what a kit's name is. Nothing else

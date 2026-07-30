@@ -24,6 +24,7 @@ use crate::{
         lives::{Eliminated, InvulnerableUntil, Lives, Placement, RespawnAt},
         player::{Health, Player, Position},
         selector, sound,
+        vitals::{Hunger, VitalsComponentsModule},
     },
     server::{Channel, NamedColor, PlayerId, ServerHandle, Sound, SoundCategory, Text},
 };
@@ -344,6 +345,10 @@ impl Module for LobbyModule {
     fn module(world: &World) {
         world.module::<Self>("smash::Lobby");
 
+        // The end of a match refills every food bar, so the component that
+        // holds one has to be registered before `reset` first queries for it.
+        world.import::<VitalsComponentsModule>();
+
         world.component::<Lobby>().add_trait::<flecs::Singleton>();
         world
             .component::<LobbyConfig>()
@@ -519,15 +524,22 @@ fn scatter(world: &WorldRef<'_>) {
 /// * A stale [`InvulnerableUntil`] is the same arithmetic the other way: it
 ///   makes them untouchable, and immune to the kill plane, for that long
 ///   instead.
+///
+/// The food bar is the fourth. Hunger is deliberately *not* refilled by dying
+/// -- an anti-stall clock a player can reset by throwing a life away is not a
+/// clock -- so the only thing that ever refills it is landing a hit, and the
+/// end of a match. Without this a second match starts with whatever everyone
+/// had left, and somebody spawns already starving.
 fn reset(world: &WorldRef<'_>) {
     world.get::<&mut MatchClock>(|clock| clock.0 = 0.0);
     world
-        .query::<(&mut Lives, &mut Health)>()
+        .query::<(&mut Lives, &mut Health, &mut Hunger)>()
         .with(Player::id())
         .build()
-        .each_entity(|player, (lives, health)| {
+        .each_entity(|player, (lives, health, hunger)| {
             *lives = Lives::default();
             health.current = health.max;
+            *hunger = Hunger::full(hunger.interval);
             player.remove(Eliminated::id());
             player.remove(Placement::id());
             player.remove(RespawnAt::id());

@@ -46,6 +46,7 @@ use smash::{
         scoreboard::ScoreboardModule,
         selector::{self, SelectorModule, TAKEN_BLOCK},
         sound::{self, Levels, PlaysOnCast, PlaysOnHurt, SoundModule},
+        vitals::{self, Hunger, Regen, VitalsModule},
     },
     server::{PlayerId, ServerHandle, mock::MockServer},
 };
@@ -324,6 +325,37 @@ fn contracts() -> Vec<Contract> {
                 let kit = kit.prefab();
                 smash::module::kit::apply(world, player, kit);
                 assert!((player.cloned::<&KnockbackTaken>().0 - 1.5).abs() < 1e-6);
+            },
+        },
+        Contract {
+            name: "Vitals",
+            import: |world| {
+                world.import::<VitalsModule>();
+            },
+            // `feed_the_attacker` is an observer on Knockback's `Smashed`
+            // naming Player, and the starve tick emits Damage's `Damaged`.
+            requires: &["Player", "Knockback", "Damage"],
+            // Both clocks read the lobby phase inside a `run` closure, and a
+            // starve tick runs the whole damage pipeline behind it.
+            runtime_requires: &["Lives", "Sound", "Kit", "Lobby"],
+            exercise: |world, player| {
+                world.set(Lobby {
+                    phase: Phase::Playing,
+                    timer: 1.0,
+                });
+                player.set(Regen(2.0));
+                player.set(Hunger::full(0.5));
+                player.get::<&mut Health>(|health| health.current = 1.0);
+
+                world.progress_time(1.0);
+                assert!(
+                    player.cloned::<&Health>().current > 1.0,
+                    "regeneration never ran"
+                );
+                assert!(
+                    player.cloned::<&Hunger>().food < vitals::FULL,
+                    "the food bar never drained"
+                );
             },
         },
         Contract {

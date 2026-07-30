@@ -22,6 +22,8 @@ pub enum Call {
     /// Whether the client may take a mid-air jump.
     Flight(PlayerId, Flight),
     SetHealth(PlayerId, f32, f32),
+    /// A food bar, in vanilla food points.
+    SetFood(PlayerId, u8),
     /// A potion effect applied to a player.
     Status(PlayerId, Status),
     SetHotbar(PlayerId, Vec<HotbarItem>),
@@ -240,6 +242,10 @@ impl Server for MockServer {
 
     fn set_health(&self, player: PlayerId, health: f32, max: f32) {
         self.push(Call::SetHealth(player, health, max));
+    }
+
+    fn set_food(&self, player: PlayerId, food: u8) {
+        self.push(Call::SetFood(player, food));
     }
 
     fn status(&self, player: PlayerId, status: Status) {

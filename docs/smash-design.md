@@ -153,8 +153,38 @@ on purpose: the old code ran it through armour, which let high-armour kits
 outlast everyone in a stalled game, and the relaunch fixed it. There is no
 sudden death in Super Smash Mobs; the starve timer is what it has instead.
 
+`[WIKI]` The bar is not a one-way clock: "if you do not attack, your hunger bar
+will start depleting, which can be filled back up by hitting other mobs with
+melee or your special skills", and the game's own front page leads with "attack
+enemies to refill your hunger bar". *How much* a hit puts back is stated
+nowhere, so `vitals::FOOD_PER_HIT` is `[APPROXIMATED]` at one food point --
+half a shank, exactly what one drain tick takes off, so a hit buys back an
+interval. It is the only number in the mechanic that is ours.
+
 `Armor::apply` and `DamageKind::is_reduced_by_armor` in
-`events/smash/src/module/damage.rs`.
+`events/smash/src/module/damage.rs`; the drain, the starve tick and the refill
+in `events/smash/src/module/vitals.rs`.
+
+### Regeneration is health per second, and the wiki is not decisive about it
+
+`[SHEET]` + `[WIKI]` Every kit carries a regeneration rate and they are all
+different: 0.40 for Creeper down to 0.15 for Blaze. The wiki lists them as bare
+"0.35 Regen Per Second" with no unit.
+
+`[INFERRED]` The unit implemented is health points -- half-hearts -- per second,
+which is what the kit table below means by "Regen (HP/s)" and the unit the rest
+of the crate counts health in. The wiki's Slime page glosses Slime's 0.35 as
+"regenerating 1 heart in just four seconds", and that fits neither reading:
+half-hearts per second gives 5.7 s to the heart, hearts per second gives 2.9 s.
+One loose sentence is not enough to move the unit, and the disagreement is
+recorded rather than resolved.
+
+Nothing in any source gates regeneration on being out of combat, and the design
+argues against it: health *is* the knockback percentage here, so a regeneration
+that stopped during a fight would be a percentage that only ever went up.
+`vitals::VitalsModule` therefore heals continuously, in combat and out, and
+stops for exactly one condition -- zero health, because the kill plane reads
+`Health::is_dead` in the same tick and a heal off zero would cancel deaths.
 
 ---
 
@@ -519,11 +549,21 @@ Stated plainly, because these are the parts nobody can see from the code.
    `Blocks`.
 2. **No Smash Crystal spawning.** The ultimates exist and are granted through the
    ordinary relationship; the beacon, the descent and the pickup are not built.
-3. **No hunger drain.** `hunger_interval` is carried on every kit and
-   `STARVE_DAMAGE` is defined, but nothing ticks it.
-4. **Assists.** Only the last hit is tracked.
-5. **Seventeen of the twenty-one kits.**
-6. **Teams and the Dominate variant.**
+3. **Assists.** Only the last hit is tracked.
+4. **Seventeen of the twenty-one kits.**
+5. **Teams and the Dominate variant.**
+
+Three things left this list on the same night and the list is shorter than the
+three, because two of them were one entry. Health regeneration and the hunger
+drain are `events/smash/src/module/vitals.rs` (ENG-11450); the double jump is
+`events/smash/src/module/jump.rs` (ENG-11440).
+
+What is still wrong, and is now wrong *visibly* rather than merely declared:
+the per-kit `hunger_interval` values. The changelog puts Zombie, Snowman and
+Wither Skeleton at 7 s and Spider, Wolf and Chicken at 6.25 s, and all six are
+still on the 7.75 s default. That was dead data disagreeing with a changelog
+while nothing read the field; it is a balance defect now that something does.
+ENG-11463, filed rather than folded in.
 
 ---
 
