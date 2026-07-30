@@ -337,24 +337,28 @@ proptest! {
     }
 
     /// A melee bonus applies only to who it names and only while it lasts.
+    ///
+    /// `remaining` is generated down through zero and below, because that is
+    /// where a bonus ends up: `expire_melee_bonus` subtracts a whole frame's
+    /// delta time and then asks, so the value the last swing of a lapsing
+    /// bonus sees is negative rather than exactly zero.
     #[test]
     fn a_melee_bonus_respects_its_target_and_its_expiry(
         flat in 0.0f32..10.0,
-        until in 0.0f32..100.0,
-        now in 0.0f32..100.0,
+        remaining in -5.0f32..100.0,
         targeted in any::<bool>(),
     ) {
         let marked = Entity::new(42);
         let other = Entity::new(43);
-        let bonus = MeleeBonus { flat, against: targeted.then_some(marked), until };
+        let bonus = MeleeBonus { flat, against: targeted.then_some(marked), remaining };
 
-        if now >= until {
-            prop_assert_eq!(bonus.applies_to(marked, now), 0.0, "an expired bonus still applied");
-            prop_assert_eq!(bonus.applies_to(other, now), 0.0);
+        if remaining <= 0.0 {
+            prop_assert_eq!(bonus.applies_to(marked), 0.0, "an expired bonus still applied");
+            prop_assert_eq!(bonus.applies_to(other), 0.0);
         } else {
-            prop_assert_eq!(bonus.applies_to(marked, now), flat);
+            prop_assert_eq!(bonus.applies_to(marked), flat);
             prop_assert_eq!(
-                bonus.applies_to(other, now),
+                bonus.applies_to(other),
                 if targeted { 0.0 } else { flat },
                 "a bonus aimed at one player reached another"
             );

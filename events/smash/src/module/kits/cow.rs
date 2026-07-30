@@ -203,14 +203,13 @@ fn mooshroom_madness(cast: &Cast<'_>) {
     cast.server.set_health(cast.player, current, max);
 
     // `against: None`, because the wiki's +1 is against everybody -- unlike
-    // Guardian's mark, which is the other user of this component. The deadline
+    // Guardian's mark, which is the other user of this component. The duration
     // is the ability layer's own, so the bonus and the mode cannot disagree
     // about when they end.
-    let now = cast.world.cloned::<&crate::module::damage::MatchClock>().0;
     cast.caster.set(MeleeBonus {
         flat: MOOSHROOM_BONUS_DAMAGE,
         against: None,
-        until: now + ability::ULTIMATE_SECONDS,
+        remaining: ability::ULTIMATE_SECONDS,
     });
 
     effect::afflict(

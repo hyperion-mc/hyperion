@@ -81,16 +81,31 @@ pub struct MeleeBonus {
     pub flat: f32,
     /// `None` means it applies to every victim.
     pub against: Option<Entity>,
-    /// Match clock time after which it stops counting. Kits that want a
-    /// permanent bonus set this to infinity.
-    pub until: f32,
+    /// Seconds of bonus left, counted down by `expire_melee_bonus`.
+    ///
+    /// Delta time and not a [`MatchClock`] deadline, for the reason
+    /// [`crate::module::effect::Expires`] gives about itself: that clock only
+    /// advances in `Phase::Playing`, so a deadline measured against it is
+    /// unreachable everywhere else and the bonus becomes permanent. Because
+    /// this component sits on the player rather than on the kit, permanent
+    /// also meant it survived the results screen, the next lobby and a change
+    /// of kit.
+    ///
+    /// That is what made `buffs_melee` unprovable in `nix run .#smash-e2e`
+    /// (ENG-11399), whose whole ability sweep runs in the hub: the second press
+    /// of Target Laser was measured against a baseline swing that already
+    /// carried the first press's bonus, so the swing could not get any harder
+    /// and a working ability read as broken.
+    ///
+    /// `f32::INFINITY` for a bonus that is meant never to run out.
+    pub remaining: f32,
 }
 
 impl MeleeBonus {
-    /// The addition this bonus makes to a swing at `victim` at time `now`.
+    /// The addition this bonus makes to a swing at `victim`.
     #[must_use]
-    pub fn applies_to(self, victim: Entity, now: f32) -> f32 {
-        if now >= self.until {
+    pub fn applies_to(self, victim: Entity) -> f32 {
+        if self.remaining <= 0.0 {
             return 0.0;
         }
         match self.against {
@@ -225,6 +240,20 @@ impl Module for DamageModule {
             .component::<MatchClock>()
             .add_trait::<flecs::Singleton>();
         world.set(MatchClock::default());
+
+        // Delta time, not the match clock the deadline used to be measured
+        // against: see [`MeleeBonus::remaining`]. Removed rather than left
+        // sitting at zero so a lapsed bonus leaves nothing behind on the
+        // player, and so `f32::INFINITY` -- which subtraction never moves --
+        // is the one value that stays.
+        world
+            .system_named::<&mut MeleeBonus>("expire_melee_bonus")
+            .each_iter(|it, index, bonus| {
+                bonus.remaining -= it.delta_time();
+                if bonus.remaining <= 0.0 {
+                    it.entity(index).remove(MeleeBonus::id());
+                }
+            });
 
         // Health is written here and read by the knockback observer this one
         // emits into. flecs tracks that at runtime and panics on the overlap,

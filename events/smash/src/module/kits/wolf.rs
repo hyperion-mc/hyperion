@@ -143,10 +143,9 @@ impl Module for Wolf {
                 if !plays(attacker, "Wolf") {
                     return;
                 }
-                let now = world.get::<&crate::module::damage::MatchClock>(|clock| clock.0);
                 let ceiling = RAVAGE_MAX_DAMAGE - 5.0;
                 let current = attacker
-                    .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(attacker.id(), now))
+                    .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(attacker.id()))
                     // `applies_to` is asked about the attacker itself only to
                     // reuse the expiry check; Ravage is never targeted, so any
                     // entity would answer the same.
@@ -154,7 +153,7 @@ impl Module for Wolf {
                 attacker.set(MeleeBonus {
                     flat: (current + RAVAGE_PER_STACK).min(ceiling),
                     against: None,
-                    until: now + RAVAGE_DECAY_SECS,
+                    remaining: RAVAGE_DECAY_SECS,
                 });
             });
     }
@@ -263,14 +262,13 @@ fn wolf_strike(cast: &Cast<'_>) {
 /// recharge much faster" is a Wolf Strike on a beat -- the kit's own lunge,
 /// arriving faster than its seven-second cooldown ever allows.
 fn frenzy(cast: &Cast<'_>) {
-    let now = cast.world.cloned::<&crate::module::damage::MatchClock>().0;
     // Strength III is +3 in vanilla's own table, which is also exactly the gap
     // between Wolf's base 5 and the 8 its own Ravage ceiling reaches -- so a
     // frenzied Wolf starts where a Wolf who has been landing hits ends up.
     cast.caster.set(MeleeBonus {
         flat: FRENZY_BONUS_DAMAGE,
         against: None,
-        until: now + ability::ULTIMATE_SECONDS,
+        remaining: ability::ULTIMATE_SECONDS,
     });
 
     effect::afflict(

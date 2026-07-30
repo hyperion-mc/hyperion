@@ -195,11 +195,7 @@ fn observed(bench: &Bench, observable: Observable, before: &Snapshot, held: bool
         // Measured rather than read off a component: what a player experiences
         // is the next swing hurting more, and a bonus that never reaches the
         // melee path is a bonus that does not exist.
-        Observable::BuffsMelee => {
-            let clock = bench.game.world.cloned::<&MatchClock>().0;
-            let boosted = melee_damage(bench, clock);
-            boosted > before.baseline_melee + 1e-3
-        }
+        Observable::BuffsMelee => melee_damage(bench) > before.baseline_melee + 1e-3,
         // The distinguishing word is *keeps*. Every ability can take health off
         // somebody once, and reading a single drop would pass for all fifty-one
         // of them. So the clock is advanced with nothing cast, and what is
@@ -321,8 +317,8 @@ fn probe_hit(bench: &Bench) -> bool {
 /// does. Under that version, deleting the bonus lookup from the swing path
 /// would have left every `buffs_melee` assertion green and the failure would
 /// have surfaced only in `nix run .#smash-e2e`, where a real client swings.
-fn melee_damage(bench: &Bench, now: f32) -> f32 {
-    let amount = smash::input::melee_damage(bench.caster(), bench.near, now);
+fn melee_damage(bench: &Bench) -> f32 {
+    let amount = smash::input::melee_damage(bench.caster(), bench.near);
 
     let victim = bench.game.world.entity_from_id(bench.near);
     let before = victim.cloned::<&Health>().current;
@@ -357,8 +353,7 @@ fn snapshot(bench: &Bench) -> Snapshot {
         .entity_from_id(bench.caster)
         .get::<&mut Health>(|health| health.current = health.max * 0.5);
 
-    let clock = bench.game.world.cloned::<&MatchClock>().0;
-    let baseline_melee = melee_damage(bench, clock);
+    let baseline_melee = melee_damage(bench);
     // Undo the probe swing so the ability under test sees a full-health victim.
     let victim = bench.game.world.entity_from_id(bench.near);
     victim.get::<&mut Health>(|health| health.current = health.max);
@@ -467,6 +462,90 @@ fn every_declared_effect_actually_happens() {
     }
 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Longer than the longest melee bonus any ability grants, which is an
+/// ultimate's own window. A kit that grants a longer one has to raise this with
+/// it, and fails the test below rather than quietly outlasting it.
+const PAST_EVERY_MELEE_BONUS: f32 = ability::ULTIMATE_SECONDS + 1.0;
+
+/// A melee bonus runs out even where the match clock does not run.
+///
+/// [`smash::module::damage::MeleeBonus`] used to carry a `MatchClock` deadline,
+/// and the lobby advances that clock only in `Phase::Playing`. Everywhere else
+/// -- the hub, the results screen, this bench -- it is pinned, so the deadline
+/// is unreachable and the bonus is permanent; and because the component sits on
+/// the player rather than on the kit, permanent outlasted a change of kit too.
+///
+/// [`every_declared_effect_actually_happens`] structurally cannot catch that.
+/// It builds a fresh [`Bench`] per ability and presses once, so no bonus is
+/// ever still alive when the next measurement is taken. What noticed was
+/// `nix run .#smash-e2e`, whose sweep runs entirely in the hub and presses each
+/// ability three times: the second press was measured against a baseline swing
+/// that already carried the first press's bonus, so the swing could not get any
+/// harder and two working abilities read as broken (ENG-11399).
+///
+/// So the clock being frozen is asserted here rather than assumed. A version of
+/// this that let the clock run would pass against the very deadline it exists
+/// to refuse.
+#[test]
+fn a_melee_bonus_runs_out_even_though_the_match_clock_does_not() {
+    let manifest = ability::manifest(&Game::new().world);
+    let mut checked = 0;
+
+    for entry in manifest
+        .iter()
+        .filter(|entry| entry.proves.contains(&Observable::BuffsMelee))
+    {
+        let bench = Bench::new();
+        bench.reset(entry.kit);
+        bench.arm(entry);
+
+        let base = smash::input::melee_damage(bench.caster(), bench.near);
+        bench.press(entry);
+        // One tick, because the `set` an ability makes from inside an observer
+        // is deferred to the end of the frame.
+        bench.game.advance(TICK, 1);
+        let boosted = smash::input::melee_damage(bench.caster(), bench.near);
+        assert!(
+            boosted > base + 1e-3,
+            "{} / {}: the press left the swing at {base}",
+            entry.kit,
+            entry.name
+        );
+
+        let frozen = bench.game.world.cloned::<&MatchClock>().0;
+        bench.game.advance(PAST_EVERY_MELEE_BONUS, 200);
+        let now = bench.game.world.cloned::<&MatchClock>().0;
+        assert!(
+            (now - frozen).abs() < 1e-6,
+            "the bench's match clock ran from {frozen} to {now}, so this proves nothing about a \
+             deadline that is unreachable while it is stopped"
+        );
+        // The swing first, because that is the claim a player can feel; the
+        // component going away is the housekeeping behind it.
+        let after = smash::input::melee_damage(bench.caster(), bench.near);
+        assert!(
+            (after - base).abs() < 1e-3,
+            "{} / {}: the swing still takes {after} rather than {base}, {PAST_EVERY_MELEE_BONUS} \
+             seconds after a bonus that was supposed to run out",
+            entry.kit,
+            entry.name
+        );
+        assert!(
+            !bench.caster().has(smash::module::damage::MeleeBonus::id()),
+            "{} / {}: a lapsed bonus was left on the player",
+            entry.kit,
+            entry.name
+        );
+
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "no ability in the registry declares buffs_melee, so this test looked at nothing"
+    );
 }
 
 /// Every ability draws something on the press that fires it.
