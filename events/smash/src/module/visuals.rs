@@ -224,10 +224,10 @@ pub fn wingbeat(at: Vec3) -> Particles {
         },
         at - Vec3::Y * 0.3,
     )
-        .count(16)
-        .offset(Vec3::new(0.6, 0.2, 0.6))
-        .speed(0.06)
-        .long_distance(true)
+    .count(16)
+    .offset(Vec3::new(0.6, 0.2, 0.6))
+    .speed(0.06)
+    .long_distance(true)
 }
 
 /// Something swimming through air that is not water.
@@ -251,12 +251,16 @@ pub fn wake(at: Vec3) -> Particles {
 /// whether they are in it.
 pub fn ink(from: Vec3, toward: Vec3) -> Particles {
     let eye = from + Vec3::Y * CHEST;
-    Particles::line(Particle::SquidInk, eye, eye + toward.normalize_or_zero() * 4.0)
-        .points(16)
-        .count(4)
-        .offset(Vec3::splat(0.5))
-        .speed(0.2)
-        .long_distance(true)
+    Particles::line(
+        Particle::SquidInk,
+        eye,
+        eye + toward.normalize_or_zero() * 4.0,
+    )
+    .points(16)
+    .count(4)
+    .offset(Vec3::splat(0.5))
+    .speed(0.2)
+    .long_distance(true)
 }
 
 /// A melee lunge landing.
@@ -415,7 +419,7 @@ pub fn spray(at: Vec3) -> Particles {
 /// particle rises, so a ring of it reads as a wall standing up out of the
 /// ground rather than as a puddle. The one ultimate in the roster that is
 /// explicitly a *wave*, and a wave with no front is just damage.
-pub fn tide(at: Vec3, radius: f32) -> Particles {
+pub const fn tide(at: Vec3, radius: f32) -> Particles {
     Particles::ring(Particle::BubbleColumnUp, at, radius)
         .points(56)
         .count(3)
@@ -437,5 +441,156 @@ pub fn tossed_mob(at: Vec3, toward: Vec3) -> Particles {
     .count(12)
     .offset(Vec3::splat(0.3))
     .speed(0.05)
+    .long_distance(true)
+}
+
+/// A mouthful of something caustic thrown at somebody.
+///
+/// `minecraft:spit`, vanilla's llama spit, which is the one particle in the
+/// game that already means "a mob has launched a body fluid at you". Laid
+/// along the firing direction like [`ink`], because the ability is a fan and
+/// what a victim can act on is whether they are standing in it. `NoxiousGas`
+/// lost: it is a cloud that hangs, so it would belong where the bile lands
+/// rather than where it leaves, and the bile that lands is the half that
+/// already draws.
+pub fn bile(from: Vec3, toward: Vec3) -> Particles {
+    let eye = from + Vec3::Y * CHEST;
+    Particles::line(Particle::Spit, eye, eye + toward.normalize_or_zero() * 2.5)
+        .points(10)
+        .count(3)
+        .offset(Vec3::splat(0.3))
+        .speed(0.15)
+        .long_distance(true)
+}
+
+/// Something dead reaching out for somebody.
+///
+/// `minecraft:soul`, which vanilla lifts off soul sand under a player wearing
+/// Soul Speed: its one picture of the dead grabbing at whatever walks past.
+/// [`bowshot`]'s `crit` is the closer fit to the *arrow* and lost anyway: the
+/// arrow is only the delivery, the hand on the far end of it is the ability,
+/// and the particle is the Skeleton's besides.
+pub fn grasp(from: Vec3, toward: Vec3) -> Particles {
+    let eye = from + Vec3::Y * CHEST;
+    Particles::line(Particle::Soul, eye, eye + toward.normalize_or_zero() * 3.0)
+        .points(12)
+        .speed(DRIFT)
+        .long_distance(true)
+}
+
+/// Eggs leaving somebody at speed.
+///
+/// `minecraft:egg_crack`, what vanilla draws when a thrown egg breaks and when
+/// a chicken lays one. The eggs are already flying entities, so what was
+/// missing is the muzzle, on the same reasoning as [`torn_earth`]: the thing
+/// nobody could see was the moment of them leaving.
+pub fn egg_burst(from: Vec3, toward: Vec3) -> Particles {
+    let eye = from + Vec3::Y * CHEST;
+    Particles::line(
+        Particle::EggCrack,
+        eye,
+        eye + toward.normalize_or_zero() * 2.0,
+    )
+    .points(8)
+    .count(2)
+    .offset(Vec3::splat(0.25))
+    .speed(0.1)
+    .long_distance(true)
+}
+
+/// Feathers knocked loose by something small beating its wings hard.
+///
+/// White `minecraft:dust`. Vanilla draws nothing at all when a chicken flaps
+/// and has no feather particle, so this is a colour choice rather than a
+/// citation, called out on the same terms as [`milk`]. [`wingbeat`] lost:
+/// `dragon_breath` is sized and coloured for the largest thing in the game and
+/// the Chicken is the smallest.
+pub fn feathers(at: Vec3) -> Particles {
+    Particles::burst(
+        Particle::Dust {
+            color: Argb::opaque(0xFF, 0xFF, 0xFF),
+            scale: 0.8,
+        },
+        at + Vec3::Y * CHEST,
+    )
+    .count(14)
+    .offset(Vec3::new(0.4, 0.5, 0.4))
+    .speed(0.08)
+    .long_distance(true)
+}
+
+/// A body big enough that standing near it is the whole danger.
+///
+/// `minecraft:item_slime` again, deliberately the same particle as [`slam`]:
+/// both are the Slime's own body arriving on somebody, and a second slime
+/// picture would invent a distinction the kit does not make. A shell at the
+/// radius that hurts and not a puff at the caster, because the only fact a
+/// player needs off a Giga Slime is whether they are inside it.
+pub const fn giga_body(at: Vec3, radius: f32) -> Particles {
+    Particles::sphere(Particle::ItemSlime, at, radius)
+        .points(48)
+        .count(2)
+        .speed(0.05)
+        .long_distance(true)
+}
+
+/// Something catching light and staying alight.
+///
+/// `minecraft:flame`, full size, as a shell around the caster. [`burn`] draws
+/// the same particle as a puff at the chest, and the difference in shape is
+/// load-bearing: that one is a point of damage ticking on a victim, this one
+/// is a Blaze announcing twenty seconds of being a hazard, and a player has to
+/// be able to tell at a glance which of the two is in front of them.
+pub fn pyre(at: Vec3, radius: f32) -> Particles {
+    Particles::sphere(Particle::Flame, at + Vec3::Y, radius)
+        .points(40)
+        .count(2)
+        .speed(0.05)
+        .long_distance(true)
+}
+
+/// The violet a Guardian's beam reads as.
+///
+/// Vanilla's guardian laser is a rendered beam texture and not a particle at
+/// all, so like [`milk`] this is a colour chosen rather than one cited off an
+/// effect. Named once because two functions draw it, and a flare in one violet
+/// with a beam in another would be two lasers.
+const LASER_VIOLET: Argb = Argb::opaque(0x9A, 0x5C, 0xD0);
+
+/// A beam singling one player out.
+///
+/// Drawn between the two players: the entire content of a mark is *who* it
+/// landed on, and a puff at the caster answers everything except that.
+pub fn mark_beam(from: Vec3, to: Vec3) -> Particles {
+    Particles::line(
+        Particle::Dust {
+            color: LASER_VIOLET,
+            scale: 1.0,
+        },
+        from + Vec3::Y * CHEST,
+        to + Vec3::Y * CHEST,
+    )
+    .points(32)
+    .long_distance(true)
+}
+
+/// An eye lighting up, whether or not a beam follows it.
+///
+/// [`mark_beam`]'s violet at [`mark_beam`]'s own origin, so the flare sits
+/// exactly where the beam roots and the two read as one ability. This exists
+/// because the beam needs a target and the press does not: a Guardian who
+/// presses the button with nobody in range spends the ability and, without
+/// this, sees nothing at all.
+pub fn laser_eye(at: Vec3) -> Particles {
+    Particles::burst(
+        Particle::Dust {
+            color: LASER_VIOLET,
+            scale: 1.0,
+        },
+        at + Vec3::Y * CHEST,
+    )
+    .count(10)
+    .offset(Vec3::splat(0.2))
+    .speed(DRIFT)
     .long_distance(true)
 }

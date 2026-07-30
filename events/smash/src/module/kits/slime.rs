@@ -179,6 +179,16 @@ fn slime_slam(cast: &Cast<'_>) {
 /// It used to be one splash and no shield at all, which is the two halves of
 /// the tooltip both missing.
 fn giga_slime(cast: &Cast<'_>) {
+    // First statement in the function, ahead of the energy write and the
+    // affliction, so nothing the ultimate does can come between the press and
+    // the picture of it. Drawn at the press as well as on every beat below:
+    // the first beat is next frame at the earliest, and the one thing
+    // everybody nearby has to learn immediately is that the small slime they
+    // were about to fight is now nineteen seconds of untouchable with a five
+    // block reach.
+    cast.server
+        .particles(visuals::giga_body(giga_center(cast), GIGA_RADIUS));
+
     // Growing back to full is part of the ultimate: the bar is the hitbox.
     cast.caster.get::<&mut Energy>(|energy| {
         energy.current = energy.max;
@@ -203,6 +213,22 @@ const GIGA_INTERVAL: f32 = 1.0;
 /// `[APPROXIMATED]`. Per beat, and there are nineteen.
 const GIGA_DAMAGE: f32 = 4.0;
 
+/// `[APPROXIMATED]`. How far the body reaches, and the radius it is drawn at,
+/// so the shell a player backs away from is the shell that hits them.
+const GIGA_RADIUS: f32 = 5.0;
+
+/// How far above the feet the middle of a slime that size sits. Named because
+/// the contact and the shell both have to be centred on the body rather than
+/// on the ground under it.
+const GIGA_CENTER: f32 = 3.0;
+
+fn giga_center(cast: &Cast<'_>) -> Vec3 {
+    cast.position.0 + Vec3::Y * GIGA_CENTER
+}
+
 fn giga_contact(cast: &Cast<'_>) {
-    splash_at(cast, cast.position.0 + Vec3::Y * 3.0, 5.0, GIGA_DAMAGE, 2.0);
+    let center = giga_center(cast);
+    splash_at(cast, center, GIGA_RADIUS, GIGA_DAMAGE, 2.0);
+    cast.server
+        .particles(visuals::giga_body(center, GIGA_RADIUS));
 }
