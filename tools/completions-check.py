@@ -493,22 +493,33 @@ def run(args):
             "answer out of the graph and never ask" % (name_arg.name, name_arg.suggests)
         )
 
-    set_node = path_of(graph, ["perms", "set"])
-    if set_node is None:
-        raise SystemExit("the graph has no /perms set, only %s" % literals)
-    set_args = arguments_under(graph, set_node)
-    if len(set_args) != 1 or set_args[0].suggests != ASK_SERVER:
-        raise SystemExit("/perms set does not lead to one ask_server argument")
+    # `/perms get`, not `/perms set`. This client joins as `Normal`, and
+    # ENG-10871 gave every subcommand its own group precisely so the tree a
+    # `Normal` player is sent stops carrying `set`. Reading a permission is
+    # still `Normal`, so `get` is the subcommand that proves the ask_server
+    # wiring for a player argument.
+    if path_of(graph, ["perms", "set"]) is not None:
+        raise SystemExit(
+            "a Normal player was sent /perms set in the command tree. Granting "
+            "a permission is an Admin subcommand (ENG-10871); offering it is "
+            "how the escalation used to be discoverable"
+        )
+    get_node = path_of(graph, ["perms", "get"])
+    if get_node is None:
+        raise SystemExit("the graph has no /perms get, only %s" % literals)
+    get_args = arguments_under(graph, get_node)
+    if len(get_args) != 1 or get_args[0].suggests != ASK_SERVER:
+        raise SystemExit("/perms get does not lead to one ask_server argument")
     check.prove(
         "an argument tells the client to ask the server",
-        "/kit <%s> is %s with provider %s, and /perms set <%s> is %s with the "
+        "/kit <%s> is %s with provider %s, and /perms get <%s> is %s with the "
         "same provider"
         % (
             name_arg.name,
             name_arg.parser,
             name_arg.suggests,
-            set_args[0].name,
-            set_args[0].parser,
+            get_args[0].name,
+            get_args[0].parser,
         ),
     )
 
@@ -609,10 +620,11 @@ def run(args):
 
     # 7. The second live source: a different tag, owned by a different crate,
     #    reached through the same relation.
-    #    Both spellings, because `set` and `get` are two nodes carrying the one
-    #    clap id `player`: a declaration that wired only the first would pass
-    #    on `set` and offer nothing on `get`.
-    for command in ("/perms set ", "/perms get "):
+    #    `get` only, and not `set`: this client is `Normal`, so since ENG-10871
+    #    `set` is not in the tree it was sent and a vanilla client would never
+    #    press tab there. `set` and `get` are two nodes carrying the one clap id
+    #    `player`, so the relation this proves is the same one either way.
+    for command in ("/perms get ",):
         players = client.suggestions_for(command)
         if players.entries != [args.name]:
             raise SystemExit(
@@ -621,9 +633,9 @@ def run(args):
             )
     check.prove(
         "a player argument offers whoever is connected",
-        "the one connected player, %s, is the one name offered under both "
-        "/perms set and /perms get, queried through (Suggests, Player) at the "
-        "moment tab was pressed" % args.name,
+        "the one connected player, %s, is the one name offered under "
+        "/perms get, queried through (Suggests, Player) at the moment tab was "
+        "pressed" % args.name,
     )
 
     return check.report()

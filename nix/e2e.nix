@@ -196,6 +196,24 @@ let
       # `timeout` around this script sends TERM, and bash runs an EXIT trap on
       # a signal only when that signal is trapped too. Without this a check
       # that hits its cap leaves the stack running.
+      #
+      # WITH this, it still does, and do not read the paragraph above as saying
+      # otherwise (ENG-11370). A trap is dispatched between commands, never
+      # during one, and this script spends its whole run inside the foreground
+      # `python3 ... | tee` pipeline below. The TERM is queued there until the
+      # client finishes on its own -- which is the thing the cap exists to
+      # bound. Measured: `smash-e2e` declares `timeout = 480`, its derivation
+      # carries `timeout 480 hyperion-e2e-driver`, and the run took 633s with
+      # the client still logging at 631.23s. `timeout` did fire (nix reports
+      # exit 124) and stopped nothing. So today the cap only relabels the exit
+      # code of a run that completed, which also makes "timed out" and "failed
+      # its assertions" indistinguishable from outside.
+      #
+      # The fix is to background the client and `wait` on it, because bash does
+      # interrupt `wait` to dispatch a trap; ENG-11370 carries the patch and the
+      # two directions it has to be watched failing in first. Left undone here
+      # deliberately: this is shared by every e2e gate and getting it wrong
+      # turns all of them green.
       trap 'exit 143' TERM INT
 
       fail() {
