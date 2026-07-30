@@ -1259,7 +1259,20 @@
             # `runCommandCC`, not `runCommand`: the latter is `stdenvNoCC` and
             # several build scripts in the graph are C. Without it the check
             # fails at `linker `cc` not found` rather than at a lint.
-            clippy = pkgs.runCommandCC "hyperion-clippy" { inherit nativeBuildInputs; } ''
+            clippy = pkgs.runCommandCC "hyperion-clippy" {
+              inherit nativeBuildInputs;
+              # Clippy builds the dev profile, so every C build script in the
+              # graph compiles at `-O0`, and glibc answers `_FORTIFY_SOURCE`
+              # with a `#warning` whenever optimisation is off. An autoconf
+              # probe that reads stderr then misreads its own test as a
+              # compile failure: on run 30514788219 tikv-jemalloc-sys died at
+              # `configure: error: cannot determine return type of strerror_r`,
+              # nowhere near the real cause. The release build never meets this
+              # because it compiles at -O3. Darwin never meets it either, which
+              # is why this check was green on aarch64-darwin and red on the
+              # first x86_64-linux run.
+              hardeningDisable = [ "fortify" ];
+            } ''
               cp -r ${./.}/. .
               chmod -R u+w .
               # Points CARGO_HOME at the vendored crates cargoUnit already
