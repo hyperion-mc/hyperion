@@ -29,7 +29,7 @@ use smash::{
         kit::{self, KitStats},
         knockback::Knockback,
         lobby::{Lobby, Phase},
-        player::{Energy, Health, OnGround, Position},
+        player::{Energy, Flying, Health, OnGround, Position},
         vitals::Hunger,
     },
     server::{PlayerId, mock::Call},
@@ -338,25 +338,26 @@ fn hunger_interval_changes_how_fast_the_food_bar_drains() {
     });
 }
 
-/// What ENG-11440 has to make happen.
+/// Press the jump key in mid-air, the way a client does.
 ///
-/// There is no entry point for a double jump in the game at all today -- the
-/// press is not routed, `JumpsLeft` is re-armed and never spent, and no
-/// velocity is applied -- so there is nothing this function can call. It is the
-/// one line ENG-11440 replaces, and the two tests below are `#[ignore]` until
-/// it does.
+/// Deliberately the production path and not a shortcut past it. ENG-11440
+/// routes a double jump through vanilla's flight toggle: `arm_double_jump`
+/// grants permission while a player is airborne with jumps left, the client
+/// answers by setting the flying flag, and `spend_double_jump` reads that
+/// mirror. Setting the two mirrors is exactly what the host does with the
+/// packet; nothing here reaches past the systems under test to apply an
+/// impulse itself, which would make these gates decoration.
 fn double_jump(gate: &Gate, side: &Side) {
-    // Airborne, which is the only precondition the game already models.
-    gate.view(side.player).set(OnGround(false));
+    let player = gate.view(side.player);
+    player.set(OnGround(false));
+    // One tick for `arm_double_jump` to grant permission, as it would before a
+    // real client could press anything.
+    gate.advance(harness::TICK);
+    player.set(Flying(true));
 }
 
 /// `jump_power`: the double jump's impulse.
-///
-/// `#[ignore]`: fails until ENG-11440 lands, because nothing applies the
-/// impulse. That failure *is* the finding -- do not delete the test to make the
-/// suite green.
 #[test]
-#[ignore = "ENG-11440: double jump is not implemented; nothing reads jump_power"]
 fn jump_power_changes_how_high_a_double_jump_goes() {
     let gate = Gate::new(|stats| stats.jump_power = base().jump_power * 2.0);
 
@@ -369,10 +370,7 @@ fn jump_power_changes_how_high_a_double_jump_goes() {
 }
 
 /// `jump_control`: whether the double jump goes where you look.
-///
-/// `#[ignore]`: see [`jump_power_changes_how_high_a_double_jump_goes`].
 #[test]
-#[ignore = "ENG-11440: double jump is not implemented; nothing reads jump_control"]
 fn jump_control_changes_which_way_a_double_jump_goes() {
     let gate = Gate::new(|stats| stats.jump_control = !base().jump_control);
 
@@ -388,6 +386,30 @@ fn jump_control_changes_which_way_a_double_jump_goes() {
     gate.differ("the direction the double jump asked for", |gate, side| {
         observable_vec(gate.game.server.total_velocity(gate.id(side.player)))
     });
+}
+
+/// `jump_count`: how many mid-air jumps a kit gets before touching ground.
+///
+/// Arrived with ENG-11440 as a tenth `KitStats` field, and this file refused to
+/// compile until it was named -- `pattern does not mention field jump_count`,
+/// which is the destructure in
+/// [`every_kit_stats_field_is_gated_by_a_test_in_this_file`] doing its job on
+/// its first real test.
+#[test]
+fn jump_count_changes_how_many_double_jumps_a_kit_gets() {
+    let gate = Gate::new(|stats| stats.jump_count = base().jump_count + 3);
+
+    // More presses than the base kit has jumps, so the two sides diverge on
+    // the kit's allowance rather than on how many times the test pressed.
+    for _ in 0..4 {
+        gate.each(double_jump);
+        gate.advance(0.1);
+    }
+
+    gate.differ(
+        "the total impulse a run of mid-air jumps asked for",
+        |gate, side| observable_vec(gate.game.server.total_velocity(gate.id(side.player))),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +443,7 @@ fn every_kit_stats_field_is_gated_by_a_test_in_this_file() {
         "max_health",
         "jump_power",
         "jump_control",
+        "jump_count",
         "energy",
     ];
 
@@ -433,6 +456,7 @@ fn every_kit_stats_field_is_gated_by_a_test_in_this_file() {
         max_health: _,
         jump_power: _,
         jump_control: _,
+        jump_count: _,
         energy: _,
     } = KitStats::default();
 
