@@ -488,6 +488,89 @@ mod tests {
         ]);
     }
 
+    /// The whole of [`operation`]'s truth table: one field moved is that
+    /// field's own operation, two or more is a fresh `Add`, and nothing moved
+    /// is silence.
+    ///
+    /// A table here rather than only on the wire, because a gate cannot always
+    /// arrange to see a given transition. `smash-hud-e2e` used to read the
+    /// title-only case off the server's own CPU bar, which produces one only
+    /// when the host's load crosses a whole percent of a core, so on a quiet
+    /// 128-core builder that transition never happened inside the gate's
+    /// window and the check went red for the machine being idle. What the
+    /// table gives up is the wire itself, which is why `diff_check` in
+    /// `tools/hud-check.py` still reads every packet of a real run.
+    #[test]
+    fn one_field_moving_costs_that_field_and_two_cost_the_whole_bar() {
+        fn name(operation: Option<&BossEventOperation<'_>>) -> &'static str {
+            match operation {
+                None => "nothing",
+                Some(BossEventOperation::Add { .. }) => "add",
+                Some(BossEventOperation::Remove) => "remove",
+                Some(BossEventOperation::UpdateProgress(_)) => "update_progress",
+                Some(BossEventOperation::UpdateName(_)) => "update_name",
+                Some(BossEventOperation::UpdateStyle { .. }) => "update_style",
+                Some(BossEventOperation::UpdateProperties(_)) => "update_properties",
+            }
+        }
+
+        let before = Sent {
+            title: Text::text("before"),
+            progress: 0.25,
+            style: Style::default(),
+            effects: Effects::default(),
+        };
+        let after = Sent {
+            title: Text::text("after"),
+            progress: 0.5,
+            style: Style {
+                colour: BossBarColor::Red,
+                overlay: BossBarOverlay::Notched6,
+            },
+            effects: Effects(BossBarProperties::ALL),
+        };
+
+        // One bit per field, so every subset of the four is visited and not
+        // only the five the code spells out.
+        for moved in 0..16_u8 {
+            let mut now = before.clone();
+            if moved & 1 != 0 {
+                now.title = after.title.clone();
+            }
+            if moved & 2 != 0 {
+                now.progress = after.progress;
+            }
+            if moved & 4 != 0 {
+                now.style = after.style;
+            }
+            if moved & 8 != 0 {
+                now.effects = after.effects;
+            }
+            let expected = match moved {
+                0 => "nothing",
+                1 => "update_name",
+                2 => "update_progress",
+                4 => "update_style",
+                8 => "update_properties",
+                _ => "add",
+            };
+            assert_eq!(
+                name(operation(&before, &now).as_ref()),
+                expected,
+                "fields {moved:#06b}"
+            );
+        }
+
+        // And a narrow operation carries the new value and not the old, which
+        // the names above cannot tell apart.
+        let mut retitled = before.clone();
+        retitled.title = after.title.clone();
+        assert!(matches!(
+            operation(&before, &retitled),
+            Some(BossEventOperation::UpdateName(title)) if title == after.title
+        ));
+    }
+
     /// Deleting a viewer takes away what that viewer was told and leaves
     /// everybody else's bar alone.
     ///
