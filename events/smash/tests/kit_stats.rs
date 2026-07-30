@@ -407,7 +407,12 @@ fn jump_control_changes_which_way_a_double_jump_goes() {
 /// check anywhere notices that nothing reads it.
 #[test]
 fn every_kit_stats_field_is_gated_by_a_test_in_this_file() {
-    const FIELDS: [&str; 9] = [
+    // A slice and not a `[&str; 9]`. The nine is not load-bearing -- the
+    // destructure below is what refuses a tenth field -- and a second place
+    // holding the count is a second place to get it wrong. #1095 reached the
+    // same conclusion from the other direction with `BarSlot::COUNT =
+    // ALL.len()`.
+    const FIELDS: &[&str] = &[
         "melee_damage",
         "armor",
         "knockback_taken",
@@ -440,7 +445,8 @@ fn every_kit_stats_field_is_gated_by_a_test_in_this_file() {
         .collect();
 
     let missing: Vec<&str> = FIELDS
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|field| !gated.iter().any(|name| name.starts_with(field)))
         .collect();
     assert!(
