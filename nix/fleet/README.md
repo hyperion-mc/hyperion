@@ -563,6 +563,117 @@ Open:
   has to remember, and it is the one that would have caught the twelve hours of
   `active` above.
 
+## What the live fleet is running, and how to check
+
+**hyperion's root `flake.lock` is the record.** Not index's, not a pin, not this
+file -- this file goes stale and the lock cannot. It names the platform revision
+the guests are built from: index `69904c6e` as of 2026-07-30.
+
+That claim is checkable rather than asserted. Realise each node's derivation
+from the lock and compare against what the guests actually run:
+
+```sh
+# what the lock says the nodes should be
+for a in hyperion-game-system hyperion-proxy-0-system \
+         hyperion-proxy-1-system hyperion-proxy-2-system; do
+  drv=$(nix eval --raw ".#packages.x86_64-linux.$a.drvPath")
+  nix path-info --json "${drv}^out"
+done
+
+# what they are
+for vm in hyperion-game hyperion-proxy-0 hyperion-proxy-1 hyperion-proxy-2; do
+  ix shell "$vm" -- sh -c 'readlink -f /nix/var/nix/profiles/system'
+done
+```
+
+`drv^out` and not `outPath`, for the reason in the section above: these are
+content-addressed derivations and `outPath` is a placeholder.
+
+### Rollback targets, a snapshot and therefore perishable
+
+Read at **2026-07-30T06:15Z**, running hyperion `8b9a840` on index `69904c6e`:
+
+    hyperion-game     system-14-link  skj499hs4324ksjfi3pccwg7fjs57iiw
+    hyperion-proxy-0  system-8-link   6bcd07m258a8m34dspkmbznyr972s4f7
+    hyperion-proxy-1  system-8-link   77knv9by7ggf5wvsnsy3kiqmv2qj6z03
+    hyperion-proxy-2  system-5-link   ii74ikhydnpdzfy5slxfx412n98n6242
+
+**This list is a snapshot and every apply invalidates it.** Do not trust it;
+re-read it, which is one command:
+
+```sh
+for vm in hyperion-game hyperion-proxy-0 hyperion-proxy-1 hyperion-proxy-2; do
+  ix shell "$vm" -- sh -c 'readlink /nix/var/nix/profiles/system'
+done
+```
+
+Rolling one back, profile first so the pointer and the running system cannot
+disagree:
+
+```sh
+ix shell <vm> -- sh -c 'nix-env --profile /nix/var/nix/profiles/system --rollback \
+  && /nix/var/nix/profiles/system/bin/switch-to-configuration switch'
+```
+
+Measured: about one 2 s probe interval, because the closure is already on the
+host.
+
+### Index history holds the older definition, and it is not a recovery target
+
+The fleet lived at `examples/minecraft/hyperion` in index until 2026-07-30, and
+that copy is still in history:
+
+```sh
+git -C index checkout 7f602938fc30f184055384a2d212ec11d5b57df1 \
+  -- examples/minecraft/hyperion
+```
+
+**Useful as history, misleading as a recovery target.** It pins index
+`76e59e1a`, which is what the fleet ran *before* 2026-07-30T06:00Z and is not
+current. Checking it out during an incident recovers the previous platform while
+looking like it recovers the current one.
+
+## Apply from a checkout of `main`, not from a branch
+
+`nix build` and `ix apply` from a feature branch stamp that branch's commit into
+`HYPERION_BUILD_REV`, and the game puts it on a boss bar in front of every
+player. A branch commit is not reachable from `main`, so `git show <rev>` on a
+fresh clone returns nothing and the natural conclusion is that the clone is
+stale rather than that the stamp is meaningless.
+
+It happened on 2026-07-30: the live server advertised `33e0d33` for ten minutes.
+**Every other signal was green** -- apply exit 0, four `✓ ready`,
+`NRestarts=0`, the `drv^out` identity check matching, the endpoint serving.
+Nothing surfaces this except reading the deployed wrapper:
+
+```sh
+ix shell hyperion-game -- sh -c \
+  'E=$(systemctl cat hyperion-game-server.service | grep -o "/nix/store/[^ ]*-smash-0.1.0-stamped");
+   grep -o "HYPERION_BUILD_[A-Z]*=.[^\x27]*." "$E/bin/smash"'
+```
+
+Treat that as a standing post-apply check, and confirm the rev is one
+`git merge-base --is-ancestor <rev> origin/main` accepts. ENG-11491 tracks
+making the apply refuse an unreachable rev rather than relying on the habit.
+
+## Checking the server answers: `mcping.py` moved
+
+It is `nix/fleet/mcping.py` in this repository. **The old path,
+`index/examples/minecraft/hyperion/mcping.py`, is gone** -- and it is the one in
+everybody's shell history, so the first thing tried during an incident will fail
+with `No such file or directory`.
+
+```sh
+python3 nix/fleet/mcping.py 15.204.111.75 25565
+```
+
+If a local checkout predates the move, read it out of the remote rather than
+pulling mid-incident:
+
+```sh
+git show origin/main:nix/fleet/mcping.py | python3 - 15.204.111.75 25565
+```
+
 ## Evaluating it without deploying
 
 Every node's closure, from this directory, against the index checkout you are
