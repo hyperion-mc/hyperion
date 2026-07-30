@@ -33,6 +33,9 @@ vendor/
 /extractor/run
 /extractor/bin
 
+# `nix run .#flake-gate` writes one json line per check here for CI to upload.
+/flake-gate-results.jsonl
+
 # `nix run .#certs` writes the development certificate authority and both
 # private keys here.
 /certs

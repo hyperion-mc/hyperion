@@ -116,6 +116,16 @@ jobs:
           extra-conf: |
             extra-experimental-features = ca-derivations
       - run: nix run --accept-flake-config .#flake-gate
+      # One json line per check: attr, outcome, drvPath. Uploaded even when the
+      # gate is red, because a red gate is the case a consumer differencing two
+      # runs is there for. `if: always()` and not `if: failure()`: the run this
+      # is compared against is usually the green one.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flake-gate-results
+          path: flake-gate-results.jsonl
+          if-no-files-found: error
 
   coverage:
     name: Code Coverage
