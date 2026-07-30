@@ -55,6 +55,28 @@ jobs:
   # branch has no classic protection either, so today nothing here is a
   # required context and a red job does not block a merge on its own. Renaming
   # a job is therefore safe and enforcement is weaker than it reads. ENG-10827.
+  #
+  # THE Clippy AND Formatting ENTRIES BELOW DUPLICATE `checks.clippy` AND
+  # `checks.rustfmt` IN THE `flake` JOB, AND THAT IS THE INTENDED STATE. Do not
+  # delete them to save the duplicated run.
+  #
+  # They answer different questions. This matrix answers "is this branch
+  # lint-clean" -- fast, standalone, and legible as its own line in the pull
+  # request's checks list. The gate's entry answers "does `results.jsonl` tell
+  # the truth about lint", which is what the differential verdict, the
+  # published baseline and the instability record all consume. Collapsing the
+  # two would leave the fast answer depending on the slow one: a red clippy
+  # would surface at minute thirty instead of minute two, and loop length is
+  # the thing this repository keeps paying for.
+  #
+  # The duplication is execution, not definition. Both paths invoke the same
+  # `checkScripts.lint` / `checkScripts.fmt` derivation, so there is already
+  # exactly one source of truth for the command and the flags, and merging the
+  # jobs would collapse nothing that is currently split.
+  #
+  # Until ENG-11424 the gate ran neither. `checks = scripts // { ... }`, so
+  # `checks.lint` was the SCRIPT: building it ran shellcheck over the text of a
+  # cargo command and never ran cargo, while the gate reported `ok lint`.
   check:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
