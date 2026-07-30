@@ -134,6 +134,17 @@
           # a `nix flake check` can afford.
           kitSkinPython = pkgs.python3.withPackages (python: [ python.cryptography ]);
 
+          # The client scripts, plus the rule they are held to. Narrow on
+          # purpose: a check whose input is the whole tree reruns on every
+          # commit and stops being cheap.
+          wireAssertionSource = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./nix/verify-wire-assertions.py
+              ./tools
+            ];
+          };
+
           # The files the skin check reads: the payloads, Mojang's keys, and the
           # kit sources that declare which payload is whose. Narrow on purpose,
           # so editing an unrelated Rust file does not rebuild the check.
@@ -1338,6 +1349,21 @@
             smash-hotbar-e2e-app = scripts.smash-hotbar-e2e;
             smash-hud-e2e-app = scripts.smash-hud-e2e;
             oob-move-e2e-app = scripts.oob-move-e2e;
+
+            # A gate script may not wait on one packet and assert on the next.
+            # The failure that shipped read as a server bug for an afternoon:
+            # `smash-selector-e2e` reported an action bar the server had sent
+            # 0.2 ms earlier, because the wait was keyed on the chat line in
+            # front of it. See nix/verify-wire-assertions.py.
+            wire-assertions-are-their-own-wait =
+              pkgs.runCommand "hyperion-wire-assertions-are-their-own-wait"
+                {
+                  nativeBuildInputs = [ pkgs.python3 ];
+                }
+                ''
+                  python3 ${wireAssertionSource}/nix/verify-wire-assertions.py \
+                    ${wireAssertionSource} | tee "$out"
+                '';
 
             # Every kit's skin, checked offline against Mojang's committed
             # public keys. A derivation rather than only an app, because the
