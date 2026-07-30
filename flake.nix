@@ -1463,9 +1463,34 @@
           checks = baseChecks // {
             flake-gate = import ./nix/ci/flake-gate.nix {
               inherit lib system;
-              inherit (pkgs) writeShellApplication;
+              inherit (pkgs) writeShellApplication bash jq;
               names = builtins.attrNames checks;
             };
+
+            # The differential verdict, exercised against fixtures rather than
+            # against a real run: no network, no nix, no clock. Every row of the
+            # table in nix/ci/delta-gate.sh gets a case, and so does the inverse
+            # of every guard, because the failure mode of a test like this is
+            # passing for the wrong reason. Six deliberate mutations of the
+            # verdict logic were each caught by a named case before this landed.
+            delta-gate = pkgs.runCommand "check-delta-gate"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                  pkgs.gnused
+                ];
+              }
+              ''
+                install -m 0755 ${./nix/ci/delta-gate.sh} delta-gate.sh
+                install -m 0755 ${./nix/ci/delta-gate-tests.sh} delta-gate-tests.sh
+                # The suite locates the library beside itself, so both have to
+                # sit in one directory rather than being read from the store.
+                bash ./delta-gate-tests.sh
+                touch $out
+              '';
           };
 
         in

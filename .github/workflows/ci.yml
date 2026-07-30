@@ -23,6 +23,26 @@
 name: CI
 
 on:
+  # LEFT DELIBERATELY MANUAL. #1088 and #1089 removed every automatic trigger,
+  # and the header above has the reasoning: 18 consecutive red runs on main, no
+  # required status context, and three checks failing at random often enough to
+  # poison 61% of runs.
+  #
+  # This change answers two of those three and restores none of the triggers. A
+  # differential verdict makes a red base survivable and stops the three coin
+  # flips being blamed on anybody, but it does not make the checks green, and
+  # green-and-stays-green is the bar #1089 set. Restoring the triggers is a
+  # decision for whoever set that bar, not a side effect of landing the
+  # machinery that changes what the bar is worth.
+  #
+  # Until then `workflow_dispatch` exercises the whole path, and it is what
+  # produces the first baseline and the first instability samples.
+  #
+  # WHEN THE TRIGGERS COME BACK, ADD `schedule` WITH THEM. Running an unchanged
+  # tree again is the cleanest probe for nondeterminism there is, because the
+  # derivations are identical and any disagreement is therefore a proof. That
+  # record is what decides which checks are coin flips, and without it the gate
+  # only learns from the pushes people happen to make.
   workflow_dispatch:
 
 jobs:
@@ -96,15 +116,34 @@ jobs:
   flake:
     name: Flake
     runs-on: ubuntu-latest
+    # Reading the baseline and the instability record is two artifact API calls.
+    # Nothing here needs write access to anything.
+    permissions:
+      contents: read
+      actions: read
     # A runner-level guard, not a target. The gate realises every check from a
     # cold hosted store in one `nix build --keep-going`, so nix schedules them
     # up to `max-jobs` (auto, four here) rather than one at a time. The floor is
     # the release compile plus the longest single gate behind it: on run
     # 30500640846 that was roughly 500 seconds of crate graph and then
     # `smash-e2e` at 639.
+    #
+    # THIS NUMBER MUST DROP BELOW 60 BEFORE THE VERDICT BECOMES A REQUIRED
+    # CONTEXT. Ruleset 566717's merge_queue rule sets
+    # `check_response_timeout_minutes: 60`, so a job permitted to take 90 can be
+    # abandoned by the queue at 60, and the failure presents as a mysterious
+    # queue timeout rather than as two numbers that disagree. It is invisible
+    # today only because nothing is required. The invariant is `timeout-minutes`
+    # strictly below the queue timeout; either may move, they must not cross.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The differential verdict forfeits derivation-identity immunity for a
+          # pull request that changes what the derivation does not capture but
+          # the run depends on, and answering that needs the diff against the
+          # base rather than one commit.
+          fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           # The DAEMON is what decides whether a content-addressed derivation
@@ -115,7 +154,14 @@ jobs:
           # succeeds. The gate re-checks this itself and says so if it is lost.
           extra-conf: |
             extra-experimental-features = ca-derivations
-      - run: nix run --accept-flake-config .#flake-gate
+      - name: Flake gate
+        env:
+          HYPERION_GATE_OUT_DIR: ${{ runner.temp }}/gate/out
+          HYPERION_GATE_BASELINE: ${{ runner.temp }}/gate/baseline.json
+          HYPERION_GATE_INSTABILITY: ${{ runner.temp }}/gate/instability.json
+          HYPERION_GATE_CHANGED_FILES: ${{ runner.temp }}/gate/changed-files.txt
+        run: nix run --accept-flake-config .#flake-gate
+
       # One json line per check: attr, outcome, drvPath. Uploaded even when the
       # gate is red, because a red gate is the case a consumer differencing two
       # runs is there for. `if: always()` and not `if: failure()`: the run this
@@ -124,8 +170,112 @@ jobs:
         if: always()
         with:
           name: flake-gate-results
-          path: flake-gate-results.jsonl
+          path: ${{ runner.temp }}/gate/out/results.jsonl
           if-no-files-found: error
+
+      # Read before building, because a rejected baseline is a normal outcome
+      # that has to reach the summary rather than fail the job. Both scripts
+      # exit 0 whatever happens and print one line saying what they found.
+      - name: Read the baseline and the instability record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gate"
+          bash nix/ci/gate-artifacts.sh baseline "$RUNNER_TEMP/gate/baseline.json"
+          bash nix/ci/gate-artifacts.sh instability "$RUNNER_TEMP/gate/instability.json"
+
+      # What the pull request touches, for the immunity-forfeiture guard. An
+      # empty file (a push, a schedule) forfeits nothing, which is right: main
+      # is the reference and has no base to be judged against.
+      - name: List the files this pull request changes
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}...HEAD" \
+            >"$RUNNER_TEMP/gate/changed-files.txt"
+
+      - name: Flake gate
+        env:
+          HYPERION_GATE_OUT_DIR: ${{ runner.temp }}/gate/out
+          HYPERION_GATE_BASELINE: ${{ runner.temp }}/gate/baseline.json
+          HYPERION_GATE_INSTABILITY: ${{ runner.temp }}/gate/instability.json
+          HYPERION_GATE_CHANGED_FILES: ${{ runner.temp }}/gate/changed-files.txt
+        run: nix run --accept-flake-config .#flake-gate
+
+      # Publish on GREEN as well as red, and this is not an optimisation to
+      # skip. A pull request takes the NEWEST baseline, so the moment main goes
+      # green the newest baseline names no failures and every standing excuse
+      # disappears in the same instant. Publishing only on red would leave the
+      # last red baseline excusing failures that main has already repaired.
+      - name: Publish the baseline
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-check-failures
+          path: ${{ runner.temp }}/gate/out/results.json
+          retention-days: 14
+
+      # Only main and the nightly fold the record. A pull request reads it and
+      # does not write it: two pull requests finishing at once would each fold
+      # from the same parent and one set of samples would be lost, and the
+      # measured flake rate is defined over main runs anyway. The cost is that
+      # samples seen only on a pull request are not kept.
+      - name: Publish the instability record
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-instability
+          path: |
+            ${{ runner.temp }}/gate/out/instability.json
+            ${{ runner.temp }}/gate/out/flake-rate.json
+          retention-days: 30
+
+      # The verdict rides along on every run, green or red, so the decision and
+      # its evidence stay available after the log scrolls away.
+      - name: Publish the verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-verdict
+          path: |
+            ${{ runner.temp }}/gate/out/verdict.json
+            ${{ runner.temp }}/gate/out/results.json
+            ${{ runner.temp }}/gate/out/summary.md
+          retention-days: 14
+
+  # The pressure mechanism, and the only part of this that asks a person for
+  # anything. See nix/ci/standing-issue.sh for why it is one issue rewritten in
+  # place rather than a notification per red run.
+  #
+  # Its own job so that `issues: write` stays off the job that builds the tree.
+  # DRY RUN until someone sets GATE_ISSUE_APPLY=1: a script that files issues
+  # should be watched rendering its output before it is allowed to file
+  # anything, and the render is the whole of what it does.
+  standing-issue:
+    name: Standing issue
+    runs-on: ubuntu-latest
+    needs: flake
+    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-verdict
+          path: gate
+      - uses: actions/download-artifact@v4
+        with:
+          name: gate-instability
+          path: gate
+        continue-on-error: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          # Flip to "1" to let it write. One line, deliberately.
+          GATE_ISSUE_APPLY: "0"
+        run: bash nix/ci/standing-issue.sh gate/results.json gate/instability.json
 
   coverage:
     name: Code Coverage
