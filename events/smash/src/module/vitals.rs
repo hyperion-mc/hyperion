@@ -284,16 +284,27 @@ impl Module for VitalsModule {
 
                 let world = it.world();
                 let attacker = world.entity_from_id(attacker);
-                let Some(mut hunger) = attacker.try_get::<&Hunger>(|hunger| *hunger) else {
-                    return;
-                };
-                if !hunger.feed(FOOD_PER_HIT) {
+                if !attacker.has(Hunger::id()) {
                     return;
                 }
-                attacker.set(hunger);
+                // Written through the live pointer rather than read, copied and
+                // `set` back, which is how `damage.rs` writes `Health` from
+                // inside its own observer and for the same stated reason: a
+                // `set` from inside an observer is a deferred command, so two
+                // hits landing in one frame would both read the same pre-frame
+                // bar and both write one point onto it. No test here
+                // demonstrates that -- driving two `hurt`s inside
+                // `world.defer` fed the attacker twice under both spellings --
+                // so this is the idiom the crate already uses rather than a
+                // measured fix.
+                let (fed, food) =
+                    attacker.get::<&mut Hunger>(|hunger| (hunger.feed(FOOD_PER_HIT), hunger.food));
+                if !fed {
+                    return;
+                }
 
                 if let Some(id) = attacker.try_get::<&PlayerId>(|id| *id) {
-                    world.get::<&ServerHandle>(|server| server.set_food(id, hunger.food));
+                    world.get::<&ServerHandle>(|server| server.set_food(id, food));
                 }
             });
     }
