@@ -1732,13 +1732,86 @@
           inherit checks;
 
         };
+
+      # The deployed fleet. `nix/fleet/default.nix` says at length why it lives
+      # in this repo and why it is not its own flake; the short version is that
+      # a second lock is what let the game and its deployment drift apart
+      # (ENG-11448), and there is no second lock here.
+      #
+      # x86_64-linux binaries always, because these are Linux guests whatever
+      # machine evaluates them. Taken from `mkSystem` rather than from
+      # `self.packages` so the fleet does not depend on the attribute set it
+      # contributes to.
+      fleet = import ./nix/fleet {
+        inherit index;
+        guestPackages = (mkSystem "x86_64-linux").packages;
+        inherit (self) nixosModules;
+      };
+
+      # Force every fleet node's toplevel and record what it resolved to,
+      # WITHOUT building any of them. `unsafeDiscardStringContext` is what buys
+      # that: the string still has to be computed, so all four module systems
+      # evaluate and any option type error, missing attribute or port collision
+      # throws here -- but with the context stripped this check does not depend
+      # on those closures, so it costs seconds rather than the minutes a real
+      # fleet build takes.
+      #
+      # It is a mitigation, not a restoration. In index this fleet was covered
+      # by a REQUIRED context; here nothing is required (ruleset 566717 carries
+      # no `required_status_checks`) and every workflow is `workflow_dispatch`.
+      # So this catches a broken fleet only when somebody runs it. What the move
+      # into this repo does structurally is kill the DRIFT class -- the module
+      # and its consumer are now in one commit, so they cannot disagree the way
+      # they did in ENG-11448. This check covers the smaller residue: a single
+      # commit that breaks both halves at once.
+      fleetEvalFor = system: let
+        pkgs = nixpkgs.legacyPackages."${system}";
+        lines = nixpkgs.lib.mapAttrsToList (
+          name: cfg: "${name} ${builtins.unsafeDiscardStringContext cfg.config.system.build.toplevel.drvPath}"
+        ) fleet.nixosConfigurations;
+      in
+      pkgs.runCommand "hyperion-fleet-eval"
+        {
+          __structuredAttrs = true;
+          drvPaths = builtins.concatStringsSep "\n" lines;
+          # Guard the guard, BY NAME rather than by count. An empty
+          # `nixosConfigurations` would make the line above vacuously true and
+          # this check would pass having evaluated nothing -- a green tick
+          # meaning "found no nodes", which is indistinguishable from "every
+          # node is fine". A bare count would catch that and would also break
+          # the day somebody legitimately changes `replicas` in nix/fleet,
+          # which is a digit this fleet is meant to be able to turn.
+          #
+          # Space-joined rather than a list: `__structuredAttrs` renders a Nix
+          # list as a bash ARRAY, so `"$nodeNames"` would be its first element
+          # only and the loop below would test one name while looking like it
+          # tested all of them.
+          nodeNames = builtins.concatStringsSep " " (builtins.attrNames fleet.nixosConfigurations);
+        }
+        ''
+          for required in hyperion-game hyperion-proxy-0; do
+            case " $nodeNames " in
+              *" $required "*) ;;
+              *)
+                echo "hyperion-fleet-eval: $required is not among the evaluated nodes ($nodeNames)" >&2
+                exit 1
+                ;;
+            esac
+          done
+          printf '%s\n' "$drvPaths" > "$out"
+        '';
     in
     {
       # A NixOS system that imports both modules and nothing else, built by
       # `nix flake check`. Without it the modules are only ever exercised by
       # whoever deploys them, and a typo in an option name is discovered on a
       # host rather than here.
-      nixosConfigurations.module-smoke-test = nixpkgs.lib.nixosSystem {
+      # The smoke test below plus the deployed fleet's four nodes. Merged into
+      # one attribute because the repo already had one: `nixosConfigurations`
+      # cannot be defined twice, and the fleet is not a special case that
+      # deserves its own namespace.
+      nixosConfigurations = fleet.nixosConfigurations // {
+        module-smoke-test = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
           self.nixosModules.game-server
@@ -1784,6 +1857,7 @@
             }
           )
         ];
+        };
       };
 
       # NixOS modules for the two services, so a deployment imports them
@@ -1799,8 +1873,17 @@
       };
 
       apps = forAllSystems (system: (mkSystem system).apps);
-      checks = forAllSystems (system: (mkSystem system).checks);
+      # `fleet-eval` joins the enforced set automatically: this repo's gate is
+      # subtractive, so every attribute of `checks` is built. See
+      # nix/ci/flake-gate.nix.
+      checks = forAllSystems (
+        system: (mkSystem system).checks // { fleet-eval = fleetEvalFor system; }
+      );
       devShells = forAllSystems (system: (mkSystem system).devShells);
-      packages = forAllSystems (system: (mkSystem system).packages);
+      # The fleet's `-system` attrs are exposed under every system, not only
+      # x86_64-linux: the machine that types `nix build` contributes a builder,
+      # not an identity, and without this the apply command above is a
+      # missing-attribute error on the Mac it is most likely to be typed on.
+      packages = forAllSystems (system: (mkSystem system).packages // fleet.systemPackages);
     };
 }
