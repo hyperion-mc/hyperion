@@ -471,6 +471,49 @@ fn two_identical_kits_fail_the_gate() {
     });
 }
 
+/// The regen scenario reds when `regen` is the field left equal.
+///
+/// The other half of the deletion check, and it catches a different thing.
+/// Deleting `.set(Regen(stats.regen))` proves the field is *read*; this proves
+/// the scenario above is sensitive to `regen` specifically and not to something
+/// else that happens to differ between two kits. It runs
+/// [`regen_changes_how_fast_health_comes_back`] verbatim against a pair whose
+/// `regen` is equal and whose `melee_damage` differs instead -- a field that
+/// cannot touch a health-after-four-seconds read, because nothing in the
+/// scenario swings.
+///
+/// Without it, a `regen` test whose difference actually came from the armour
+/// term would pass with `regen` unimplemented and nobody would know.
+#[test]
+#[should_panic(expected = "nothing in the game reads that field")]
+fn the_regen_gate_reds_when_regen_is_the_field_left_equal() {
+    let gate = Gate::new(|stats| stats.melee_damage = base().melee_damage * 2.0);
+
+    gate.each(|gate, side| gate.hit(side.player, 10.0, DamageKind::Ability));
+    gate.advance(4.0);
+
+    gate.differ(
+        "the health four seconds of regeneration put back",
+        |gate, side| observable(gate.health(side.player).current),
+    );
+}
+
+/// The hunger scenario reds when `hunger_interval` is the field left equal.
+///
+/// Same argument as [`the_regen_gate_reds_when_regen_is_the_field_left_equal`],
+/// for the other mechanic ENG-11450 implements.
+#[test]
+#[should_panic(expected = "nothing in the game reads that field")]
+fn the_hunger_gate_reds_when_the_interval_is_the_field_left_equal() {
+    let gate = Gate::new(|stats| stats.melee_damage = base().melee_damage * 2.0);
+
+    gate.advance(16.0);
+
+    gate.differ("the food bar after sixteen seconds", |gate, side| {
+        gate.view(side.player).cloned::<&Hunger>().food
+    });
+}
+
 /// Starving is what an empty food bar is for.
 ///
 /// The differential above proves `hunger_interval` reaches the bar. This is the
