@@ -121,6 +121,26 @@ impl Module for JumpModule {
         // flies. Writing an abilities packet at one would take that away and
         // leave them stuck to the floor of a match they are watching, so both
         // halves of the mechanic step around them.
+        //
+        // Stepping around them leaves `MayFly` and `Flying` stale, and for a
+        // player who respawns that is a bug: `lives.rs`'s `respawn` resets all
+        // three, and the comment there says why it cannot be done at the death
+        // transition instead. For an *eliminated* player nothing resets them
+        // and that is deliberate, not an oversight:
+        //
+        // The stale `allow` bit is inert, because a spectator's flight comes
+        // from their gamemode rather than from this packet. And if `Eliminated`
+        // is ever cleared -- a new match, a return to the hub -- the mechanic
+        // heals itself on the next tick without a jump being granted: the
+        // grounded check in `spend_double_jump` refuses a press from somebody
+        // standing on the floor, and `arm_double_jump` recomputes and pushes
+        // whatever is actually true.
+        //
+        // So do not "fix" this by resetting on death. That is the race the
+        // comment in `respawn` describes -- `Op::Spectating` defers gamemode
+        // publication to hyperion's roster, so a `Disarmed` pushed beside it
+        // can land after the gamemode packet and tell a spectator it may not
+        // fly, on every death rather than only the airborne ones.
         world
             .system_named::<(&OnGround, &JumpsLeft, &mut MayFly, &PlayerId)>("arm_double_jump")
             .with(Player::id())
