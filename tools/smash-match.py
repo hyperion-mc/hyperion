@@ -1208,11 +1208,13 @@ class Match:
     def prove_double_jump(self):
         """Take a real client into the air and press jump.
 
-        The one leg of the double jump no Rust test can reach. Everything under
-        `events/smash/tests/jump.rs` drives the component `src/mirror.rs`
-        writes; the packet that makes that component true, and the edge
-        detection that turns a held flying bit into one press, only exist when
-        a real client is on the other end of the socket.
+        The two links of the double jump no Rust test can reach. Everything
+        under `events/smash/tests/jump.rs` drives `Flying`, the component the
+        mirror writes; the packet that makes it true and the adapter's write
+        back onto hyperion's own `Flight` only exist when a real client is on
+        the other end of the socket. That is not a formality -- the first
+        version of the mirror could never fire, every Rust test passed, and
+        this is what said so.
 
         Both halves are asserted and the order matters. The server offering
         `CAN_FLY` while the player is airborne is what makes the press possible

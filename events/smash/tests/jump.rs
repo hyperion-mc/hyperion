@@ -2,12 +2,16 @@
 //! nothing.
 //!
 //! The input is a serverbound abilities packet, which only a real client
-//! sends, so what these drive is the component `src/mirror.rs` turns that
-//! packet into. That leaves exactly one link uncovered here -- the mirror's own
-//! edge detection -- and `tools/smash-match.py` is where a real client closes
-//! it. Everything downstream of the press is here, on the `MockServer` call
-//! log, because what matters is not that the counter moved but that an impulse
-//! reached a client.
+//! sends, so what these drive is `Flying`, the component `src/mirror.rs` turns
+//! that packet into. Two links are therefore outside them: the mirror's copy
+//! and the adapter's write back onto hyperion's own `Flight`. Both are held by
+//! `Match.prove_double_jump` in `tools/smash-match.py`, and that is not a
+//! formality -- the first version of the mirror could never fire and every
+//! assertion in this file passed anyway.
+//!
+//! Everything downstream of the press is here, and on the `MockServer` call
+//! log rather than on the world, because what matters is not that the counter
+//! moved but that an impulse reached a client.
 
 mod harness;
 
