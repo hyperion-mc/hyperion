@@ -217,8 +217,12 @@ fn mooshroom_madness(cast: &Cast<'_>) {
         cast.world,
         cast.caster,
         effect::Blame::cast(cast),
-        Affliction::mode(ability::ULTIMATE_SECONDS, MOOSHROOM_INTERVAL, mooshroom_beat)
-            .undone_by(shrink_back),
+        Affliction::mode(
+            ability::ULTIMATE_SECONDS,
+            MOOSHROOM_INTERVAL,
+            mooshroom_beat,
+        )
+        .undone_by(shrink_back),
     );
 }
 
