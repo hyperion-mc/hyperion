@@ -1152,16 +1152,30 @@ class Run:
             "%s to be playing the %s" % (client.name, entry["kit"]),
         ):
             return None
+        # And then for the announcement, separately. `client.kit` is read off
+        # the chat line, which `lobby::choose` sends one packet ahead of the
+        # action bar, and `drain` takes a single `recv` per pump: a burst split
+        # across two reads satisfies the wait above while the action bar is
+        # still on its way. Run 30500640846 recorded the failure at
+        # 00:21:41.7509285 and logged the line it was waiting for at
+        # 00:21:41.7511018. Waiting on the packet the claim is about, rather
+        # than on the one that happens to precede it, is the whole fix: the
+        # bytes had not reached the client, so no amount of draining harder
+        # would have found them.
+        self.wait_until(
+            lambda: any(entry["kit"] in line for line in client.action_bar), 10.0
+        )
         told = [line for line in client.action_bar if entry["kit"] in line]
         if not told:
             self.fail(
                 "%s picked the %s and the action bar never said so: %r"
                 % (client.name, entry["kit"], client.action_bar)
             )
+            return entry
         self.prove(
             "a right-click on a podium picks that mob",
             "%s right-clicked %s and the server answered %r"
-            % (client.name, self.click_at(entry), told or client.action_bar),
+            % (client.name, self.click_at(entry), told),
         )
         return entry
 
