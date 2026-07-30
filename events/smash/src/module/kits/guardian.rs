@@ -227,7 +227,7 @@ fn target_laser(cast: &Cast<'_>) {
     cast.caster.set(crate::module::damage::MeleeBonus {
         flat: LASER_BONUS_DAMAGE,
         against: Some(victim),
-        until: now + LASER_SECONDS,
+        remaining: LASER_SECONDS,
     });
 
     // The beam on top of the flare above, and then again every beat until the

@@ -134,8 +134,7 @@ impl Module for InputModule {
                     let Some(origin) = attacker.try_get::<&Position>(|position| position.0) else {
                         continue;
                     };
-                    let clock = world.get::<&crate::module::damage::MatchClock>(|clock| clock.0);
-                    let amount = melee_damage(attacker, victim.id(), clock);
+                    let amount = melee_damage(attacker, victim.id());
 
                     damage::hurt(victim, Damaged {
                         attacker: Some(attacker.id()),
@@ -258,13 +257,13 @@ pub(crate) fn hotbar_slot(cursor: u16) -> Option<u8> {
 /// `buffs_melee` assertion in the suite goes on passing and only a real client
 /// notices.
 #[must_use]
-pub fn melee_damage(attacker: EntityView<'_>, victim: Entity, now: f32) -> f32 {
+pub fn melee_damage(attacker: EntityView<'_>, victim: Entity) -> f32 {
     let base = attacker
         .find_target(Playing, |_| true)
         .and_then(|kit| kit.try_get::<&KitStats>(|stats| stats.melee_damage))
         .unwrap_or(1.0);
     let bonus = attacker
-        .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(victim, now))
+        .try_get::<&MeleeBonus>(|bonus| bonus.applies_to(victim))
         .unwrap_or(0.0);
     base + bonus
 }
