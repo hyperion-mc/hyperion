@@ -1,53 +1,45 @@
-# Which flake checks CI enforces, and the named exceptions.
+# Which flake checks CI enforces, and how a pull request is judged against them.
 #
 # Enforcement is subtractive: every attribute of `checks` is built and must
-# pass, except the names listed in `excluded`. A check added tomorrow is
-# enforced the day it lands rather than the day someone remembers to add it
-# here, which is the failure this file exists to prevent. See ENG-10817: the
-# job that would have built these sat behind `continue-on-error: true`, so
-# every gate landed in that window was believed to be running when it was not.
+# pass. A check added tomorrow is enforced the day it lands rather than the day
+# someone remembers to add it here, which is the failure this file exists to
+# prevent. See ENG-10817: the job that would have built these sat behind
+# `continue-on-error: true`, so every gate landed in that window was believed to
+# be running when it was not.
 #
-# An exclusion is not a comment. `nix run .#flake-gate` builds each excluded
-# check as well and requires it to STILL FAIL. The day one starts passing, the
-# gate goes red and names the entry to delete, so an exception cannot outlive
-# the defect it was written for.
+# THERE IS NO EXCLUSION LIST ANY MORE, and that is deliberate. This file used to
+# carry an `excluded` attrset of known-broken checks with a recorded reason, and
+# rebuilt each one to require that it STILL FAIL. The idea was right and the
+# storage was wrong: a list in the repository is refreshed by human attention,
+# so it goes stale on a schedule nobody sets, and every repair is a merge
+# conflict against every other repair in flight.
+#
+# "This check is known broken" now lives in the baseline, which main publishes
+# on every run and which therefore cannot go stale, and a reason belongs in the
+# standing issue where a reader will actually meet it. If you find yourself
+# wanting an exception list back, what you want is either the baseline or, for a
+# check that genuinely cannot run in CI on this system, leaving the attribute
+# out of `checks` in flake.nix. That is a truer home for "this cannot run here"
+# than a CI-side exception.
+#
+# The verdict is DIFFERENTIAL: a pull request is judged on whether it makes the
+# failing set worse, not on whether the set is empty. Two correct pull requests
+# on 2026-07-29 each displayed exactly the failures the other one repairs, so
+# neither could be green and neither could land. The rule, the soundness
+# conditions and the reason the check attribute rather than the derivation hash
+# is the identity all live in nix/ci/delta-gate.sh, whose pure half
+# nix/ci/delta-gate-tests.sh exercises without a network or a nix store.
 {
   lib,
   writeShellApplication,
   system,
+  bash,
+  jq,
   # Every name in `checks`, rather than the derivations: the gate shells out to
   # `nix build .#checks.<system>.<name>` and needs no more than the name.
   names,
 }:
 let
-  # Empty, and that is the interesting part. ENG-10817 exempted the whole set
-  # on the belief that most of it could not pass. Measured per check on
-  # ubuntu-latest instead of as one all-or-nothing job (run 30341722090, 41
-  # checks), 38 passed and the 3 that failed were the sandboxed e2e gates,
-  # failing on a missing trust store rather than on the runner. nix/e2e.nix
-  # names the CA bundle now, so nothing is left to exempt.
-  #
-  # `differential-traces` is the one worth remembering: it failed on run
-  # 30341066882 and then passed four times (30341722090, plus three
-  # independent repeats in 30342250503). The only difference was whether the
-  # daemon could realise a content-addressed derivation, so it was the store
-  # and not the check, and it is enforced.
-  #
-  # An entry here is `name = <the evidence>`, never a justification. The gate
-  # prints that text, builds the check anyway, and fails if it passes, so an
-  # exception cannot outlive the defect it was written for. Anything you cannot
-  # write as an observation carrying a date and a run id does not belong here.
-  # Fix the check or delete it instead.
-  excluded = { };
-
-  excludedNames = lib.attrNames excluded;
-
-  # A renamed or deleted check must not leave a dead exclusion behind, reading
-  # as though it exempts something while exempting nothing.
-  stale = lib.subtractLists names excludedNames;
-
-  enforced = lib.subtractLists excludedNames names;
-
   # The results file is JSON assembled with printf rather than jq, so a name
   # has to be a string that survives being dropped between two quotes. Every
   # attribute in `checks` is a plain identifier today, and this is what stops
@@ -57,17 +49,14 @@ let
 
   quote = xs: lib.concatMapStringsSep " " lib.escapeShellArg xs;
 
-  # The recorded evidence is printed by the gate, not left in this file for
-  # someone to go and read. An exception nobody sees is an exception nobody
-  # revisits.
-  reasonArms = lib.concatStrings (
-    lib.mapAttrsToList (
-      name: why: "${lib.escapeShellArg name}) printf '%s' ${lib.escapeShellArg why} ;;\n    "
-    ) excluded
-  );
+  deltaGate = ./delta-gate.sh;
 
   gate = writeShellApplication {
     name = "flake-gate";
+    runtimeInputs = [
+      bash
+      jq
+    ];
     text = ''
       flake="''${1:-.}"
 
@@ -100,13 +89,7 @@ let
         exit 1
       fi
 
-      enforced=(${quote enforced})
-      excluded=(${quote excludedNames})
-
-      reason() {
-        case "$1" in
-          ${reasonArms}esac
-      }
+      enforced=(${quote names})
 
       # Every check's derivation path, in one flake load.
       #
@@ -144,7 +127,7 @@ let
       # otherwise report as a failed check, which is a true statement about
       # nothing. Say which name instead.
       unevaluated=()
-      for name in "''${enforced[@]}" "''${excluded[@]}"; do
+      for name in "''${enforced[@]}"; do
         [ -n "''${drv_path[$name]:-}" ] || unevaluated+=("$name")
       done
       if [ "''${#unevaluated[@]}" -gt 0 ]; then
@@ -185,7 +168,7 @@ let
       # other 66. The report is not printed at all in that case, which is the
       # honest answer: nothing was measured.
       installables=()
-      for name in "''${enforced[@]}" "''${excluded[@]}"; do
+      for name in "''${enforced[@]}"; do
         installables+=("$flake#checks.${system}.$name")
       done
 
@@ -196,8 +179,7 @@ let
       #
       # The exit status is discarded on purpose: it says only that something
       # failed, and which checks failed is the question the loops below answer
-      # per name. It is also the expected status whenever `excluded` is
-      # non-empty.
+      # per name.
       nix build --accept-flake-config --no-link --print-build-logs --keep-going \
         "''${installables[@]}" || true
 
@@ -250,7 +232,13 @@ let
       # Built with printf rather than jq: an attribute name is checked at
       # evaluation time (see `unquotable`) to need no JSON escaping, and a
       # store path cannot contain a quote or a backslash.
-      results="''${FLAKE_GATE_RESULTS:-flake-gate-results.jsonl}"
+      # Where this run's documents land. CI points HYPERION_GATE_OUT_DIR at a
+      # directory it uploads; a local run gets a temporary one and the same
+      # files. FLAKE_GATE_RESULTS still overrides the results path alone, so
+      # anything already pointing at it keeps working.
+      out="''${HYPERION_GATE_OUT_DIR:-$(mktemp -d -t flake-gate.XXXXXX)}"
+      mkdir -p "$out"
+      results="''${FLAKE_GATE_RESULTS:-$out/results.jsonl}"
       : > "$results"
       record() {
         printf '{"attr":"%s","outcome":"%s","drvPath":"%s","seconds":null}\n' \
@@ -274,53 +262,95 @@ let
         fi
       done
 
-      # An excluded check is recorded by what it did, not by how the gate
-      # treats it. A consumer differencing two runs wants the outcome; whether
-      # this file forgives it is this file's business and changes under them.
-      for name in "''${excluded[@]}"; do
-        if realised "''${drv_path[$name]}"; then
-          echo "STALE     $name"
-          record "$name" pass "''${drv_path[$name]}"
-          {
-            echo "checks.${system}.$name is excluded from CI but now builds."
-            echo "nix/ci/flake-gate.nix excluded it on this evidence:"
-            reason "$name"
-            echo "Delete the entry; CI enforces the check from then on."
-          } >&2
-          status=1
-        else
-          echo "excluded  $name (still failing, on the evidence recorded for it)"
-          record "$name" fail "''${drv_path[$name]}"
-          reason "$name"
-        fi
-      done
-
       echo ""
       echo "$results holds one json line per check: attr, outcome, drvPath."
       # The gate's own wall clock, so a run says what it cost without anyone
       # having to subtract two timestamps out of the job log. This is the
       # number the change to one concurrent build was made to move.
-      echo "gate: ''${#enforced[@]} enforced and ''${#excluded[@]} excluded checks in ''${SECONDS}s"
+      echo "gate: ''${#enforced[@]} checks in ''${SECONDS}s"
 
       if [ "''${#failed[@]}" -gt 0 ]; then
         {
           echo ""
-          echo "enforced checks that failed: ''${failed[*]}"
+          echo "checks that failed: ''${failed[*]}"
           echo "reproduce one with: nix build .#checks.${system}.<name> -L"
         } >&2
       fi
 
+      # ---- the differential verdict -------------------------------------
+      #
+      # Everything below reads the results file and nothing else, so how the
+      # checks were built is not its business. That is the seam: the loop above
+      # went from one `nix build` per name to one concurrent build for the whole
+      # set without any of this noticing.
+
+      jq -s \
+        --arg system "${system}" \
+        --arg commit "''${GITHUB_SHA:-$(git -C "$flake" rev-parse HEAD 2>/dev/null || echo unknown)}" \
+        --arg runId "''${GITHUB_RUN_ID:-local}" \
+        --arg event "''${GITHUB_EVENT_NAME:-local}" \
+        --arg recordedAt "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --argjson recordedAtEpoch "$(date +%s)" \
+        '{schemaVersion: 1, system: $system, commit: $commit, runId: $runId,
+          event: $event, recordedAt: $recordedAt, recordedAtEpoch: $recordedAtEpoch,
+          evalFailed: false, checks: (. | sort_by(.attr))}' \
+        "$results" >"$out/results.json"
+
+      # Folded on every run including a green one. A run that agrees with the
+      # last is not a wasted sample: the record needs agreements for the
+      # eventual disagreement to mean anything.
+      ${bash}/bin/bash ${deltaGate} fold \
+        "''${HYPERION_GATE_INSTABILITY:-}" "$out/results.json" >"$out/instability.json"
+      ${bash}/bin/bash ${deltaGate} flake-rate "$out/instability.json" >"$out/flake-rate.json"
+
+      # A baseline is admitted or it is not, and there is no middle. When it is
+      # not, nothing is excused and the gate behaves exactly as it did before
+      # any of this existed, which is the fail-closed direction.
+      baseline=""
+      reject="no baseline was supplied to this run"
+      if [ -n "''${HYPERION_GATE_BASELINE:-}" ] && [ -s "''${HYPERION_GATE_BASELINE}" ]; then
+        if ${bash}/bin/bash ${deltaGate} admissible "''${HYPERION_GATE_BASELINE}" \
+          "${system}" "''${HYPERION_GATE_BASELINE_MAX_AGE_HOURS:-48}"; then
+          baseline="''${HYPERION_GATE_BASELINE}"
+          reject=""
+        else
+          reject="the published baseline was not admissible; see the delta-gate lines above"
+        fi
+      fi
+
+      forfeit=""
+      if [ -n "''${HYPERION_GATE_CHANGED_FILES:-}" ] && [ -s "''${HYPERION_GATE_CHANGED_FILES}" ]; then
+        forfeit="$(${bash}/bin/bash ${deltaGate} forfeit-reason "''${HYPERION_GATE_CHANGED_FILES}")"
+      fi
+
+      ${bash}/bin/bash ${deltaGate} verdict \
+        "$out/results.json" "$baseline" "$out/instability.json" "$reject" "$forfeit" \
+        >"$out/verdict.json"
+      ${bash}/bin/bash ${deltaGate} summary "$out/verdict.json" >"$out/summary.md"
+
+      printf '::group::Differential CI verdict\n'
+      cat "$out/summary.md"
+      printf '::endgroup::\n'
+      if [ -n "''${GITHUB_STEP_SUMMARY:-}" ]; then
+        printf '\n' >>"$GITHUB_STEP_SUMMARY"
+        cat "$out/summary.md" >>"$GITHUB_STEP_SUMMARY"
+      fi
+
+      # The verdict decides, not the raw status. A run whose every failure also
+      # fails on the base has made nothing worse, and saying otherwise is the
+      # deadlock this exists to end. With no baseline the two agree, so a local
+      # `nix run .#flake-gate` behaves exactly as it always has.
+      if [ "$(jq -r '.gatePasses' "$out/verdict.json")" = "true" ]; then
+        exit 0
+      fi
+      [ "$status" -eq 0 ] && status=1
       exit "$status"
     '';
   };
 in
-lib.throwIf (stale != [ ]) ''
-  nix/ci/flake-gate.nix excludes checks that do not exist: ${lib.concatStringsSep ", " stale}
-  Delete them, or spell them the way `checks.${system}` does.
-''
-  (lib.throwIf (unquotable != [ ]) ''
-    nix/ci/flake-gate.nix writes each check's verdict into a json results file
-    with printf, which holds only for names that need no json escaping. These
-    do: ${lib.concatStringsSep ", " unquotable}
-    Rename them, or teach the gate to escape a name before it writes one.
-  '' gate)
+lib.throwIf (unquotable != [ ]) ''
+  nix/ci/flake-gate.nix writes each check's verdict into a json results file
+  with printf, which holds only for names that need no json escaping. These
+  do: ${lib.concatStringsSep ", " unquotable}
+  Rename them, or teach the gate to escape a name before it writes one.
+'' gate
