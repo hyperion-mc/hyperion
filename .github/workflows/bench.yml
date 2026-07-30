@@ -1,9 +1,28 @@
+# Every trigger here is manual. Nothing in this repository runs automatically.
+#
+# Why: the gate ran on every pull request and every push to main, on
+# GitHub-hosted runners because ix's dispatcher registers JIT runners at
+# `orgs/indexable-inc` and this repository is `hyperion-mc` (ENG-10824). It
+# cost roughly 29,000 runner-minutes a month, measured over a 23 hour window
+# at 41 runner-minutes an hour.
+#
+# What that bought: nothing. The last 18 consecutive runs on main were red,
+# no check is a required context on ruleset 566717 (ENG-10827), and three
+# checks fail at random often enough to poison 61% of runs, so a change needed
+# 2.6 attempts to pass even when it was correct.
+#
+# The checks themselves are not deleted and are not the problem. Every one of
+# them is `nix build .#checks.x86_64-linux.<name>`, and `nix run .#ci` runs the
+# lot, locally, on a machine of your choosing. That is the same command CI ran.
+# Run it before you push.
+#
+# To re-enable: restore the `push` / `pull_request` / `merge_group` triggers.
+# Do not do that until the checks are green and stay green, or this comment
+# will be describing the situation again in a month.
+
 name: Bench
 on:
-  pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
+  workflow_dispatch:
 
 env:
   # No -Ctarget-cpu=native: the compare job runs a baseline binary built by the
