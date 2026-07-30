@@ -13,7 +13,7 @@ use hyperion_inventory::PlayerInventory;
 
 use crate::{
     input::hotbar_slot,
-    module::player::{Facing, JumpPressed, OnGround, Player, Position, SelectedSlot, Velocity},
+    module::player::{Facing, Flying, OnGround, Player, Position, SelectedSlot, Velocity},
 };
 
 #[derive(Component)]
@@ -35,7 +35,7 @@ impl Module for MirrorModule {
                 &mut Facing,
                 &mut OnGround,
                 &mut Velocity,
-                &mut JumpPressed,
+                &mut Flying,
                 &mut SelectedSlot,
             )>("mirror_player_state")
             .kind(id::<flecs::pipeline::OnLoad>())
@@ -52,7 +52,7 @@ impl Module for MirrorModule {
                     facing,
                     ground,
                     velocity,
-                    jump_pressed,
+                    flying,
                     selected,
                 )| {
                     position.0 = **source;
@@ -64,15 +64,12 @@ impl Module for MirrorModule {
                     // and it is what abilities that scale with speed -- Block
                     // Toss, Iron Hook -- are asking for.
                     velocity.0 = tracking.server_velocity.as_vec3();
-                    // The rising edge, not the bit. `sync_player_entity`
-                    // copies `is_flying` into `last_tick_flying` in PreStore,
-                    // which is after every game system has run, so comparing
-                    // the two here is exactly "the client asked to take off
-                    // during the last tick" and is true for one tick per
-                    // press. Mirroring the level instead would be true for as
-                    // long as the client kept flying, and the game would spend
-                    // a jump on each of those ticks.
-                    jump_pressed.0 = flight.is_flying && !tracking.last_tick_flying;
+                    // A plain copy. An edge computed here would be wrong; see
+                    // `Flying` for why, and for why a level is safe to read as
+                    // a press. One tick of latency, the same one knockback
+                    // already costs, because packets are decoded in `OnUpdate`
+                    // and this runs in `OnLoad`.
+                    flying.0 = flight.is_flying;
                     // A cursor outside the hotbar leaves the last slot standing
                     // rather than resetting to zero: the alternative reads as
                     // "you are holding slot 0" and would put slot 0's cooldown

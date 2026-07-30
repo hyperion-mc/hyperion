@@ -40,7 +40,7 @@ use smash::{
         lives::{DeathCause, Lives, LivesModule, kill},
         lobby::{Lobby, LobbyModule, Phase},
         player::{
-            self, Energy, Health, JumpPressed, JumpsLeft, OnGround, Player, PlayerModule, Position,
+            self, Energy, Flying, Health, JumpsLeft, OnGround, Player, PlayerModule, Position,
         },
         projectile::ProjectileModule,
         scoreboard::ScoreboardModule,
@@ -391,7 +391,7 @@ fn contracts() -> Vec<Contract> {
                 assert!(allowance > 0, "landing did not hand back a jump");
 
                 player.set(OnGround(false));
-                player.set(JumpPressed(true));
+                player.set(Flying(true));
                 world.progress_time(0.05);
                 assert_eq!(
                     player.cloned::<&JumpsLeft>().0,

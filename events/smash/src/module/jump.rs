@@ -31,9 +31,7 @@ use crate::{
     module::{
         kit::{KitModule, KitStats, Playing},
         lives::{Eliminated, LivesModule, RespawnAt},
-        player::{
-            Facing, JumpPressed, JumpsLeft, MayFly, OnGround, Player, PlayerModule, Position,
-        },
+        player::{Facing, Flying, JumpsLeft, MayFly, OnGround, Player, PlayerModule, Position},
         sound, visuals,
     },
     server::{Flight, PlayerId, ServerHandle, Sound, SoundCategory},
@@ -141,7 +139,7 @@ impl Module for JumpModule {
 
         world
             .system_named::<(
-                &mut JumpPressed,
+                &Flying,
                 &OnGround,
                 &Facing,
                 &Position,
@@ -153,17 +151,10 @@ impl Module for JumpModule {
             .without(Eliminated::id())
             .without(RespawnAt::id())
             .each_entity(
-                |entity, (pressed, ground, facing, position, jumps, may_fly, player)| {
-                    if !pressed.0 {
+                |entity, (flying, ground, facing, position, jumps, may_fly, player)| {
+                    if !flying.0 {
                         return;
                     }
-                    // Consumed here rather than left for the mirror to
-                    // overwrite next tick. The mirror does clear it, and this
-                    // line is still what bounds the damage if some future host
-                    // reports the flying *bit* instead of the edge: one press
-                    // is one jump, whatever the thing upstream says twice.
-                    pressed.0 = false;
-
                     let world = entity.world();
                     let stats = stats_of(entity);
 

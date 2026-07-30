@@ -245,9 +245,22 @@ Wolf and Spider). Power and height limit are per-kit sheet values.
 get another — is an artefact of the loose ground check, and the relaunch's
 changelog lists fixes in exactly that area.
 
-`events/smash/src/module/player.rs` carries `JumpsLeft` and re-arms it on
-ground contact. The launch impulse itself belongs to the host's physics, so it
-crosses the seam.
+Built, and built the same way. `events/smash/src/module/jump.rs` keeps
+`Flight::Armed` on any playing player who is off the ground with a jump left,
+pushed across the seam only when the answer changes; `src/mirror.rs` copies the
+host's flying bit onto `Flying`; and seeing it true is what spends a
+`JumpsLeft`, clears the flight and adds the velocity. No client mod, because
+the double tap a vanilla client already sends is the input.
+
+Two departures from the citation, both deliberate. `UtilAction.velocity`'s
+`yMax` of 1.0 is not implemented: every uncontrolled kit declares a
+`jump_power` of at least 0.9, so a ceiling there would clamp all twelve of them
+to the same jump and the per-kit number would stop meaning anything. And the
+"triple jump" is refused rather than reproduced — a press that arrives while
+the player is standing on something spends nothing.
+
+`jump_count` is on `KitStats` beside `jump_power`, because the Chicken's
+`[VERIFIED]` eight flaps are a per-kit number and not a constant.
 
 ---
 
@@ -508,11 +521,9 @@ Stated plainly, because these are the parts nobody can see from the code.
    ordinary relationship; the beacon, the descent and the pickup are not built.
 3. **No hunger drain.** `hunger_interval` is carried on every kit and
    `STARVE_DAMAGE` is defined, but nothing ticks it.
-4. **No double-jump impulse.** `JumpsLeft` is tracked and re-armed; applying the
-   velocity is a seam call that is not made yet.
-5. **Assists.** Only the last hit is tracked.
-6. **Seventeen of the twenty-one kits.**
-7. **Teams and the Dominate variant.**
+4. **Assists.** Only the last hit is tracked.
+5. **Seventeen of the twenty-one kits.**
+6. **Teams and the Dominate variant.**
 
 ---
 

@@ -123,22 +123,28 @@ impl Energy {
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct JumpsLeft(pub u8);
 
-/// Mirror of the host seeing a client ask to take off.
+/// Mirror of the host having this client in flight.
 ///
-/// True for the one tick a serverbound abilities packet turned flight on, and
-/// false every other tick. A vanilla client sends that packet when the player
-/// double-taps the jump key with flight permitted, so this is the mid-air jump
-/// press and there is no other input that produces one.
+/// A vanilla client turns this on by double-tapping the jump key with flight
+/// permitted, which sends a serverbound abilities packet, and that is the only
+/// mid-air jump input a client without a mod can produce. So
+/// [`crate::module::jump`] reads a true here as a *press*.
 ///
-/// An edge and not the flying bit itself, which is the difference that makes
-/// it safe to read: the bit stays on for as long as the client is flying, and
-/// a system reading the level would spend a jump every tick until something
-/// cleared it.
+/// Reading a level as an edge is sound only because of what the game does with
+/// it. Every press is answered by writing the flight state back across the
+/// seam, which clears the host's flying bit in the same tick, so the next
+/// mirror read is false and one double tap is one jump. Nothing in this game
+/// ever leaves anybody flying, and `smash::Jump::spend_double_jump` refusing a
+/// press from somebody standing on the ground is the other half of that.
 ///
-/// The one mirror the game writes back to, and only ever to clear: whoever
-/// spends the press marks it spent. See `smash::Jump::spend_double_jump`.
+/// An `is_flying && !was_flying_last_tick` edge computed in the mirror is the
+/// tempting alternative and it does not work: hyperion decodes packets in
+/// `OnUpdate` and copies `is_flying` into `MovementTracking::last_tick_flying`
+/// in `PreStore`, both of them after the mirror has run in `OnLoad`, so by the
+/// next mirror read the two are already equal and the edge is gone. Watched:
+/// a real client's double tap produced no impulse at all.
 #[derive(Component, Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub struct JumpPressed(pub bool);
+pub struct Flying(pub bool);
 
 /// What the client was last told about flight, so the arming system sends a
 /// packet when the answer changes rather than twenty times a second.
@@ -185,7 +191,7 @@ impl Module for PlayerModule {
         world.component::<Health>();
         world.component::<Energy>();
         world.component::<JumpsLeft>();
-        world.component::<JumpPressed>();
+        world.component::<Flying>();
         world.component::<MayFly>();
         world.component::<SelectedSlot>();
 
@@ -200,7 +206,7 @@ impl Module for PlayerModule {
             .add_trait::<(flecs::With, OnGround)>()
             .add_trait::<(flecs::With, Health)>()
             .add_trait::<(flecs::With, JumpsLeft)>()
-            .add_trait::<(flecs::With, JumpPressed)>()
+            .add_trait::<(flecs::With, Flying)>()
             .add_trait::<(flecs::With, MayFly)>()
             .add_trait::<(flecs::With, SelectedSlot)>();
 

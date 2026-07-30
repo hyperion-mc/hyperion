@@ -18,7 +18,7 @@ use smash::{
     module::{
         jump,
         kit::{self, KitStats},
-        player::{JumpPressed, JumpsLeft, MayFly, OnGround, Position},
+        player::{Flying, JumpsLeft, MayFly, OnGround, Position},
     },
     server::{Flight, PlayerId, mock::Call},
 };
@@ -39,12 +39,15 @@ fn airborne(game: &Game, player: Entity) {
 
 /// One press of the jump key, as the mirror reports one.
 ///
-/// Set for a tick, which is the shape of the thing being simulated: the mirror
-/// writes the rising edge of the host's flying bit and it is true for one tick
-/// per double tap.
+/// Set, ticked, and cleared, because that is what the mirror does with it: the
+/// game answers a press by clearing the host's flying bit, so the next mirror
+/// read is false again. Leaving it set would simulate a host that never got
+/// the answer, and the run would spend a jump every tick.
 fn press(game: &Game, player: Entity) {
-    game.world.entity_from_id(player).set(JumpPressed(true));
+    let player = game.world.entity_from_id(player);
+    player.set(Flying(true));
     game.world.progress_time(TICK);
+    player.set(Flying(false));
 }
 
 /// Every impulse the game asked the host to add to `player`.
