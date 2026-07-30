@@ -1243,10 +1243,17 @@
             # `clippyArgs` says and therefore covers `crates/*` and `tools/*` as
             # well as the two events.
             #
-            # Source is the whole tree rather than a fileset, because clippy
-            # compiles: a kit's arena is `include_str!`, so narrowing the input
-            # would be narrowing what compiles. Reusing `workspaceArgs.src`
-            # keeps it one store copy shared with the release build.
+            # Source is `workspaceArgs.src`, so clippy reads exactly the tree
+            # the release build compiles and there is one store copy rather
+            # than two. Written as the binding rather than as `./.` a second
+            # time: the two are the same path today (checked in one evaluation
+            # -- both `/nix/store/4p2rn13...-source`), but that is a coincidence
+            # of two identical literals, and narrowing the release build's
+            # source later would silently leave clippy on the whole tree.
+            #
+            # Whole tree is the right input anyway, and not an oversight:
+            # clippy compiles, and a kit's arena is `include_str!`, so
+            # narrowing it is narrowing what compiles.
             #
             # Cost, measured cold with an empty CARGO_TARGET_DIR on an M-series
             # mac: 63 s wall, 429 s CPU. It shares nothing with the release
@@ -1273,7 +1280,7 @@
               # first x86_64-linux run.
               hardeningDisable = [ "fortify" ];
             } ''
-              cp -r ${./.}/. .
+              cp -r ${workspaceArgs.src}/. .
               chmod -R u+w .
               # Points CARGO_HOME at the vendored crates cargoUnit already
               # fetched for the release build, so this resolves the same lock
