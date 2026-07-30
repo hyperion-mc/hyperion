@@ -455,11 +455,16 @@ fn jump_power_changes_how_high_a_double_jump_goes() {
 fn jump_control_changes_which_way_a_double_jump_goes() {
     let gate = Gate::new(|stats| stats.jump_control = !base().jump_control);
 
-    // Looking sideways, so a controlled jump and an uncontrolled one point in
-    // measurably different directions rather than in the same one.
+    // A real yaw *and* a real pitch, not a flat sideways look. `impulse`
+    // normalises the whole facing vector, so the pitch decides how much of the
+    // jump goes upward -- and a purely horizontal `Vec3::X` cannot tell that
+    // apart from an implementation that throws the vertical component away,
+    // because there is no vertical component to throw. Looking up and to the
+    // side is the cheapest facing that exercises both.
+    let facing = Vec3::new(1.0, 1.0, 0.0).normalize();
     gate.each(|gate, side| {
         gate.view(side.player)
-            .set(smash::module::player::Facing(Vec3::X));
+            .set(smash::module::player::Facing(facing));
         double_jump(gate, side);
     });
     gate.advance(0.1);
@@ -467,6 +472,76 @@ fn jump_control_changes_which_way_a_double_jump_goes() {
     gate.differ("the direction the double jump asked for", |gate, side| {
         observable_vec(gate.game.server.total_velocity(gate.id(side.player)))
     });
+}
+
+/// A controlled double jump follows where you look, pitch included.
+///
+/// **Why the gate above is not enough, which I got wrong once before writing
+/// this.** `jump_control_changes_which_way_a_double_jump_goes` is a
+/// differential: it proves the *field matters*, because flipping it changes the
+/// impulse. It cannot prove what the field *does*. Dropping the pitch from
+/// `impulse` -- `Vec3::new(facing.x, 0.0, facing.z)` -- still produces a
+/// controlled jump that differs from an uncontrolled one, so that gate stays
+/// green on a version that ignores where you are looking vertically. I checked;
+/// it does.
+///
+/// This one is a differential on the *facing* rather than on a kit stat, with
+/// both players on the same controlled kit and only their pitch different. A
+/// version that flattens the look cannot tell those two apart, so it reds.
+///
+/// Through the production press path, for the reason the whole file is: the
+/// pure `impulse()` function was already covered, and a field gated only as a
+/// function argument is not gated as something that reaches a client.
+#[test]
+fn a_controlled_double_jump_follows_the_pitch_you_are_looking_at() {
+    let mut game = Game::new();
+    kit::define(&game.world, "PitchGate", KitStats {
+        jump_control: true,
+        ..base()
+    })
+    .register();
+
+    // Same yaw, different pitch: level, and steeply up.
+    let looks = [Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 2.0, 0.0)];
+    let mut players = Vec::new();
+    for (index, look) in looks.iter().enumerate() {
+        players.push(game.player(&format!("pitch{index}"), COLUMNS[index]));
+        let chosen = kit::by_name(&game.world, "PitchGate").expect("just defined");
+        let view = game.world.entity_from_id(players[index]);
+        kit::apply(&game.world, view, chosen);
+        view.set(smash::module::player::Facing(look.normalize()));
+    }
+
+    game.world.set(Lobby {
+        phase: Phase::Playing,
+        timer: 0.0,
+    });
+    for player in &players {
+        game.world.entity_from_id(*player).set(OnGround(false));
+    }
+    game.advance(harness::TICK, 1);
+    for player in &players {
+        game.world.entity_from_id(*player).set(Flying(true));
+    }
+    game.advance(0.1, 2);
+
+    let impulses: Vec<[i64; 3]> = players
+        .iter()
+        .map(|player| {
+            let id = game.world.entity_from_id(*player).cloned::<&PlayerId>();
+            observable_vec(game.server.total_velocity(id))
+        })
+        .collect();
+
+    assert!(
+        impulses.iter().all(|impulse| *impulse != [0, 0, 0]),
+        "neither player jumped, so this compares two absences: {impulses:?}"
+    );
+    assert_ne!(
+        impulses[0], impulses[1],
+        "two players on the same kit looking at different pitches were launched identically, so \
+         the vertical half of where you look is being thrown away"
+    );
 }
 
 /// `jump_count`: how many mid-air jumps a kit gets before touching ground.
