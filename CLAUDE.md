@@ -144,3 +144,37 @@ impl Module for CombatModule {
   `cargo test` that imports your module before trusting it. Reverting a
   registration should reproduce the `ECS_INVALID_OPERATION` abort; that is the
   guard proving it works.
+
+## Mirroring host state: mirror the level, never compute an edge
+
+**The rule.** A system that copies host state onto a game component copies the
+*value*. It does not compute "this just became true". If a consumer needs an
+edge, either keep the memory somewhere that is written after the host state is,
+or mirror the level and make the consumer idempotent.
+
+**Why this exists (ENG-11440).** `events/smash/src/mirror.rs` runs in `OnLoad`.
+hyperion decodes the tick's packets in `OnUpdate` (`ingress/decode.rs`) and
+copies `is_flying` into `MovementTracking::last_tick_flying` in `PreStore`
+(`egress/sync_entity_state.rs`) -- both strictly after. So
+`bit && !hyperions_previous_bit`, evaluated in the mirror, is **always false**:
+the packet lands after the mirror has run, and by its next run hyperion's own
+"previous" has caught up. There is no point in the tick where the mirror can
+see the two disagree.
+
+**Why the test suite cannot catch it.** Every test under `events/smash/tests/`
+drives the mirrored component directly, because the mirror is host-side and a
+mock world has no host. A mirror that can only ever write `false` is therefore
+invisible to all of them: the double jump shipped eleven passing unit tests and
+a green contract while doing nothing at all on a real client. Only
+`Match.prove_double_jump` in `tools/smash-match.py` -- a real client
+double-tapping jump and getting no impulse -- showed it.
+
+**What to do.** Mirror the level, and put the idempotence in the consumer.
+`Flying` is the host's flying bit copied verbatim; `smash::Jump` answers a press
+by clearing that bit through the seam in the same tick, and refuses a press from
+a player standing on the ground. One double tap is one jump because of those two
+properties, not because the mirror was clever.
+
+**When you add a mirror of a host bit, gate it with a real client.** A Rust test
+that sets the component proves the consumer, not the mirror. The two are
+different code and only one of them has this hazard.

@@ -5,6 +5,42 @@
 //! iteration precisely because position, facing and ground state arrive as
 //! components rather than as trait calls, and that only holds if one system
 //! owns the copy.
+//!
+//! # A mirror cannot compute a rising edge
+//!
+//! Read this before adding a mirror of a host *bit*, because the obvious thing
+//! to write does not work and does not fail loudly.
+//!
+//! This system runs in `OnLoad`. Two things that decide what a bit looks like
+//! happen strictly after it, every tick:
+//!
+//! | phase | what happens | where |
+//! |---|---|---|
+//! | `OnLoad` | **this system copies** | here |
+//! | `OnUpdate` | hyperion decodes the tick's packets | `ingress/decode.rs:81` |
+//! | `OnUpdate` | the game's own systems run | `smash::*` |
+//! | `PostUpdate` | the adapter drains the write queue | `adapter.rs` |
+//! | `PreStore` | `is_flying` is copied to `last_tick_flying` | `sync_entity_state.rs:471` |
+//!
+//! So `bit && !hyperions_previous_bit` is always false here. The packet that
+//! sets the bit arrives after this system has already run, and by the time it
+//! runs again hyperion's own "previous" has caught up with it. There is no
+//! moment in the tick at which this system can see the two disagree.
+//!
+//! That is exactly the bug [`crate::module::player::Flying`] was written wrong
+//! for the first time, and the way it surfaced is the part worth remembering:
+//! **every Rust test passed.** They drive the mirrored component directly, so
+//! they never exercise the mirror at all, and a mirror that can only ever
+//! write `false` is invisible to all of them. What found it was
+//! `Match.prove_double_jump` in `tools/smash-match.py` -- a real client
+//! double-tapping jump and getting no impulse back.
+//!
+//! Two ways out, and the second is the one taken here. Keep the edge somewhere
+//! that is written after the packet is decoded, or **mirror the level and make
+//! the consumer idempotent**: [`crate::module::jump`] answers a press by
+//! clearing the host bit in the same tick and refuses one from a player
+//! standing on the ground, so reading a level as an edge is sound. If you
+//! mirror a new bit, say which of the two you did and why.
 
 use flecs_ecs::prelude::*;
 use glam::Vec3;
@@ -64,11 +100,11 @@ impl Module for MirrorModule {
                     // and it is what abilities that scale with speed -- Block
                     // Toss, Iron Hook -- are asking for.
                     velocity.0 = tracking.server_velocity.as_vec3();
-                    // A plain copy. An edge computed here would be wrong; see
-                    // `Flying` for why, and for why a level is safe to read as
-                    // a press. One tick of latency, the same one knockback
-                    // already costs, because packets are decoded in `OnUpdate`
-                    // and this runs in `OnLoad`.
+                    // A plain copy, deliberately. An edge computed here is
+                    // always false -- see this module's own documentation for
+                    // the phase ordering that makes it so, and `Flying` for
+                    // why a level is safe to read as a press instead. One tick
+                    // of latency, the same one knockback already costs.
                     flying.0 = flight.is_flying;
                     // A cursor outside the hotbar leaves the last slot standing
                     // rather than resetting to zero: the alternative reads as
