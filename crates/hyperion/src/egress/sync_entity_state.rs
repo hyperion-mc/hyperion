@@ -527,7 +527,16 @@ impl Module for EntityStateSyncModule {
         .each_iter(
             |it,
              row,
-             (position, velocity, owner, connection_id, mut yaw, mut pitch, in_ground, mut shake)| {
+             (
+                position,
+                velocity,
+                owner,
+                connection_id,
+                mut yaw,
+                mut pitch,
+                in_ground,
+                mut shake,
+            )| {
                 if let Some(_connection_id) = connection_id {
                     return;
                 }
@@ -599,8 +608,8 @@ impl Module for EntityStateSyncModule {
                     // differential gate caught it: `arrow-into-wall` pitch was
                     // -0.542 against vanilla's -1.018, exactly one `lerpRotation`
                     // step behind.
-                    let aims_before_moving = motion
-                        .is_some_and(|motion| motion.order == MotionOrder::MoveThenDecay);
+                    let aims_before_moving =
+                        motion.is_some_and(|motion| motion.order == MotionOrder::MoveThenDecay);
                     if aims_before_moving {
                         aim_along(yaw.as_deref_mut(), pitch.as_deref_mut(), velocity.0);
                     }
