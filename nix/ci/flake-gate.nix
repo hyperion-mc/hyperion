@@ -57,6 +57,29 @@
 #      bisection retries carry the same rate. `delta-gate.sh flake-rate` reports
 #      this against the instability record.
 #
+#      The `bedwars-bow-e2e 11%` term is retired, and it was never a flake.
+#      The measurement stands as a measurement -- it is what those 18 runs did
+#      -- but what it measured was a check asserting on a packet that never
+#      described an impact, which passed or failed on whether a channel
+#      subscription happened to be answered before or after the arrow stopped.
+#      It read 11% here and ~75% two days later on the same tree for that
+#      reason. #1125 replaced the assertion; six forced-rebuild runs on
+#      e637f712 passed six times, with the per-run broadcast count varying 23
+#      to 37, which is the same timing spread the old check was keyed on and
+#      the new one is not. Re-measure before quoting a rate for it. ENG-12085.
+#
+#      Whoever re-measures LOCALLY: force every repeat. `nix build` of an
+#      already-successful check is answered from the store and does not run
+#      anything -- one sample in the six above came back rc=0 with three lines
+#      of log and had to be discarded -- so `--rebuild` on every repeat, and
+#      print the log length beside each result, or a stuck pass reads as a
+#      streak. Failures are not cached and do re-execute, which is exactly why
+#      an uncorrected count skews optimistic. Whether the same hazard reaches
+#      the CI-fed record below is untested: `dg_merge_instability` folds one
+#      run's results per CI run, and if that pipeline can substitute a check's
+#      output rather than build it, a substituted pass enters the record as a
+#      sample that never ran. Unverified, so not claimed -- ENG-12120.
+#
 #   2. AT LEAST 30 RUNS in the instability record. P(a check flaking at rate q
 #      is proven within n same-derivation samples) is 1 - q^n - (1-q)^n. At
 #      n=18 an 11% flake is still 12% likely to be unproven; n=30 puts anything
