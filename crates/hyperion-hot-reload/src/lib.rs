@@ -12,6 +12,7 @@ pub mod gate;
 pub mod host;
 pub mod manifest;
 pub mod schema;
+pub mod service;
 
 pub use abi::{ABI_VERSION, AbiToken, ENTRY_SYMBOL, Migration, ModuleDescriptor, ModuleEntry};
 pub use flecs_ecs;
@@ -23,6 +24,7 @@ pub use manifest::{
     Manifest, ModuleManifest, Registrations, WorldSample, describe_module, read_component_schema,
 };
 pub use schema::{ComponentSchema, FieldSchema, Layout, SchemaHash};
+pub use service::{ReloadService, Reloaded, run};
 
 /// A field type the migration macro can describe to the gate.
 ///
