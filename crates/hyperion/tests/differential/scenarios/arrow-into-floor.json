@@ -1,0 +1,30 @@
+{
+  "name": "arrow-into-floor",
+  "description": "A fully drawn bow fired straight down onto a stone floor seven blocks below. The arrow spends three ticks in the air and seventeen embedded in the block it hit, which is where inGround and the shake countdown are read.",
+  "ticks": 20,
+  "seed": 4242,
+  "blocks": [
+    { "position": [-1, 120, -1], "state": "minecraft:stone" },
+    { "position": [-1, 120, 0], "state": "minecraft:stone" },
+    { "position": [-1, 120, 1], "state": "minecraft:stone" },
+    { "position": [0, 120, -1], "state": "minecraft:stone" },
+    { "position": [0, 120, 0], "state": "minecraft:stone" },
+    { "position": [0, 120, 1], "state": "minecraft:stone" },
+    { "position": [1, 120, -1], "state": "minecraft:stone" },
+    { "position": [1, 120, 0], "state": "minecraft:stone" },
+    { "position": [1, 120, 1], "state": "minecraft:stone" }
+  ],
+  "entities": [
+    {
+      "id": "arrow",
+      "type": "minecraft:arrow",
+      "position": [0.5, 128.0, 0.5],
+      "launch": { "yaw": 0.0, "pitch": 90.0, "power": 3.0 }
+    }
+  ],
+  "compare": {
+    "position": 2.0e-4,
+    "velocity": 3.0e-6,
+    "rotation": 2.0e-1
+  }
+}

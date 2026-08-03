@@ -1,0 +1,29 @@
+{
+  "name": "arrow-into-wall",
+  "description": "A fully drawn bow fired dead level into a stone wall ten blocks along +Z. The arrow reaches it on its fourth tick, having already dropped a fifth of a block, so where it stops depends on the vertical face being clipped rather than on the cell being entered.",
+  "ticks": 20,
+  "seed": 4242,
+  "blocks": [
+    { "position": [0, 126, 10], "state": "minecraft:stone" },
+    { "position": [0, 127, 10], "state": "minecraft:stone" },
+    { "position": [0, 128, 10], "state": "minecraft:stone" },
+    { "position": [0, 129, 10], "state": "minecraft:stone" },
+    { "position": [1, 127, 10], "state": "minecraft:stone" },
+    { "position": [1, 128, 10], "state": "minecraft:stone" },
+    { "position": [-1, 127, 10], "state": "minecraft:stone" },
+    { "position": [-1, 128, 10], "state": "minecraft:stone" }
+  ],
+  "entities": [
+    {
+      "id": "arrow",
+      "type": "minecraft:arrow",
+      "position": [0.5, 128.0, 0.5],
+      "launch": { "yaw": 0.0, "pitch": 0.0, "power": 3.0 }
+    }
+  ],
+  "compare": {
+    "position": 2.0e-4,
+    "velocity": 3.0e-6,
+    "rotation": 2.0e-1
+  }
+}

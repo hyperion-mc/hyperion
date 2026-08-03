@@ -32,6 +32,9 @@ the wrong recording.
   "description": "A fully drawn bow fired dead level along +Z.",
   "ticks": 60,
   "seed": 4242,
+  "blocks": [
+    { "position": [0, 120, 10], "state": "minecraft:stone" }
+  ],
   "entities": [
     {
       "id": "arrow",
@@ -57,6 +60,9 @@ the wrong recording.
 | `entities[].id` | Names this entity in the trace and in a failure message. |
 | `entities[].type` | A protocol entity type. It must appear in `hyperion::simulation::projectile_motion::SIMULATED`, or there is nothing here to compare. |
 | `entities[].position` | Where it starts. |
+| `blocks` | Optional. Terrain to put in the world before anything is fired. |
+| `blocks[].position` | Integer block coordinates. |
+| `blocks[].state` | A block name and nothing else: `minecraft:stone`, not `minecraft:stone_slab[type=top]`. Both sides place the block's default state. |
 | `compare.position` | Tolerance in blocks. |
 | `compare.velocity` | Tolerance in blocks per tick. |
 | `compare.rotation` | Tolerance in degrees, for the arrow's client-facing yaw and pitch. |
@@ -70,6 +76,51 @@ scenario:
 - `"motion": [x, y, z]` sets the delta movement directly.
 - `"knockback": { "power", "fromX", "fromZ", "damage", "onGround" }` runs
   `LivingEntity.knockback`, for entities that have one.
+
+### Terrain is opt-in, per scenario
+
+A scenario with no `blocks` runs in an empty world on both sides and its trace
+is unchanged by any of this: the recorder places nothing and the replay stamps
+nothing. There is no global "load a flat world" switch to get wrong, and adding
+the terrain scenarios changed the four sky scenarios' recorded numbers not at
+all -- the only difference in those files is the two impact fields and the
+header index described below.
+
+A scenario that *does* name blocks gets them in both places before any entity
+exists. `VanillaTrace.placeBlocks` calls `setBlock` with `Block.UPDATE_CLIENTS`
+rather than `UPDATE_ALL`, because a neighbour update runs block logic and block
+logic is where a recording would start consuming randomness. On the hyperion
+side `stamp_terrain` loads each containing chunk first -- `HyperionCore`
+installs `Blocks::empty`, and `set_block` on an unloaded chunk quietly places
+nothing -- and clears them again afterwards, because every scenario shares one
+world where vanilla records each in a fresh level.
+
+Default states only. That means the two registries' defaults have to agree, and
+that is checked rather than trusted: a slab that came out `top` on one side and
+`bottom` on the other moves the arrow's resting height by half a block, four
+orders of magnitude outside any tolerance here.
+
+### The impact state, and the field index that rides with it
+
+An arrow's trace also carries `inGround` and `shakeTime`, and they are compared
+exactly, with no tolerance -- a flag and a countdown have no notion of "close".
+They are the reason a terrain scenario can assert anything at all: a resting
+position on its own cannot tell "stopped by the wall" from "still flying and
+happening to be there this tick". A snowball's trace carries neither, because
+`ThrowableProjectile` has no such state.
+
+`inGround` is read from the *synched* data rather than from `isInGround()`,
+which is `protected` -- so it is the value a client is actually sent, which is
+what `metadata::arrow::InGround` mirrors. Getting the accessor means reflection,
+and since the reflection is happening anyway the trace header records
+`inGroundFieldIndex` as well. That number is the one thing in
+`crates/hyperion/src/simulation/metadata/` nothing else can check: a field index
+never appears on the wire, so no packet capture recovers it, and getting it
+wrong neither fails to compile nor fails to send -- it writes a boolean into
+whichever field Mojang moved into slot 10 and the arrow quietly does something
+else on the client. The replay asserts it against `InGround::INDEX` before it
+compares a single tick. ENG-12106 is the general version of this for every other
+hand-transcribed index.
 
 ## What is deterministic, and how that is known rather than assumed
 
@@ -107,9 +158,10 @@ since it is a property of the runtime and not of anything in this repository.
   by inaccuracy, and a real bow shot passes inaccuracy 1.0. Scenarios pass 0.0,
   so the spread distribution is untested. What is tested is the flight, from
   whatever state vanilla started it in.
-- **Anything the arrow hits.** Every committed scenario flies through empty air.
-  Block and entity collision, `inGround`, and despawn are recorded in the trace
-  (`removed`) but no scenario exercises them yet.
+- **Entity collision, and despawn.** `removed` is recorded and nothing asserts
+  on it, and no scenario puts a second entity in an arrow's path. Block
+  collision *is* covered now -- see the three terrain scenarios -- but what an
+  arrow does when it meets a player is not.
 - **Water, lava, portals, bubble columns, levitation.** All change the
   integration and none appear in a flat world's sky.
 - **Player movement, and so knockback as Super Smash Mobs uses it.** Two
@@ -148,6 +200,26 @@ ok: snowball-throw (40 ticks); worst position delta 1.4786633116159464e-5 of 4e-
 
 Both sit about an order of magnitude inside the bound, which says the rounding
 errors are not accumulating in one direction.
+
+The terrain scenarios are twenty ticks and reach 128 blocks (121 for the slab),
+so the same arithmetic gives `20 * 2^-17 = 1.5e-4` and `20 * 2^-18 = 7.6e-5`;
+the committed tolerances are `2e-4` and `1e-4`. What they actually measure is
+smaller again, and this is the number worth reading, because the question going
+in was whether a swept clip against block shapes would open a bigger gap than
+free flight does:
+
+```
+ok: arrow-into-floor (20 ticks);   worst position delta 3.386e-6 of 2e-4
+ok: arrow-into-wall (20 ticks);    worst position delta 5.615e-6 of 2e-4
+ok: arrow-grazing-slab (20 ticks); worst position delta 8.309e-6 of 1e-4
+```
+
+It does not. Those are *tighter* than the sixty-tick sky shots (3.4e-5 to
+5.0e-5), for the ordinary reason that they run a third as long. The clip itself
+contributes nothing measurable: `geometry::sweep::first_block_hit` computes in
+`f64` internally, so the only rounding on the impact path is the `f32` the
+segment's endpoints arrive as -- the same single source of disagreement free
+flight has. **The residual gap is hyperion's `f32` positions, and nothing else.**
 
 **This tolerance is larger than the wire can express, and that is a real
 finding rather than a detail.** Entity position deltas go on the wire in units
@@ -257,3 +329,31 @@ column of every trace keeps them honest. Hyperion aims with `f32::atan2` where
 vanilla uses `Mth.atan2`, a table approximation; the two agree to under a
 thousandth of a degree across every committed scenario, which is why the
 rotation tolerance is a fifth of a degree rather than zero.
+
+### The heading of an arrow that stops
+
+The terrain scenarios found this on their first run, which is the reason to
+write them.
+
+`AbstractArrow.tick` aims the arrow at lines 212-215, from the velocity it
+entered the tick with, and **before** the clip at line 218. So an arrow that
+meets a wall this tick still turns to face the way it was going, and then holds
+that heading for as long as it stays embedded, because the in-ground branch
+returns at line 199 without reaching the rotation again.
+
+Hyperion did the aiming inside the *miss* branch of
+`update_projectile_positions`, so an arrow that landed kept the heading it had
+one tick earlier -- exactly one `lerpRotation` step behind, forever:
+
+```
+arrow-into-wall: arrow pitch diverges at tick 4
+  vanilla:  -1.0176632
+  hyperion: -0.5419483780860901
+  delta:    4.757e-1 (tolerance 2e-1)
+```
+
+Nothing else could have found it. It is invisible in flight, where the next tick
+corrects it; it is invisible to every sky scenario, because they never stop; and
+it is invisible to the bow e2e checks, which read velocity rather than
+orientation. The fix is one line moved above the clip, and the comment there
+names the vanilla lines rather than the symptom.

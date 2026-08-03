@@ -52,6 +52,7 @@ import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -72,6 +73,7 @@ import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.gizmos.GizmoCollector;
 import net.minecraft.gizmos.Gizmos;
 import net.minecraft.resources.Identifier;
@@ -103,11 +105,14 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.DataPackConfig;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.gamerules.GameRuleMap;
@@ -422,6 +427,13 @@ public final class VanillaTrace extends MinecraftServer {
                 }
             }
         }
+        // A declared block outside every entity's radius would be placed into a
+        // chunk that is not loaded, which `setBlock` answers by doing nothing
+        // and returning false -- a scenario whose wall silently is not there.
+        // Claiming its chunk is cheaper than detecting that later.
+        for (Scenario.BlockSpec spec : scenario.blocks) {
+            forced.add(new ChunkPos(spec.position[0] >> 4, spec.position[2] >> 4));
+        }
         for (ChunkPos pos : forced) {
             level.setChunkForced(pos.x(), pos.z(), true);
         }
@@ -435,6 +447,37 @@ public final class VanillaTrace extends MinecraftServer {
             }
         }
         return true;
+    }
+
+    /// Puts the scenario's declared blocks into the level, before any entity
+    /// exists to fly into them.
+    ///
+    /// `Block.UPDATE_CLIENTS` rather than `UPDATE_ALL`: a neighbour update runs
+    /// block logic, and block logic is where a recording would start consuming
+    /// randomness. There are no clients either way. The recorder's three-seed
+    /// agreement check is what would catch it if this were wrong.
+    ///
+    /// Default states only, deliberately. Naming a property here would mean
+    /// hyperion's replay parsing the same property string out of valence's
+    /// 1.20.1 tables, and the two default states agreeing is not something this
+    /// has to take on trust: a slab that came out `top` on one side and
+    /// `bottom` on the other moves the arrow's resting height half a block,
+    /// which is four orders of magnitude outside the position tolerance.
+    private void placeBlocks(ServerLevel level) {
+        for (Scenario.BlockSpec spec : scenario.blocks) {
+            Block block = BuiltInRegistries.BLOCK.getValue(Identifier.parse(spec.state));
+            if (block == null) {
+                throw new IllegalArgumentException("no such block: " + spec.state);
+            }
+            BlockPos pos = new BlockPos(spec.position[0], spec.position[1], spec.position[2]);
+            BlockState state = block.defaultBlockState();
+            if (!level.setBlock(pos, state, Block.UPDATE_CLIENTS)) {
+                throw new IllegalStateException("level refused the block " + spec.state + " at " + pos);
+            }
+        }
+        if (!scenario.blocks.isEmpty()) {
+            LOGGER.info("placed {} blocks", scenario.blocks.size());
+        }
     }
 
     private Entity spawn(ServerLevel level, Scenario.EntitySpec spec) {
@@ -514,6 +557,7 @@ public final class VanillaTrace extends MinecraftServer {
         if (tracked.isEmpty()) {
             warmup++;
             if (chunksReady(level)) {
+                placeBlocks(level);
                 for (Scenario.EntitySpec spec : scenario.entities) {
                     tracked.put(spec.id, spawn(level, spec));
                 }
@@ -532,6 +576,36 @@ public final class VanillaTrace extends MinecraftServer {
             halt(false);
         }
     }
+
+    /// `AbstractArrow.IN_GROUND`, the tracked field the client is told about.
+    ///
+    /// Reflected rather than read through `isInGround()`, which is `protected`,
+    /// and deliberately the *synched* value rather than a private boolean: it
+    /// is the thing that reaches a client, and it is what hyperion's
+    /// `metadata::arrow::InGround` mirrors. Its index rides along in the trace
+    /// header, so the field number hyperion hand-transcribes is checked against
+    /// the jar on every recording instead of being trusted (ENG-12106).
+    ///
+    /// Resolved on first use rather than in a static initialiser, and that is
+    /// not style: reading the field forces `AbstractArrow`'s superclass to
+    /// initialise, and `Entity.<clinit>` reaches `BuiltInRegistries` and throws
+    /// `Not bootstrapped`. A `static final` here runs before `main` has called
+    /// `Bootstrap.bootStrap()`, so it cannot work.
+    @SuppressWarnings("unchecked")
+    private static synchronized EntityDataAccessor<Boolean> arrowInGround() {
+        if (arrowInGround == null) {
+            try {
+                Field field = AbstractArrow.class.getDeclaredField("IN_GROUND");
+                field.setAccessible(true);
+                arrowInGround = (EntityDataAccessor<Boolean>) field.get(null);
+            } catch (ReflectiveOperationException error) {
+                throw new IllegalStateException("AbstractArrow no longer has an IN_GROUND accessor", error);
+            }
+        }
+        return arrowInGround;
+    }
+
+    private static EntityDataAccessor<Boolean> arrowInGround;
 
     private void sample() {
         JsonObject entities = new JsonObject();
@@ -552,6 +626,19 @@ public final class VanillaTrace extends MinecraftServer {
             rotation.add(entity.getXRot());
             state.add("rotation", rotation);
             state.addProperty("removed", entity.isRemoved());
+            // The impact state, and the reason a block scenario can assert
+            // anything at all. An arrow's resting position alone cannot tell
+            // "stopped by the wall" from "still flying and happening to be
+            // there this tick"; `inGround` can, and `shakeTime` pins the tick
+            // it landed on, since it counts down from seven.
+            //
+            // Absent for anything that is not an arrow rather than defaulted:
+            // `ThrowableProjectile` has no such state, and writing a false
+            // would claim a snowball was known not to be in the ground.
+            if (entity instanceof AbstractArrow arrow) {
+                state.addProperty("inGround", arrow.getEntityData().get(arrowInGround()));
+                state.addProperty("shakeTime", arrow.shakeTime);
+            }
             entities.add(entry.getKey(), state);
         }
         JsonObject sample = new JsonObject();
@@ -620,6 +707,7 @@ public final class VanillaTrace extends MinecraftServer {
         trace.addProperty("minecraftVersion", SharedConstants.getCurrentVersion().name());
         trace.addProperty("seed", seed);
         trace.addProperty("ticks", scenario.ticks);
+        trace.addProperty("inGroundFieldIndex", arrowInGround().id());
         JsonArray array = new JsonArray();
         samples.forEach(array::add);
         trace.add("samples", array);
@@ -640,6 +728,15 @@ public final class VanillaTrace extends MinecraftServer {
         private int ticks;
         private long seed;
         private List<EntitySpec> entities = List.of();
+        /// Terrain the scenario wants, and nothing else. Empty for every
+        /// scenario that flies through open sky, which is what keeps their
+        /// recordings byte-identical across this change.
+        private List<BlockSpec> blocks = List.of();
+
+        private static final class BlockSpec {
+            private int[] position;
+            private String state;
+        }
 
         private static final class EntitySpec {
             private String id;
@@ -693,6 +790,13 @@ public final class VanillaTrace extends MinecraftServer {
             }
             if (scenario.entities.isEmpty()) {
                 throw new IllegalArgumentException(scenario.name + ": no entities to record");
+            }
+            for (BlockSpec spec : scenario.blocks) {
+                Objects.requireNonNull(spec.state, scenario.name + ": block is missing a state");
+                if (spec.position == null || spec.position.length != 3) {
+                    throw new IllegalArgumentException(
+                            scenario.name + ": block position must be three integers");
+                }
             }
             for (EntitySpec spec : scenario.entities) {
                 Objects.requireNonNull(spec.id, "entity is missing an id");

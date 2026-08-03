@@ -527,7 +527,7 @@ impl Module for EntityStateSyncModule {
         .each_iter(
             |it,
              row,
-             (position, velocity, owner, connection_id, yaw, pitch, in_ground, mut shake)| {
+             (position, velocity, owner, connection_id, mut yaw, mut pitch, in_ground, mut shake)| {
                 if let Some(_connection_id) = connection_id {
                     return;
                 }
@@ -578,6 +578,33 @@ impl Module for EntityStateSyncModule {
                     // it got there.
                     let ray = geometry::ray::Ray::new(center, velocity.0);
 
+                    // A projectile points where it is going, re-aimed off its
+                    // velocity every tick. Without this an arrow keeps its
+                    // launch orientation for its whole flight: the arc is right
+                    // but it renders frozen at its loosed angle rather than
+                    // nosing over as it falls.
+                    //
+                    // *When* it is re-aimed differs by integrator, and the
+                    // difference is only visible on the tick a projectile stops.
+                    // `AbstractArrow.tick` aims at lines 212-215, from the
+                    // velocity it entered the tick with and **before** the clip
+                    // at line 218 -- so an arrow that meets a wall this tick
+                    // still turns to face the way it was going, and then holds
+                    // that heading, because the in-ground branch returns at line
+                    // 199 without reaching the rotation again.
+                    // `ThrowableProjectile.tick:56` aims after its move instead.
+                    //
+                    // Doing this inside the miss branch, as it used to be, left
+                    // the heading a tick stale on every arrow that landed. The
+                    // differential gate caught it: `arrow-into-wall` pitch was
+                    // -0.542 against vanilla's -1.018, exactly one `lerpRotation`
+                    // step behind.
+                    let aims_before_moving = motion
+                        .is_some_and(|motion| motion.order == MotionOrder::MoveThenDecay);
+                    if aims_before_moving {
+                        aim_along(yaw.as_deref_mut(), pitch.as_deref_mut(), velocity.0);
+                    }
+
                     let Some(collision) = get_first_collision(ray, &world, Some(owner.entity))
                     else {
                         // Vanilla's own integration, per kind, rather than one
@@ -586,34 +613,16 @@ impl Module for EntityStateSyncModule {
                         // statements. `crates/hyperion/tests/differential.rs`
                         // holds this against a recording of the real server.
                         if let Some(motion) = motion {
-                            // A projectile points where it is going, re-aimed off
-                            // its velocity every tick. Without this an arrow keeps
-                            // its launch orientation for its whole flight: the arc
-                            // is right but it renders frozen at its loosed angle
-                            // rather than nosing over as it falls. Vanilla reads
-                            // the velocity at the moment its own tick calls
-                            // `updateRotation`, and that moment differs by
-                            // integrator: `AbstractArrow.tick` aims from the
-                            // velocity it entered the tick with, before the move
-                            // and decay, while `ThrowableProjectile.tick` applies
-                            // gravity and drag first and aims from the result. So
-                            // the arrow is aimed before the step and the thrown
-                            // kind after it.
-                            // The rotation easing still runs (it keeps the
-                            // stored facing correct for anything server-side
-                            // that reads it) but is no longer sent: the client
-                            // re-derives an arrow's heading from its velocity.
-                            let _rotation = match motion.order {
-                                MotionOrder::MoveThenDecay => {
-                                    let rotation = aim_along(yaw, pitch, velocity.0);
-                                    motion.step(position, &mut velocity.0);
-                                    rotation
-                                }
-                                MotionOrder::DecayThenMove => {
-                                    motion.step(position, &mut velocity.0);
-                                    aim_along(yaw, pitch, velocity.0)
-                                }
-                            };
+                            motion.step(position, &mut velocity.0);
+                            // The thrown kinds aim here, from the velocity the
+                            // step left behind. The rotation easing still runs
+                            // for both (it keeps the stored facing correct for
+                            // anything server-side that reads it) but is not
+                            // sent: the client re-derives a projectile's heading
+                            // from its velocity.
+                            if !aims_before_moving {
+                                aim_along(yaw, pitch, velocity.0);
+                            }
 
                             // Tell every client watching this arrow how fast it
                             // is going, every tick, and let the client dead-reckon

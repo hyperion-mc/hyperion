@@ -1,0 +1,28 @@
+{
+  "name": "arrow-grazing-slab",
+  "description": "A fully drawn bow fired level over a bottom slab and into a wall behind it. The slab's top face is at y=120.5 and the arrow crosses its cell at about y=120.8, so a collider that treated the slab as a full cube would stop the arrow ten blocks early. It stops at the wall instead.",
+  "ticks": 20,
+  "seed": 4242,
+  "blocks": [
+    { "position": [0, 120, 10], "state": "minecraft:stone_slab" },
+    { "position": [0, 120, 11], "state": "minecraft:stone_slab" },
+    { "position": [0, 118, 20], "state": "minecraft:stone" },
+    { "position": [0, 119, 20], "state": "minecraft:stone" },
+    { "position": [0, 120, 20], "state": "minecraft:stone" },
+    { "position": [0, 121, 20], "state": "minecraft:stone" },
+    { "position": [0, 122, 20], "state": "minecraft:stone" }
+  ],
+  "entities": [
+    {
+      "id": "arrow",
+      "type": "minecraft:arrow",
+      "position": [0.5, 121.0, 0.5],
+      "launch": { "yaw": 0.0, "pitch": 0.0, "power": 3.0 }
+    }
+  ],
+  "compare": {
+    "position": 1.0e-4,
+    "velocity": 3.0e-6,
+    "rotation": 2.0e-1
+  }
+}
