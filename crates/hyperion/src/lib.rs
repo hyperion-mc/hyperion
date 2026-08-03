@@ -259,10 +259,8 @@ impl HyperionCore {
             value: shutdown.clone(),
         });
 
-        world.component::<Prev>();
-
         // Minecraft tick rate is 20 ticks per second
-        world.set_target_fps(20.0);
+        world.set_target_fps(TICKS_PER_SECOND);
 
         // todo: sadly this requires u32
         // .bit("on_fire", *EntityFlags::ON_FIRE)
@@ -330,7 +328,6 @@ impl HyperionCore {
             .component::<StreamLookup>()
             .add_trait::<flecs::Singleton>();
         world.component::<EntitySize>();
-        world.component::<IgnMap>().add_trait::<flecs::Singleton>();
 
         world
             .component::<config::Config>()
