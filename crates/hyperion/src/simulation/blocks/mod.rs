@@ -69,6 +69,14 @@ pub struct RayCollision {
     pub point: Vec3,
     pub normal: Vec3,
     pub block: BlockState,
+    /// The ray began inside this block's collision shape rather than crossing
+    /// into it, which is vanilla's `BlockHitResult.isInside`.
+    ///
+    /// Worth carrying rather than collapsing: a projectile loosed from inside
+    /// a wall and one that flew into it are told apart by nothing else, and
+    /// the reported point is a probe a thousandth of the way along rather than
+    /// a surface.
+    pub inside: bool,
 }
 
 /// Accessor of blocks.
@@ -156,6 +164,7 @@ impl Blocks {
             location: hit.block,
             point: hit.point,
             normal: hit.normal,
+            inside: hit.inside,
             // A second lookup rather than carrying the state out through the
             // traversal: the shape source is a `BlockState` here and a set of
             // coordinates in a test, and threading a payload through

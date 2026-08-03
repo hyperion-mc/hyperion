@@ -38,6 +38,7 @@ impl BlockWorld for HyperionBlocks {
                 block: hit.location,
                 point: hit.point,
                 normal: hit.normal,
+                inside: hit.inside,
             })
         })
     }
