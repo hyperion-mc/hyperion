@@ -44,6 +44,7 @@ members = [
     'crates/packet-channel',
     'events/bedwars',
     'events/smash',
+    'events/smash-rules',
     'tools/rust-mc-bot',
 ]
 resolver = '2'
