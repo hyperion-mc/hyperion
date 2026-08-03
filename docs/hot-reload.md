@@ -873,6 +873,49 @@ state in one process — the same shape the index probe exists to reject for fle
 signature, for the next native library that hits this: an undefined `foo_*` at an event's
 final link whose definition is `LOCAL` in `libhyperion.so`'s `.symtab`.
 
+### Checking that one `flecs_ecs` really reached both artifacts
+
+The build already refuses a dangling `DT_NEEDED` (`requireResolved` in
+`nix/hot-reload/packaging.nix`), so a rules dylib asking for a `libflecs_ecs` nobody ships
+fails at build time. That is not quite the property the feature needs. The property is that
+the server and the rules ask for the *same* one, and two artifacts can each resolve happily
+against two different libraries.
+
+There is no check for that yet, deliberately -- see below -- so until there is, it is a
+command:
+
+```console
+$ nix build --no-link --print-out-paths .#packages.x86_64-linux.smash-server
+/nix/store/5z9q...-smash-server
+$ nix build --no-link --print-out-paths .#packages.x86_64-linux.smash-rules
+/nix/store/6lk4...-smash-rules
+
+$ readelf -d .../smash-server/bin/smash        | grep flecs
+ 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-bf77c44af1eeb9f5.so]
+$ readelf -d .../smash-rules/lib/libsmash_rules.so | grep flecs
+ 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-bf77c44af1eeb9f5.so]
+```
+
+The hashes must be identical, and `ldd` on both must resolve them to the *same*
+`hyperion-dylibs` output:
+
+```console
+$ ldd .../smash-rules/lib/libsmash_rules.so | grep flecs
+    libflecs_ecs-bf77c44af1eeb9f5.so => /nix/store/ya44...-hyperion-dylibs/lib/libflecs_ecs-bf77c44af1eeb9f5.so
+```
+
+Two different hashes is two `INDEX_POOL`s: one world, indexed two different ways, with no
+crash and no error -- components read as each other's neighbours. Same hash but two store
+paths is the same fault wearing a nicer name.
+
+**Why this is a command and not a `checks.` entry.** Asserting it needs both release
+derivations built, which CI does not do today, and that is a real cost to add for a
+property that is about to become structural. The `cargoUnit` migration (ENG-12078) makes
+`flecs_ecs` one derivation per crate, at which point there is exactly one `libflecs_ecs`
+store path because there is exactly one derivation producing it, and a cheap check falls
+out of the migrated layout rather than being bolted onto this one. Write the check then,
+against that layout, instead of writing it twice.
+
 ### The boundary, measured rather than asserted
 
 `checks.hot-reload-source-split` compares the source trees. The property it stands in for is
