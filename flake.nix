@@ -1718,6 +1718,31 @@
               timeout = 180;
             };
 
+            # Player chat, which smash did not have.
+            #
+            # `PacketId::Chat` was routed, decoded and pushed onto
+            # `EventQueue<event::ChatMessage>`, and nothing drained that queue,
+            # so every message a player typed was thrown away when the queue
+            # was recycled. There was no code to unit-test and no packet to
+            # assert on; the only evidence that separates "wired up" from
+            # "decoded and dropped" is a second connection hearing the first
+            # one, which is what makes this a gate rather than a test.
+            #
+            # `chat-check.py` joins two clients, has one talk, and requires the
+            # line to reach both in vanilla's `<Name> message` shape. It also
+            # sends a message full of section signs: a literal `SystemChat`
+            # string is rendered through the client's `StringDecomposer`, which
+            # applies legacy colour codes as it reads, so `§k` typed by a bot
+            # scrambles its own text and `§4[Server]` paints a fake notice.
+            # Both must arrive with the sign gone.
+            chat-e2e = e2e.mkCheck {
+              name = "hyperion-chat-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "chat-check.py";
+              timeout = 180;
+            };
+
             # The tab list's two new numbers, and the one claim about them that
             # no Rust test can settle.
             #
