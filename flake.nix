@@ -748,23 +748,6 @@
               text = ''exec ./crates/hyperion-hot-reload/demo.sh "$@"'';
             };
 
-            # Whether the host binary and a dlopened module draw component
-            # indices from one pool. Everything the reload gate checks rests on
-            # this, and nothing it checks would notice if it were false: both
-            # sides stay internally consistent and simply disagree about which
-            # slot is which. `checks.hot-reload-index-probe` runs this same
-            # script, so the gate and the command a contributor runs by hand
-            # cannot say different things about the same tree.
-            hot-reload-index-probe = {
-              deps = [ pkgs.cmake pkgs.pkg-config ];
-              # Through `bash` rather than the script's own shebang. The
-              # sandbox has no `/usr/bin/env`, so `#!/usr/bin/env bash` is a
-              # `bad interpreter` there and the check failed before running a
-              # line of the probe. It passed on darwin, where that path exists,
-              # which is how the ELF half stayed unverified.
-              text = ''exec bash ./crates/hyperion-hot-reload/index-probe.sh "$@"'';
-            };
-
             # The game server and the proxy authenticate to each other with
             # mTLS, so a fresh clone cannot run until a CA and two leaf certs
             # exist. That is the only thing between `git clone` and a running
@@ -1183,9 +1166,10 @@
 
           # The hot-reload packaging: the engine's dylibs, the server binary
           # `ExecStart` names, and the rules dylib `X-Reload-Triggers` names.
-          # Kept out of `cargoUnit` because that builder is rlib-only, and split
-          # across three derivations because a rules edit has to move exactly
-          # one store path. See nix/hot-reload/packaging.nix.
+          # Built by `cargoUnit` like everything else since ENG-12078 taught it
+          # dylib crate types; the split into separately-moving store paths is
+          # cargoUnit's per-unit source scoping rather than anything this flake
+          # arranges. See nix/hot-reload/packaging.nix.
           # One entry per game. smash is the first consumer, not the shape
           # (ENG-12067): every hot-reload derivation, check and NixOS option
           # below is a function of this list rather than of smash.
@@ -1198,7 +1182,13 @@
           ];
 
           hotReload = import ./nix/hot-reload/packaging.nix {
-            inherit lib pkgs workspace rustToolchain nativeBuildInputs;
+            inherit
+              lib
+              pkgs
+              cargoUnit
+              workspaceArgs
+              rustToolchain
+              ;
             root = ./.;
             events = hotReloadEvents;
           };
@@ -1347,68 +1337,200 @@
               touch $out
             '';
 
-            # Runs the shared-pool probe rather than only shellchecking it.
-            # `scripts` puts every `nix run` app in `checks`, so
-            # `checks.hot-reload-index-probe` already existed -- as the SCRIPT,
-            # whose build runs shellcheck over a cargo invocation and never
-            # runs cargo. That is the same gap #1094 found in `checks.lint`.
-            #
-            # This is the one invariant the reload gate cannot check for
-            # itself. `AbiToken` compares a rustc version, an ABI integer and
-            # the address of a static, and all three pass while the host and a
-            # module index one world through two different `INDEX_POOL`s. So
-            # the thing that would catch a regression is a build of both halves
-            # and a comparison of allocation order, which is what the probe is.
-            #
-            # Cost: a dev-profile build of `hyperion` and its graph inside the
-            # sandbox, shared with nothing. Same shape as `clippy` above and
-            # for the same reason -- prefer-dynamic artifacts are not the
-            # release rlibs `cargoUnit` produces, so there is nothing to reuse.
             # The source split the reload boundary is made of, asserted on the
-            # trees themselves rather than on a rebuild.
+            # derivations themselves rather than on a proxy.
             #
             # `ExecStart` must not move when only the rules change, and a store
             # path is a function of a derivation's inputs, so the question is
             # exactly whether the rules crate's code is an input to the server.
-            # Checking that directly costs a `diff` and no compile, and it fails
-            # for the same reason the feature would: if this stub is ever the
-            # real file, every rules edit moves `ExecStart` and every apply
-            # restarts, dropping every connected player while the pipeline stays
-            # green.
+            # This perturbs one crate's source and compares `drvPath`s: a
+            # `drvPath` that did not move guarantees an `outPath` that did not
+            # move, so the assertion is conservative in the safe direction even
+            # though every unit is content-addressed.
+            #
+            # It replaces a check that read the stub trees the old cargo-based
+            # packaging built by hand. cargoUnit scopes each unit's source to
+            # its own crate directory, so there are no stub trees left to read,
+            # and this asks the question the stubs were standing in for.
+            #
+            # NOTE, and this changed with ENG-12078: a HOST edit no longer moves
+            # the rules dylib. The old packaging put the host crate in the rules
+            # derivation's source tree, so it did. `smash-rules` does not depend
+            # on `smash` -- it reaches components through
+            # `hyperion-hot-reload`'s registry by name -- so cargoUnit correctly
+            # rebuilds nothing, and the layout check the loader runs is what
+            # catches a component whose shape moved underneath it. That is the
+            # guard that was always doing this work; the recompile was an
+            # artifact of the coarse source filter.
+            #
+            # Cost: two extra cargoUnit workspace instantiations at eval, each
+            # a cargo resolve and a render, not a compile.
             hot-reload-source-split =
-              pkgs.runCommand "hyperion-hot-reload-source-split" { }
+              let
+                # A whole-tree copy with one file appended to. The copy is what
+                # makes it a different source tree; the content of the append is
+                # irrelevant as long as it changes the file's bytes.
+                perturbed =
+                  label: file:
+                  pkgs.runCommand "hyperion-source-perturbed-${label}" { } ''
+                    cp -r ${./.} "$out"
+                    chmod -R u+w "$out"
+                    printf '\n// hot-reload-source-split perturbation\n' >> "$out/${file}"
+                  '';
+
+                base = hotReload;
+                movedBy = label: file: hotReload.packagingFor (perturbed label file);
+
+                # `throw` rather than a build-time comparison: these are eval
+                # facts, and forcing them here fails the check with the two
+                # paths in the message.
+                same =
+                  what: a: b:
+                  if a.drvPath == b.drvPath then
+                    true
+                  else
+                    throw ''
+                      hot-reload-source-split: ${what} moved and must not have.
+                        before: ${a.drvPath}
+                        after:  ${b.drvPath}
+                      A path in `ExecStart` that moves on an unrelated edit turns every
+                      reload into a restart, dropping every connected player, with no
+                      other symptom.
+                    '';
+                different =
+                  what: a: b:
+                  if a.drvPath != b.drvPath then
+                    true
+                  else
+                    throw ''
+                      hot-reload-source-split: ${what} did NOT move and must have.
+                        both: ${a.drvPath}
+                      An edit that changes nothing means the derivation does not carry
+                      that crate's source, so the change would never reach a player.
+                    '';
+
+                assertions = lib.concatMap (
+                  event:
+                  let
+                    afterRules = movedBy "${event.name}-rules" "${event.rulesCrate}/src/lib.rs";
+                    afterHost = movedBy "${event.name}-host" "${event.hostCrate}/src/lib.rs";
+                  in
+                  [
+                    (different "${event.name}-rules on a rules edit" base.events.${event.name}.rules
+                      afterRules.events.${event.name}.rules
+                    )
+                    (same "${event.name}-server on a rules edit" base.events.${event.name}.server
+                      afterRules.events.${event.name}.server
+                    )
+                    (same "hyperion-dylibs on a rules edit" base.hyperion-dylibs afterRules.hyperion-dylibs)
+                    (different "${event.name}-server on a host edit" base.events.${event.name}.server
+                      afterHost.events.${event.name}.server
+                    )
+                    (same "hyperion-dylibs on a host edit" base.hyperion-dylibs afterHost.hyperion-dylibs)
+                  ]
+                ) hotReloadEvents;
+              in
+              assert lib.all (held: held) assertions;
+              pkgs.runCommand "hyperion-hot-reload-source-split" { } ''
+                touch $out
+              '';
+
+            # One `libflecs_ecs`, asserted on the shipped artifacts (ENG-12053).
+            #
+            # Two questions, and only asking both is a check. `requireResolved`
+            # in the packaging already refuses a dangling `DT_NEEDED`, so each
+            # artifact resolves *something*. The property the feature needs is
+            # that the server and the rules dylib resolve the SAME something:
+            #
+            #   1. the same `DT_NEEDED` name. Two different metadata hashes is
+            #      two `INDEX_POOL`s -- one world indexed two different ways,
+            #      with no crash and no error, components reading as each
+            #      other's neighbours.
+            #   2. the same resolved store path. The same hash reaching two
+            #      store paths is the identical aliasing fault wearing a nicer
+            #      name, and a string comparison alone cannot see it.
+            #
+            # This replaces the manual `readelf`/`ldd` recipe docs/hot-reload.md
+            # carried while the property was not yet structural. Since ENG-12078
+            # it is: one cargoUnit graph resolves features once, so there is one
+            # `flecs_ecs` derivation, and `engineUnit` fails the build at eval if
+            # the graph ever holds two. This is the runtime half of that -- what
+            # the loader actually does with the files.
+            #
+            # Written to fail closed. Every extraction is checked for emptiness
+            # before it is compared, because "no flecs line found" and "the two
+            # flecs lines agree" are the same silence otherwise.
+            hot-reload-one-flecs =
+              pkgs.runCommandCC "hyperion-hot-reload-one-flecs"
+                {
+                  nativeBuildInputs = [ pkgs.binutils ];
+                }
                 (
                   ''
-                    set -eu
+                    set -euo pipefail
                   ''
                   + lib.concatMapStrings (event: ''
                     echo "checking ${event.name}"
-                    server=${hotReload.events.${event.name}.serverSource}/${event.rulesCrate}/src/lib.rs
-                    rules=${hotReload.events.${event.name}.rulesSource}/${event.rulesCrate}/src/lib.rs
-                    engine=${hotReload.dylibSource}/${event.hostCrate}/src/lib.rs
+                    server=${hotReload.events.${event.name}.server}/bin/${
+                      (lib.importTOML (./. + "/${event.hostCrate}/Cargo.toml")).package.name
+                    }
+                    rules=${hotReload.events.${event.name}.rules}/lib/${hotReload.events.${event.name}.rulesLib}
 
-                    if [ -s "$server" ]; then
-                      echo "${event.name}-server's source carries the real rules crate." >&2
-                      echo "Every rules edit would move ExecStart and restart the server." >&2
+                    ${
+                      if pkgs.stdenv.hostPlatform.isElf then
+                        ''
+                          for artifact in "$server" "$rules"; do
+                            readelf -d "$artifact"                               | sed -n 's/.*Shared library: \[\(libflecs_ecs[^]]*\)\].*//p' >> names.txt
+                            ldd "$artifact" | awk '/libflecs_ecs/ { print $3 }' >> paths.txt
+                          done
+                        ''
+                      else
+                        ''
+                          # Mach-O records the absolute install name, so the two
+                          # questions have one answer there; ask it twice anyway
+                          # so the shape of the check does not differ.
+                          for artifact in "$server" "$rules"; do
+                            otool -L "$artifact" | awk '/libflecs_ecs/ { print $1 }' >> paths.txt
+                            otool -L "$artifact" | awk '/libflecs_ecs/ { print $1 }' | xargs -n1 basename >> names.txt
+                          done
+                        ''
+                    }
+
+                    if [ "$(wc -l < names.txt)" -ne 2 ] || [ "$(wc -l < paths.txt)" -ne 2 ]; then
+                      echo "expected one libflecs_ecs line from each of the two artifacts, got:" >&2
+                      echo "names:" >&2; cat names.txt >&2
+                      echo "paths:" >&2; cat paths.txt >&2
+                      echo "Neither naming it twice nor naming it zero times is the property;" >&2
+                      echo "this is the check failing to run, not the artifacts being clean." >&2
                       exit 1
                     fi
-                    if [ ! -s "$rules" ]; then
-                      echo "${event.name}-rules' source carries a stub, not the rules crate." >&2
+                    if [ "$(sort -u names.txt | wc -l)" -ne 1 ]; then
+                      echo "${event.name}: the server and the rules dylib name DIFFERENT libflecs_ecs:" >&2
+                      cat names.txt >&2
+                      echo "Two metadata hashes is two INDEX_POOLs in one process; see ENG-12053." >&2
                       exit 1
                     fi
-                    if [ -s "$engine" ]; then
-                      echo "hyperion-dylibs' source carries ${event.name}'s host crate." >&2
-                      echo "A host edit would move the engine dylibs and restart." >&2
+                    if [ "$(sort -u paths.txt | wc -l)" -ne 1 ]; then
+                      echo "${event.name}: one libflecs_ecs name resolving to TWO store paths:" >&2
+                      cat paths.txt >&2
+                      echo "Same hash, two libraries loaded -- the same fault as two hashes." >&2
                       exit 1
                     fi
-                    # The real file has to actually be the one in the tree, not
-                    # merely non-empty: a stub that grew a comment would pass
-                    # the size test.
-                    cmp "$rules" ${./. + "/${event.rulesCrate}/src/lib.rs"}
+
+                    # And it is the engine's copy, not some third one that
+                    # happens to be consistent between the two.
+                    resolved=$(head -1 paths.txt)
+                    if [ ! "$resolved" -ef "${hotReload.hyperion-dylibs}/lib/$(basename "$resolved")" ]; then
+                      echo "${event.name}: libflecs_ecs resolves outside hyperion-dylibs:" >&2
+                      echo "  resolved:  $resolved" >&2
+                      echo "  engine:    ${hotReload.hyperion-dylibs}/lib/" >&2
+                      ls -l ${hotReload.hyperion-dylibs}/lib >&2
+                      exit 1
+                    fi
+
+                    printf '%s %s\n' "${event.name}" "$resolved" >> "$out"
+                    rm -f names.txt paths.txt
                   '') hotReloadEvents
-                  + ''
-                    touch $out
-                  ''
                 );
 
             # THE PACKAGED SERVER STARTS. Nothing else here runs it.
@@ -1553,25 +1675,34 @@
                   cp before.ini "$out"
                 '';
 
-            hot-reload-index-probe = pkgs.runCommandCC "hyperion-hot-reload-index-probe" {
-              inherit nativeBuildInputs;
-              # Dev profile, so every C build script in the graph compiles at
-              # -O0 and glibc answers `_FORTIFY_SOURCE` with a `#warning`. An
-              # autoconf probe reading stderr then misreads its own test as a
-              # compile failure; see `clippy` above, which met this first.
-              hardeningDisable = [ "fortify" ];
-            } ''
-              cp -r ${workspaceArgs.src}/. .
-              chmod -R u+w .
-              ${workspace.cargoConfigScript}
-              # `pipefail` because the probe's status is the one that matters
-              # and `tee` would otherwise report for it. Both assertions are
-              # kept: the exit code catches a probe that dies before saying
-              # anything, and the grep catches one that exits 0 having measured
-              # nothing. A run that printed PROBE_OK and then failed would pass
-              # on the grep alone, which is the case pipefail adds.
-              set -o pipefail
-              ${lib.getExe runners.hot-reload-index-probe} | tee $out
+            # Runs the shared-pool probe over the artifacts that ship.
+            #
+            # This is the one invariant the reload gate cannot check for itself.
+            # `AbiToken` compares a rustc version, an ABI integer and the address
+            # of a static, and all three pass while the host and a module index
+            # one world through two different `INDEX_POOL`s. So the thing that
+            # would catch a regression is a build of both halves and a comparison
+            # of allocation order, which is what the probe is.
+            #
+            # Since ENG-12078 both halves come out of the same cargoUnit graph
+            # the server and the rules dylib do, so this costs the probe's own
+            # two units and nothing else -- it used to be a whole second
+            # dev-profile compile of `hyperion`, with its own hand-written
+            # prefer-dynamic string, proving the property for a build nobody
+            # deployed.
+            hot-reload-index-probe = pkgs.runCommand "hyperion-hot-reload-index-probe" { } ''
+              # `pipefail` because the probe's status is the one that matters and
+              # `tee` would otherwise report for it. Both assertions are kept: the
+              # exit code catches a probe that dies before saying anything, and
+              # the grep catches one that exits 0 having measured nothing.
+              set -euo pipefail
+              module=$(echo ${hotReload.indexProbe.module}/lib/libhyperion_hot_reload_index_probe_module-*${pkgs.stdenv.hostPlatform.extensions.sharedLibrary})
+              if [ ! -f "$module" ]; then
+                echo "the index-probe module unit produced no shared library:" >&2
+                ls -la ${hotReload.indexProbe.module}/lib >&2
+                exit 1
+              fi
+              ${hotReload.indexProbe.host}/bin/hot-reload-index-probe "$module" | tee $out
               grep -q PROBE_OK $out
             '';
           };

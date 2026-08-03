@@ -143,17 +143,17 @@
     "git-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784960835,
+        "lastModified": 1785531994,
         "narHash": "sha256-9N1VyEYI7gpdR75evmQiO5fg546e4tc3W4zuwRFKbU0=",
         "owner": "indexable-inc",
         "repo": "git",
-        "rev": "69fbc5cfd883f5a45c88f202325ba08d20fdbdcb",
+        "rev": "eef38393cda1413ded72f0259d1618110cf38456",
         "type": "github"
       },
       "original": {
         "owner": "indexable-inc",
         "repo": "git",
-        "rev": "69fbc5cfd883f5a45c88f202325ba08d20fdbdcb",
+        "rev": "eef38393cda1413ded72f0259d1618110cf38456",
         "type": "github"
       }
     },
@@ -208,17 +208,17 @@
     "home-manager-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784724659,
-        "narHash": "sha256-eCwzFQYWJ5vW3nODZHPiaTuiRq9Z00S6jE5tfPtZe3s=",
+        "lastModified": 1785530609,
+        "narHash": "sha256-85GQQa8fT6mMGISL22IaZ99uDSHtRefSiy/Fae5rv90=",
         "owner": "indexable-inc",
         "repo": "home-manager",
-        "rev": "d27be2a29e5feb86a9196838b1bb0fdc44119cb8",
+        "rev": "7d29fa5cbf4b468b7d9692cfb500cb89291fb519",
         "type": "github"
       },
       "original": {
         "owner": "indexable-inc",
         "repo": "home-manager",
-        "rev": "d27be2a29e5feb86a9196838b1bb0fdc44119cb8",
+        "rev": "7d29fa5cbf4b468b7d9692cfb500cb89291fb519",
         "type": "github"
       }
     },
@@ -238,7 +238,6 @@
         "jj-src": "jj-src",
         "launchk-src": "launchk-src",
         "mesa-src": "mesa-src",
-        "nix-derivation-src": "nix-derivation-src",
         "nix-fast-build-src": "nix-fast-build-src",
         "nix-ninja-src": "nix-ninja-src",
         "nix-src": "nix-src",
@@ -260,11 +259,11 @@
         "tests": "tests"
       },
       "locked": {
-        "lastModified": 1785376358,
-        "narHash": "sha256-2DE6TQE1tCyJyn6T6G7zpU7iOR+XCvHZg+peuyNv0Fk=",
+        "lastModified": 1785730910,
+        "narHash": "sha256-6ZQStDZWejuQADY9Yno/tg1mqQFVsTZcKBCS/yEUOsI=",
         "owner": "indexable-inc",
         "repo": "index",
-        "rev": "69904c6e20087c28d9adec1b78a179d45ab160af",
+        "rev": "efe77d641f76398ebf979735760df8e31e7153c2",
         "type": "github"
       },
       "original": {
@@ -276,17 +275,17 @@
     "jj-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1785212716,
-        "narHash": "sha256-uypz70OifGkGp2gcAUHrFFh1UUvmlVBiqjS7FkR8X3M=",
+        "lastModified": 1785704459,
+        "narHash": "sha256-/xoE3TN1l7NsismAQC058M54N+XU2QdWh6m+ngUC+Ns=",
         "owner": "indexable-inc",
         "repo": "jj",
-        "rev": "c1e8eece663170df3f461ee7a085721e535426e1",
+        "rev": "b6e967b88ce979c4e1a304472b90dc9e0f2b7f53",
         "type": "github"
       },
       "original": {
         "owner": "indexable-inc",
         "repo": "jj",
-        "rev": "c1e8eece663170df3f461ee7a085721e535426e1",
+        "rev": "b6e967b88ce979c4e1a304472b90dc9e0f2b7f53",
         "type": "github"
       }
     },
@@ -321,23 +320,6 @@
         "owner": "indexable-inc",
         "repo": "mesa",
         "rev": "0859cf8912b7dde1cb7b06f2ed416a84a479feef",
-        "type": "github"
-      }
-    },
-    "nix-derivation-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1784724798,
-        "narHash": "sha256-2iW2bmKUlHZ+uVhb5JjZdIfICxMjSjCsdDzHKw/HFPA=",
-        "owner": "indexable-inc",
-        "repo": "Haskell-Nix-Derivation-Library",
-        "rev": "ba78008319f3517013a9fd70245ecee5ab2054b4",
-        "type": "github"
-      },
-      "original": {
-        "owner": "indexable-inc",
-        "repo": "Haskell-Nix-Derivation-Library",
-        "rev": "ba78008319f3517013a9fd70245ecee5ab2054b4",
         "type": "github"
       }
     },
@@ -378,17 +360,17 @@
     "nix-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1785328166,
-        "narHash": "sha256-l9oDJNHEnXDf83/+FXKXFCSmmN6h8vWouazCDY9Iw1Y=",
+        "lastModified": 1785534682,
+        "narHash": "sha256-k1pNEeTmiYl+6gcK98O+fjJbdRk2Ho+92yqDK+SqmHQ=",
         "owner": "indexable-inc",
         "repo": "nix",
-        "rev": "0f356d7cf513ca074a2122079defeb95810b6a91",
+        "rev": "2d7585afe7b146f2bb07d834285ce8caefc7ba33",
         "type": "github"
       },
       "original": {
         "owner": "indexable-inc",
         "repo": "nix",
-        "rev": "0f356d7cf513ca074a2122079defeb95810b6a91",
+        "rev": "2d7585afe7b146f2bb07d834285ce8caefc7ba33",
         "type": "github"
       }
     },

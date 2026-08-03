@@ -567,10 +567,17 @@ rebuild and a restart.**
    version script `flecs_ecs`'s build script installs names four globs and both bfd and
    lld treat a pattern matching nothing as an error.
 
-   `crates/hyperion-hot-reload/index-probe.sh` is that recipe, written once.
-   `nix run .#hot-reload-index-probe` runs it, and `checks.hot-reload-index-probe` is the
-   same script as a derivation, so the gate and the command a contributor runs by hand
-   cannot disagree about the same tree.
+   `nix/hot-reload/packaging.nix` is that recipe, written once, as flags on one
+   `cargoUnit` workspace. `checks.hot-reload-index-probe` runs the probe over units out of
+   that same workspace, so what the gate measures and what a host runs are the same
+   artifacts rather than two builds that agree by construction.
+
+   `-C link-arg=-Wl,--undefined-version` is **not** in the recipe as built. The version
+   script `flecs_ecs`'s build script installs still names four globs, and bfd and lld still
+   error on a pattern that matches nothing, but the workspace's configured linker does not,
+   so nothing needs the flag today. It is left out rather than added defensively: if the
+   linker changes, the link fails and names the pattern, which is a better signal than a
+   flag nobody can explain.
 
 What makes the pool shared is step 1 and nothing else. It is tempting to think a module has
 to *reference* `hyperion-hot-reload` to end up on the shared runtime — an earlier version of
@@ -848,12 +855,41 @@ time, each migration a small PR that is already covered by the existing test sui
 The failure this avoids is the expensive one: finishing a nineteen-file refactor and only
 then discovering that `[Service]` differs on every apply and nothing ever reloads.
 
-## Packaging: three derivations, because two would restart
+## Packaging: one cargoUnit graph, three sets of store paths
 
-Three things were measured, and together they settle the design.
+`nix/hot-reload/packaging.nix` builds every hot-reload artifact from one `cargoUnit`
+workspace: one derivation per rustc invocation, each unit's source scoped to its own crate
+directory. Which store paths move is therefore a fact about the unit graph rather than
+something the packaging arranges, and the boundary table below is a description of the
+dependency graph rather than a rule anyone has to maintain.
 
-**`cargoUnit` cannot build the module dylib.** Its library support is rlib-only and says so
-in an assertion rather than in a comment:
+Two flags are the packaging's own, because cargoUnit cannot infer either. `-C
+prefer-dynamic`: generating a dylib without it makes rustc statically absorb every
+dependency into that dylib, and linking an executable without it makes rustc prefer the
+rlib of a crate offering both — either way the server and the rules dylib each get their
+own `flecs_ecs`. And an rpath to the toolchain's lib directory, because prefer-dynamic
+makes libstd dynamic too. cargoUnit supplies the rpaths for the dylibs inside the graph,
+whose store paths only it knows.
+
+Neither flag reaches `-C metadata`: cargoUnit derives that from its own graph identity
+hash, not from the rustc arguments it passes. That is what makes the ENG-12053 hazard
+class structurally impossible here rather than merely handled — under cargo, changing
+nothing but an rpath produced `libflecs_ecs-c1d9502659600761` and
+`libflecs_ecs-13cef1f428680a8e`.
+
+### How this design was arrived at, and what it replaced
+
+> **Everything from here to "Checking that one `flecs_ecs` really reached both
+> artifacts" is history, kept because the measurements in it are what the design rests
+> on. The packaging it describes — three `runCommandCC` derivations each running `cargo
+> build` over a tree of hand-written stub crates — no longer exists**, and neither do the
+> hazards two of its subsections describe. What is still live and stated above: the
+> boundary, the source split, and every reason a multi-output derivation is wrong.
+
+Three things were measured, and together they settled the design.
+
+**`cargoUnit` could not build the module dylib.** Its library support was rlib-only and
+said so in an assertion rather than in a comment:
 
 ```
 # M2: this builder is rlib-only (the filename and extern-path hardcode
@@ -862,8 +898,10 @@ in an assertion rather than in a comment:
   Only plain rlib libraries are supported (not cdylib/staticlib/proc-macro).
 ```
 
-`workspace.libraries.<name>` is therefore not a route to `libsmash_rules.so`, and neither
-is `mkPrebuiltLibraryUnit`.
+That is fixed (ENG-12078, index#4543): a `dylib` unit now publishes every linkable
+artifact it produced and a consumer passes all of them to rustc, which is what cargo does
+and what lets rustc pick dynamic linkage. `workspace.libraries.smash_rules` is the route to
+`libsmash_rules.so` today.
 
 **The binary the fleet runs today links nothing from the workspace dynamically.** It is a
 `cargoUnit` build with no `-C prefer-dynamic`, so `crate-type = ["rlib", "dylib"]` on
@@ -896,17 +934,29 @@ What the boundary actually requires is that **the module's store path moves when
 does not**, and a store path is a function of a derivation's inputs. So the boundary is a
 statement about which sources reach which derivation:
 
-| derivation | source | what moves it |
-| --- | --- | --- |
-| `hyperion-dylibs` | `crates/hyperion` and its graph | an engine change |
-| `smash-server` (`ExecStart`) | the host crate: registration modules, loader, tick loop | a component or engine change |
-| `smash-rules` (`reloadTriggers`) | the rules crate: systems and observers | a rules change |
+| edit | `hyperion-dylibs` | `smash-server` (`ExecStart`) | `smash-rules` (`reloadTriggers`) | deploy |
+| --- | --- | --- | --- | --- |
+| a rules crate | — | — | moves | **reload** |
+| a host crate | — | moves | — | restart |
+| an engine crate | moves | moves | moves | restart |
 
-The last two both link `hyperion-dylibs` by rpath into the store, which is what keeps one
+All three link the engine dylibs by rpath into the store, which is what keeps one
 `flecs_ecs` in the process. A component's layout lives in the host crate, so changing it
-moves `smash-server` and systemd restarts. A system's body lives in the rules crate, so
-changing it moves only `smash-rules` and systemd reloads. Nobody has to remember the rule;
-it is the source split.
+moves `ExecStart` and systemd restarts. A system's body lives in the rules crate, so
+changing it moves only the reload trigger and systemd reloads. Nobody has to remember the
+rule; it is the dependency graph.
+
+**A host edit does not move the rules dylib, and that is deliberate (ENG-12078).** The
+cargo-based packaging moved it, because `mkSource` put the host crate's directory in the
+rules derivation's source tree — a consequence of filtering at directory granularity, not
+of a dependency edge. `events/smash-rules` depends on `flecs_ecs`, `hyperion-hot-reload`
+and `tracing`; it does not depend on `smash`, so cargoUnit correctly rebuilds nothing. A
+rules system cannot name a host-owned component type; it reaches components through
+`hyperion-hot-reload`'s registry by name, and the loader's layout check is what catches a
+component whose shape moved underneath it. That check was always doing this work — on a
+host edit the old packaging just also happened to recompile. The deploy is unchanged
+either way: a host edit moves `ExecStart`, systemd restarts, and the fresh process loads
+and layout-checks the rules dylib, so nothing stale survives.
 
 **The part that will actually cost time is the source filter, and it is worth naming now.**
 Each derivation needs a `src` narrow enough that an unrelated commit does not move it, and
@@ -917,7 +967,14 @@ wearing a different hat, and every apply restarts. There is a cheap gate for it:
 three derivations, touch a file in the rules crate, rebuild, and assert that exactly one of
 the three paths changed.
 
-### One `flecs_ecs` needs one package selection, not one derivation
+#### One `flecs_ecs` needs one package selection, not one derivation
+
+> **Obsolete mechanism, live lesson.** Cargo resolving features per invocation is why the
+> old packaging had to pass one identical `-p` selection to three `cargo build`s. There is
+> one invocation now, so there is nothing to keep in step. The lesson that survives is what
+> the failure looked like, and that `engineUnit` in `nix/hot-reload/packaging.nix` asserts
+> exactly one `flecs_ecs` unit exists rather than assuming it.
+
 
 Splitting the build across three derivations reintroduced the problem the split exists to
 prevent. Each derivation runs its own `cargo build`, and building `-p hyperion` in one and
@@ -961,7 +1018,13 @@ packages this derivation ships", and may not be a function of the event being bu
 is the source split written out a second time, in a place where its only symptom is a reload
 that silently indexes one world two different ways.
 
-### The seed may only carry artifacts whose source the consumer agrees with
+#### The seed may only carry artifacts whose source the consumer agrees with
+
+> **Obsolete mechanism.** There is no seed. The three derivations shared one `target/`
+> tarball because three `cargo build`s had to reuse each other's artifacts; cargoUnit
+> shares artifacts by making each one its own derivation, so nothing is copied between
+> builds and nothing can be stale.
+
 
 `hyperion-dylibs` tars its target directory so the other two do not recompile the engine, and
 they date everything to 2100 because cargo decides freshness by mtime and everything unpacked
@@ -981,7 +1044,7 @@ a guard that fails the build if a stub artifact survives. Cleaning before the co
 what keeps a stub `libsmash_rules.so` — same filename as the real rules dylib, none of its
 systems — from being shipped beside the engine and landing on every event binary's rpath.
 
-### An engine dylib hides the C libraries it swallows
+#### An engine dylib hides the C libraries it swallows
 
 `smash-server` failed to link with eight undefined LMDB symbols, and the cause is not where
 the error points. `libhyperion.so` contains LMDB's code and hides every byte of it:
@@ -1019,68 +1082,78 @@ final link whose definition is `LOCAL` in `libhyperion.so`'s `.symtab`.
 
 ### Checking that one `flecs_ecs` really reached both artifacts
 
+`checks.hot-reload-one-flecs` asserts it, on the artifacts that ship. It used to be a manual
+`readelf`/`ldd` recipe here, with a note saying to write the check once the cargoUnit
+migration made the property structural. It did, so this is that check (ENG-12078).
+
+Two questions, and only asking both is a check:
+
+1. **The same `DT_NEEDED` name.** Two different metadata hashes is two `INDEX_POOL`s: one
+   world indexed two different ways, with no crash and no error, components reading as each
+   other's neighbours.
+2. **The same resolved store path.** The same hash reaching two store paths is the identical
+   aliasing fault wearing a nicer name, and a string comparison alone cannot see it.
+
 The build already refuses a dangling `DT_NEEDED` (`requireResolved` in
-`nix/hot-reload/packaging.nix`), so a rules dylib asking for a `libflecs_ecs` nobody ships
-fails at build time. That is not quite the property the feature needs. The property is that
-the server and the rules ask for the *same* one, and two artifacts can each resolve happily
-against two different libraries.
+`nix/hot-reload/packaging.nix`), so each artifact resolves *something*; that is a weaker
+property than the two above and does not imply either.
 
-There is no check for that yet, deliberately -- see below -- so until there is, it is a
-command:
+The check fails closed. Each extraction is checked for emptiness before anything is
+compared, because "no `flecs_ecs` line found" and "the two `flecs_ecs` lines agree" are
+otherwise the same silence. It also asserts the resolved file is the one `hyperion-dylibs`
+exposes, so a third copy that happens to be consistent between the two artifacts is still
+caught.
+
+What it looks like when it holds:
 
 ```console
-$ nix build --no-link --print-out-paths .#packages.x86_64-linux.smash-server
-/nix/store/5z9q...-smash-server
-$ nix build --no-link --print-out-paths .#packages.x86_64-linux.smash-rules
-/nix/store/6lk4...-smash-rules
-
-$ readelf -d .../smash-server/bin/smash        | grep flecs
- 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-bf77c44af1eeb9f5.so]
+$ readelf -d .../smash-server/bin/smash            | grep flecs
+ 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-fa19ab35c63d573f.so]
 $ readelf -d .../smash-rules/lib/libsmash_rules.so | grep flecs
- 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-bf77c44af1eeb9f5.so]
-```
-
-The hashes must be identical, and `ldd` on both must resolve them to the *same*
-`hyperion-dylibs` output:
-
-```console
+ 0x0000000000000001 (NEEDED)  Shared library: [libflecs_ecs-fa19ab35c63d573f.so]
 $ ldd .../smash-rules/lib/libsmash_rules.so | grep flecs
-    libflecs_ecs-bf77c44af1eeb9f5.so => /nix/store/ya44...-hyperion-dylibs/lib/libflecs_ecs-bf77c44af1eeb9f5.so
+    libflecs_ecs-fa19ab35c63d573f.so => /nix/store/0hvrp...-flecs_ecs-0.2.2/lib/libflecs_ecs-fa19ab35c63d573f.so
 ```
 
-Two different hashes is two `INDEX_POOL`s: one world, indexed two different ways, with no
-crash and no error -- components read as each other's neighbours. Same hash but two store
-paths is the same fault wearing a nicer name.
-
-**Why this is a command and not a `checks.` entry.** Asserting it needs both release
-derivations built, which CI does not do today, and that is a real cost to add for a
-property that is about to become structural. The `cargoUnit` migration (ENG-12078) makes
-`flecs_ecs` one derivation per crate, at which point there is exactly one `libflecs_ecs`
-store path because there is exactly one derivation producing it, and a cheap check falls
-out of the migrated layout rather than being bolted onto this one. Write the check then,
-against that layout, instead of writing it twice.
+Since ENG-12078 the eval-time half is stronger than the runtime half: one cargoUnit graph
+resolves features once, so there is one `flecs_ecs` derivation, and `engineUnit` in the
+packaging fails the build if the graph ever holds two. This check is what the loader
+actually does with the resulting files.
 
 ### The boundary, measured rather than asserted
 
-`checks.hot-reload-source-split` compares the source trees. The property it stands in for is
-about derivation inputs, and that is worth checking directly at least once:
+`checks.hot-reload-source-split` asks this directly rather than standing in for it. It
+instantiates the packaging over a perturbed source tree and compares `drvPath`s, in both
+directions, which is exactly the table above:
 
 ```
                  baseline                          after a rules-only edit
-hyperion-dylibs  b5lxh69r...-hyperion-dylibs.drv   b5lxh69r...  (unchanged)
-smash-server     wz26cwn7...-smash-server.drv      wz26cwn7...  (unchanged)
-smash-rules      4f0rqas7...-smash-rules.drv       hvvb5m74...  (MOVED)
+hyperion-dylibs  <unchanged>
+smash-server     <unchanged>
+smash-rules      MOVED
 
                                                    after a host (component) edit
-hyperion-dylibs                                    b5lxh69r...  (unchanged)
-smash-server                                       aza2i90m...  (MOVED)
-smash-rules                                        www61vnr...  (MOVED)
+hyperion-dylibs  <unchanged>
+smash-server     MOVED
+smash-rules      <unchanged>
 ```
+
+A `drvPath` that did not move guarantees an `outPath` that did not move, so the assertion
+stays conservative in the safe direction even though every unit is content-addressed.
 
 A rules edit moves the reload trigger and leaves `ExecStart` alone, so systemd reloads. A
 component edit moves `ExecStart`, so systemd restarts — which is the correct outcome, because
 a system compiled against a layout the world no longer holds is memory corruption rather than
 a stale build.
+
+Broken once and watched failing, by making the server derivation take the rules unit as an
+input:
+
+```
+error: hot-reload-source-split: smash-server on a rules edit moved and must not have.
+  before: /nix/store/2mpmd2j7v1zy29ha5s0j6ixb9rsp100j-smash-server.drv
+  after:  /nix/store/m0sclw0czzabkk2igicalc52pvc6xv62-smash-server.drv
+```
 
 ### Adopting it costs no scheduled restart
 
