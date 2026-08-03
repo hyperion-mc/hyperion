@@ -748,7 +748,12 @@
             # cannot say different things about the same tree.
             hot-reload-index-probe = {
               deps = [ pkgs.cmake pkgs.pkg-config ];
-              text = ''exec ./crates/hyperion-hot-reload/index-probe.sh "$@"'';
+              # Through `bash` rather than the script's own shebang. The
+              # sandbox has no `/usr/bin/env`, so `#!/usr/bin/env bash` is a
+              # `bad interpreter` there and the check failed before running a
+              # line of the probe. It passed on darwin, where that path exists,
+              # which is how the ELF half stayed unverified.
+              text = ''exec bash ./crates/hyperion-hot-reload/index-probe.sh "$@"'';
             };
 
             # The game server and the proxy authenticate to each other with

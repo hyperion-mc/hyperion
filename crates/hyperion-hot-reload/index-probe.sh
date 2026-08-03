@@ -41,6 +41,13 @@ sysroot_lib="$(rustc --print sysroot)/lib/rustlib/$host_triple/lib"
 # If it comes back, so does the blanket impl.
 flags="--cfg tokio_unstable -C prefer-dynamic"
 flags="$flags -C link-arg=-Wl,-rpath,$sysroot_lib -C link-arg=-Wl,-rpath,$target/debug"
+# `deps/` as well as `debug/`, because the two dylibs are named differently
+# there. Cargo gives a workspace member's dylib an unhashed copy in
+# `target/debug` (`libhyperion.so`), but a dependency's dylib exists only in
+# `target/debug/deps` under its metadata hash -- and the DT_NEEDED entry names
+# the hashed file. So `libhyperion.so` resolved and `libflecs_ecs-<hash>.so`
+# did not, which is the one library the whole probe is about.
+flags="$flags -C link-arg=-Wl,-rpath,$target/debug/deps"
 if [ "$ext" = so ]; then
   flags="$flags -C link-arg=-Wl,--undefined-version"
 fi
