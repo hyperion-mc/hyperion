@@ -3,7 +3,10 @@
 //! Nothing in the live world is touched until [`gate::plan`] has accepted the candidate,
 //! which is why a refused reload leaves a running server exactly as it was.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use flecs_ecs::{
     core::{
@@ -30,6 +33,9 @@ struct Loaded {
 /// Why a load could not even be attempted.
 #[derive(Debug)]
 pub enum LoadError {
+    /// `dlopen` handed back an image it had already loaded, so the candidate's code
+    /// never ran. See [`HotReloader::seen_entries`].
+    Deduped,
     /// The candidate could not be copied somewhere `dlopen` has not seen before.
     ///
     /// Carries the path because `std::fs::copy`'s error does not: "No such file or
@@ -55,6 +61,12 @@ fn platform_detail(e: &libloading::Error) -> String {
 impl core::fmt::Display for LoadError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Deduped => write!(
+                f,
+                "the loader was handed back a module image it had already loaded, so this build's \
+                 code would never have run. `dlopen` matches on the name it is given before it \
+                 looks at the file, so a candidate must reach it under a name nothing has used yet"
+            ),
             Self::Stage { path, source } => {
                 write!(
                     f,
@@ -81,7 +93,7 @@ impl std::error::Error for LoadError {
         match self {
             Self::Stage { source, .. } => Some(source),
             Self::Dlopen(e) | Self::MissingEntry(e) => Some(e),
-            Self::Abi(_) | Self::Refused(_) => None,
+            Self::Abi(_) | Self::Refused(_) | Self::Deduped => None,
         }
     }
 }
@@ -111,6 +123,22 @@ pub struct HotReloader {
     /// So the handles are forgotten rather than stored. The cost is address-space growth
     /// proportional to the number of reloads.
     retained: Vec<std::path::PathBuf>,
+    /// The address of every module entry point this loader has ever been handed.
+    ///
+    /// **This is the guard that makes a reload unable to lie.** `stage` exists so that
+    /// `dlopen` never sees a name twice; this exists so that a reload is refused rather
+    /// than silently repeated if it ever does. Nothing is unloaded, so two genuinely
+    /// distinct images occupy two address ranges and their entry points cannot collide --
+    /// an address that is already in here means the platform returned an image that is
+    /// already mapped, and the candidate's code did not run.
+    ///
+    /// Written for the refactor that has not happened yet: somebody looking at `stage`
+    /// will eventually ask why it copies a file instead of just passing the path along,
+    /// and the answer is a defect (ENG-12113) whose every outward signal said the deploy
+    /// had landed -- `MainPID` unchanged, `NRestarts` unchanged, `hot reload accepted` in
+    /// the journal, the client printing `accepted`. If the copy goes, this turns the
+    /// silence back into a refusal with a reason.
+    seen_entries: BTreeSet<usize>,
 }
 
 /// Copies `candidate` to a path `dlopen` has never been given before, and returns it.
@@ -164,6 +192,7 @@ impl HotReloader {
         Self {
             loaded: BTreeMap::new(),
             retained: Vec::new(),
+            seen_entries: BTreeSet::new(),
         }
     }
 
@@ -194,6 +223,15 @@ impl HotReloader {
         let descriptor = {
             let entry: libloading::Symbol<'_, ModuleEntry> =
                 unsafe { lib.get(ENTRY_SYMBOL) }.map_err(LoadError::MissingEntry)?;
+            // Before the entry point is called, and therefore before anything the
+            // candidate does can be mistaken for the candidate having been loaded.
+            // Returning here drops `lib` and so calls `dlclose`, which is safe in exactly
+            // this case and nowhere else: the image was already open and its first handle
+            // was forgotten, so this second `dlopen` took the reference count to two and
+            // dropping ours takes it back to one. Nothing is unmapped.
+            if !self.seen_entries.insert(*entry as usize) {
+                return Err(LoadError::Deduped);
+            }
             let raw = unsafe { entry() };
             *unsafe { Box::from_raw(raw) }
         };
