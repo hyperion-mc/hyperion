@@ -155,7 +155,8 @@ let
   # freshness by comparing them and everything unpacked from the store shares
   # one normalised timestamp.
   seed = ''
-    tar -C . -xf ${hyperion-dylibs}/share/cargo-target.tar
+    mkdir -p target
+    tar -C target -xf ${hyperion-dylibs}/share/cargo-target.tar
     find target -exec touch -d "2100-01-01" {} +
   '';
 
