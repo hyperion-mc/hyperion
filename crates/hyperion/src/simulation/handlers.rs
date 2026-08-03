@@ -62,7 +62,9 @@ use crate::{
         protocol::{decode_body, frame_body, send},
     },
     simulation::{
-        Pitch, Yaw, aabb, event, gamemode,
+        Pitch, Yaw, aabb,
+        blocks::translate,
+        event, gamemode,
         metadata::{
             entity::Pose,
             living_entity::HandStates,
@@ -729,11 +731,10 @@ fn use_item_on(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result
     // todo(hack): technically players can do some crazy position stuff to abuse this probably
     let player_aabb = aabb(**query.position, *query.size);
 
-    let collides_player = block_state
-        .collision_shapes()
-        .map(|aabb| {
-            Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3()).move_by(position.as_vec3())
-        })
+    let collides_player = translate::collision_shapes(block_state)
+        .iter()
+        .copied()
+        .map(|shape| Aabb::from(shape).move_by(position.as_vec3()))
         .any(|block_aabb| Aabb::overlap(&block_aabb, &player_aabb).is_some());
 
     if collides_player {
@@ -915,9 +916,8 @@ fn has_block_collision(position: &Vec3, size: EntitySize, blocks: &Blocks) -> bo
     let res = blocks.get_blocks(min, max, |pos, block| {
         let pos = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
 
-        for aabb in block.collision_shapes() {
-            let aabb = Aabb::new(aabb.min().as_vec3(), aabb.max().as_vec3());
-            let aabb = aabb.move_by(pos);
+        for shape in translate::collision_shapes(block) {
+            let aabb = Aabb::from(*shape).move_by(pos);
 
             if shrunk.collides(&aabb) {
                 return ControlFlow::Break(false);

@@ -143,9 +143,10 @@ impl Blocks {
             ray.origin() + ray.direction(),
             |cell| {
                 self.get_block(cell).into_iter().flat_map(|block| {
-                    block
-                        .collision_shapes()
-                        .map(|shape| Aabb::new(shape.min().as_vec3(), shape.max().as_vec3()))
+                    translate::collision_shapes(block)
+                        .iter()
+                        .copied()
+                        .map(Aabb::from)
                 })
             },
         )?;

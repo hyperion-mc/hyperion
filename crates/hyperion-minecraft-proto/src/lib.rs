@@ -26,6 +26,7 @@ extern crate self as hyperion_minecraft_proto;
 
 pub mod block_state;
 pub mod codec;
+pub mod collision_shape;
 pub mod framing;
 pub mod generated;
 pub mod item;
