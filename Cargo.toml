@@ -42,6 +42,7 @@ members = [
     'crates/hyperion-proxy-proto',
     'crates/hyperion-reload-client',
     'crates/hyperion-utils',
+    'crates/hyperion-web-console',
     'crates/packet-channel',
     'events/bedwars',
     'events/smash',
@@ -92,6 +93,13 @@ heapless = "0.9.3"
 heed = "0.22.1"
 hex = '0.4.3'
 humantime = "2.4.0"
+# The console's web server. hyper and its two helper crates are already
+# in the lock through reqwest, so naming them here adds no new tree --
+# axum would have. Nothing here needs routing or extractors: five paths
+# matched on a string is the whole surface.
+http-body-util = "0.1.4"
+hyper = "1.11.0"
+hyper-util = "0.1.20"
 hyperion-proxy = { path = "crates/hyperion-proxy" }
 itertools = "0.15.0"
 kanal = '0.1.1'
@@ -254,6 +262,9 @@ path = 'crates/hyperion-proxy-proto'
 
 [workspace.dependencies.hyperion-utils]
 path = 'crates/hyperion-utils'
+
+[workspace.dependencies.hyperion-web-console]
+path = 'crates/hyperion-web-console'
 
 [workspace.dependencies.packet-channel]
 path = 'crates/packet-channel'

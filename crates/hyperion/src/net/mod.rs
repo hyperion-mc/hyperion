@@ -1,6 +1,6 @@
 //! All the networking related code.
 
-use std::{cell::RefCell, fmt::Debug};
+use std::{cell::RefCell, fmt::Debug, sync::Arc};
 
 use byteorder::WriteBytesExt;
 use bytes::{Bytes, BytesMut};
@@ -12,7 +12,7 @@ use hyperion_utils::EntityExt;
 use libdeflater::CompressionLvl;
 use rustc_hash::FxHashMap;
 use thread_local::ThreadLocal;
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::{
     Global, PacketBundle, Scratch,
@@ -387,6 +387,33 @@ impl Compose {
     }
 }
 
+/// A [`ConnectionId`] with no socket behind it.
+///
+/// Everything that answers a player -- a command's reply, a permission
+/// refusal, a parse error -- is written as `caller.get::<&ConnectionId>()` and
+/// a `unicast`, in dozens of places across `hyperion-clap` and both events. So
+/// a caller that is not a player has exactly two options: teach every one of
+/// those call sites about a second kind of reply, or give it a connection id
+/// and answer to that. This is the second one.
+///
+/// The frames arrive here already framed, exactly as the proxy would have
+/// received them, because that is the last point where a packet is still one
+/// contiguous thing. Whoever installs this is expected to run them back
+/// through a [`hyperion_minecraft_proto::framing::FrameDecoder`], which is the
+/// same code a client uses and so cannot drift from what was sent.
+///
+/// Without this the id belongs to nobody and the proxy says so, once per
+/// packet: `Player not found for id ...`, a warning that names the wrong
+/// cause.
+pub trait VirtualConnection: Send + Sync {
+    /// The id that means "me". Compared against every unicast, so this must be
+    /// cheap and must not change.
+    fn stream(&self) -> ConnectionId;
+
+    /// One whole framed packet addressed to [`stream`](Self::stream).
+    fn deliver(&self, frame: &[u8]);
+}
+
 /// This is useful for the ECS, so we can use Single<&mut Broadcast> instead of having to use a marker struct
 #[derive(Component, Default)]
 pub struct IoBuf {
@@ -394,9 +421,25 @@ pub struct IoBuf {
     // broadcast_buffer: ThreadLocal<RefCell<BytesMut>>,
     temp_buffer: ThreadLocal<RefCell<BytesMut>>,
     egress_comms: FxHashMap<ProxyId, EgressComm>,
+    /// Installed by an operator console and absent otherwise, which is what
+    /// keeps this off the cost of a server nobody is watching: one
+    /// `Option::is_none` per unicast and nothing at all per broadcast.
+    virtual_connection: Option<Arc<dyn VirtualConnection>>,
 }
 
 impl IoBuf {
+    /// Route every unicast addressed to `connection.stream()` to it rather
+    /// than to a proxy.
+    ///
+    /// Replaces any previous one: there is one console per server, and two
+    /// silently sharing a stream id would each see half the traffic.
+    pub fn attach_virtual_connection(&mut self, connection: Arc<dyn VirtualConnection>) {
+        if self.virtual_connection.is_some() {
+            warn!("replacing an already attached virtual connection");
+        }
+        self.virtual_connection = Some(connection);
+    }
+
     pub(crate) fn add_proxy(&mut self, proxy_id: ProxyId, egress_comm: EgressComm) {
         let already_exists = self.egress_comms.insert(proxy_id, egress_comm).is_some();
 
@@ -674,6 +717,16 @@ impl IoBuf {
     }
 
     pub(crate) fn unicast_raw(&self, data: &[u8], stream: ConnectionId) {
+        // Before the proxy, because a virtual connection has none: an id with
+        // no socket behind it makes the proxy warn once per packet about a
+        // player that was never going to be there.
+        if let Some(virtual_connection) = self.virtual_connection.as_ref()
+            && virtual_connection.stream() == stream
+        {
+            virtual_connection.deliver(data);
+            return;
+        }
+
         self.add_proxy_message(&IntermediateServerToProxyMessage::Unicast(
             intermediate::Unicast { stream, data },
         ));

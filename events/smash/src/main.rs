@@ -40,6 +40,6 @@ use smash::init_game;
 
 fn main() -> anyhow::Result<()> {
     hyperion_event_runner::run("SMASH_", |args, crypto| {
-        init_game(args.address(), crypto, args.deployment()?)
+        init_game(args.address(), crypto, args.deployment()?, args.console()?)
     })
 }

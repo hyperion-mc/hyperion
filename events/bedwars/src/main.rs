@@ -10,7 +10,10 @@
 use bedwars::init_game;
 
 fn main() -> anyhow::Result<()> {
-    // bedwars takes the address and nothing else: it has no reloadable rules,
-    // so the deployment paths on `Args` are none of its business.
-    hyperion_event_runner::run("BEDWARS_", |args, crypto| init_game(args.address(), crypto))
+    // bedwars takes no deployment paths: it has no reloadable rules, so that
+    // part of `Args` is none of its business. It does take a console, which is
+    // engine-level and asks the same operator questions of either game.
+    hyperion_event_runner::run("BEDWARS_", |args, crypto| {
+        init_game(args.address(), crypto, args.console()?)
+    })
 }

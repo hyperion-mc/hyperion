@@ -852,7 +852,11 @@
                 # code in their working tree, rebuilt incrementally. The check
                 # of the same name hands the same driver two store paths, and
                 # that is the only difference between them.
-                export HYPERION_E2E_GAME_SERVER="cargo run --profile $profile -p $event --"
+                # `HYPERION_E2E_GAME_SERVER_ARGS` is the `nix run` twin of
+                # `mkCheck`'s `gameServerArgs`: extra flags for the server,
+                # for trying a gate's configuration by hand before writing it
+                # down.
+                export HYPERION_E2E_GAME_SERVER="cargo run --profile $profile -p $event -- ''${HYPERION_E2E_GAME_SERVER_ARGS:-}"
                 export HYPERION_E2E_PROXY="cargo run --profile $profile --bin hyperion-proxy --"
                 export HYPERION_E2E_CLIENT="''${HYPERION_E2E_CLIENT:-tools/client-26.2.py --name e2e}"
                 # Certificates from the store rather than `nix run .#certs`, so
@@ -1937,6 +1941,47 @@
               timeout = 180;
             };
 
+            # The operator console, which needs a server and a browser at once
+            # and so cannot be tested from inside its own crate.
+            #
+            # `hyperion-web-console` has unit tests for everything that is a
+            # function of its inputs -- the token comparison, the backlog
+            # bound, the legacy colour rendering, the threshold rule. None of
+            # them can see the three things the console actually claims, all of
+            # which are about two processes agreeing:
+            #
+            #   * a line a player types reaching a browser, with the section
+            #     signs they typed stripped on the way. The stripping is
+            #     per-source and the game's own path already does it, so a
+            #     mirror of that path would look right and paint the operator's
+            #     console anyway.
+            #   * a command typed on the web running through the same registry
+            #     a player's command runs through, and its reply coming back
+            #     over a `ConnectionId` with no socket behind it. Nothing short
+            #     of a real unicast exercises that.
+            #   * that reply surviving both branches of the frame decoder. A
+            #     short reply is framed with `data_len` zero and a long one is
+            #     deflated, and a decoder told the wrong threshold reads the
+            #     length as a packet id and silently drops every frame -- no
+            #     error, no log line, an operator console that shows commands
+            #     going out and nothing coming back. That state was reproduced
+            #     deliberately, and this gate is the only thing that saw it.
+            #
+            # `console = true` has the driver pick a third port beside the
+            # other two and hand the same address and token file to the server
+            # and the client. No `e2eOffsets` entry, for the same reason
+            # `chat-e2e` has none: the offsets exist for the gates that also
+            # run as host apps, and a sandboxed check gets free ports from the
+            # driver instead.
+            console-e2e = e2e.mkCheck {
+              name = "hyperion-console-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "console-check.py";
+              console = true;
+              timeout = 180;
+            };
+
             # The tab list's two new numbers, and the one claim about them that
             # no Rust test can settle.
             #
@@ -1998,6 +2043,32 @@
                 "--name"
                 "smashdevboot"
               ];
+              timeout = 300;
+            };
+
+            # The same boot, with the console turned on.
+            #
+            # `console-e2e` runs the release binary, because that is what
+            # ships, and a release build has the flecs assert compiled out. So
+            # everything `install` does -- registering two singletons, setting
+            # both, spawning the caller entity, attaching the virtual
+            # connection -- is reached by no gate that can see a
+            # use-before-register. That is the ENG-11000 shape exactly: a
+            # console that aborts `nix run .#smash` on boot while every gate
+            # above stays green.
+            #
+            # It runs the whole console client rather than a bare join, because
+            # the assert fires wherever the unregistered component is first
+            # used, and for the console that is as likely to be a command reply
+            # or a snapshot as it is the boot itself.
+            console-dev-boot-e2e = e2e.mkCheck {
+              name = "hyperion-console-dev-boot-e2e";
+              gameServer = devGameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "console-check.py";
+              console = true;
+              # A dev build is unoptimised, so it gets the same generous
+              # deadline as the boot gate above rather than `console-e2e`'s.
               timeout = 300;
             };
 

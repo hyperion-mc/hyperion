@@ -25,7 +25,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use anyhow::bail;
-use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, id};
+use flecs_ecs::core::{Entity, EntityView, EntityViewGet, World, WorldGet, id};
 use geometry::aabb::Aabb;
 use glam::{DVec3, IVec3, Vec3};
 use hyperion_minecraft_proto::{
@@ -62,7 +62,7 @@ use crate::{
         protocol::{decode_body, frame_body, send},
     },
     simulation::{
-        Pitch, Yaw, aabb,
+        Name, Pitch, Yaw, aabb,
         blocks::translate,
         event, gamemode,
         metadata::{
@@ -293,6 +293,22 @@ fn interact(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()
 
 fn chat(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
     let packet: serverbound::Chat<'_> = decode_body(body)?;
+
+    // Before the queue, because the queue has one consumer and the game is it.
+    // See `crate::console`. The name is resolved here because this is the last
+    // place that has a world; an observer does not.
+    query
+        .world
+        .get::<&crate::console::ChatObservers>(|observers| {
+            if observers.is_empty() {
+                return;
+            }
+            let speaker = query.id.entity_view(query.world);
+            let name = speaker
+                .try_get::<&Name>(ToString::to_string)
+                .unwrap_or_else(|| query.id.to_string());
+            observers.player_said(query.id, &name, packet.message);
+        });
 
     query.events.push(
         event::ChatMessage {
