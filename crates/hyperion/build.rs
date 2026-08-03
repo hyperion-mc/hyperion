@@ -46,7 +46,10 @@
 
 // A build script talks to cargo over stdout and has no other channel, so the
 // workspace-wide `print_stdout = deny` does not apply to this file.
-#![allow(clippy::print_stdout, reason = "the cargo build-script protocol is stdout")]
+#![allow(
+    clippy::print_stdout,
+    reason = "the cargo build-script protocol is stdout"
+)]
 
 /// Spelled without the leading underscore Mach-O adds.
 const LMDB_EXPORTS: [&str; 1] = ["mdb_*"];
