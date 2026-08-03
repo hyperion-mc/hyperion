@@ -56,15 +56,21 @@ let
   # The filtering happens at eval time through `lib.fileset`, whose store path
   # is a function of the included files alone. Filtering inside the builder
   # instead would make the whole tree an input and defeat the entire split.
+  # `realDirs` is separate from `realMembers` because not every path
+  # dependency is a workspace member: `crates/hyperion-clap-macros` is depended
+  # on by `crates/hyperion-clap` and appears in no `members` list, so a fileset
+  # built from members alone omits it and cargo fails the whole resolve with
+  # `failed to read crates/hyperion-clap-macros/Cargo.toml`. Taking `crates` as
+  # a directory covers the members and their private neighbours in one rule.
   mkSource =
-    { pname, realMembers }:
+    { pname, realDirs, realMembers }:
     let
       filtered = lib.fileset.toSource {
         inherit root;
         fileset = lib.fileset.unions (
           rootFiles
           ++ map (member: root + "/${member}/Cargo.toml") members
-          ++ map (member: root + "/${member}") realMembers
+          ++ map (dir: root + "/${dir}") realDirs
         );
       };
       stubbed = lib.subtractLists realMembers members;
@@ -80,14 +86,17 @@ let
 
   dylibSource = mkSource {
     pname = "dylibs";
+    realDirs = [ "crates" ];
     realMembers = crateMembers;
   };
   serverSource = mkSource {
     pname = "server";
+    realDirs = [ "crates" "events/smash" ];
     realMembers = crateMembers ++ [ "events/smash" ];
   };
   rulesSource = mkSource {
     pname = "rules";
+    realDirs = [ "crates" "events/smash" "events/smash-rules" ];
     realMembers = crateMembers ++ [ "events/smash" "events/smash-rules" ];
   };
 
