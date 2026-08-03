@@ -18,9 +18,10 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::bail;
+use anyhow::{Context, bail};
 use clap::Parser;
 use hyperion::Crypto;
+use hyperion_web_console::Config as ConsoleConfig;
 use serde::Deserialize;
 use tracing_subscriber::{EnvFilter, Registry, filter::LevelFilter, layer::SubscriberExt};
 
@@ -76,6 +77,30 @@ pub struct Args {
     #[clap(long, requires_all = ["rules", "reload_socket"])]
     #[serde(default)]
     pub build_stamp: Option<PathBuf>,
+
+    /// Where to serve the operator console, or nowhere.
+    ///
+    /// Absent means no console at all: no socket is opened and nothing is
+    /// spent. An address here is an admin surface, so the value an operator
+    /// should reach for is a loopback or an internal one; see
+    /// [`hyperion_web_console`] for what it exposes.
+    ///
+    /// `requires` runs this way round and not the other because only one
+    /// direction is dangerous. A token file with no bind address is a console
+    /// that is simply off; a bind address with no token file is an open admin
+    /// port that looks configured.
+    #[clap(long, requires = "console_token_file")]
+    #[serde(default)]
+    pub console_bind: Option<SocketAddr>,
+
+    /// The file holding the console's bearer token.
+    ///
+    /// A file rather than an argument or an environment variable, because both
+    /// of those are readable by anything that can list processes. A systemd
+    /// `LoadCredential` puts one here.
+    #[clap(long)]
+    #[serde(default)]
+    pub console_token_file: Option<PathBuf>,
 }
 
 /// The paths a packaged deployment hands the server.
@@ -131,6 +156,46 @@ impl Args {
                 bail!("a partial deployment: {} not set", missing.join(", "))
             }
         }
+    }
+
+    /// How to run the operator console, or `None` when it was not asked for.
+    ///
+    /// # Errors
+    /// Fails when a bind address was given without a token file, when the file
+    /// cannot be read, or when it is empty once trimmed. All three are refused
+    /// at startup rather than warned about: every one of them ends in a console
+    /// that either is not there or has no password, and an operator finding
+    /// that out later finds it out the wrong way.
+    pub fn console(&self) -> anyhow::Result<Option<ConsoleConfig>> {
+        let Some(address) = self.console_bind else {
+            return Ok(None);
+        };
+
+        // `clap` already refuses this on the command line; the environment path
+        // does not go through clap at all, so this is the check that covers
+        // `SMASH_CONSOLE_BIND` set without its token. Same shape, and same
+        // reason, as `deployment` above.
+        let Some(path) = self.console_token_file.as_ref() else {
+            bail!(
+                "the console was asked for at {address} with no --console-token-file, which would \
+                 be an admin port with no password"
+            );
+        };
+
+        let token = std::fs::read_to_string(path)
+            .with_context(|| format!("reading the console token from {}", path.display()))?;
+        // Trimmed because a token file written by a person, or by systemd's
+        // credential machinery, ends in a newline that is not part of the
+        // secret. A token compared with the newline still on it fails every
+        // request and looks like a wrong password.
+        let token = token.trim().to_owned();
+        anyhow::ensure!(
+            !token.is_empty(),
+            "the console token file {} is empty",
+            path.display()
+        );
+
+        Ok(Some(ConsoleConfig { address, token }))
     }
 }
 

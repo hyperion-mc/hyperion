@@ -154,7 +154,11 @@ impl Module for BedwarsModule {
     }
 }
 
-pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
+pub fn init_game(
+    address: SocketAddr,
+    crypto: Crypto,
+    console: Option<hyperion_web_console::Config>,
+) -> anyhow::Result<()> {
     let world = World::new();
 
     world.import::<HyperionCore>();
@@ -162,6 +166,15 @@ pub fn init_game(address: SocketAddr, crypto: Crypto) -> anyhow::Result<()> {
 
     world.set(crypto);
     world.set(GameServerEndpoint::from(address));
+
+    // After the game's own modules, so a command registered by the event is
+    // already in the registry the console's caller will be dispatched
+    // against, and after `GameServerEndpoint`, so the first line on the page
+    // is a server that has finished coming up.
+    if let Some(config) = console {
+        world.import::<hyperion_web_console::ConsoleModule>();
+        hyperion_web_console::install(&world, &config)?;
+    }
 
     let mut app = world.app();
 

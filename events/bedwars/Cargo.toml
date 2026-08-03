@@ -14,6 +14,7 @@ hyperion-inventory = { workspace = true }
 hyperion-item = { workspace = true }
 hyperion-permission = { workspace = true }
 hyperion-utils = { workspace = true }
+hyperion-web-console = { workspace = true }
 rayon = { workspace = true }
 roaring = { workspace = true }
 rustc-hash = { workspace = true }

@@ -142,19 +142,27 @@ let
       : "''${HYPERION_E2E_CLIENT:?the client script and its arguments}"
       : "''${HYPERION_E2E_CERTS:?a directory holding root_ca.crt and the two leaf pairs}"
 
-      # Unset means "find a free pair". A check has no reason to care which
+      # Unset means "find a free set". A check has no reason to care which
       # ports it uses and every reason not to collide: on Linux the sandbox
       # has its own network namespace, but on darwin there is no such thing
       # and a build shares the host's loopback with everything else on the
       # machine. A fixed 47565 lost that race to an unrelated server the first
-      # time this ran. Both sockets are held open until both numbers are read,
-      # so the pair cannot come back equal.
+      # time this ran. Every socket is held open until all the numbers are
+      # read, so no two can come back equal.
+      #
+      # Three and not two because a gate may ask for an operator console, which
+      # listens on a port of its own. Picked here rather than derived from one
+      # of the others -- `server_port + 1` is a free number right up until the
+      # run that finds it taken -- and picked whether or not this run wants
+      # one, so the held-open guarantee covers the same set every time.
       picked_player=""
       picked_server=""
-      if [ -z "''${HYPERION_PLAYER_PORT:-}" ] || [ -z "''${HYPERION_SERVER_PORT:-}" ]; then
-        read -r picked_player picked_server < <(python3 -c "
+      picked_console=""
+      if [ -z "''${HYPERION_PLAYER_PORT:-}" ] || [ -z "''${HYPERION_SERVER_PORT:-}" ] \
+        || [ -z "''${HYPERION_CONSOLE_PORT:-}" ]; then
+        read -r picked_player picked_server picked_console < <(python3 -c "
       import socket
-      held = [socket.socket() for _ in range(2)]
+      held = [socket.socket() for _ in range(3)]
       for sock in held:
           sock.bind(('127.0.0.1', 0))
       print(' '.join(str(sock.getsockname()[1]) for sock in held))
@@ -162,6 +170,7 @@ let
       fi
       player_port="''${HYPERION_PLAYER_PORT:-$picked_player}"
       server_port="''${HYPERION_SERVER_PORT:-$picked_server}"
+      console_port="''${HYPERION_CONSOLE_PORT:-$picked_console}"
       bind="''${HYPERION_E2E_BIND:-127.0.0.1}"
       certs="$HYPERION_E2E_CERTS"
       log="''${HYPERION_E2E_LOG:-$(mktemp -t hyperion-e2e.XXXXXX)}"
@@ -174,6 +183,30 @@ let
       read -ra proxy <<< "$HYPERION_E2E_PROXY"
       read -ra client <<< "$HYPERION_E2E_CLIENT"
 
+      # An operator console, for the one gate whose question is about it. Off
+      # otherwise: a console is an admin port, and opening one on every gate
+      # would be a surface nothing else here needs.
+      #
+      # The server and the client are handed the same two facts from one place,
+      # because an address written down twice is the pair most likely to drift.
+      # Arrays rather than strings, so the absent case expands to no arguments
+      # at all rather than to one empty one.
+      game_server_console=()
+      client_console=()
+      if [ -n "''${HYPERION_E2E_CONSOLE:-}" ]; then
+        token_file="''${HYPERION_E2E_TOKEN_FILE:-$(mktemp -t hyperion-console-token.XXXXXX)}"
+        # Deliberately a token carrying `+` and `/`. Standard base64 emits
+        # both, an operator who generates one with `base64` gets them, and `+`
+        # in a query used to come back 401 because the decoder read it as a
+        # space. A token without them leaves that fix untested.
+        python3 -c "
+      import base64, os, sys
+      sys.stdout.write('+/' + base64.b64encode(os.urandom(18)).decode())
+      " > "$token_file"
+        game_server_console=(--console-bind "$bind:$console_port" --console-token-file "$token_file")
+        client_console=(--console "$bind:$console_port" --token-file "$token_file")
+      fi
+
       echo "stack log: $log"
 
       "''${game_server[@]}" \
@@ -181,6 +214,7 @@ let
         --root-ca-cert "$certs/root_ca.crt" \
         --cert "$certs/server.crt" \
         --private-key "$certs/server_private_key.pem" \
+        ''${game_server_console[@]+"''${game_server_console[@]}"} \
         < /dev/null >> "$log" 2>&1 &
       game_pid=$!
 
@@ -258,6 +292,13 @@ let
       # rather than at once; a check has both already built.
       await_port "$server_port" "game server" "$game_pid"
 
+      # The console binds inside `init_game`, so a client that reaches for it
+      # before the server gets there sees connection refused and reports it as
+      # the console being broken. Waiting names the right thing instead.
+      if [ -n "''${HYPERION_E2E_CONSOLE:-}" ]; then
+        await_port "$console_port" "console" "$game_pid"
+      fi
+
       # Best effort: a sandbox can hold a hard limit below this, and these
       # gates drive four clients rather than the few thousand bots it is for.
       ulimit -Sn ${fileDescriptors} || true
@@ -279,7 +320,8 @@ let
       # both processes, and the next run would die on "address already in use".
       rc=0
       client_log="$(mktemp -t hyperion-e2e-client.XXXXXX)"
-      python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" "$@" \
+      python3 "''${client[@]}" --host 127.0.0.1 --port "$player_port" \
+        ''${client_console[@]+"''${client_console[@]}"} "$@" \
         2>&1 | tee "$client_log" || rc=$?
 
       # A client that finished its checks proves nothing if the server died
@@ -326,10 +368,21 @@ let
       proxy,
       client,
       clientArgs ? [ ],
+      # Extra arguments for the game server, after the five the driver always
+      # passes. For a gate whose question is about a server configured a
+      # particular way; `serverEnv` cannot answer it, because
+      # `hyperion_event_runner` reads the environment all-or-nothing and falls
+      # back to the command line the moment one variable is missing.
+      gameServerArgs ? [ ],
       # Environment for the game server process. A gate whose question needs a
       # server configured differently from the one the product ships says so
       # here, rather than the client inferring it.
       serverEnv ? { },
+      # Start the game server with an operator console and tell the client
+      # where to find it. A boolean and not a number: the driver picks the port
+      # beside the other two, and a gate naming its own would be the fixed-port
+      # race this file already learned about once.
+      console ? false,
       needsGenMap ? false,
       timeout ? 300,
     }:
@@ -365,7 +418,7 @@ let
             name: value: "export ${name}=${lib.escapeShellArg (toString value)}"
           ) serverEnv
         )}
-        export HYPERION_E2E_GAME_SERVER="${lib.getExe gameServer}"
+        export HYPERION_E2E_GAME_SERVER="${lib.getExe gameServer} ${lib.escapeShellArgs gameServerArgs}"
         export HYPERION_E2E_PROXY="${lib.getExe proxy}"
         export HYPERION_E2E_CLIENT="${clients}/tools/${client} ${lib.escapeShellArgs clientArgs}"
         export HYPERION_E2E_CERTS="${certs}"
@@ -373,6 +426,12 @@ let
         # The binaries are already built, so anything past this is a hang
         # rather than a slow compile.
         export HYPERION_E2E_TIMEOUT=120
+        ${lib.optionalString console ''
+          export HYPERION_E2E_CONSOLE=1
+          # Named rather than left to `mktemp`, so a run that fails leaves
+          # the token beside the rest of the build's evidence.
+          export HYPERION_E2E_TOKEN_FILE="$NIX_BUILD_TOP/console-token"
+        ''}
 
         timeout ${toString timeout} hyperion-e2e-driver
         touch "$out"

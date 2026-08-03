@@ -21,6 +21,7 @@ hyperion-item = { workspace = true }
 hyperion-minecraft-proto = { workspace = true }
 hyperion-permission = { workspace = true }
 hyperion-utils = { workspace = true }
+hyperion-web-console = { workspace = true }
 tracing = { workspace = true }
 valence_nbt = { workspace = true }
 valence_protocol = { workspace = true }

@@ -73,6 +73,7 @@ use crate::{
     util::mojang::ApiProvider,
 };
 
+pub mod console;
 pub mod effects;
 pub mod egress;
 pub mod ingress;
@@ -302,6 +303,13 @@ impl HyperionCore {
             .component::<MojangClient>()
             .add_trait::<flecs::Singleton>();
         world.component::<Events>().add_trait::<flecs::Singleton>();
+        // Empty unless an operator console registers. Registered here rather
+        // than in whatever installs an observer, so the packet handler can
+        // read it on a server that has no console at all.
+        world
+            .component::<console::ChatObservers>()
+            .add_trait::<flecs::Singleton>();
+        world.set(console::ChatObservers::default());
         world.component::<Comms>().add_trait::<flecs::Singleton>();
         world
             .component::<EgressComm>()

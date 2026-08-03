@@ -1,0 +1,325 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hyperion console</title>
+<!--
+  One file, hand written, no build step. A console that needs `npm install`
+  before anyone can look at it is a console that has stopped working by the
+  time somebody needs it.
+
+  It looks like the game because what it shows is the game: the same dark
+  translucent backdrop the chat box draws on, the same sixteen colours, and
+  section-sign codes rendered rather than stripped. A line reads here the way
+  it reads in the chat box, which is the point.
+-->
+<style>
+  :root {
+    /* Minecraft's chat backdrop: black at 50%, over whatever is behind it.
+       There is nothing behind a browser tab, so this is the flat result. */
+    --backdrop: #101010;
+    --panel: #1c1c1c;
+    --edge: #2f2f2f;
+    --dim: #7f7f7f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--backdrop);
+    color: #fff;
+    /* Minecraft's own font is not ours to ship, so this asks for the
+       closest thing already on the machine and falls back to any monospace
+       rather than to a proportional face, which would make the columns
+       below stop lining up. */
+    font-family: "Minecraft", "Monocraft", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.45;
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas: "head side" "log side" "input side";
+    height: 100vh;
+  }
+  header {
+    grid-area: head;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--edge);
+    display: flex;
+    gap: 16px;
+    align-items: baseline;
+  }
+  header b { font-weight: normal; color: #55ff55; }
+  #log {
+    grid-area: log;
+    overflow-y: auto;
+    padding: 10px 12px;
+    /* Pre-wrap, because chat is whitespace and a long line must wrap rather
+       than scroll sideways away from the operator. */
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #log div { padding: 1px 0; }
+  #log .system { color: var(--dim); }
+  #log .reply { border-left: 2px solid #3f3f3f; padding-left: 8px; }
+  #log time { color: #4a4a4a; margin-right: 8px; font-size: 12px; }
+  form {
+    grid-area: input;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--edge);
+  }
+  input, button, select {
+    font: inherit;
+    background: var(--panel);
+    color: #fff;
+    border: 1px solid var(--edge);
+    padding: 6px 10px;
+  }
+  #line { flex: 1; }
+  button { cursor: pointer; }
+  button:hover { background: #2a2a2a; }
+  aside {
+    grid-area: side;
+    border-left: 1px solid var(--edge);
+    padding: 10px 12px;
+    overflow-y: auto;
+  }
+  aside h2 { font-size: 12px; color: var(--dim); font-weight: normal; margin: 12px 0 6px; text-transform: uppercase; }
+  aside h2:first-child { margin-top: 0; }
+  .player { display: flex; justify-content: space-between; gap: 8px; }
+  .ping-good { color: #55ff55; }
+  .ping-ok { color: #ffff55; }
+  .ping-bad { color: #ff5555; }
+  .ping-unknown { color: var(--dim); }
+  #gate {
+    position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    display: grid; place-items: center; gap: 10px; grid-auto-flow: row;
+  }
+  #gate[hidden] { display: none; }
+</style>
+
+<header>
+  <span>hyperion console</span>
+  <span>tps <b id="tps">—</b></span>
+  <span>build <b id="build">—</b></span>
+  <span id="link" class="ping-unknown">connecting…</span>
+</header>
+
+<div id="log"></div>
+
+<form id="send">
+  <select id="mode">
+    <option value="say">say</option>
+    <option value="command">command</option>
+  </select>
+  <input id="line" autocomplete="off" placeholder="a message every player sees">
+  <button>send</button>
+</form>
+
+<aside>
+  <h2>players</h2>
+  <div id="players" class="ping-unknown">—</div>
+</aside>
+
+<div id="gate">
+  <div>this console needs its bearer token</div>
+  <input id="token" type="password" autocomplete="off" placeholder="token">
+  <button id="unlock">open</button>
+</div>
+
+<script>
+  // Minecraft's legacy formatter, which is what the server writes and what a
+  // client renders out of a literal string. Kept as a table rather than as
+  // CSS classes so that a code with no meaning falls through visibly instead
+  // of silently doing nothing.
+  const COLOURS = {
+    '0': '#000000', '1': '#0000aa', '2': '#00aa00', '3': '#00aaaa',
+    '4': '#aa0000', '5': '#aa00aa', '6': '#ffaa00', '7': '#aaaaaa',
+    '8': '#555555', '9': '#5555ff', a: '#55ff55', b: '#55ffff',
+    c: '#ff5555', d: '#ff55ff', e: '#ffff55', f: '#ffffff',
+  };
+
+  // Renders one line into an element, applying section-sign codes as it goes.
+  // Deliberately builds text nodes rather than assigning innerHTML: every
+  // string here came off the wire from a player, and the one thing this page
+  // must never do is let somebody type markup into chat and have a browser
+  // run it.
+  function render(text) {
+    const out = document.createDocumentFragment();
+    let style = {};
+    let buffer = '';
+
+    const flush = () => {
+      if (!buffer) return;
+      const span = document.createElement('span');
+      span.textContent = buffer;
+      if (style.colour) span.style.color = style.colour;
+      if (style.bold) span.style.fontWeight = 'bold';
+      if (style.italic) span.style.fontStyle = 'italic';
+      if (style.underline) span.style.textDecoration = 'underline';
+      if (style.strike) span.style.textDecoration = 'line-through';
+      if (style.obfuscated) span.classList.add('obf');
+      out.appendChild(span);
+      buffer = '';
+    };
+
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (character !== '§' || index + 1 >= text.length) {
+        buffer += character;
+        continue;
+      }
+      const code = text[index + 1].toLowerCase();
+      index += 1;
+      flush();
+      if (COLOURS[code]) {
+        // A colour resets every decoration, exactly as the client's own
+        // formatter does. Getting this wrong makes bold leak down a line.
+        style = { colour: COLOURS[code] };
+      } else if (code === 'l') style.bold = true;
+      else if (code === 'o') style.italic = true;
+      else if (code === 'n') style.underline = true;
+      else if (code === 'm') style.strike = true;
+      else if (code === 'k') style.obfuscated = true;
+      else if (code === 'r') style = {};
+      else buffer += '§' + text[index];
+    }
+    flush();
+    return out;
+  }
+
+  const log = document.getElementById('log');
+  const seen = new Set();
+
+  function append(line) {
+    // The stream replays a backlog and then goes live, and a line pushed
+    // between those two can arrive twice. Dropping by sequence is why that is
+    // safe; the alternative (subscribe after fetching) loses lines instead.
+    if (line.seq && seen.has(line.seq)) return;
+    if (line.seq) seen.add(line.seq);
+
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    const row = document.createElement('div');
+    row.className = line.source;
+    const when = document.createElement('time');
+    when.textContent = new Date(line.at || Date.now())
+      .toTimeString()
+      .slice(0, 8);
+    row.appendChild(when);
+    row.appendChild(render(line.text));
+    log.appendChild(row);
+    // Only follow the tail if the operator was already at it. Yanking the
+    // view down while somebody is reading history is the single most annoying
+    // thing a live log can do.
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+
+  let token = sessionStorage.getItem('hyperion-console-token') || '';
+  const gate = document.getElementById('gate');
+  const link = document.getElementById('link');
+
+  function open() {
+    gate.hidden = true;
+    const stream = new EventSource('/events?token=' + encodeURIComponent(token));
+    stream.onopen = () => {
+      link.textContent = 'live';
+      link.className = 'ping-good';
+    };
+    stream.onmessage = (event) => append(JSON.parse(event.data));
+    stream.onerror = () => {
+      // EventSource reconnects on its own, which is most of why this is not a
+      // WebSocket. Say so rather than leaving a stale "live".
+      link.textContent = 'reconnecting…';
+      link.className = 'ping-bad';
+    };
+    poll();
+  }
+
+  document.getElementById('unlock').onclick = () => {
+    token = document.getElementById('token').value.trim();
+    sessionStorage.setItem('hyperion-console-token', token);
+    open();
+  };
+
+  if (token) open();
+
+  document.getElementById('mode').onchange = (event) => {
+    document.getElementById('line').placeholder =
+      event.target.value === 'say'
+        ? 'a message every player sees'
+        : 'a command, with or without the leading slash';
+  };
+
+  document.getElementById('send').onsubmit = async (event) => {
+    event.preventDefault();
+    const input = document.getElementById('line');
+    const body = input.value;
+    if (!body.trim()) return;
+    input.value = '';
+    const path = document.getElementById('mode').value === 'say' ? '/say' : '/command';
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token },
+      body,
+    });
+    if (!response.ok) {
+      append({
+        at: Date.now(),
+        source: 'system',
+        text: '§cthe server refused that: ' + response.status + ' ' + (await response.text()),
+      });
+    }
+  };
+
+  async function poll() {
+    try {
+      const response = await fetch('/state', {
+        headers: { authorization: 'Bearer ' + token },
+      });
+      if (response.ok) draw(await response.json());
+    } catch (error) {
+      // A failed poll is the same condition the stream already reports, so
+      // this stays quiet rather than saying it twice.
+    }
+    setTimeout(poll, 2000);
+  }
+
+  function draw(state) {
+    document.getElementById('tps').textContent =
+      state.tps === null || state.tps === undefined
+        ? 'sampling'
+        : state.tps.toFixed(1) + ' / ' + state.targetTps.toFixed(1);
+
+    document.getElementById('build').textContent = state.buildRev
+      ? state.buildRev + (state.buildDirty ? ' (dirty)' : '')
+      : 'unknown';
+
+    const players = document.getElementById('players');
+    players.textContent = '';
+    if (!state.players.length) {
+      players.textContent = 'nobody online';
+      players.className = 'ping-unknown';
+      return;
+    }
+    players.className = '';
+    for (const player of state.players) {
+      const row = document.createElement('div');
+      row.className = 'player';
+      const name = document.createElement('span');
+      name.textContent = player.name;
+      const ping = document.createElement('span');
+      // Null is "nothing has been measured", which is not the same as fast.
+      // The engine is careful about this distinction and so is the page.
+      if (player.latency === null || player.latency === undefined) {
+        ping.textContent = '—';
+        ping.className = 'ping-unknown';
+      } else {
+        ping.textContent = player.latency + 'ms';
+        ping.className =
+          player.latency < 150 ? 'ping-good' : player.latency < 300 ? 'ping-ok' : 'ping-bad';
+      }
+      row.append(name, ping);
+      players.appendChild(row);
+    }
+  }
+</script>

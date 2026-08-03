@@ -1,0 +1,25 @@
+[package]
+license.workspace = true
+publish = false
+name = "hyperion-web-console"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+flecs_ecs = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true, features = ["http1", "server"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+hyperion = { workspace = true }
+hyperion-command = { workspace = true }
+hyperion-minecraft-proto = { workspace = true }
+hyperion-permission = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "net", "sync", "macros", "io-util", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+
+[lints]
+workspace = true
