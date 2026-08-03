@@ -26,6 +26,18 @@ ix apply .#hyperion-game .#hyperion-proxy-0 .#hyperion-proxy-1 .#hyperion-proxy-
 Change anything and run the same command again. Each VM is reused by name and
 switched in place, so only the units whose definition changed restart.
 
+## What the fleet cost in the last 24 hours
+
+```sh
+python3 nix/fleet/spend.py            # dollars per VM + fleet total, last 24h
+python3 nix/fleet/spend.py --since 7d
+```
+
+It reads `ix billing usage --since ... --json` and filters the per-VM
+`resource_spend` rows to names starting with `hyperion-`, so it needs a
+logged-in `ix` and a provisioned billing account; without the account it
+repeats ix's own error and exits nonzero instead of printing zeros.
+
 ## Build the fleet once, not once per VM
 
 The `nix build` line is what makes the apply finish in minutes instead of
