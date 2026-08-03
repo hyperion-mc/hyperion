@@ -104,30 +104,66 @@ let
   sysrootLib = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/lib";
   inherit (pkgs.stdenv.hostPlatform) extensions;
 
-  # The link recipe `crates/hyperion-hot-reload/index-probe.sh` proves, with
-  # store paths where that script has `target/debug`.
+  # The link recipe `crates/hyperion-hot-reload/index-probe.sh` proves.
   #
   # `-C prefer-dynamic` is the load-bearing flag: it makes the server binary and
   # the rules dylib resolve `hyperion`, and through it the one `flecs_ecs` that
   # owns the component-index pool, to a shared image rather than each linking
   # its own static copy. `checks.hot-reload-index-probe` is what proves that
   # holds; this is only the flags.
-  rustFlags =
-    libDirs:
-    lib.concatStringsSep " " (
-      [ "--cfg tokio_unstable" "-C prefer-dynamic" ]
-      ++ map (dir: "-C link-arg=-Wl,-rpath,${dir}") libDirs
-      # `flecs_ecs`'s build script installs a version script naming four globs,
-      # and ld treats a pattern that matches nothing as an error by default.
-      ++ lib.optional pkgs.stdenv.hostPlatform.isElf "-C link-arg=-Wl,--undefined-version"
-    );
+  #
+  # THE SAME STRING IN ALL THREE DERIVATIONS, and that is load bearing rather
+  # than tidy. Cargo folds RUSTFLAGS into each unit's `-C metadata`, so a flag
+  # that differs by one character recompiles the entire graph under different
+  # mangled symbol names. Measured directly: building `flecs_ecs` twice,
+  # changing nothing but an rpath, produced
+  #
+  #     libflecs_ecs-c1d9502659600761   (-Wl,-rpath,/tmp/one)
+  #     libflecs_ecs-13cef1f428680a8e   (-Wl,-rpath,/tmp/two)
+  #
+  # An earlier version put each derivation's own rpath here, which is why the
+  # rules dylib asked for a `libflecs_ecs` the engine derivation did not ship
+  # (ENG-12053). The rpaths are therefore applied AFTER linking, below, where
+  # they cannot reach the compiler.
+  rustFlags = lib.concatStringsSep " " (
+    [
+      "--cfg tokio_unstable"
+      "-C prefer-dynamic"
+      "-C link-arg=-Wl,-rpath,${sysrootLib}"
+    ]
+    # `flecs_ecs`'s build script installs a version script naming four globs,
+    # and ld treats a pattern that matches nothing as an error by default.
+    ++ lib.optional pkgs.stdenv.hostPlatform.isElf "-C link-arg=-Wl,--undefined-version"
+  );
+
+  # Point a linked artifact at the engine's dylibs, after the compiler has
+  # stopped caring. `$ORIGIN` first so a dylib sitting beside its neighbours
+  # finds them without naming a store path.
+  setRunPath = libDirs: file: if pkgs.stdenv.hostPlatform.isElf then ''
+    patchelf --set-rpath ${lib.escapeShellArg (lib.concatStringsSep ":" ([ "$ORIGIN" ] ++ libDirs ++ [ sysrootLib ]))} ${file}
+  '' else lib.concatMapStrings (dir: ''
+    install_name_tool -add_rpath ${dir} ${file} || true
+  '') libDirs;
+
+  # Every `DT_NEEDED` has to resolve, and the build is the place to find out.
+  #
+  # This is the guard that would have caught ENG-12053 the day it was written
+  # instead of at `ldd` time on a dev box: a rules dylib asking for a
+  # `libflecs_ecs` nobody ships is a dangling reference, and a dangling
+  # reference to THAT library specifically means two component-index pools.
+  requireResolved = file: lib.optionalString pkgs.stdenv.hostPlatform.isElf ''
+    if ldd ${file} | grep "not found"; then
+      echo "unresolved libraries in ${file}; see ENG-12053" >&2
+      exit 1
+    fi
+  '';
 
   common = {
     # The toolchain explicitly: flake.nix's `nativeBuildInputs` is the C and
     # build-tool half and does not carry cargo. Every other cargo build in this
     # flake reaches it through a `writeShellApplication`'s `runtimeInputs`,
     # which these derivations do not go through.
-    nativeBuildInputs = nativeBuildInputs ++ [ rustToolchain ];
+    nativeBuildInputs = nativeBuildInputs ++ [ rustToolchain ] ++ lib.optional pkgs.stdenv.hostPlatform.isElf pkgs.patchelf;
     # Every C build script in the graph answers `_FORTIFY_SOURCE` with a
     # `#warning` at -O0, and an autoconf probe reading stderr then misreads its
     # own test as a compile failure. `checks.clippy` met this first.
@@ -171,8 +207,8 @@ let
   # The engine, built once, as the dylibs everything else resolves at runtime.
   hyperion-dylibs = pkgs.runCommandCC "hyperion-dylibs" common ''
     ${setup dylibSource}
-    export RUSTFLAGS=${lib.escapeShellArg (rustFlags [ sysrootLib "$ORIGIN" ])}
-    cargo build --profile ${profile} --offline -p hyperion
+    export RUSTFLAGS=${lib.escapeShellArg rustFlags}
+    cargo build --profile ${profile} --offline -p hyperion -p hyperion-hot-reload
 
     mkdir -p "$out/lib" "$out/share"
     # `deps/` as well as the profile directory: cargo leaves an unhashed copy of
@@ -180,6 +216,13 @@ let
     # dylib only in `deps/`, under the metadata hash DT_NEEDED actually names.
     cp target/${profile}/*${extensions.sharedLibrary} "$out/lib/"
     cp target/${profile}/deps/libflecs_ecs-*${extensions.sharedLibrary} "$out/lib/"
+    ${lib.optionalString pkgs.stdenv.hostPlatform.isElf ''
+      # `$ORIGIN` so `libhyperion.so` finds the `libflecs_ecs.so` sitting
+      # beside it in this output rather than through an absolute path.
+      for shared in "$out"/lib/*${extensions.sharedLibrary}; do
+        patchelf --set-rpath '$ORIGIN':${sysrootLib} "$shared"
+      done
+    ''}
     tar -C target -cf "$out/share/cargo-target.tar" ${profile}
   '';
 
@@ -190,11 +233,13 @@ let
   smash-server = pkgs.runCommandCC "smash-server" (common // { meta.mainProgram = "smash"; }) ''
     ${setup serverSource}
     ${seed}
-    export RUSTFLAGS=${lib.escapeShellArg (rustFlags [ sysrootLib "${hyperion-dylibs}/lib" ])}
+    export RUSTFLAGS=${lib.escapeShellArg rustFlags}
     cargo build --profile ${profile} --offline -p smash
 
     mkdir -p "$out/bin"
     cp target/${profile}/smash "$out/bin/smash"
+    ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/bin/smash"''}
+    ${requireResolved ''"$out/bin/smash"''}
   '';
 
   # What `X-Reload-Triggers` names, and the only path a rules-only change is
@@ -202,11 +247,13 @@ let
   smash-rules = pkgs.runCommandCC "smash-rules" common ''
     ${setup rulesSource}
     ${seed}
-    export RUSTFLAGS=${lib.escapeShellArg (rustFlags [ sysrootLib "${hyperion-dylibs}/lib" ])}
+    export RUSTFLAGS=${lib.escapeShellArg rustFlags}
     cargo build --profile ${profile} --offline -p smash-rules
 
     mkdir -p "$out/lib"
     cp target/${profile}/libsmash_rules${extensions.sharedLibrary} "$out/lib/"
+    ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/lib/libsmash_rules${extensions.sharedLibrary}"''}
+    ${requireResolved ''"$out/lib/libsmash_rules${extensions.sharedLibrary}"''}
   '';
 in
 {
