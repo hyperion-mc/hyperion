@@ -142,6 +142,14 @@ let
 
   # Reuse the engine's artifacts rather than compiling equivalents of them.
   #
+  # THIS DOES NOT YET HOLD; see ENG-12053. Measured on x86_64-linux, the rules
+  # dylib asks for `libflecs_ecs-2c5aa556f4fa166e.so` while this derivation
+  # ships `libflecs_ecs-c4fb60682bf29e00.so`, so the seed was not reused for
+  # that crate and it was recompiled -- most likely because `-p hyperion` and
+  # `-p smash-rules` resolve different features onto it. Two compilations is
+  # two `INDEX_POOL`s, which is what `checks.hot-reload-index-probe` rejects.
+  # The paragraph below is the intent, not yet the fact.
+  #
   # This is not a build-time optimisation, it is what makes the boundary sound.
   # If the server and the rules each compiled their own `hyperion`, each would
   # get its own `-C metadata` hash -- the source ids differ, because the two
