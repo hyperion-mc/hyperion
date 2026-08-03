@@ -1,5 +1,3 @@
-#![feature(exact_size_is_empty)]
-
 use std::net::SocketAddr;
 
 use flecs_ecs::prelude::*;

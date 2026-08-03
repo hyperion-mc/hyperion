@@ -578,6 +578,9 @@ let
   particleCodegen = pkgs.writers.writePython3Bin "generate-minecraft-particles" pythonWriterOptions
     (builtins.readFile ./generate-particles.py);
 
+  collisionShapeCodegen = pkgs.writers.writePython3Bin "generate-minecraft-collision-shapes" pythonWriterOptions
+    (builtins.readFile ./generate-collision-shapes.py);
+
   coverageChecker = pkgs.writers.writePython3Bin "check-minecraft-proto-coverage" pythonWriterOptions
     (builtins.readFile ./check-proto-coverage.py);
 
@@ -642,6 +645,24 @@ let
         --protocol ${toString pin.protocolVersion} \
         --out $out/block_state.rs
       rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/block_state.rs
+    '';
+
+  # The shapes the extractor read out of the game, as Rust. Two arrays rather
+  # than one: 32366 states share 326 box lists, so the distinct lists are
+  # stored once and the per-state table is an index into them.
+  generatedCollisionShapes = pkgs.runCommand "hyperion-minecraft-collision-shapes-${pin.id}"
+    {
+      nativeBuildInputs = [ collisionShapeCodegen rustfmt ];
+      meta.description = "Generated Rust collision shape table for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      generate-minecraft-collision-shapes \
+        --shapes ${collisionShapes}/collision-shapes.json \
+        --version ${pin.id} \
+        --protocol ${toString pin.protocolVersion} \
+        --out $out/collision_shape.rs
+      rustfmt --edition 2024 --config-path ${../rustfmt.toml} $out/collision_shape.rs
     '';
 
   # The one registry that cannot be generated from protocol.json alone.
@@ -848,6 +869,17 @@ let
     '';
   };
 
+  syncCollisionShapesScript = pkgs.writeShellApplication {
+    name = "sync-minecraft-collision-shapes";
+    runtimeInputs = [ pkgs.coreutils pkgs.git ];
+    text = ''
+      root=$(git rev-parse --show-toplevel)
+      dest="$root/crates/hyperion-minecraft-proto/src/collision_shape.rs"
+      install -m 644 ${generatedCollisionShapes}/collision_shape.rs "$dest"
+      echo "synced $dest" >&2
+    '';
+  };
+
   # Rewrites the raw-literal baseline. The same command tightens it after a
   # migration and records a deliberate new one, so the two cannot drift.
   syncLiteralsScript = pkgs.writeShellApplication {
@@ -976,6 +1008,19 @@ let
         touch $out
       else
         echo "committed block state table is stale; run: nix run .#sync-minecraft-block-states" >&2
+        head -n 200 diff.txt >&2
+        exit 1
+      fi
+    '';
+
+  collisionShapesUpToDate = pkgs.runCommand "check-minecraft-collision-shapes"
+    { }
+    ''
+      committed=${../crates/hyperion-minecraft-proto/src/collision_shape.rs}
+      if diff -u "$committed" ${generatedCollisionShapes}/collision_shape.rs > diff.txt 2>&1; then
+        touch $out
+      else
+        echo "committed collision shape table is stale; run: nix run .#sync-minecraft-collision-shapes" >&2
         head -n 200 diff.txt >&2
         exit 1
       fi
@@ -1134,6 +1179,7 @@ in
     generatedRegistryData
     generatedTagData
     generatedBlockStates
+    generatedCollisionShapes
     generatedParticles
     extractor
     vanillaShapes
@@ -1142,12 +1188,14 @@ in
     registryCodegen
     tagDataCodegen
     blockStateCodegen
+    collisionShapeCodegen
     particleCodegen
     updateScript
     syncScript
     syncRegistryDataScript
     syncTagDataScript
     syncBlockStatesScript
+    syncCollisionShapesScript
     syncParticlesScript
     coverageChecker
     coverageRatchet
@@ -1161,6 +1209,7 @@ in
     tagDataUpToDate
     tagsLoadForClient
     blockStatesUpToDate
+    collisionShapesUpToDate
     particlesUpToDate
     fixturesUpToDate
     protocolJsonUpToDate

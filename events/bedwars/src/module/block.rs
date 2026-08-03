@@ -93,7 +93,7 @@ impl Module for BlockModule {
                 sequence,
             } in event_queue.drain()
             {
-                if block.collision_shapes().is_empty() {
+                if translate::collision_shapes(block).is_empty() {
                     blocks
                         .to_confirm
                         .push(EntityAndSequence::new(from, sequence));

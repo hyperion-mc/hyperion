@@ -16,10 +16,17 @@
 //!
 //! Biomes have the same problem in miniature and are handled the same way, in
 //! [`biome_ids`].
+//!
+//! Collision shapes go the same way for the same reason, in
+//! [`collision_shapes`]: valence's table describes 1.20.1's geometry, and what
+//! an entity stops against has to be the geometry the client is rendering.
 
 use std::sync::LazyLock;
 
-use hyperion_minecraft_proto::block_state;
+use hyperion_minecraft_proto::{
+    block_state,
+    collision_shape::{self, CollisionBox},
+};
 use valence_generated::block::BlockState;
 use valence_protocol::Ident;
 use valence_registry::{BiomeRegistry, RegistryIdx, biome::BiomeId};
@@ -52,6 +59,27 @@ pub fn block_state(state: BlockState) -> u32 {
     // Every raw id below `max_raw` has an entry, and `to_raw` cannot produce
     // anything else, so the index is in range by construction.
     BLOCK_STATES[usize::from(state.to_raw())]
+}
+
+/// The 26.2 collision boxes of a 1.20.1 block state, in the block's own
+/// coordinates.
+///
+/// Use this rather than [`BlockState::collision_shapes`], which answers out of
+/// valence's checked-in 1.20.1 table. They agree on all but one of the 24135
+/// states a 1.20.1 world can hold, which the `shapes_changed_since_1_20_1`
+/// test below both measures and pins; the reason to ask 26.2 anyway is that
+/// 26.2 is what the client deciding where a player may stand is running.
+///
+/// A state with no boxes is passed through -- air, a torch, tall grass -- so
+/// an empty slice is the answer for "nothing to collide with" and not a
+/// failure to look it up.
+#[must_use]
+pub fn collision_shapes(state: BlockState) -> &'static [CollisionBox] {
+    // Total by construction: every id [`block_state`] returns comes out of the
+    // same jar's registry that the shape table was extracted from, and the two
+    // tables assert against each other's state count at compile time.
+    collision_shape::collision_shape(block_state(state))
+        .expect("every protocol 776 state id has a collision shape")
 }
 
 /// The name 26.2 knows a 1.20.1 block by.
@@ -159,7 +187,114 @@ pub fn biome_name_to_id(biomes: &BiomeRegistry) -> std::collections::BTreeMap<Id
 mod tests {
     use valence_generated::block::{BlockState, PropName, PropValue};
 
-    use super::block_state;
+    use super::{block_state, collision_shapes};
+
+    /// Named 26.2 geometry, reached through the same call the collision path
+    /// makes.
+    ///
+    /// Written against the extracted table rather than from memory: each of
+    /// these was read out of `collision-shapes.json` first and is here to say
+    /// that the translation lands on the right row, not to restate the game.
+    #[test]
+    fn known_blocks_have_their_2_6_2_shapes() {
+        const CUBE: [f32; 6] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+
+        assert_eq!(collision_shapes(BlockState::STONE), &[CUBE]);
+        assert_eq!(collision_shapes(BlockState::SOUL_SAND), &[[
+            0.0, 0.0, 0.0, 1.0, 0.875, 1.0
+        ]]);
+
+        // The three slab states, which are the reason a shape is asked for per
+        // state and not per block.
+        let slab = |value| BlockState::OAK_SLAB.set(PropName::Type, value);
+        assert_eq!(collision_shapes(slab(PropValue::Bottom)), &[[
+            0.0, 0.0, 0.0, 1.0, 0.5, 1.0
+        ]]);
+        assert_eq!(collision_shapes(slab(PropValue::Top)), &[[
+            0.0, 0.5, 0.0, 1.0, 1.0, 1.0
+        ]]);
+        assert_eq!(collision_shapes(slab(PropValue::Double)), &[CUBE]);
+
+        // A fence post stands 1.5 blocks high, above the cell it belongs to,
+        // so a consumer clamping a shape to the unit cube would let a player
+        // walk over one.
+        let fence = BlockState::OAK_FENCE
+            .set(PropName::North, PropValue::False)
+            .set(PropName::South, PropValue::False)
+            .set(PropName::East, PropValue::False)
+            .set(PropName::West, PropValue::False)
+            .set(PropName::Waterlogged, PropValue::False);
+        assert_eq!(collision_shapes(fence), &[[
+            0.375, 0.0, 0.375, 0.625, 1.5, 0.625
+        ]]);
+
+        // Nothing to collide with is an empty slice, not a missing row.
+        assert!(collision_shapes(BlockState::AIR).is_empty());
+        assert!(collision_shapes(BlockState::TORCH).is_empty());
+        assert!(collision_shapes(BlockState::WATER).is_empty());
+    }
+
+    /// Every 1.20.1 state resolves to a 26.2 shape.
+    ///
+    /// [`collision_shapes`] expects rather than returns an option, on the
+    /// grounds that the id it looks up came out of the same registry the table
+    /// did. This is what makes that reasoning checked: a state whose
+    /// translation landed outside the table would panic here rather than in a
+    /// tick.
+    #[test]
+    fn every_1_20_1_state_has_a_2_6_2_shape() {
+        for raw in 0..=BlockState::max_raw() {
+            let Some(state) = BlockState::from_raw(raw) else {
+                continue;
+            };
+            let _: &[[f32; 6]] = collision_shapes(state);
+        }
+    }
+
+    /// What swapping the table actually changed, measured rather than assumed.
+    ///
+    /// The honest result is: almost nothing. Of the 24135 states a 1.20.1
+    /// world can hold, exactly one has different geometry in 26.2 --
+    /// `pitcher_crop[age=0, half=upper]`, which valence gives the bulb box and
+    /// 26.2 gives no collision at all -- and that state cannot be placed in a
+    /// world, because a pitcher crop only grows its upper half at age 3. So
+    /// this change fixes no collision anybody could have hit. What it fixes is
+    /// the source: the shapes now come from the version the client is running,
+    /// and `nix flake check` fails if the committed table drifts from the jar.
+    ///
+    /// Kept as a ratchet. A jar bump that moves another block's shape fails
+    /// here and names it, which is the difference between knowing what a
+    /// version bump changed and hoping.
+    #[test]
+    fn shapes_changed_since_1_20_1() {
+        let expected = BlockState::PITCHER_CROP
+            .set(PropName::Age, PropValue::_0)
+            .set(PropName::Half, PropValue::Upper);
+
+        let mut changed = Vec::new();
+        for raw in 0..=BlockState::max_raw() {
+            let Some(state) = BlockState::from_raw(raw) else {
+                continue;
+            };
+            let old: Vec<[f32; 6]> = state
+                .collision_shapes()
+                .map(|shape| {
+                    let (min, max) = (shape.min().as_vec3(), shape.max().as_vec3());
+                    [min.x, min.y, min.z, max.x, max.y, max.z]
+                })
+                .collect();
+            if old != collision_shapes(state) {
+                changed.push(state);
+            }
+        }
+
+        assert_eq!(
+            changed,
+            vec![expected],
+            "the shapes 26.2 disagrees with 1.20.1 about have moved; each entry is a block whose \
+             collision geometry a player will feel change"
+        );
+    }
 
     /// Named states, checked against `block_state.rs`'s own table.
     ///

@@ -1909,6 +1909,7 @@
             minecraft-tag-data = minecraft.tagDataUpToDate;
             minecraft-tags-load = minecraft.tagsLoadForClient;
             minecraft-block-states = minecraft.blockStatesUpToDate;
+            minecraft-collision-shapes = minecraft.collisionShapesUpToDate;
             minecraft-particles = minecraft.particlesUpToDate;
             minecraft-encoder-fixtures = minecraft.fixturesUpToDate;
             minecraft-proto-json = minecraft.protocolJsonUpToDate;
@@ -2018,6 +2019,7 @@
               sync-minecraft-registry-data = minecraft.syncRegistryDataScript;
               sync-minecraft-tag-data = minecraft.syncTagDataScript;
               sync-minecraft-block-states = minecraft.syncBlockStatesScript;
+              sync-minecraft-collision-shapes = minecraft.syncCollisionShapesScript;
               sync-minecraft-particles = minecraft.syncParticlesScript;
               # Re-records the golden traces `crates/hyperion/tests/differential.rs`
               # compares against. See docs/differential-testing.md.
@@ -2046,10 +2048,11 @@
             minecraft-decompiled = minecraft.decompiledSources;
             minecraft-physics-sources = minecraft.physicsSources;
             # The extracted per-state collision shapes, and the harness that
-            # reads them out of the jar. `nix build .#minecraft-collision-shapes`
-            # is what a reader inspects; the harness is exposed too so a shape
-            # can be dumped by hand while debugging a clip.
-            minecraft-collision-shapes = minecraft.collisionShapes;
+            # reads them out of the jar. The JSON is what a reader inspects and
+            # what `minecraft-collision-shapes-rust` is generated from; the
+            # harness is exposed too so a shape can be dumped by hand while
+            # debugging a clip.
+            minecraft-collision-shapes-json = minecraft.collisionShapes;
             minecraft-shapes = minecraft.vanillaShapes;
             minecraft-client-skin-sources = minecraft.clientSkinSources;
             minecraft-protocol = minecraft.protocolJson;
@@ -2062,6 +2065,7 @@
             differential-recorder = differential.recorder;
             differential-traces = differential.recordedTraces;
             minecraft-block-states-rust = minecraft.generatedBlockStates;
+            minecraft-collision-shapes-rust = minecraft.generatedCollisionShapes;
             minecraft-particles-rust = minecraft.generatedParticles;
           };
 

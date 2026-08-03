@@ -7,7 +7,10 @@ use flecs_ecs::{
 };
 use hyperion::{
     runtime::AsyncRuntime,
-    simulation::{Position, Uuid, blocks::Blocks},
+    simulation::{
+        Position, Uuid,
+        blocks::{Blocks, translate},
+    },
     valence_protocol::{
         BlockKind,
         math::{IVec2, IVec3, Vec3},
@@ -128,7 +131,7 @@ pub fn is_valid_spawn_block(
         return false;
     };
 
-    if ground.collision_shapes().is_empty() {
+    if translate::collision_shapes(ground).is_empty() {
         return false;
     }
 
@@ -139,7 +142,7 @@ pub fn is_valid_spawn_block(
     for displacement in DISPLACEMENTS {
         let above = pos + displacement;
         if let Some(block) = blocks.get_block(above) {
-            if !block.collision_shapes().is_empty() {
+            if !translate::collision_shapes(block).is_empty() {
                 return false;
             }
 

@@ -10,9 +10,16 @@
 //
 // The alternative it replaces was `valence_generated`'s checked-in
 // `extracted/blocks.json`. That file is Minecraft 1.20.1: 1003 blocks and
-// 24135 states against this jar's 1196 and 32366. Using it meant an arrow was
-// clipped against 1.20.1's shapes while the client watching the arrow was
-// running 26.2, and meant no shape at all for anything added since.
+// 24135 states against this jar's 1196 and 32366, so an arrow was clipped
+// against 1.20.1's shapes while the client watching it ran 26.2.
+//
+// Measured, that cost less than it sounds. Of the 24135 states a 1.20.1 world
+// can hold, exactly one has different geometry in 26.2, and it is one no world
+// contains -- the `shapes_changed_since_1_20_1` test in hyperion's
+// `simulation/blocks/translate.rs` names it and fails if that stops being
+// true. What this buys is not a fixed collision but a source that moves with
+// the jar under a check, and a shape for all 32366 of this version's states
+// rather than for the 24135 the old table described.
 //
 // No `MinecraftServer` subclass here, unlike `VanillaTrace`. A collision shape
 // is a pure function of the state: `getCollisionShape` takes a `BlockGetter`
