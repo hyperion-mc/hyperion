@@ -420,7 +420,14 @@ Stated plainly, because these are the parts a reader cannot see for themselves.
   `nix build .#checks.<system>.hot-reload-demo .#checks.<system>.hot-reload-registry-guard`.
 - **The deployment half is designed, not shipped.** Nothing here is wired to `ix apply`,
   to a systemd unit, or to hyperion's own modules. See "Deploying a reload" below for the
-  shape and what is missing.
+  shape and what is missing, and "Packaging: three derivations" for the part that is now
+  measured rather than assumed.
+
+- **The packaged server does not satisfy the shared-pool precondition.** `hyperion` is a
+  dylib and the fleet's binary does not link it as one, because `cargoUnit` builds without
+  `-C prefer-dynamic`. `checks.hot-reload-index-probe` gates the recipe; nothing yet gates
+  the artifact a host runs. Until the packaging lands, loading a module into the deployed
+  server is the exact configuration the probe exists to reject.
 
 ## Linux, and the one copy of flecs everything depends on
 
@@ -555,9 +562,15 @@ rebuild and a restart.**
    directory means the second configuration may not have taken effect. Treat the build-time
    cost as unmeasured rather than as shown to be zero, and measure it properly if CI wall
    time matters.
-3. Host and every module build with
-   `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
-   plus rpaths to the rust sysroot and to wherever the dylibs land.
+3. Host and every module build with `-C prefer-dynamic`, plus rpaths to the rust sysroot
+   and to wherever the dylibs land. On ELF add `-C link-arg=-Wl,--undefined-version`: the
+   version script `flecs_ecs`'s build script installs names four globs and both bfd and
+   lld treat a pattern matching nothing as an error.
+
+   `crates/hyperion-hot-reload/index-probe.sh` is that recipe, written once.
+   `nix run .#hot-reload-index-probe` runs it, and `checks.hot-reload-index-probe` is the
+   same script as a derivation, so the gate and the command a contributor runs by hand
+   cannot disagree about the same tree.
 
 What makes the pool shared is step 1 and nothing else. It is tempting to think a module has
 to *reference* `hyperion-hot-reload` to end up on the shared runtime — an earlier version of
@@ -565,17 +578,20 @@ the probe carried a call to `AbiToken::current()` with a comment claiming exactl
 Removing the dependency entirely leaves the probe passing. The dependency being a dylib is
 what shares it; a consumer's import list has nothing to do with it.
 
-`--allow-shlib-undefined` is not a shrug. `simulation/metadata/mod.rs` hand-writes
+**`--allow-shlib-undefined` is gone, and what it stood for is fixed.**
+`simulation/metadata/mod.rs` used to hand-write
 `impl PartialOrd for $name where $type: PartialOrd`, and for 7 metadata types that bound is
 unsatisfiable because glam's `Quat` and `Vec3` have no `PartialOrd`. rustc never codegens
-those `partial_cmp` bodies but still lists them in the dylib's export list. They cannot be
-called — calling one fails to compile on the same unsatisfiable bound — so allowing them
-undefined is sound. Removing the blanket impl from that macro would remove the need for the
-flag, and is the better fix.
+those `partial_cmp` bodies and still lists them in the dylib's export list, so a consumer
+needed the flag to link at all. The blanket impl is deleted rather than tolerated: it had
+exactly one caller in the whole workspace, `events/bedwars/src/module/regeneration.rs`
+comparing two `Health`, and that now compares through `Health`'s own `Deref` to `f32`. So
+the flag is not in the recipe, and if it ever needs to come back, that is the signal a
+blanket impl came back with it.
 
-**Steps 1 and 2 are not landed.** They were verified through a local `[patch]` against a
-copy of the fork checkout. Landing them means a commit in `andrewgazelka/Flecs-Rust` and a
-repin here.
+**Steps 1 and 2 are landed.** `flecs_ecs` carries the dylib change at
+`andrewgazelka/Flecs-Rust` `f09dc53` and `Cargo.toml` pins it; `crates/hyperion` carries
+`crate-type = ["rlib", "dylib"]`.
 
 ## Deploying a reload
 
@@ -642,30 +658,120 @@ anything here.
 
 ## Handing this off: what is left, in order
 
-The mechanism is proven and the deployment is not built. Four steps remain. The third is
-the risky one; the rest are known work.
+The mechanism is proven and the deployment is not built. The third step below is the risky
+one; the rest are known work.
 
-**1. Make `hyperion` a dylib and settle the build flags.** `crate-type = ["dylib", "rlib"]`
-plus `-C prefer-dynamic -C link-arg=-Wl,--undefined-version
--C link-arg=-Wl,--allow-shlib-undefined` everywhere. Small edit, wide blast radius: it
-changes how every consumer links, and a plain `cargo test` without those flags will not
-link the result. Confirm by running `demo/index-probe-host`, which should print `PROBE_OK`.
+**Done: make `hyperion` a dylib and settle the build flags.** `crate-type` on
+`crates/hyperion`, `-C prefer-dynamic` everywhere, and the ELF-only
+`-Wl,--undefined-version`. Wide blast radius -- it changes how every consumer links, and a
+plain `cargo build` without those flags builds a host whose pool a module cannot share.
+`checks.hot-reload-index-probe` gates it, and the guard was watched failing: dropping
+`-C prefer-dynamic` from the recipe reproduces this document's own unshared numbers,
+module index 1 against a host that had already taken up to 4.
 
-**2. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
+**1. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
 `export_module!`.** The rules already avoid the host seam by design, but they reach into
 `crate::server`, `crate::flecs_ext` and about fifteen `hyperion::` items, so this is a real
 refactor rather than a file move. Registration modules stay in the host per the section
 above.
 
-**3. Package it. This is the risky step.** The game server binary and the module dylib have
-to be separate store paths, both built with the flags from step 1, with rpaths that resolve
-in the nix store rather than in `target/debug`. Nothing here is verified — every
-measurement in this document was taken from a cargo build, not a nix one. Expect the
-surprises to be here.
+**2. Package it.** No longer the unknown it was; see "Packaging: three derivations, because
+two would restart" below, which replaces the guesswork with a measured design.
 
-**4. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
+**3. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
 `reloadTriggers`, the stable `/etc` path, and an `ExecReload` client that exits non-zero on
 a refusal. Small, and the design is settled.
+
+### Do the deployment half first, against a module with nothing in it
+
+The order above is the order the pieces were designed in, and it is the wrong order to
+build them in. Reversed:
+
+- **The rules split has no unknowns.** It is nineteen files, 111 `world.component::<T>()`
+  calls and 30 system declarations, moved across a crate boundary. Large, mechanical, and
+  nothing about it can surprise anyone.
+- **The deployment half has all of them.** systemd's reload-versus-restart decision, the
+  `/etc` indirection, rpaths that resolve in the store, the `stamped` wrapper that puts a
+  per-commit path inside `[Service]`, and whether a title reaches a connected player at
+  all. Every one of those is a fact about a running host.
+
+So build the loader, the socket, the `ExecReload` client, the title and the NixOS wiring
+against a **trivial** rules module that registers nothing and does one visible thing. That
+proves reload-not-restart, the surviving player connection and the title on a dev node
+without waiting for the split. Then migrate smash's rules into that module a domain at a
+time, each migration a small PR that is already covered by the existing test suite.
+
+The failure this avoids is the expensive one: finishing a nineteen-file refactor and only
+then discovering that `[Service]` differs on every apply and nothing ever reloads.
+
+## Packaging: three derivations, because two would restart
+
+Three things were measured, and together they settle the design.
+
+**`cargoUnit` cannot build the module dylib.** Its library support is rlib-only and says so
+in an assertion rather than in a comment:
+
+```
+# M2: this builder is rlib-only (the filename and extern-path hardcode
+# `.rlib`). Reject an artifact that is clearly not an rlib/rmeta so a
+# cdylib/staticlib/proc-macro mistake fails loud at eval, not at link.
+  Only plain rlib libraries are supported (not cdylib/staticlib/proc-macro).
+```
+
+`workspace.libraries.<name>` is therefore not a route to `libsmash_rules.so`, and neither
+is `mkPrebuiltLibraryUnit`.
+
+**The binary the fleet runs today links nothing from the workspace dynamically.** It is a
+`cargoUnit` build with no `-C prefer-dynamic`, so `crate-type = ["rlib", "dylib"]` on
+`hyperion` changes what is *available* and not what is *linked*:
+
+```
+$ otool -L /nix/store/yjlf...-smash-0.1.0/bin/smash
+    /System/Library/Frameworks/Security.framework/...
+    /System/Library/Frameworks/SystemConfiguration.framework/...
+    /System/Library/Frameworks/CoreFoundation.framework/...
+    /nix/store/0ky9...-libiconv-115.100.1/lib/libiconv.2.dylib
+    /usr/lib/libSystem.B.dylib
+$ find /nix/store/yjlf...-smash-0.1.0 -name '*.dylib' -o -name '*.so'
+(nothing)
+```
+
+Five entries, all system. No `libhyperion`, no `libflecs_ecs`, and no dylib shipped beside
+the binary. A module loaded into *that* process gets its own pool, which is the
+configuration the probe exists to reject. So the packaged server has to leave the
+`cargoUnit` path too, not only the module.
+
+**A multi-output derivation would defeat the whole feature.** The obvious repair — one
+cargo build emitting the binary and the dylib as two outputs — is wrong, and quietly so.
+Every output of a derivation moves when any input does, so a rules-only edit would move the
+binary's store path, `ExecStart` would differ, and systemd would restart. The gate would
+pass, the reload would never be attempted, and the only symptom is that players get dropped
+on a deploy that should have been invisible.
+
+What the boundary actually requires is that **the module's store path moves when the host's
+does not**, and a store path is a function of a derivation's inputs. So the boundary is a
+statement about which sources reach which derivation:
+
+| derivation | source | what moves it |
+| --- | --- | --- |
+| `hyperion-dylibs` | `crates/hyperion` and its graph | an engine change |
+| `smash-server` (`ExecStart`) | the host crate: registration modules, loader, tick loop | a component or engine change |
+| `smash-rules` (`reloadTriggers`) | the rules crate: systems and observers | a rules change |
+
+The last two both link `hyperion-dylibs` by rpath into the store, which is what keeps one
+`flecs_ecs` in the process. A component's layout lives in the host crate, so changing it
+moves `smash-server` and systemd restarts. A system's body lives in the rules crate, so
+changing it moves only `smash-rules` and systemd reloads. Nobody has to remember the rule;
+it is the source split.
+
+**The part that will actually cost time is the source filter, and it is worth naming now.**
+Each derivation needs a `src` narrow enough that an unrelated commit does not move it, and
+wide enough that cargo can resolve the workspace: the root `Cargo.toml`, `Cargo.lock`, and
+the member directories in that crate's dependency graph. Get it wrong in the loose
+direction and `smash-server` moves on every commit, which is the `stamped` wrapper's bug
+wearing a different hat, and every apply restarts. There is a cheap gate for it: build the
+three derivations, touch a file in the rules crate, rebuild, and assert that exactly one of
+the three paths changed.
 
 ### Adopting it costs no scheduled restart
 

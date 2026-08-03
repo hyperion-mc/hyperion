@@ -208,16 +208,6 @@ macro_rules! define_metadata_component {
             value: $type,
         }
 
-        #[allow(warnings)]
-        impl PartialOrd for $name
-        where
-            $type: PartialOrd,
-        {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                self.value.partial_cmp(&other.value)
-            }
-        }
-
         impl Metadata for $name {
             type Type = $type;
 
