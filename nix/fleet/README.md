@@ -29,14 +29,19 @@ switched in place, so only the units whose definition changed restart.
 ## What the fleet cost in the last 24 hours
 
 ```sh
-python3 nix/fleet/spend.py            # dollars per VM + fleet total, last 24h
-python3 nix/fleet/spend.py --since 7d
+ix billing usage --since 24h --resource-prefix hyperion-
+ix billing usage --since 7d --resource-prefix hyperion- --json
 ```
 
-It reads `ix billing usage --since ... --json` and filters the per-VM
-`resource_spend` rows to names starting with `hyperion-`, so it needs a
-logged-in `ix` and a provisioned billing account; without the account it
-repeats ix's own error and exits nonzero instead of printing zeros.
+It prints dollars per VM plus a fleet total, and a remainder line for
+everything else in the report, so a prefix that matches nothing is
+distinguishable from a fleet that cost nothing. It needs a logged-in `ix`
+and a provisioned billing account; without the account it fails with ix's
+own error rather than printing zeros.
+
+`--resource-prefix` landed in ix `8d04237a` (2026-08-03); an older `ix`
+rejects the flag. This replaced `nix/fleet/spend.py`, which did the same
+filter in Python against the same `--json` output.
 
 ## Build the fleet once, not once per VM
 
