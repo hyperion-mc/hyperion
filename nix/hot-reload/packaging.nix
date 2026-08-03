@@ -13,21 +13,40 @@
 # A store path is a function of a derivation's inputs, so "which paths move" is
 # decided entirely by which sources reach which derivation:
 #
-#   hyperion-dylibs  crates/*                          an engine change
-#   smash-server     crates/* + events/smash           a component or engine change
-#   smash-rules      crates/* + events/smash + rules   a rules change
+#   hyperion-dylibs   crates/*                       an engine change
+#   <event>-server    crates/* + host crate          a component or engine change
+#   <event>-rules     crates/* + host + rules crate  a rules change
 #
 # Nobody has to remember the rule. A component's layout lives in the host crate
 # and a system's body lives in the rules crate, so the source split is the rule.
 #
+# `smash` is the first consumer, not the shape (ENG-12067). One engine dylib set
+# is shared by every event; each event named in `events` gets its own server and
+# rules pair. Adding an event is one attrset here and one `services.
+# hyperion-game-server` instance, with no smash-shaped path anywhere between.
+#
 # See docs/hot-reload.md, "Packaging: three derivations, because two would
 # restart", for the measurements behind this.
-{ lib, pkgs, workspace, rustToolchain, nativeBuildInputs, root }:
+{
+  lib,
+  pkgs,
+  workspace,
+  rustToolchain,
+  nativeBuildInputs,
+  root,
+  # Each entry is one game: `{ name; hostCrate; rulesCrate; }`, where the two
+  # crates are workspace-member paths. `name` is what the NixOS module keys on
+  # (`/etc/hyperion/<name>-rules.so`) and what the derivations are called.
+  events,
+}:
 let
   # Read from the manifest rather than restated here, so a new member cannot be
   # silently omitted from the stub list and fail one derivation much later.
   members = (lib.importTOML (root + "/Cargo.toml")).workspace.members;
   crateMembers = lib.filter (member: lib.hasPrefix "crates/" member) members;
+  # Package name, not directory basename: `cargo clean -p` takes the former and
+  # the two are only equal by convention.
+  packageNameOf = member: (lib.importTOML (root + "/${member}/Cargo.toml")).package.name;
 
   rootFiles = map (file: root + "/${file}") [
     "Cargo.toml"
@@ -84,23 +103,61 @@ let
       done
     '';
 
+  eventMembers = lib.subtractLists crateMembers members;
+
   dylibSource = mkSource {
     pname = "dylibs";
     realDirs = [ "crates" ];
     realMembers = crateMembers;
   };
-  serverSource = mkSource {
-    pname = "server";
-    realDirs = [ "crates" "events/smash" ];
-    realMembers = crateMembers ++ [ "events/smash" ];
-  };
-  rulesSource = mkSource {
-    pname = "rules";
-    realDirs = [ "crates" "events/smash" "events/smash-rules" ];
-    realMembers = crateMembers ++ [ "events/smash" "events/smash-rules" ];
-  };
+
+  # The engine packages every event links, ahead of the events themselves so
+  # that a one-event workspace produces the selection string this was measured
+  # against.
+  enginePackages = [ "hyperion" "hyperion-hot-reload" ];
+  eventPackages = lib.concatMap (event: [
+    (packageNameOf event.hostCrate)
+    (packageNameOf event.rulesCrate)
+  ]) events;
 
   profile = "release";
+
+  # THE SAME PACKAGE SELECTION IN ALL THREE DERIVATIONS, for the same reason the
+  # RUSTFLAGS string is shared: it decides `flecs_ecs`'s `-C metadata`.
+  #
+  # Cargo resolves features over the packages named on the command line, and it
+  # folds every dependency's metadata hash into the dependent's. So a selection
+  # that reaches a different set of crates gives `flecs_ecs` a different hash
+  # even though nothing about `flecs_ecs` itself changed. Measured with
+  # `cargo build --unit-graph` over the same tree and target directory
+  # (ENG-12053): the `flecs_ecs` unit is byte-identical under `-p hyperion` and
+  # `-p smash-rules` -- same features, same profile, same `crate-types` -- and
+  # three of its transitive dependencies are not.
+  #
+  #     bitflags   -p hyperion: serde, serde_core, std   -p smash-rules: (none)
+  #     libc       -p hyperion: default, std             -p smash-rules: (none)
+  #     syn        -p hyperion: ..., fold, visit         -p smash-rules: (fewer)
+  #
+  # `bitflags` is a direct dependency of `flecs_ecs`, so that alone was the two
+  # hashes the seed failed to reuse: `libflecs_ecs-a576c74c3728f55c.so` from
+  # `-p hyperion` and `libflecs_ecs-af57d040ba838c15.so` from `-p smash-rules`,
+  # both in one target directory.
+  #
+  # Naming every package in every derivation fixes it by construction rather
+  # than by luck, because resolution reads manifests and never source: `mkSource`
+  # puts every member's `Cargo.toml` in every tree and stubs only the `.rs`
+  # bodies, so all three invocations resolve over identical inputs. A derivation
+  # whose source stubs a package still compiles that package's dependency graph
+  # -- which is exactly the seed the other two want -- and then compiles an
+  # empty `lib.rs` for the package itself.
+  #
+  # Do not narrow this to "the packages this derivation ships", and do not make
+  # it a function of the event being built. Either is the split, written out
+  # again: two derivations that disagree get two `flecs_ecs`, and the only
+  # symptom is a reload that silently indexes one world two different ways.
+  selection = lib.concatMapStringsSep " " (package: "-p ${package}") (
+    enginePackages ++ eventPackages
+  );
   sysrootLib = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/lib";
   inherit (pkgs.stdenv.hostPlatform) extensions;
 
@@ -178,14 +235,6 @@ let
 
   # Reuse the engine's artifacts rather than compiling equivalents of them.
   #
-  # THIS DOES NOT YET HOLD; see ENG-12053. Measured on x86_64-linux, the rules
-  # dylib asks for `libflecs_ecs-2c5aa556f4fa166e.so` while this derivation
-  # ships `libflecs_ecs-c4fb60682bf29e00.so`, so the seed was not reused for
-  # that crate and it was recompiled -- most likely because `-p hyperion` and
-  # `-p smash-rules` resolve different features onto it. Two compilations is
-  # two `INDEX_POOL`s, which is what `checks.hot-reload-index-probe` rejects.
-  # The paragraph below is the intent, not yet the fact.
-  #
   # This is not a build-time optimisation, it is what makes the boundary sound.
   # If the server and the rules each compiled their own `hyperion`, each would
   # get its own `-C metadata` hash -- the source ids differ, because the two
@@ -198,6 +247,19 @@ let
   # Artifact mtimes are moved ahead of the sources', because cargo decides
   # freshness by comparing them and everything unpacked from the store shares
   # one normalised timestamp.
+  #
+  # That is also why the seed may only carry artifacts whose SOURCE is identical
+  # in the consuming derivation. `hyperion-dylibs` compiles the event members
+  # from stubs, and dating those artifacts to 2100 told cargo an empty
+  # `libsmash.rlib` was fresher than the real `events/smash` -- so the real
+  # source was never compiled and the binary failed against the stub:
+  #
+  #     error[E0432]: unresolved import `smash::init_game`
+  #      --> events/smash/src/main.rs:1:5
+  #                no `init_game` in the root
+  #
+  # `hyperion-dylibs` therefore drops them before tarring; `crates/*` is real in
+  # all three trees and stays.
   seed = ''
     mkdir -p target
     tar -C target -xf ${hyperion-dylibs}/share/cargo-target.tar
@@ -208,12 +270,32 @@ let
   hyperion-dylibs = pkgs.runCommandCC "hyperion-dylibs" common ''
     ${setup dylibSource}
     export RUSTFLAGS=${lib.escapeShellArg rustFlags}
-    cargo build --profile ${profile} --offline -p hyperion -p hyperion-hot-reload
+    cargo build --profile ${profile} --offline ${selection}
+
+    # The event members were compiled from stubs here; see `seed`. Cleaning
+    # them is what makes the tar safe to unpack over a real source tree.
+    cargo clean --profile ${profile} --offline ${
+      lib.concatMapStringsSep " " (member: "-p ${packageNameOf member}") eventMembers
+    }
+    for package in ${lib.escapeShellArgs (map packageNameOf eventMembers)}; do
+      stale=$(find target -name "lib''${package//-/_}-*" -o -name "''${package//-/_}-*" | head -20)
+      if [ -n "$stale" ]; then
+        echo "cargo clean left stub artifacts for $package:" >&2
+        echo "$stale" >&2
+        exit 1
+      fi
+    done
 
     mkdir -p "$out/lib" "$out/share"
     # `deps/` as well as the profile directory: cargo leaves an unhashed copy of
     # a workspace member's dylib in `target/${profile}`, but a dependency's
     # dylib only in `deps/`, under the metadata hash DT_NEEDED actually names.
+    #
+    # The clean above is what makes this glob correct: the events were compiled
+    # from stubs, so before it ran `target/${profile}` also held a stub
+    # `libsmash_rules.so`, and shipping that beside the engine puts a file with
+    # the real rules dylib's exact name, and none of its systems, on the rpath
+    # of every event binary. Clean first and everything left is the engine.
     cp target/${profile}/*${extensions.sharedLibrary} "$out/lib/"
     cp target/${profile}/deps/libflecs_ecs-*${extensions.sharedLibrary} "$out/lib/"
     ${lib.optionalString pkgs.stdenv.hostPlatform.isElf ''
@@ -226,43 +308,74 @@ let
     tar -C target -cf "$out/share/cargo-target.tar" ${profile}
   '';
 
-  # What `ExecStart` names. Moves on a component or engine change, which is
-  # exactly when a restart is correct: a component's layout is defined here, and
-  # a system compiled against a layout the world no longer holds is memory
-  # corruption rather than a stale build.
-  smash-server = pkgs.runCommandCC "smash-server" (common // { meta.mainProgram = "smash"; }) ''
-    ${setup serverSource}
-    ${seed}
-    export RUSTFLAGS=${lib.escapeShellArg rustFlags}
-    cargo build --profile ${profile} --offline -p smash
+  # One event's pair. The engine dylibs above are shared by all of them; only
+  # these two move when an event's own code does.
+  forEvent =
+    event:
+    let
+      hostPackage = packageNameOf event.hostCrate;
+      rulesPackage = packageNameOf event.rulesCrate;
+      # cargo spells a dylib after the crate name, which is the package name
+      # with dashes folded to underscores.
+      rulesLib = "lib${lib.replaceStrings [ "-" ] [ "_" ] rulesPackage}${extensions.sharedLibrary}";
 
-    mkdir -p "$out/bin"
-    cp target/${profile}/smash "$out/bin/smash"
-    ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/bin/smash"''}
-    ${requireResolved ''"$out/bin/smash"''}
-  '';
+      serverSource = mkSource {
+        pname = "${event.name}-server";
+        realDirs = [ "crates" event.hostCrate ];
+        realMembers = crateMembers ++ [ event.hostCrate ];
+      };
+      rulesSource = mkSource {
+        pname = "${event.name}-rules";
+        realDirs = [ "crates" event.hostCrate event.rulesCrate ];
+        realMembers = crateMembers ++ [ event.hostCrate event.rulesCrate ];
+      };
 
-  # What `X-Reload-Triggers` names, and the only path a rules-only change is
-  # allowed to move.
-  smash-rules = pkgs.runCommandCC "smash-rules" common ''
-    ${setup rulesSource}
-    ${seed}
-    export RUSTFLAGS=${lib.escapeShellArg rustFlags}
-    cargo build --profile ${profile} --offline -p smash-rules
+      # What `ExecStart` names. Moves on a component or engine change, which is
+      # exactly when a restart is correct: a component's layout is defined in the
+      # host crate, and a system compiled against a layout the world no longer
+      # holds is memory corruption rather than a stale build.
+      server =
+        pkgs.runCommandCC "${event.name}-server" (common // { meta.mainProgram = hostPackage; })
+          ''
+            ${setup serverSource}
+            ${seed}
+            export RUSTFLAGS=${lib.escapeShellArg rustFlags}
+            cargo build --profile ${profile} --offline ${selection}
 
-    mkdir -p "$out/lib"
-    cp target/${profile}/libsmash_rules${extensions.sharedLibrary} "$out/lib/"
-    ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/lib/libsmash_rules${extensions.sharedLibrary}"''}
-    ${requireResolved ''"$out/lib/libsmash_rules${extensions.sharedLibrary}"''}
-  '';
+            mkdir -p "$out/bin"
+            cp target/${profile}/${hostPackage} "$out/bin/${hostPackage}"
+            ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/bin/${hostPackage}"''}
+            ${requireResolved ''"$out/bin/${hostPackage}"''}
+          '';
+
+      # What `X-Reload-Triggers` names, and the only path a rules-only change is
+      # allowed to move.
+      rules = pkgs.runCommandCC "${event.name}-rules" common ''
+        ${setup rulesSource}
+        ${seed}
+        export RUSTFLAGS=${lib.escapeShellArg rustFlags}
+        cargo build --profile ${profile} --offline ${selection}
+
+        mkdir -p "$out/lib"
+        cp target/${profile}/${rulesLib} "$out/lib/"
+        ${setRunPath [ "${hyperion-dylibs}/lib" ] ''"$out/lib/${rulesLib}"''}
+        ${requireResolved ''"$out/lib/${rulesLib}"''}
+      '';
+    in
+    {
+      inherit
+        server
+        rules
+        serverSource
+        rulesSource
+        rulesLib
+        ;
+    };
 in
 {
-  inherit
-    hyperion-dylibs
-    smash-server
-    smash-rules
-    dylibSource
-    serverSource
-    rulesSource
-    ;
+  inherit hyperion-dylibs dylibSource;
+  # Keyed by event name so a consumer names the game rather than a path.
+  events = lib.listToAttrs (
+    map (event: lib.nameValuePair event.name (forEvent event)) events
+  );
 }
