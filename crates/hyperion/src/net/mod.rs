@@ -783,11 +783,17 @@ pub mod test_util {
 pub(crate) mod tests {
     use std::sync::Arc;
 
+    // These three reach only `next_variant` and the `#[test]` functions at the
+    // bottom of this module, all of which are `cfg(test)`. Under `test-util`
+    // alone they are unused imports and `-D warnings` rejects them.
+    #[cfg(test)]
     use hyperion_proxy_proto::ArchivedServerToProxyMessage;
 
+    #[cfg(test)]
+    use super::{ChannelId, ConnectionId};
     // Named rather than a glob: `test-util` compiles this module outside
     // `cfg(test)`, where the workspace's pedantic `wildcard_imports` applies.
-    use super::{ChannelId, Compose, CompressionLvl, ConnectionId, IoBuf, ProxyId};
+    use super::{Compose, CompressionLvl, IoBuf, ProxyId};
     use crate::{CompressionThreshold, Global, common::Shared, simulation::EgressComm};
 
     /// A [`Compose`] with two proxies registered, and the receiving end of each proxy's channel.
@@ -821,6 +827,14 @@ pub(crate) mod tests {
     }
 
     /// Reads one framed message off a proxy's channel and tells you which variant it was.
+    ///
+    /// `cfg(test)` and not `test-util`, because the only callers are this crate's own
+    /// tests. `test-util` compiles this module into the LIB target, where an item nothing
+    /// outside `cfg(test)` calls is dead code -- and `checks.clippy` runs
+    /// `--all-targets --all-features -- -D warnings`, so dead code there is a build
+    /// failure rather than a warning. Widen this to the whole module the day something
+    /// outside the crate needs it.
+    #[cfg(test)]
     pub fn next_variant(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<bytes::Bytes>,
     ) -> Option<String> {
