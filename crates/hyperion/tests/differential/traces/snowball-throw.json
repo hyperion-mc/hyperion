@@ -3,6 +3,7 @@
   "minecraftVersion": "26.2",
   "seed": 4242,
   "ticks": 40,
+  "inGroundFieldIndex": 10,
   "samples": [
     {
       "tick": 0,

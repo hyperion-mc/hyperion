@@ -3,6 +3,7 @@
   "minecraftVersion": "26.2",
   "seed": 4242,
   "ticks": 30,
+  "inGroundFieldIndex": 10,
   "samples": [
     {
       "tick": 0,
@@ -22,7 +23,9 @@
             -89.99999,
             0.0
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -44,7 +47,9 @@
             -89.99999,
             0.0
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -66,7 +71,9 @@
             -89.99999,
             -0.19288321
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -88,7 +95,9 @@
             -89.99999,
             -0.54195017
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -110,7 +119,9 @@
             -89.99999,
             -1.0176632
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -132,7 +143,9 @@
             -89.99999,
             -1.5963333
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -154,7 +167,9 @@
             -89.99999,
             -2.258918
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -176,7 +191,9 @@
             -89.99999,
             -2.9900265
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -198,7 +215,9 @@
             -89.99999,
             -3.7772586
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -220,7 +239,9 @@
             -89.99999,
             -4.6105394
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -242,7 +263,9 @@
             -89.99999,
             -5.481715
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -264,7 +287,9 @@
             -89.99999,
             -6.384083
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -286,7 +311,9 @@
             -89.99999,
             -7.312202
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -308,7 +335,9 @@
             -89.99999,
             -8.261508
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -330,7 +359,9 @@
             -89.99999,
             -9.228291
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -352,7 +383,9 @@
             -89.99999,
             -10.209342
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -374,7 +407,9 @@
             -89.99999,
             -11.202055
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -396,7 +431,9 @@
             -89.99999,
             -12.204084
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -418,7 +455,9 @@
             -89.99999,
             -13.213527
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -440,7 +479,9 @@
             -89.99999,
             -14.228587
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -462,7 +503,9 @@
             -89.99999,
             -15.247816
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -484,7 +527,9 @@
             -89.99999,
             -16.269773
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -506,7 +551,9 @@
             -89.99999,
             -17.293232
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -528,7 +575,9 @@
             -89.99999,
             -18.317074
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -550,7 +599,9 @@
             -89.99999,
             -19.340343
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -572,7 +623,9 @@
             -89.99999,
             -20.361996
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -594,7 +647,9 @@
             -89.99999,
             -21.38114
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -616,7 +671,9 @@
             -89.99999,
             -22.396942
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -638,7 +695,9 @@
             -89.99999,
             -23.408617
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -660,7 +719,9 @@
             -89.99999,
             -24.415424
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     },
@@ -682,7 +743,9 @@
             -89.99999,
             -25.416664
           ],
-          "removed": false
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
         }
       }
     }

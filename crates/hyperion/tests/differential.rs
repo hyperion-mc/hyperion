@@ -14,19 +14,23 @@
     reason = "a failing comparison is only useful if it prints the tick and the numbers"
 )]
 
-use std::{fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use flecs_ecs::{
-    core::{EntityViewGet, World},
+    core::{EntityViewGet, World, WorldGet},
     macros::Component,
     prelude::Module,
 };
 use hyperion::{
-    glam::Vec3,
+    BlockKind, BlockState,
+    glam::{I16Vec2, IVec3, Vec3},
+    runtime::AsyncRuntime,
     simulation::{
         Owner, Pitch, Position, Velocity, Yaw,
+        blocks::Blocks,
         entity_kind::EntityKind,
-        projectile_motion::{SIMULATED, look_angles},
+        metadata::{Metadata, arrow::InGround},
+        projectile_motion::{SIMULATED, ShakeTime, look_angles},
     },
     spatial::SpatialModule,
 };
@@ -58,7 +62,32 @@ struct Scenario {
     #[expect(dead_code, reason = "consumed by the recorder, not by this test")]
     seed: i64,
     entities: Vec<EntitySpec>,
+    /// Terrain the scenario wants, and nothing else.
+    ///
+    /// Absent from every scenario that flies through open sky, which is what
+    /// keeps their traces byte-identical: the recorder places nothing and this
+    /// replay stamps nothing, so the world both sides run in is the one they
+    /// always ran in. A scenario that names blocks opts *itself* into terrain;
+    /// there is no global flat-world switch to get wrong.
+    #[serde(default)]
+    blocks: Vec<BlockSpec>,
     compare: Tolerance,
+}
+
+/// One block the scenario puts in the world before anything is fired.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BlockSpec {
+    position: [i32; 3],
+    /// A block name, and only a name: `minecraft:stone`, not
+    /// `minecraft:stone_slab[type=top]`.
+    ///
+    /// Both sides place the block's *default* state, which means the two
+    /// registries' defaults have to agree. That is not taken on trust -- it is
+    /// what the comparison itself checks. A slab that came out `top` on one
+    /// side and `bottom` on the other moves the arrow's resting height half a
+    /// block, four orders of magnitude outside any tolerance here.
+    state: String,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +140,18 @@ struct Trace {
     )]
     seed: i64,
     ticks: usize,
+    /// The wire index of `AbstractArrow.IN_GROUND`, read out of the jar by the
+    /// recorder rather than transcribed.
+    ///
+    /// This is the one number in `metadata::arrow` that nothing else can check.
+    /// A field index never appears on the wire, so no packet capture recovers
+    /// it, and getting it wrong does not fail to compile or to send -- it sends
+    /// a boolean to whichever field Mojang moved into slot 10, and the arrow
+    /// quietly does something else on the client. Recording it here costs the
+    /// recorder one reflective read and turns a hand-transcribed constant into
+    /// one the jar has to agree with. See ENG-12106 for the general case.
+    #[serde(rename = "inGroundFieldIndex")]
+    in_ground_field_index: u8,
     samples: Vec<Sample>,
 }
 
@@ -135,6 +176,17 @@ struct State {
         reason = "recorded so a scenario can one day assert a despawn"
     )]
     removed: bool,
+    /// `AbstractArrow.isInGround`, present only for the kinds that have it.
+    ///
+    /// The reason a terrain scenario can assert anything at all. A resting
+    /// position on its own cannot tell "stopped by the wall" from "still
+    /// flying and happening to be there this tick"; this can.
+    #[serde(default, rename = "inGround")]
+    in_ground: Option<bool>,
+    /// `AbstractArrow.shakeTime`, which counts down from seven and so pins the
+    /// tick the arrow landed on rather than merely that it did.
+    #[serde(default, rename = "shakeTime")]
+    shake_time: Option<u8>,
 }
 
 /// Narrows a recorded double to the `f32` this server stores.
@@ -184,6 +236,80 @@ fn kind_for(entity_type: &str) -> EntityKind {
         })
 }
 
+/// Puts a scenario's declared blocks into the replay world.
+///
+/// `HyperionCore` installs `Blocks::empty`, so the replay world starts with no
+/// chunks at all -- and `set_block` on an unloaded chunk returns
+/// `ChunkNotLoaded` rather than placing anything, which would leave a scenario
+/// whose wall silently was not there and a comparison that then blamed the
+/// physics. Each chunk is loaded first, through the same `block_and_load` the
+/// server uses.
+///
+/// Nothing happens for a scenario with no blocks, which is every scenario that
+/// flies through open sky: their replay world is untouched by this and their
+/// committed traces are unchanged.
+fn stamp_terrain(world: &World, blocks: &[BlockSpec]) {
+    set_terrain(world, blocks, |spec| block_state(&spec.state));
+}
+
+/// Takes it back out again.
+///
+/// Every scenario shares one world -- `HyperionCore` can only be imported once
+/// per process -- so a wall left standing would be in the next scenario's sky.
+/// Vanilla records each scenario in a fresh level, and this is what makes the
+/// replay side match that. The scenarios are also written not to overlap, but
+/// relying on that would make every future scenario's author responsible for
+/// every past one's geometry.
+fn clear_terrain(world: &World, blocks: &[BlockSpec]) {
+    set_terrain(world, blocks, |_| BlockState::AIR);
+}
+
+fn set_terrain(world: &World, blocks: &[BlockSpec], state_for: impl Fn(&BlockSpec) -> BlockState) {
+    if blocks.is_empty() {
+        return;
+    }
+
+    // Deduplicated and ordered, so a scenario naming twenty blocks in one
+    // chunk loads it once and the loads happen in a fixed order. `I16Vec2` is
+    // not `Ord`, so the pair is the key and the vector is rebuilt from it.
+    let chunks: BTreeSet<(i16, i16)> = blocks
+        .iter()
+        .map(|spec| {
+            (
+                i16::try_from(spec.position[0] >> 4).expect("block x is inside the world limit"),
+                i16::try_from(spec.position[2] >> 4).expect("block z is inside the world limit"),
+            )
+        })
+        .collect();
+
+    let runtime = world.get::<&AsyncRuntime>(AsyncRuntime::clone);
+    world.get::<&mut Blocks>(|store| {
+        for (x, z) in chunks {
+            store.block_and_load(I16Vec2::new(x, z), &runtime);
+        }
+        for spec in blocks {
+            let state = state_for(spec);
+            let position = IVec3::new(spec.position[0], spec.position[1], spec.position[2]);
+            store
+                .set_block(position, state)
+                .unwrap_or_else(|error| panic!("could not place {} at {position}: {error:?}", spec.state));
+        }
+    });
+}
+
+/// The default state of a block named the way a scenario names it.
+///
+/// A name and nothing else, so `minecraft:stone`, not
+/// `minecraft:stone_slab[type=top]`. See [`BlockSpec::state`] for why the two
+/// registries' defaults agreeing is checked by the comparison rather than
+/// asserted here.
+fn block_state(name: &str) -> BlockState {
+    let bare = name.strip_prefix("minecraft:").unwrap_or(name);
+    let kind = BlockKind::from_str(bare)
+        .unwrap_or_else(|| panic!("no such block in this server's tables: {name}"));
+    BlockState::from_kind(kind)
+}
+
 /// Replays one scenario and reports the first tick that disagrees.
 ///
 /// Returns the failure as a string rather than asserting, so the caller can
@@ -210,6 +336,20 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
         scenario.ticks + 1,
         "a trace carries the state before the first tick plus one sample per tick"
     );
+
+    assert_eq!(
+        trace.in_ground_field_index,
+        InGround::INDEX,
+        "the pinned jar puts AbstractArrow's IN_GROUND at index {}, and \
+         hyperion::simulation::metadata::arrow says {}; every arrow this server sends is \
+         writing the wrong tracked field",
+        trace.in_ground_field_index,
+        InGround::INDEX,
+    );
+
+    // Terrain first, before anything is spawned to fly into it. The recorder
+    // does the same, in `VanillaTrace.placeBlocks`.
+    stamp_terrain(world, &scenario.blocks);
 
     // The owner exists only so the ray cast can exclude the shooter, which is
     // what `update_projectile_positions` does with it.
@@ -328,6 +468,35 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
                 }
             }
 
+            // The impact state, compared exactly. No tolerance, and none is
+            // possible: these are a flag and a countdown, so "close" has no
+            // meaning. An arrow that lands one tick early agrees on position to
+            // well inside the tolerance and disagrees here, which is the whole
+            // reason they are recorded.
+            //
+            // Only where vanilla recorded them. A trace of a snowball carries
+            // neither, because `ThrowableProjectile` has no such state.
+            if let Some(expected_in_ground) = expected.in_ground {
+                let in_ground = entity.try_get::<&InGround>(|flag| **flag);
+                if in_ground != Some(expected_in_ground) {
+                    outcome = Err(format!(
+                        "{}: {id} inGround diverges at tick {}\n  vanilla:  {expected_in_ground}\n  \
+                         hyperion: {in_ground:?}",
+                        scenario.name, sample.tick,
+                    ));
+                }
+            }
+            if let Some(expected_shake) = expected.shake_time {
+                let shake = entity.try_get::<&ShakeTime>(|shake| shake.0);
+                if shake != Some(expected_shake) {
+                    outcome = Err(format!(
+                        "{}: {id} shakeTime diverges at tick {}\n  vanilla:  {expected_shake}\n  \
+                         hyperion: {shake:?}",
+                        scenario.name, sample.tick,
+                    ));
+                }
+            }
+
             // The heading, in the same shape. Yaw and pitch rather than three
             // axes, and the shorter arc between the two angles so a reading of
             // 179 against -179 is two degrees apart, not 358.
@@ -362,6 +531,7 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
         entity.destruct();
     }
     owner.destruct();
+    clear_terrain(world, &scenario.blocks);
 
     outcome
 }

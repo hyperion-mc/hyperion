@@ -1,0 +1,513 @@
+{
+  "scenario": "arrow-into-floor",
+  "minecraftVersion": "26.2",
+  "seed": 4242,
+  "ticks": 20,
+  "inGroundFieldIndex": 10,
+  "samples": [
+    {
+      "tick": 0,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            128.0,
+            0.5
+          ],
+          "velocity": [
+            0.0,
+            -3.0,
+            3.6739405577555036E-16
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 1,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            125.0,
+            0.5000000000000003
+          ],
+          "velocity": [
+            0.0,
+            -3.0200000286102293,
+            3.637201187215376E-16
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 2,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.97999997138977,
+            0.5000000000000007
+          ],
+          "velocity": [
+            0.0,
+            -3.0398000571250914,
+            3.6008292100302756E-16
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": false,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 3,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 7
+        }
+      }
+    },
+    {
+      "tick": 4,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 6
+        }
+      }
+    },
+    {
+      "tick": 5,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 5
+        }
+      }
+    },
+    {
+      "tick": 6,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 4
+        }
+      }
+    },
+    {
+      "tick": 7,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 3
+        }
+      }
+    },
+    {
+      "tick": 8,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 2
+        }
+      }
+    },
+    {
+      "tick": 9,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 1
+        }
+      }
+    },
+    {
+      "tick": 10,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 11,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 12,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 13,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 14,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 15,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 16,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 17,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 18,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 19,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    },
+    {
+      "tick": 20,
+      "entities": {
+        "arrow": {
+          "position": [
+            0.5,
+            121.05000000074506,
+            0.4499999992549427
+          ],
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -89.99999
+          ],
+          "removed": false,
+          "inGround": true,
+          "shakeTime": 0
+        }
+      }
+    }
+  ]
+}
