@@ -58,6 +58,10 @@
   # binding rather than two lists, so a VM built to develop hyperion on cannot
   # end up with a different compiler than `nix develop` hands a contributor.
   guestDevEnvironment,
+  # What commit this is, and when it was made. Lands in `/etc/hyperion` on the
+  # game node rather than in the unit, which is what lets a deploy change the
+  # build without restarting the server. See flake.nix.
+  buildStamp,
 }:
 index.lib.mkFleet {
   # One private segment. A VM outside it has no route to the game server,
@@ -66,9 +70,16 @@ index.lib.mkFleet {
     {ix.networking.groups = ["hyperion"];}
     {
       _module.args = {
-        hyperionGameServer = guestPackages.smash;
+        # `smash-server` and not `smash`: the latter is a `cargoUnit` build that
+        # links nothing from the workspace dynamically, so a rules dylib loaded
+        # into it would get its own component-index pool. Only this pair shares
+        # one engine image. See nix/hot-reload/packaging.nix.
+        hyperionGameServer = guestPackages.smash-server;
+        hyperionRules = guestPackages.smash-rules;
+        hyperionReloadClient = guestPackages.hyperion-dylibs;
         hyperionProxy = guestPackages.hyperion-proxy;
         hyperionDevEnvironment = guestDevEnvironment;
+        inherit buildStamp;
       };
     }
     ./pki.nix

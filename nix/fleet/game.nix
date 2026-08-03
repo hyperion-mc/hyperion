@@ -2,7 +2,11 @@
 # group, and a VM outside the group has no route here at all.
 {
   config,
+  lib,
   hyperionGameServer,
+  hyperionRules,
+  hyperionReloadClient,
+  buildStamp,
   ...
 }: let
   port = 35565;
@@ -43,6 +47,22 @@ in {
   services.hyperion-game-server = {
     enable = true;
     package = hyperionGameServer;
+    event = "smash";
+
+    # The one store path that is allowed to move on a rules-only deploy. The
+    # module puts it in `X-Reload-Triggers` and nowhere else, so a build that
+    # changes only this reaches the running server as `systemctl reload` and
+    # nobody is disconnected. Everything else -- a component's layout, the
+    # engine -- moves `ExecStart` instead and is a restart, which is correct: a
+    # system compiled against a layout the world no longer holds is memory
+    # corruption rather than a stale build.
+    rules = "${hyperionRules}/lib/${hyperionRules.dylibName}";
+    reloadClient = hyperionReloadClient;
+
+    buildStamp = {
+      inherit (buildStamp) rev committedAt dirty;
+    };
+
     inherit port;
     pki = {
       rootCaCert = "/var/lib/hyperion-pki/root_ca.crt";

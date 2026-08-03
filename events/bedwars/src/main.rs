@@ -1,9 +1,16 @@
+//! bedwars' entry point.
+//!
+//! No `#[global_allocator]`, for the reason written out in full in
+//! `events/smash/src/main.rs`: a Rust global allocator and the `-C
+//! prefer-dynamic` dylib split put two allocators in one process, and the first
+//! pointer that crosses between them segfaults. bedwars is not packaged that way
+//! yet, and adding an event to `hotReloadEvents` is meant to be one attrset --
+//! so the landmine is removed here rather than left for whoever does it.
+
 use bedwars::init_game;
 
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
 fn main() -> anyhow::Result<()> {
-    hyperion_event_runner::run("BEDWARS_", init_game)
+    // bedwars takes the address and nothing else: it has no reloadable rules,
+    // so the deployment paths on `Args` are none of its business.
+    hyperion_event_runner::run("BEDWARS_", |args, crypto| init_game(args.address(), crypto))
 }

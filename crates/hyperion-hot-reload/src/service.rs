@@ -64,6 +64,22 @@ const VERB_TIMEOUT: Duration = Duration::from_millis(100);
 /// The only thing a client may ask for.
 const VERB: &str = "reload";
 
+/// What answering one request did.
+///
+/// Returned rather than logged, because this crate cannot depend on `tracing`: it and
+/// `hyperion` are sibling dylibs and every rlib they both use is a duplicate the final
+/// link refuses. See `Cargo.toml`. The host writes these wherever it writes things, at
+/// whatever severity it thinks a failed deploy deserves.
+#[derive(Debug, Clone)]
+pub enum Outcome {
+    /// A new build is live in the world.
+    Applied(Reloaded),
+    /// Nothing changed, and this is why -- the same words the client was told, so an
+    /// operator reading `systemctl reload` and an operator reading the journal see one
+    /// message rather than two accounts of one event.
+    Refused(String),
+}
+
 /// A reload that was applied to the running world.
 #[derive(Debug, Clone)]
 pub struct Reloaded {
@@ -137,72 +153,65 @@ impl ReloadService {
 
     /// Answers every request waiting on the socket, applying each to `world`.
     ///
-    /// Returns one entry per reload that was applied. A refused reload leaves the world
-    /// exactly as it was and produces no entry, because the caller's job -- telling players
-    /// what they are now running -- has nothing to say about a build that was rejected.
-    pub fn poll(&mut self, world: &World) -> Vec<Reloaded> {
-        let mut applied = Vec::new();
+    /// One entry per request answered, refusals included: a refused reload means the
+    /// deploy did not take, and something has to say so at a severity an operator queries.
+    pub fn poll(&mut self, world: &World) -> Vec<Outcome> {
+        let mut answered = Vec::new();
         loop {
             let stream = match self.listener.accept() {
                 Ok((stream, _)) => stream,
                 // Nothing waiting: the normal exit from this loop, once per tick.
-                Err(e) if e.kind() == ErrorKind::WouldBlock => return applied,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => return answered,
+                // Nobody is waiting on a reply this can be written to, so it goes back
+                // with the rest -- a reload was asked for and did not happen.
                 Err(e) => {
-                    tracing::warn!("reload socket accept failed: {e}");
-                    return applied;
+                    answered.push(Outcome::Refused(format!(
+                        "could not accept a reload request: {e}"
+                    )));
+                    return answered;
                 }
             };
-            if let Some(reloaded) = self.serve(world, stream) {
-                applied.push(reloaded);
-            }
+            answered.push(self.serve(world, stream));
         }
     }
 
     /// One request, start to finish.
-    fn serve(&mut self, world: &World, mut stream: UnixStream) -> Option<Reloaded> {
-        let reply = match read_verb(&mut stream) {
+    fn serve(&mut self, world: &World, mut stream: UnixStream) -> Outcome {
+        let outcome = match read_verb(&mut stream) {
             Ok(verb) if verb == VERB => match self.reloader.load(world, &self.module) {
-                Ok(applied) => {
-                    let revision = self.revision();
-                    let reloaded = Reloaded {
-                        module: applied.module.clone(),
-                        revision: revision.clone(),
-                        migrated_instances: applied.migrated_instances,
-                    };
-                    let label = revision.as_deref().unwrap_or("unknown");
-                    tracing::info!(
-                        module = %applied.module,
-                        revision = label,
-                        migrated_instances = applied.migrated_instances,
-                        "hot reload accepted"
-                    );
-                    let line = format!("accepted {} {label}", applied.module);
-                    respond(&mut stream, &line);
-                    return Some(reloaded);
-                }
-                // Deliberately `error`, not `warn`: a refused reload means the deploy did
-                // not take, and the operator has to see it in a query filtered by severity.
-                Err(e) => {
-                    tracing::error!("hot reload refused: {e}");
-                    format!("refused {e}")
-                }
+                Ok(applied) => Outcome::Applied(Reloaded {
+                    module: applied.module,
+                    revision: self.revision(),
+                    migrated_instances: applied.migrated_instances,
+                }),
+                Err(e) => Outcome::Refused(e.to_string()),
             },
-            Ok(verb) => format!("refused unknown request `{verb}`"),
-            Err(e) => format!("refused could not read request: {e}"),
+            Ok(verb) => Outcome::Refused(format!("unknown request `{verb}`")),
+            Err(e) => Outcome::Refused(format!("could not read request: {e}")),
         };
-        respond(&mut stream, &reply);
-        None
+
+        // The reply is one line and its first word is the client's exit status.
+        let line = match &outcome {
+            Outcome::Applied(reloaded) => format!(
+                "accepted {} {}",
+                reloaded.module,
+                reloaded.revision.as_deref().unwrap_or("unknown")
+            ),
+            Outcome::Refused(reason) => format!("refused {reason}"),
+        };
+        respond(&mut stream, &line);
+        outcome
     }
 }
 
-/// Writes one line back, or says why it could not.
+/// Writes one line back.
 ///
 /// A client that hung up before reading is not a reload failure -- the reload already
-/// happened -- so this reports and returns rather than propagating.
+/// happened, and the world does not care whether anybody read the receipt -- so the error
+/// is dropped rather than propagated or reported. This is the one thing in here that is
+/// deliberately silent.
 fn respond(stream: &mut UnixStream, line: &str) {
-    if let Err(e) = writeln!(stream, "{line}").and_then(|()| stream.flush()) {
-        tracing::warn!("could not answer a reload request: {e}");
-    }
+    drop(writeln!(stream, "{line}").and_then(|()| stream.flush()));
 }
 
 /// Reads the client's verb, giving up after [`VERB_TIMEOUT`].
@@ -219,17 +228,24 @@ fn read_verb(stream: &mut UnixStream) -> std::io::Result<String> {
 
 /// Ticks the world until it stops, answering reload requests between frames.
 ///
-/// `on_reload` is the seam an event uses to tell its players what just happened; it is
-/// called once per applied reload, with a world that is between frames and safe to write
-/// to. It is deliberately a callback on the loop rather than a flecs observer, because a
+/// `on_reload` is the seam an event uses to tell its players -- and its journal -- what
+/// just happened. It is called once per request answered, refusals included, with a world
+/// that is between frames and safe to write to. It is deliberately a callback on the loop rather than a flecs observer, because a
 /// reload is not a world event -- it is the thing that just replaced every observer.
-pub fn run<F>(world: &World, service: &mut ReloadService, mut on_reload: F)
+///
+/// `service` is optional because a server started without a rules dylib -- a developer's
+/// `nix run`, an end-to-end gate -- still needs a tick loop, and it must be *this* loop.
+/// Two loops, one that can reload and one that cannot, is two things that have to agree
+/// about how a frame is run, and the one nobody deploys is the one that would drift.
+pub fn run<F>(world: &World, mut service: Option<&mut ReloadService>, mut on_reload: F)
 where
-    F: FnMut(&World, &Reloaded),
+    F: FnMut(&World, &Outcome),
 {
     while world.progress() {
-        for reloaded in service.poll(world) {
-            on_reload(world, &reloaded);
+        if let Some(service) = service.as_deref_mut() {
+            for outcome in service.poll(world) {
+                on_reload(world, &outcome);
+            }
         }
     }
 }
@@ -332,6 +348,10 @@ mod tests {
 
     /// The refusal carries the loader's own words. An operator reading `systemctl reload`
     /// output needs the reason, not a generic failure.
+    ///
+    /// A module that is not there fails while being staged rather than at `dlopen` -- see
+    /// `host::stage`, which copies every candidate to a name `dlopen` has not seen -- so
+    /// the words are the read's, and the path is in them.
     #[test]
     fn a_refused_load_answers_with_the_loaders_reason() {
         let fixture = Fixture::new("bad-module");
@@ -339,8 +359,12 @@ mod tests {
         let mut service = fixture.service();
         let reply = fixture.ask(&mut service, &world, Some(b"reload"));
         assert!(
-            reply.starts_with("refused could not open module"),
-            "expected the dlopen refusal, got `{reply}`"
+            reply.starts_with("refused could not read the module at "),
+            "expected the staging refusal, got `{reply}`"
+        );
+        assert!(
+            reply.contains("no-such-module.so"),
+            "the refusal does not name the module: `{reply}`"
         );
     }
 
