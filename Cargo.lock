@@ -2004,6 +2004,7 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "libloading 0.9.0",
+ "tracing",
 ]
 
 [[package]]
