@@ -1475,6 +1475,13 @@
               cp -r ${workspaceArgs.src}/. .
               chmod -R u+w .
               ${workspace.cargoConfigScript}
+              # `pipefail` because the probe's status is the one that matters
+              # and `tee` would otherwise report for it. Both assertions are
+              # kept: the exit code catches a probe that dies before saying
+              # anything, and the grep catches one that exits 0 having measured
+              # nothing. A run that printed PROBE_OK and then failed would pass
+              # on the grep alone, which is the case pipefail adds.
+              set -o pipefail
               ${lib.getExe runners.hot-reload-index-probe} | tee $out
               grep -q PROBE_OK $out
             '';
