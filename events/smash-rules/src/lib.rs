@@ -41,7 +41,7 @@ const TICKS_PER_BEAT: u64 = 20;
 /// Editing this string is the canonical rules-only change: it moves this
 /// crate's store path and nothing else's, so the deploy that carries it must
 /// reload rather than restart. The reload proof drives exactly this edit.
-const BEAT: &str = "smash rules heartbeat";
+const BEAT: &str = "smash rules heartbeat LIVE-RELOAD-1";
 
 /// Behaviour, and no registration. See the module docs for why that split is
 /// load bearing rather than tidy.
