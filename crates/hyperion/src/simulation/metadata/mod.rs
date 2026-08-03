@@ -37,6 +37,7 @@ use crate::{
     },
 };
 
+pub mod arrow;
 pub mod block_display;
 pub mod display;
 pub mod entity;
@@ -47,6 +48,8 @@ pub mod player;
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct MetadataPrefabs {
     pub entity_base: Entity,
+
+    pub arrow_base: Entity,
 
     pub display_base: Entity,
     pub block_display_base: Entity,
@@ -136,6 +139,12 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
         .component_and_track::<Pose>()
         .id();
 
+    // Arrows carry one tracked field of their own, `IN_GROUND`, and it is what
+    // stops a client dead-reckoning an arrow through the wall the server
+    // stopped it at: `AbstractArrow.tick` returns before moving whenever it is
+    // set (`AbstractArrow.java:184-200`).
+    let arrow_base = arrow::register_prefab(world, Some(entity_base)).id();
+
     let display_base = display::register_prefab(world, Some(entity_base)).id();
     let block_display_base = block_display::register_prefab(world, Some(display_base)).id();
 
@@ -152,6 +161,7 @@ pub fn register_prefabs(world: &World) -> MetadataPrefabs {
 
     MetadataPrefabs {
         entity_base,
+        arrow_base,
         display_base,
         block_display_base,
         item_base,
@@ -346,6 +356,14 @@ impl MetadataChanges {
             }
             EntityKind::Item => {
                 item::encode_non_default_components(entity, self);
+            }
+            // Every kind that reaches `AbstractArrow.tick`, which is the same
+            // set `projectile_motion::SIMULATED` gives `MotionOrder::
+            // MoveThenDecay`. A subscriber joining after an arrow has already
+            // landed has to be told it is in the ground, or its client starts
+            // simulating a stopped arrow forwards.
+            EntityKind::Arrow | EntityKind::SpectralArrow | EntityKind::Trident => {
+                arrow::encode_non_default_components(entity, self);
             }
             _ => {}
         }

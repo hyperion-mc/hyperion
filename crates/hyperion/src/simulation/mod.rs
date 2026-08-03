@@ -549,6 +549,15 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
                 .flatten()
             {
                 entity.set(motion);
+                // The shake clock belongs to the arrow tick and only to it:
+                // `ThrowableProjectile` has no such state, because a snowball
+                // that hits something is discarded rather than embedded
+                // (`ThrowableProjectile.java:59-61`). Keyed on the order rather
+                // than listing the kinds a second time -- `MoveThenDecay` *is*
+                // "this reaches `AbstractArrow.tick`".
+                if motion.order == projectile_motion::MotionOrder::MoveThenDecay {
+                    entity.set(projectile_motion::ShakeTime::default());
+                }
             }
         });
 
@@ -565,6 +574,13 @@ fn register_observers(world: &World, prefabs: MetadataPrefabs) {
                 }
                 EntityKind::Player => {
                     entity.is_a(prefabs.player_base);
+                }
+                // The `IN_GROUND` tracked field, so a client stops simulating
+                // an arrow the server has stopped. Same set as the
+                // `MoveThenDecay` half of `projectile_motion::SIMULATED`:
+                // these are the kinds whose tick is `AbstractArrow.tick`.
+                EntityKind::Arrow | EntityKind::SpectralArrow | EntityKind::Trident => {
+                    entity.is_a(prefabs.arrow_base);
                 }
                 _ => {}
             });

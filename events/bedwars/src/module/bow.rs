@@ -6,7 +6,6 @@ use flecs_ecs::{
 };
 use hyperion::{
     ItemKind, ItemStack,
-    glam::Vec3,
     net::Channel,
     simulation::{
         Owner, Pitch, Player, Position, Spawn, Uuid, Velocity, Yaw,
@@ -312,25 +311,26 @@ impl Module for BowModule {
             }
         });
 
-        // multi-threaded causes issues
+        // Stopping the arrow is no longer this module's job: `AbstractArrow.
+        // onHitBlock` is one statement -- pin, zero, embed -- and
+        // `update_projectile_positions` now performs all of it in the tick the
+        // hit happens. Doing it here as well used to overwrite the engine's
+        // backed-off resting point with the raw impact point, and doing it a
+        // pipeline stage later left a window in which the arrow was stopped by
+        // the world and still carrying its flight speed.
+        //
+        // The queue still has to be emptied. `EventQueue` has no cycle-end
+        // clear, so an unread event lives until someone drains it and a match
+        // that never did would grow one entry per arrow that ever landed.
         system!(
             "arrow_block_hit",
             world,
             &mut EventQueue<event::ProjectileBlockEvent>,
         )
         .kind(id::<flecs::pipeline::PreStore>())
-        .each_iter(move |it, _, event_queue| {
-            let world = it.world();
-
+        .each_iter(move |_, _, event_queue| {
             for event in event_queue.drain() {
-                event
-                    .projectile
-                    .entity_view(world)
-                    .get::<(&mut Position, &mut Velocity)>(|(position, velocity)| {
-                        debug!("Arrow hit block at {:?}", event.collision.point);
-                        velocity.0 = Vec3::ZERO;
-                        **position = event.collision.point;
-                    });
+                debug!("Arrow hit block at {:?}", event.collision.point);
             }
         });
 
