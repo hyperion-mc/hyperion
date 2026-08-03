@@ -92,6 +92,15 @@ serial_test = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[lib]
+# A dylib as well as an rlib so a dynamically loaded game module and this host resolve
+# `hyperion` -- and through it the one `flecs_ecs` that owns the process-global pool
+# handing out component indices -- to a single shared image. Two copies index one world
+# two different ways, consistently on each side, with nothing raising an error. See
+# `docs/hot-reload.md`. The rlib stays first so a consumer linking statically is
+# unaffected.
+crate-type = ["rlib", "dylib"]
+
 [lints]
 workspace = true
 

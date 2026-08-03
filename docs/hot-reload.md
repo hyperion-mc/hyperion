@@ -555,9 +555,15 @@ rebuild and a restart.**
    directory means the second configuration may not have taken effect. Treat the build-time
    cost as unmeasured rather than as shown to be zero, and measure it properly if CI wall
    time matters.
-3. Host and every module build with
-   `-C prefer-dynamic -C link-arg=-Wl,--undefined-version -C link-arg=-Wl,--allow-shlib-undefined`,
-   plus rpaths to the rust sysroot and to wherever the dylibs land.
+3. Host and every module build with `-C prefer-dynamic`, plus rpaths to the rust sysroot
+   and to wherever the dylibs land. On ELF add `-C link-arg=-Wl,--undefined-version`: the
+   version script `flecs_ecs`'s build script installs names four globs and both bfd and
+   lld treat a pattern matching nothing as an error.
+
+   `crates/hyperion-hot-reload/index-probe.sh` is that recipe, written once.
+   `nix run .#hot-reload-index-probe` runs it, and `checks.hot-reload-index-probe` is the
+   same script as a derivation, so the gate and the command a contributor runs by hand
+   cannot disagree about the same tree.
 
 What makes the pool shared is step 1 and nothing else. It is tempting to think a module has
 to *reference* `hyperion-hot-reload` to end up on the shared runtime — an earlier version of
@@ -565,17 +571,20 @@ the probe carried a call to `AbiToken::current()` with a comment claiming exactl
 Removing the dependency entirely leaves the probe passing. The dependency being a dylib is
 what shares it; a consumer's import list has nothing to do with it.
 
-`--allow-shlib-undefined` is not a shrug. `simulation/metadata/mod.rs` hand-writes
+**`--allow-shlib-undefined` is gone, and what it stood for is fixed.**
+`simulation/metadata/mod.rs` used to hand-write
 `impl PartialOrd for $name where $type: PartialOrd`, and for 7 metadata types that bound is
 unsatisfiable because glam's `Quat` and `Vec3` have no `PartialOrd`. rustc never codegens
-those `partial_cmp` bodies but still lists them in the dylib's export list. They cannot be
-called — calling one fails to compile on the same unsatisfiable bound — so allowing them
-undefined is sound. Removing the blanket impl from that macro would remove the need for the
-flag, and is the better fix.
+those `partial_cmp` bodies and still lists them in the dylib's export list, so a consumer
+needed the flag to link at all. The blanket impl is deleted rather than tolerated: it had
+exactly one caller in the whole workspace, `events/bedwars/src/module/regeneration.rs`
+comparing two `Health`, and that now compares through `Health`'s own `Deref` to `f32`. So
+the flag is not in the recipe, and if it ever needs to come back, that is the signal a
+blanket impl came back with it.
 
-**Steps 1 and 2 are not landed.** They were verified through a local `[patch]` against a
-copy of the fork checkout. Landing them means a commit in `andrewgazelka/Flecs-Rust` and a
-repin here.
+**Steps 1 and 2 are landed.** `flecs_ecs` carries the dylib change at
+`andrewgazelka/Flecs-Rust` `f09dc53` and `Cargo.toml` pins it; `crates/hyperion` carries
+`crate-type = ["rlib", "dylib"]`.
 
 ## Deploying a reload
 
@@ -642,28 +651,30 @@ anything here.
 
 ## Handing this off: what is left, in order
 
-The mechanism is proven and the deployment is not built. Four steps remain. The third is
-the risky one; the rest are known work.
+The mechanism is proven and the deployment is not built. The third step below is the risky
+one; the rest are known work.
 
-**1. Make `hyperion` a dylib and settle the build flags.** `crate-type = ["dylib", "rlib"]`
-plus `-C prefer-dynamic -C link-arg=-Wl,--undefined-version
--C link-arg=-Wl,--allow-shlib-undefined` everywhere. Small edit, wide blast radius: it
-changes how every consumer links, and a plain `cargo test` without those flags will not
-link the result. Confirm by running `demo/index-probe-host`, which should print `PROBE_OK`.
+**Done: make `hyperion` a dylib and settle the build flags.** `crate-type` on
+`crates/hyperion`, `-C prefer-dynamic` everywhere, and the ELF-only
+`-Wl,--undefined-version`. Wide blast radius -- it changes how every consumer links, and a
+plain `cargo build` without those flags builds a host whose pool a module cannot share.
+`checks.hot-reload-index-probe` gates it, and the guard was watched failing: dropping
+`-C prefer-dynamic` from the recipe reproduces this document's own unshared numbers,
+module index 1 against a host that had already taken up to 4.
 
-**2. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
+**1. Split `SmashModule` out of `events/smash` into its own crate, built as a dylib with
 `export_module!`.** The rules already avoid the host seam by design, but they reach into
 `crate::server`, `crate::flecs_ext` and about fifteen `hyperion::` items, so this is a real
 refactor rather than a file move. Registration modules stay in the host per the section
 above.
 
-**3. Package it. This is the risky step.** The game server binary and the module dylib have
-to be separate store paths, both built with the flags from step 1, with rpaths that resolve
-in the nix store rather than in `target/debug`. Nothing here is verified — every
-measurement in this document was taken from a cargo build, not a nix one. Expect the
-surprises to be here.
+**2. Package it. This is the risky step.** The game server binary and the module dylib have
+to be separate store paths, both built with the flags above, with rpaths that resolve in
+the nix store rather than in `target/debug`. `checks.hot-reload-index-probe` is the first
+nix build of the recipe and it is a `cargo build` inside a sandbox, not a `cargoUnit`
+artifact, so it proves the flags and not the packaging. Expect the surprises here.
 
-**4. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
+**3. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
 `reloadTriggers`, the stable `/etc` path, and an `ExecReload` client that exits non-zero on
 a refusal. Small, and the design is settled.
 

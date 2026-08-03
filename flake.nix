@@ -739,6 +739,18 @@
               text = ''exec ./crates/hyperion-hot-reload/demo.sh "$@"'';
             };
 
+            # Whether the host binary and a dlopened module draw component
+            # indices from one pool. Everything the reload gate checks rests on
+            # this, and nothing it checks would notice if it were false: both
+            # sides stay internally consistent and simply disagree about which
+            # slot is which. `checks.hot-reload-index-probe` runs this same
+            # script, so the gate and the command a contributor runs by hand
+            # cannot say different things about the same tree.
+            hot-reload-index-probe = {
+              deps = [ pkgs.cmake pkgs.pkg-config ];
+              text = ''exec ./crates/hyperion-hot-reload/index-probe.sh "$@"'';
+            };
+
             # The game server and the proxy authenticate to each other with
             # mTLS, so a fresh clone cannot run until a CA and two leaf certs
             # exist. That is the only thing between `git clone` and a running
@@ -1381,6 +1393,38 @@
               ${workspace.cargoConfigScript}
               ${lib.getExe checkScripts.lint}
               touch $out
+            '';
+
+            # Runs the shared-pool probe rather than only shellchecking it.
+            # `scripts` puts every `nix run` app in `checks`, so
+            # `checks.hot-reload-index-probe` already existed -- as the SCRIPT,
+            # whose build runs shellcheck over a cargo invocation and never
+            # runs cargo. That is the same gap #1094 found in `checks.lint`.
+            #
+            # This is the one invariant the reload gate cannot check for
+            # itself. `AbiToken` compares a rustc version, an ABI integer and
+            # the address of a static, and all three pass while the host and a
+            # module index one world through two different `INDEX_POOL`s. So
+            # the thing that would catch a regression is a build of both halves
+            # and a comparison of allocation order, which is what the probe is.
+            #
+            # Cost: a dev-profile build of `hyperion` and its graph inside the
+            # sandbox, shared with nothing. Same shape as `clippy` above and
+            # for the same reason -- prefer-dynamic artifacts are not the
+            # release rlibs `cargoUnit` produces, so there is nothing to reuse.
+            hot-reload-index-probe = pkgs.runCommandCC "hyperion-hot-reload-index-probe" {
+              inherit nativeBuildInputs;
+              # Dev profile, so every C build script in the graph compiles at
+              # -O0 and glibc answers `_FORTIFY_SOURCE` with a `#warning`. An
+              # autoconf probe reading stderr then misreads its own test as a
+              # compile failure; see `clippy` above, which met this first.
+              hardeningDisable = [ "fortify" ];
+            } ''
+              cp -r ${workspaceArgs.src}/. .
+              chmod -R u+w .
+              ${workspace.cargoConfigScript}
+              ${lib.getExe runners.hot-reload-index-probe} | tee $out
+              grep -q PROBE_OK $out
             '';
           };
 

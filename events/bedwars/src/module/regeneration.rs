@@ -44,7 +44,14 @@ impl Module for RegenerationModule {
             |(last_damaged, prev_health, health, compose)| {
                 let current_tick = compose.global().tick;
 
-                if *health < *prev_health {
+                // Through `Health`'s `Deref` to `f32` rather than on `Health` itself.
+                // The metadata macro used to hand every component a blanket
+                // `impl PartialOrd where $type: PartialOrd`; for the seven whose
+                // inner type is a glam `Quat` or `Vec3` that bound is unsatisfiable,
+                // and rustc still listed those uncallable `partial_cmp` bodies in the
+                // dylib's export table, forcing `-Wl,--allow-shlib-undefined` on every
+                // consumer. See `docs/hot-reload.md`.
+                if **health < **prev_health {
                     last_damaged.tick = current_tick;
                 }
 
