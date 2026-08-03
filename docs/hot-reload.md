@@ -773,6 +773,128 @@ wearing a different hat, and every apply restarts. There is a cheap gate for it:
 three derivations, touch a file in the rules crate, rebuild, and assert that exactly one of
 the three paths changed.
 
+### One `flecs_ecs` needs one package selection, not one derivation
+
+Splitting the build across three derivations reintroduced the problem the split exists to
+prevent. Each derivation runs its own `cargo build`, and building `-p hyperion` in one and
+`-p smash-rules` in another put two `flecs_ecs` in one target directory:
+
+```
+libflecs_ecs-a576c74c3728f55c.so    from -p hyperion
+libflecs_ecs-af57d040ba838c15.so    from -p smash-rules
+```
+
+Two `flecs_ecs` is two `INDEX_POOL`s, which is exactly what `checks.hot-reload-index-probe`
+rejects. The first guess was that package *selection* and *source filtering* must differ per
+derivation by design, so no arrangement of inputs could unify them — that fingerprint
+equality across derivations was structurally impossible. That guess was wrong, and
+`cargo build --unit-graph` says why in about a minute.
+
+The `flecs_ecs` unit is **byte-identical** under both selections: same 23 features, same
+profile, same `crate-types = ["dylib", "rlib"]`. What differs is three of its transitive
+dependencies, whose metadata hashes cargo folds into the dependent's:
+
+| crate | `-p hyperion` | `-p smash-rules` |
+| --- | --- | --- |
+| `bitflags` | `serde`, `serde_core`, `std` | (none) |
+| `libc` | `default`, `std` | (none) |
+| `syn` | ..., `fold`, `visit` | (fewer) |
+
+`bitflags` is a direct dependency of `flecs_ecs`. Cargo resolves features over the packages
+named on the command line — `-p hyperion` reaches 473 units and `-p smash-rules` reaches 75 —
+so package selection alone moves the hash.
+
+Which makes the fix cheap and structural rather than clever: **pass the same selection string
+to every derivation.** Feature resolution reads manifests and never source, and `mkSource`
+already puts every workspace member's `Cargo.toml` into every tree, stubbing only the `.rs`
+bodies. So all three invocations resolve over identical inputs by construction. A derivation
+whose source stubs a package still compiles that package's dependency graph — which is
+exactly the seed the others want — and then compiles an empty `lib.rs` for the package
+itself.
+
+The rule that falls out, and the one to keep: the selection may not be narrowed to "the
+packages this derivation ships", and may not be a function of the event being built. Either
+is the source split written out a second time, in a place where its only symptom is a reload
+that silently indexes one world two different ways.
+
+### The seed may only carry artifacts whose source the consumer agrees with
+
+`hyperion-dylibs` tars its target directory so the other two do not recompile the engine, and
+they date everything to 2100 because cargo decides freshness by mtime and everything unpacked
+from the store shares one normalised timestamp. Once the selection was unified, that seed
+also contained a `libsmash.rlib` built from a **stub** — and dated into the future, so the
+consuming derivation never rebuilt it from the real source:
+
+```
+error[E0432]: unresolved import `smash::init_game`
+ --> events/smash/src/main.rs:1:5
+1 | use smash::init_game;
+  |            no `init_game` in the root
+```
+
+`hyperion-dylibs` therefore `cargo clean -p`s every stubbed event member before tarring, with
+a guard that fails the build if a stub artifact survives. Cleaning before the copy is also
+what keeps a stub `libsmash_rules.so` — same filename as the real rules dylib, none of its
+systems — from being shipped beside the engine and landing on every event binary's rpath.
+
+### An engine dylib hides the C libraries it swallows
+
+`smash-server` failed to link with eight undefined LMDB symbols, and the cause is not where
+the error points. `libhyperion.so` contains LMDB's code and hides every byte of it:
+
+```
+$ readelf --dyn-syms libhyperion.so | grep -c mdb_
+0
+$ readelf --syms libhyperion.so | grep mdb_env_open
+ 14356: 0000000000d0df3c   933 FUNC    LOCAL  DEFAULT   13 mdb_env_open
+```
+
+133 definitions, every one `LOCAL`. rustc links a Rust `dylib` with its own anonymous version
+script ending in `local: *`, which demotes every symbol arriving from a native static
+archive. The discriminator is that `ecs_*` (77) and `flecs_*` (22) *are* exported while
+`mdb_`, `AWS_LC` and `deflate` are all at zero — flecs is visible only because `flecs_ecs`
+ships a `build.rs` that adds a second version script for precisely this reason.
+
+That is fatal rather than merely wasteful because `heed`'s API is generic: every consumer
+monomorphises heed's code into its own rlib and emits its own `mdb_*` calls.
+`hyperion-permission` is such a consumer and links into an event's binary statically, while
+rustc suppresses lmdb's own `-llmdb` on the grounds that an upstream dylib already provides
+it.
+
+`-Wl,--export-dynamic-symbol=mdb_*` does not fix it — measured here leaving the exported
+count at zero, independently reproducing what `flecs_ecs/build.rs` documents for `ecs_*`.
+A second version script does, and it has to live in the crate that *is* the dylib, because a
+build script's `rustc-link-arg` applies to its own crate's artifacts and nothing else. That
+is what `crates/hyperion/build.rs` is: 70 exported `mdb_*` after, `mdb_env_open` `GLOBAL`.
+
+This keeps one copy of LMDB in the process. Linking a second `liblmdb.a` into the executable
+would also make the link succeed, and would put two copies of a C library with process-global
+state in one process — the same shape the index probe exists to reject for flecs. The general
+signature, for the next native library that hits this: an undefined `foo_*` at an event's
+final link whose definition is `LOCAL` in `libhyperion.so`'s `.symtab`.
+
+### The boundary, measured rather than asserted
+
+`checks.hot-reload-source-split` compares the source trees. The property it stands in for is
+about derivation inputs, and that is worth checking directly at least once:
+
+```
+                 baseline                          after a rules-only edit
+hyperion-dylibs  b5lxh69r...-hyperion-dylibs.drv   b5lxh69r...  (unchanged)
+smash-server     wz26cwn7...-smash-server.drv      wz26cwn7...  (unchanged)
+smash-rules      4f0rqas7...-smash-rules.drv       hvvb5m74...  (MOVED)
+
+                                                   after a host (component) edit
+hyperion-dylibs                                    b5lxh69r...  (unchanged)
+smash-server                                       aza2i90m...  (MOVED)
+smash-rules                                        www61vnr...  (MOVED)
+```
+
+A rules edit moves the reload trigger and leaves `ExecStart` alone, so systemd reloads. A
+component edit moves `ExecStart`, so systemd restarts — which is the correct outcome, because
+a system compiled against a layout the world no longer holds is memory corruption rather than
+a stale build.
+
 ### Adopting it costs no scheduled restart
 
 Step 1 changes the host binary, so the running game server has to restart once to pick it
