@@ -284,6 +284,10 @@ impl Module for SimComponentsModule {
         // `Player`-implies-`InventoryState` traits below have a registered
         // component to point at.
         world.import::<inventory::InventoryComponentsModule>();
+        // Same reason, for the `Player`-implies-`Ping` trait: the round trip
+        // measurement is `egress::ping`'s, but "a player has one" is a
+        // statement about `Player`, which this module owns.
+        world.import::<crate::egress::ping::PingComponentsModule>();
         // Registers every remaining simulation component and sets the
         // `MetadataPrefabs` singleton, which `SimModule`'s observers read back
         // to pick a prefab base per entity kind.
@@ -335,6 +339,15 @@ impl Module for ReflectionComponentsModule {
 /// registers as an opaque serialised through `Display` because flecs aborts if
 /// a type is registered as both a struct and an opaque.
 fn register_reflection(world: &World) {
+    // `Prev` is a relation and `metadata::register_prefabs`, further down
+    // this module's own registration chain, builds `(Prev, T)` pairs out of
+    // it, so it has to be a registered entity before any of them exist. It
+    // used to be registered only by `HyperionCore`, which meant importing
+    // `SimComponentsModule` into a bare world -- the thing the convention in
+    // the root `CLAUDE.md` promises works -- aborted a dev build with
+    // `ECS_INVALID_OPERATION: Component hyperion::Prev is not registered`.
+    world.component::<crate::Prev>();
+
     component!(world, VarInt).member(id::<i32>(), "x");
 
     // `EntitySize` registers as an opaque, which needs the component to exist
@@ -416,6 +429,10 @@ fn register_components(world: &World) -> MetadataPrefabs {
     world.component::<command::SuggestionLabel>();
     world.component::<command::FixedSuggestions>();
 
+    // Registered with its trait before `component!` annotates it, and before
+    // anything sets it. Only `HyperionCore` used to do this, which is why
+    // importing this module alone aborted here in a dev build.
+    world.component::<IgnMap>().add_trait::<flecs::Singleton>();
     component!(world, IgnMap);
 
     world.component::<Name>();
@@ -452,6 +469,9 @@ fn register_components(world: &World) -> MetadataPrefabs {
     world
         .component::<Player>()
         .add_trait::<(flecs::With, hyperion_inventory::InventoryState)>();
+    world
+        .component::<Player>()
+        .add_trait::<(flecs::With, crate::egress::ping::Ping)>();
 
     prefabs
 }

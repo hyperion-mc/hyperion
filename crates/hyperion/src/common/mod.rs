@@ -15,6 +15,14 @@ pub mod util;
 
 pub use command_channel::CommandChannel;
 
+/// How many ticks a second the game loop is paced to.
+///
+/// The number flecs is given in [`crate::HyperionCore`] and the ceiling
+/// [`crate::egress::tab_list`] prints the measured rate against, so the two
+/// cannot drift apart and the footer cannot quote a target the loop is not
+/// actually aiming at.
+pub const TICKS_PER_SECOND: f32 = 20.0;
+
 /// Shared data that is shared between the ECS framework and the IO thread.
 pub struct Shared {
     /// The compression level to use for the server. This is how long a packet needs to be before it is compressed.

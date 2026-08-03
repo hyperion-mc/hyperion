@@ -18,19 +18,23 @@ use crate::{
 pub mod boss_bar;
 mod channel;
 pub mod metadata;
+pub mod ping;
 pub mod player_join;
 pub mod server_load;
 mod stats;
 pub mod sync_chunks;
 mod sync_entity_state;
+pub mod tab_list;
 
 use boss_bar::BossBarModule;
 use channel::ChannelModule;
+use ping::PingModule;
 use player_join::PlayerJoinModule;
 use server_load::ServerLoadModule;
 use stats::StatsModule;
 use sync_chunks::SyncChunksModule;
 use sync_entity_state::EntityStateSyncModule;
+use tab_list::TabListModule;
 
 #[derive(Component)]
 pub struct EgressModule;
@@ -49,6 +53,8 @@ impl Module for EgressModule {
         world.import::<ChannelModule>();
         world.import::<BossBarModule>();
         world.import::<ServerLoadModule>();
+        world.import::<TabListModule>();
+        world.import::<PingModule>();
 
         system!("broadcast_chunk_deltas", world, &Compose, &mut Blocks,)
             .kind(id::<flecs::pipeline::OnUpdate>())
