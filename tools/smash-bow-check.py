@@ -14,6 +14,7 @@ Every claim below is one a client can settle for itself:
   * its launch heading is `look_angles(velocity)`, not the raw look yaw
   * the server broadcasts the arrow's position every tick as it flies
   * a longer draw launches faster than a shorter one (the charge curve)
+  * an arrow fired into the ground stops in it, rather than falling through
 
 Exits non-zero on the first untrue claim, after printing what it saw.
 """
@@ -117,16 +118,16 @@ def main():
     def arrows_from(spawned):
         return [e for e in spawned if e["type"] == arrow_type]
 
-    def draw(seconds, note):
+    def draw(seconds, note, yaw=35.0, pitch=-20.0, settle=1.5):
         client.spawned.clear()
         client.syncs.clear()
         client.motions.clear()
-        client.aim(35.0, -20.0)
+        client.aim(yaw, pitch)
         client.send_position()
         client.use_slot(bow_slot, "(nock) " + note)
         pump(client, seconds)
         client.release_slot(bow_slot, "(release) " + note)
-        pump(client, 1.5)
+        pump(client, settle)
         return arrows_from(client.spawned)
 
     full = draw(2.6, "full draw")
@@ -234,6 +235,95 @@ def main():
             vy_last < vy_first,
             "gravity shows in the per-tick velocity (vy %.3f -> %.3f)"
             % (vy_first, vy_last),
+        )
+
+    # --- the arrow stops in the ground it was fired into ---
+    #
+    # Every other claim in this file is about a shot into open sky, which is
+    # what the arrow scenarios in `docs/differential-testing.md` are too: they
+    # prove the flight and say nothing about what it hits. This is the one that
+    # exercises the terrain seam against real loaded chunks, and it is here
+    # rather than in a Rust test because no Rust test can. `tests/
+    # projectile_blocks.rs` drives a `Cubes` fixture; the host half --
+    # `HyperionBlocks::sweep` reaching into hyperion's block store for the
+    # arena's actual blocks -- has no mock, so a bug in it passes every unit
+    # test in the crate. That is the shape of the `Flying` mirror bug recorded
+    # in the repo's CLAUDE.md, and this is the assertion that would have caught
+    # this feature's version of it.
+    #
+    # Straight down, so the geometry needs nothing from the map: the shooter is
+    # standing on the arena floor, so a block is about `EYE_HEIGHT` under the
+    # muzzle whatever the map is and wherever on it they stand.
+    #
+    # A *short* draw, and that is not a detail. A full draw is 3.0 blocks a tick
+    # against 1.62 blocks of clearance, so the arrow reaches the floor inside
+    # its first tick -- before `smash::draw_projectiles` has decorated it, since
+    # `smash::fly` runs first in the same phase. The AddEntity that reaches the
+    # client then carries a velocity of zero, and every assertion below reads
+    # exactly as it would for an arrow that never launched. That is not a
+    # hypothetical: this check was written with a full draw, passed, and was
+    # measuring nothing. A short draw leaves about 0.4 blocks a tick, which is
+    # four ticks of real flight before the floor stops it.
+    pump(client, 0.6)
+    down = draw(0.4, "straight down", pitch=90.0, settle=2.0)
+    check(len(down) >= 1, "a downward draw fires (got %d arrows)" % len(down))
+    if down:
+        launched = down[0]
+        down_id = launched["id"]
+        down_velocities = client.motions.get(down_id, [])
+
+        # The launch, asserted before anything about the stop. Without this the
+        # two checks below pass just as loudly for an arrow that never moved:
+        # "fell 0.00 blocks" and "every broadcast at rest" are what a projectile
+        # fired at zero speed looks like too, and a gate that cannot tell the
+        # feature working from the feature never firing is not evidence of
+        # either. The AddEntity motion is the launch as the wire carried it, one
+        # packet before any collision could have touched it.
+        launch_vy = launched["motion"][1]
+        print("downward launch: speed %.3f, vy %.3f"
+              % (launched["speed"], launch_vy), flush=True)
+        check(
+            launch_vy < -0.2,
+            "the downward arrow launched downwards at speed (vy %.3f blocks a tick)"
+            % launch_vy,
+        )
+        check(
+            len(down_velocities) >= 2,
+            "the downward arrow is broadcast while it flies (got %d SetEntityMotion)"
+            % len(down_velocities),
+        )
+
+        # Integrate the velocity stream, exactly as the open-sky check above
+        # does. There is no absolute position on the wire for an arrow -- the
+        # gate asserts that too, a few checks up -- so the drop is the sum of
+        # the per-tick velocities, and the client dead-reckons it the same way.
+        drop = -sum(vy for _, vy, _ in down_velocities)
+        # The muzzle sits `EYE_HEIGHT` above the floor, so a stopped arrow falls
+        # about 1.6 blocks and no more. An unstopped one keeps accelerating
+        # under smash's gravity for the whole window this samples -- roughly
+        # sixteen blocks over these ticks, and before this feature it fell until
+        # the projectile's timer expired, straight through the map. 2.5 blocks
+        # is the stopped answer plus slack for where in the block it lands; it
+        # is nowhere near the unstopped one.
+        print("downward arrow: fell %.2f blocks over %d ticks"
+              % (drop, len(down_velocities)), flush=True)
+        check(
+            drop < 2.5,
+            "an arrow fired straight down stops in the floor rather than falling "
+            "through it (fell %.2f blocks; it launched at %.2f a tick, and the same "
+            "draw fired at the sky covers tens of blocks)" % (drop, -launch_vy),
+        )
+
+        # And the stop is a stop, not merely a slow one. `smash::fly` zeroes the
+        # flight on impact and `advance_drawn_projectiles` puts that on the wire,
+        # so a zero-velocity broadcast is the impact as a client sees it. Without
+        # this, an arrow that merely ran out of broadcast would satisfy the drop
+        # bound above by saying nothing.
+        stopped = [v for v in down_velocities if v == (0.0, 0.0, 0.0)]
+        check(
+            len(stopped) >= 1,
+            "the impact reaches the client as a zero-velocity broadcast (got %d of %d "
+            "ticks at rest)" % (len(stopped), len(down_velocities)),
         )
 
     pump(client, 0.6)
