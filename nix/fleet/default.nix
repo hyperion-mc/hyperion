@@ -10,6 +10,12 @@
 #
 # Applied by hand. There is no CI deploy and no automatic apply, deliberately.
 #
+# `hyperion-dev` is declared here too and is not in either line above: it is a
+# machine to build on, not part of serving the game, and it is applied on its
+# own when somebody wants it (README.md, "A dev machine in the fleet"). Naming
+# targets is what keeps those separate -- a bare `ix apply .` converges every
+# node this file declares, which now includes a dev box nobody asked for.
+#
 # ---------------------------------------------------------------------------
 # WHY THIS LIVES HERE, AND WHY IT IS NOT ITS OWN FLAKE
 # ---------------------------------------------------------------------------
@@ -48,6 +54,10 @@
   guestPackages,
   # This repo's own service modules. No input, no pin -- that is the point.
   nixosModules,
+  # What `devShells.default` installs, for the dev node to install too. One
+  # binding rather than two lists, so a VM built to develop hyperion on cannot
+  # end up with a different compiler than `nix develop` hands a contributor.
+  guestDevEnvironment,
 }:
 index.lib.mkFleet {
   # One private segment. A VM outside it has no route to the game server,
@@ -58,6 +68,7 @@ index.lib.mkFleet {
       _module.args = {
         hyperionGameServer = guestPackages.smash;
         hyperionProxy = guestPackages.hyperion-proxy;
+        hyperionDevEnvironment = guestDevEnvironment;
       };
     }
     ./pki.nix
@@ -67,6 +78,17 @@ index.lib.mkFleet {
 
   nodes = {
     "hyperion-game".modules = [./game.nix];
+
+    # One, and no `replicas`. The proxies are interchangeable and a digit says
+    # so; a dev machine is the opposite -- it holds somebody's working copy, so
+    # a second one is a second person's box rather than another copy of this
+    # one. Whoever needs that adds a node with their own name on it.
+    #
+    # It is in the fleet rather than beside it so that one evaluation covers
+    # the machine hyperion is built on and the machines it runs on, which is
+    # the same argument the header makes for the fleet living in this repo at
+    # all. `./dev.nix` says what it deliberately leaves to the platform.
+    "hyperion-dev".modules = [./dev.nix];
 
     # Interchangeable, and `replicas` is how that is said rather than implied:
     # three copy-pasted node entries would let one drift from its siblings.

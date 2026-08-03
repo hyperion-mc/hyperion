@@ -668,6 +668,157 @@ Treat that as a standing post-apply check, and confirm the rev is one
 `git merge-base --is-ancestor <rev> origin/main` accepts. ENG-11491 tracks
 making the apply refuse an unreachable rev rather than relying on the habit.
 
+## A dev machine in the fleet
+
+`hyperion-dev` is a fifth node and the only one that serves nothing. It exists
+so that the machine hyperion is built on is described in the same evaluation as
+the machines hyperion runs on -- the same argument the header makes for the
+fleet living in this repository at all, one step further back.
+
+```sh
+nix build .#hyperion-dev-system
+ix apply .#hyperion-dev
+ix shell hyperion-dev
+```
+
+Then, inside it, once:
+
+```sh
+cd /work/ix
+git clone https://github.com/hyperion-mc/hyperion
+```
+
+`/work/ix` is the platform's own workspace directory
+(`ix.profiles.base.shellWorkspace.directory`): it is pre-created by a tmpfiles
+rule and login shells land in it, so it is where a checkout is findable by
+somebody who did not make it. **Nothing clones for you, deliberately.** A clone
+is state rather than configuration -- activation would have to pick a revision,
+and every later apply would then either fight your working copy or ignore it,
+which is a worse contract than having no opinion. Reading is public and needs
+no credential; pushing needs yours, forwarded from your own machine, which is
+the point.
+
+The `nix build` line matters here for the same reason it does for the fleet
+(see "Build the fleet once, not once per VM" above) and more so: this node's
+closure carries a Rust toolchain the service nodes do not.
+
+### It is not in the fleet's network segment
+
+Every other node sets `ix.networking.groups = ["hyperion"]`, and that group is
+the only thing keeping an unproxied client off the game server. This one
+replaces it with `hyperion-dev`, so the box whose purpose is running code
+nobody has reviewed yet has no route to the world. The build-and-push loop
+needs none.
+
+Groups are joined at VM create, like `ipv4`, so this is not a property a
+re-apply can change on a VM that already exists: moving this node between
+segments is `ix rm` and apply again.
+
+### What the guest already has, and what it does not
+
+Nearly all of a dev box is answered by the platform, so `nix/fleet/dev.nix`
+adds a compiler and little else. Checkable in one command rather than believed:
+
+```sh
+nix eval --json .#nixosConfigurations.hyperion-dev.config --apply 'c: {
+  workspace = c.ix.profiles.base.shellWorkspace.directory;
+  git = c.programs.git.enable;
+  features = c.nix.settings.experimental-features;
+  substituters = c.nix.settings.substituters;
+}'
+```
+
+which answers `/work/ix`, `true`, a feature list including `flakes` and
+`ca-derivations`, and `cache.ix.dev` ahead of `cache.nixos.org`. That is what
+this flake's `nixConfig` block asks of whatever evaluates it, already true
+inside the guest, so the module restates none of it.
+
+**The `ix` CLI is not in there and cannot be added from this repository.**
+index packages no `ix` binary, and the CLI's repository is private while this
+one is public -- an unauthenticated `GET /repos/indexable-inc/ix` answers 404
+where `indexable-inc/index` answers 200 -- so a flake input naming it would
+break evaluation for every outside contributor and for the gate that runs on
+hosted runners. Type `ix` commands on your own machine against the VM. Anything
+that needs the CLI *inside* the guest, such as an agent creating its own
+sandbox, is out of reach until ENG-12081.
+
+**There is no RAM, CPU or disk knob to set.** A fleet node takes `modules`,
+`deployment`, `tags`, `groups`, `dependsOn`, `replicas` and `updateStrategy`,
+and none of those is a machine size; `ix apply` and `ix new` have no sizing
+flag either. Measured rather than assumed, from a node of this fleet:
+
+```console
+$ ix shell hyperion-game -- sh -c 'grep MemTotal /proc/meminfo; nproc'
+MemTotal:       268435456 kB
+64
+```
+
+So sizing is the platform's answer and not a limit worth designing around here.
+
+### A temporary key, if something on the box needs the API
+
+The loop above needs no ix credential at all: `ix` runs on your machine, and
+git pushes over yours. A key is only wanted when something *on* the box calls
+the ix API directly -- an agent that wants its own sandboxes, say, which today
+means the HTTP API rather than the CLI (ENG-12081 again).
+
+Mint it capped and narrow, store it, and attach it at create:
+
+```sh
+ix keys create hyperion-dev-agent --limit 25 --scope vm:read,create --rate-limit 60
+ix secret set hyperion_dev_ix_key          # reads the value from a hidden prompt
+ix new --name hyperion-dev --group hyperion-dev \
+       --secret-env hyperion_dev_ix_key=IX_API_KEY --no-shell
+ix apply .#hyperion-dev
+```
+
+The order is not a style choice. **`ix apply` cannot attach a secret**: it has
+no `--secret-env`, and this fleet's `deployment.secrets` would be read by the
+deprecated `ix-fleet` alone rather than by the created VM -- the split
+`lib/image/fleet.nix` draws between workflow keys and create-identity keys, and
+the same class of silent drop as ENG-10846. A secret therefore reaches a VM at
+create, which means creating with `ix new` and converging with `ix apply`
+afterwards. Revoke the key when the box goes: `ix keys revoke <id>` is terminal
+and takes every key beneath it with it.
+
+**None of those four commands has been run.** The node was added and evaluated,
+no VM was created, and no key was minted; the sequence follows the CLI's own
+contract (`ix apply` reuses a VM by name, `ix new` is the only path that
+attaches a secret) rather than a run somebody watched. Expect to correct it the
+first time, and correct it here.
+
+**That key is broader than it reads, and this is the reason to keep it
+temporary.** `--scope` parses `RESOURCE:ACTIONS` and nothing else, so there is
+no syntax for naming which VMs it covers; and even a token that carried the ids
+would not be narrowed by them, because the conversion from a token's scopes to
+the permission set the server checks drops `resource_ids` on the floor
+(`crates/ix/server/src/acl/auth.rs`, both `parse_db_scopes` and
+`auth_context_from_validated`). A `vm:read` key therefore reads **every VM the
+account owns**, this fleet's four included, not only the dev box it was minted
+for. ENG-12039. Until that lands, the controls that actually bound the damage
+are the spend cap, the rate limit, and revoking the key when you are done with
+the machine.
+
+### One node, no replicas, applied by name
+
+`replicas` says the proxies are interchangeable. A dev machine is the opposite:
+it holds somebody's working copy, so a second one is a second person's box and
+not another copy of this one. Whoever wants that adds a node with their own
+name on it.
+
+Nothing stacks or scopes these per branch today. A `--stack` that gave each
+branch its own copy of the fleet would change this section; there is no such
+flag, so the fleet is applied by naming targets, and the dev node is applied on
+its own when somebody wants it. Note the consequence of it being declared here:
+a bare `ix apply .` converges every node this repository declares, which now
+includes a dev box. Name your targets, which the commands above and at the top
+of `nix/fleet/default.nix` already do.
+
+Finally, "Apply from a checkout of `main`, not from a branch" above still
+holds, and a dev box makes it easier to get wrong: the checkout in `/work/ix`
+is usually on a branch, and applying the *game* fleet from there stamps an
+unreachable commit onto a boss bar in front of every player.
+
 ## Checking the server answers: `mcping.py` moved
 
 It is `nix/fleet/mcping.py` in this repository. **The old path,
