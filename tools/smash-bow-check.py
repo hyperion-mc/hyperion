@@ -251,65 +251,47 @@ def main():
     # in the repo's CLAUDE.md, and this is the assertion that would have caught
     # this feature's version of it.
     #
-    # Straight down, so the geometry needs nothing from the map: the shooter is
-    # above the arena floor, so a block is under the muzzle whatever the map is
-    # and wherever on it they stand.
+    # Straight up, with a short draw, and let it fall back onto the arena
+    # floor. Every part of that is load bearing.
     #
-    # From up in the air, and that is not a detail. Standing on the floor there
-    # is one eye height of clearance, and `smash::draw_projectiles` only
-    # decorates the projectile after `smash::fly` has already integrated it in
-    # the same phase -- so the AddEntity the client is told about lands half a
-    # block into a flight that is over in two ticks, and every velocity
-    # broadcast after it is a tail of zeros. That is ENG-12082: the drop
-    # measured `-0.00` blocks and the check called it a PASS. Climbing first
-    # buys about ten blocks of fall, which is twenty ticks of observable travel
-    # after the arrow exists on the wire.
-    #
-    # hyperion takes the client's own position, so the climb is just position
-    # packets; there is nothing to ask permission for. It is checked below
-    # rather than assumed, because a server that did rubber-band would leave
-    # every assertion after it measuring the old vacuous shot again.
-    ground = client.position[1]
-    for step in range(1, 11):
-        client.position = (client.position[0], ground + step, client.position[2])
-        client.on_ground = False
-        client.send_position()
-        pump(client, 0.1)
-    climbed = client.position[1] - ground
-    print("climbed %.2f blocks above the floor (y %.2f -> %.2f)"
-          % (climbed, ground, client.position[1]), flush=True)
-    check(
-        climbed > 8.0,
-        "the shooter can get above the floor, so the downward shot has room to "
-        "be seen flying (climbed %.2f blocks)" % climbed,
-    )
-
-    down = draw(0.4, "straight down", pitch=90.0, settle=2.0)
-    check(len(down) >= 1, "a downward draw fires (got %d arrows)" % len(down))
-    if down:
-        launched = down[0]
-        down_id = launched["id"]
-        down_velocities = client.motions.get(down_id, [])
+    # Down at your feet is the obvious shot and it cannot be seen. Standing on
+    # the floor there is one eye height of clearance, and
+    # `smash::draw_projectiles` only decorates the projectile after
+    # `smash::fly` has already integrated it in the same phase -- so the
+    # AddEntity the client is told about lands half a block into a flight that
+    # is over in two ticks, and every velocity broadcast after it is a tail of
+    # zeros. That is ENG-12082: the drop measured `-0.00` blocks and the check
+    # called it a PASS. Firing upwards gives the drawn entity a whole flight to
+    # exist for, and an arrow with no horizontal velocity comes back down on the
+    # terrain it left, so the impact is guaranteed without knowing anything
+    # about the map.
+    pump(client, 0.6)
+    up = draw(0.4, "straight up", pitch=-90.0, settle=2.5)
+    check(len(up) >= 1, "an upward draw fires (got %d arrows)" % len(up))
+    if up:
+        launched = up[0]
+        up_id = launched["id"]
+        velocities = client.motions.get(up_id, [])
 
         # The launch, asserted before anything about the stop. Without this the
-        # checks below pass just as loudly for an arrow that never moved:
-        # "fell 0.00 blocks" and "every broadcast at rest" are what a projectile
-        # fired at zero speed looks like too, and a gate that cannot tell the
-        # feature working from the feature never firing is not evidence of
-        # either. The AddEntity motion is the launch as the wire carried it, one
-        # packet before any collision could have touched it.
+        # checks below pass just as loudly for an arrow that never moved: "every
+        # broadcast at rest" is what a projectile fired at zero speed looks like
+        # too, and a gate that cannot tell the feature working from the feature
+        # never firing is evidence of neither. The AddEntity motion is the launch
+        # as the wire carried it, one packet before any collision could have
+        # touched it.
         launch_vy = launched["motion"][1]
-        print("downward launch: speed %.3f, vy %.3f"
+        print("upward launch: speed %.3f, vy %.3f"
               % (launched["speed"], launch_vy), flush=True)
         check(
-            launch_vy < -0.2,
-            "the downward arrow launched downwards at speed (vy %.3f blocks a tick)"
+            launch_vy > 0.2,
+            "the upward arrow launched upwards at speed (vy %.3f blocks a tick)"
             % launch_vy,
         )
         check(
-            len(down_velocities) >= 2,
-            "the downward arrow is broadcast while it flies (got %d SetEntityMotion)"
-            % len(down_velocities),
+            len(velocities) >= 2,
+            "the upward arrow is broadcast while it flies (got %d SetEntityMotion)"
+            % len(velocities),
         )
 
         # The shape that says "it flew, then it stopped", and the one the old
@@ -317,59 +299,43 @@ def main():
         # zero. `len(stopped) >= 1` on its own is satisfied *most* loudly by an
         # arrow that never moved on the wire -- eighteen of eighteen ticks at
         # rest was its best possible score.
-        moving = [
-            i for i, v in enumerate(down_velocities) if v != (0.0, 0.0, 0.0)
-        ]
         first_stop = next(
-            (i for i, v in enumerate(down_velocities) if v == (0.0, 0.0, 0.0)),
+            (i for i, v in enumerate(velocities) if v == (0.0, 0.0, 0.0)),
             None,
         )
-        print("downward stream: %d broadcasts, %d moving, first zero at %s"
-              % (len(down_velocities), len(moving), first_stop), flush=True)
+        moving = [i for i, v in enumerate(velocities) if v != (0.0, 0.0, 0.0)]
+        print("upward stream: %d broadcasts, %d moving, first zero at %s"
+              % (len(velocities), len(moving), first_stop), flush=True)
         check(
             first_stop is not None and first_stop >= 1,
-            "the downward arrow was seen flying and then seen stopping "
-            "(%d broadcasts, %d of them moving, first zero at index %s)"
-            % (len(down_velocities), len(moving), first_stop),
+            "the arrow was seen flying and then seen stopping (%d broadcasts, "
+            "%d of them moving, first zero at index %s)"
+            % (len(velocities), len(moving), first_stop),
         )
 
-        # Integrate the velocity stream, exactly as the open-sky check above
-        # does. There is no absolute position on the wire for an arrow -- the
-        # gate asserts that too, a few checks up -- so the drop is the sum of
-        # the per-tick velocities, and the client dead-reckons it the same way.
-        drop = -sum(vy for _, vy, _ in down_velocities)
-        # The muzzle sits `climbed + EYE_HEIGHT` above the floor and the client
-        # only hears about the arrow part way down, so the drop it can see is at
-        # most that and usually less. An unstopped arrow keeps accelerating
-        # under smash's gravity for the whole window this samples, and before
-        # this feature it fell until the projectile's timer expired, straight
-        # through the map. The bound is the clearance plus a block of slack for
-        # where in the block it lands.
-        ceiling = climbed + EYE_HEIGHT + 1.0
-        print("downward arrow: fell %.2f blocks over %d ticks (clearance %.2f)"
-              % (drop, len(down_velocities), climbed + EYE_HEIGHT), flush=True)
-        check(
-            drop < ceiling,
-            "an arrow fired straight down stops in the floor rather than falling "
-            "through it (fell %.2f blocks against %.2f of clearance; it launched "
-            "at %.2f a tick)" % (drop, ceiling, -launch_vy),
-        )
+        if first_stop is not None:
+            # It went up and it came back down. Without this the stop could be
+            # the arrow hitting a ceiling on the way up, and the claim being
+            # made -- that an arrow stops in the ground rather than falling
+            # through it -- would not have been exercised at all.
+            rising = [vy for _, vy, _ in velocities[:first_stop] if vy > 0.0]
+            falling = [vy for _, vy, _ in velocities[:first_stop] if vy < 0.0]
+            check(
+                len(rising) >= 1 and len(falling) >= 1,
+                "the arrow rose and then fell before it stopped (%d rising "
+                "ticks, %d falling)" % (len(rising), len(falling)),
+            )
 
-        # And the stop is a stop, not merely a slow one. `smash::fly` zeroes the
-        # flight on impact and `advance_drawn_projectiles` puts that on the wire,
-        # so a zero-velocity broadcast is the impact as a client sees it.
-        stopped = [v for v in down_velocities if v == (0.0, 0.0, 0.0)]
-        check(
-            len(stopped) >= 1,
-            "the impact reaches the client as a zero-velocity broadcast (got %d of %d "
-            "ticks at rest)" % (len(stopped), len(down_velocities)),
-        )
-
-    # Back on the floor for whatever comes next.
-    client.position = (client.position[0], ground, client.position[2])
-    client.on_ground = True
-    client.send_position()
-    pump(client, 0.5)
+            # And it stays stopped: `smash::fly` zeroes the flight on impact,
+            # `advance_drawn_projectiles` puts that on the wire, and `Stuck`
+            # keeps it there.
+            after = velocities[first_stop:]
+            check(
+                all(v == (0.0, 0.0, 0.0) for v in after),
+                "a stopped arrow stays stopped: %d broadcasts after the first "
+                "zero, %d of them moving"
+                % (len(after), sum(1 for v in after if v != (0.0, 0.0, 0.0))),
+            )
 
     pump(client, 0.6)
     short = draw(0.4, "short draw")

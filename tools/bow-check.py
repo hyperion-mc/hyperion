@@ -497,45 +497,43 @@ def main():
 
     # --- the arrow stops in the ground it was fired into ---------------
     #
-    # From up in the air, aimed straight down, with a short draw. Every part of
-    # that is load bearing. Standing on the ground there is one eye height of
-    # clearance and the flight is over before the client has subscribed to the
-    # arrow's channel, so nothing about it reaches the wire at all; climbing
-    # buys a fall long enough to watch, and a short draw makes it last tens of
-    # ticks rather than four.
+    # Straight up, with a short draw, and let it fall back onto the block it
+    # was fired from. Every part of that is load bearing.
     #
-    # hyperion takes the client's own position, so the climb is only position
-    # packets. It is checked rather than assumed, because a server that
-    # rubber-banded would leave every assertion below measuring the old
-    # invisible shot again.
-    client.aim(0.0, 90.0)
-    ground = client.position[1]
-    for step in range(1, 16):
-        client.position = (client.position[0], ground + step, client.position[2])
-        client.on_ground = False
-        client.send_position()
-        pump(client, 0.1)
-    climbed = client.position[1] - ground
-    print("climbed %.2f blocks above the ground (y %.2f -> %.2f)"
-          % (climbed, ground, client.position[1]), flush=True)
-    check(
-        climbed > 12.0,
-        "the shooter can get above the ground, so the downward shot has room "
-        "to be seen flying (climbed %.2f blocks)" % climbed,
-    )
-
+    # The obvious shot -- level, or down at your feet -- cannot be seen at all.
+    # It meets something within a tick or two, which is before the client's
+    # subscription to the arrow's channel has landed, so the client receives
+    # **zero** `SetEntityMotion` for it. That is measured, not feared: the run
+    # that established it printed `impact: 0 velocity broadcasts`. Firing
+    # upwards buys the subscription time to arrive and then guarantees the
+    # impact anyway, because an arrow with no horizontal velocity comes down on
+    # the terrain it left. A short draw keeps the whole round trip inside two
+    # seconds.
+    #
+    # What used to be asserted here was a *second* `AddEntity` carrying
+    # |v| == 0, on the stated grounds that the server re-sends a pinned arrow.
+    # It does not and never did: the second `AddEntity` is
+    # `send_subscribe_channel_packets` replaying the spawn for a client that has
+    # just subscribed, and it carries whatever the arrow's velocity happens to
+    # be at that moment -- one tick after launch on a level shot, which is
+    # 3.0 * 0.99 == 2.970, exactly the number the failures printed about three
+    # runs in four (ENG-12085). It was a race between the subscription and the
+    # wall, not a flake.
+    pump(client, 0.5)
+    client.aim(0.0, -90.0)
+    client.send_position()
     client.motions.clear()
-    down = draw(0.25, "(quarter draw, straight down)")
-    check(len(down) == 1, "the downward draw fires one arrow (got %d)" % len(down))
-    if down:
-        down_id = down[0][0]["id"]
-        pump(client, 1.5)
-        flight = client.motions.get(down_id, [])
+    up = draw(0.25, "(quarter draw, straight up)")
+    check(len(up) == 1, "the upward short draw fires one arrow (got %d)" % len(up))
+    if up:
+        up_id = up[0][0]["id"]
+        pump(client, 2.0)
+        flight = client.motions.get(up_id, [])
         speeds = [(vx * vx + vy * vy + vz * vz) ** 0.5 for vx, vy, vz in flight]
         first_stop = next((i for i, v in enumerate(speeds) if v == 0.0), None)
         print(
             "impact: %d velocity broadcasts, first zero at %s, speeds %s"
-            % (len(speeds), first_stop, ["%.3f" % v for v in speeds[:8]]),
+            % (len(speeds), first_stop, ["%.3f" % v for v in speeds[:6]]),
             flush=True,
         )
         # `onHitBlock` zeroes the velocity in the tick of the hit and broadcasts
@@ -550,8 +548,8 @@ def main():
         # evidence of neither. That vacuity is ENG-12082 on the smash side.
         check(
             first_stop is not None and first_stop >= 1,
-            "an arrow that hits the ground stops, and was seen moving first: "
-            "%d velocity broadcasts, first zero at index %s"
+            "an arrow that falls back to the ground stops in it, and was seen "
+            "flying first: %d velocity broadcasts, first zero at index %s"
             % (len(speeds), first_stop),
         )
         if first_stop is not None:
@@ -559,26 +557,18 @@ def main():
             check(
                 all(v == 0.0 for v in after),
                 "a stopped arrow stays stopped: %d broadcasts after the first "
-                "zero, %s" % (len(after), ["%.3f" % v for v in after[:8]]),
+                "zero, %s" % (len(after), ["%.3f" % v for v in after[:6]]),
             )
-            # The fall it can be seen making is bounded by the clearance it had.
-            # An arrow that was never stopped keeps accelerating for the whole
-            # sampling window, which is far more than this.
-            drop = -sum(vy for _, vy, _ in flight)
-            ceiling = climbed + 2.0
-            print("downward arrow: fell %.2f blocks over %d ticks (clearance ~%.2f)"
-                  % (drop, len(flight), climbed), flush=True)
+            # It went up and it came back down: the sign of vy has to change,
+            # or the arrow was stopped on the way up by something and the round
+            # trip this assertion is built on never happened.
+            rising = [vy for _, vy, _ in flight[:first_stop] if vy > 0.0]
+            falling = [vy for _, vy, _ in flight[:first_stop] if vy < 0.0]
             check(
-                drop < ceiling,
-                "the arrow stopped in the ground rather than falling through it "
-                "(fell %.2f blocks against %.2f of clearance)" % (drop, ceiling),
+                len(rising) >= 1 and len(falling) >= 1,
+                "the arrow rose and then fell before it stopped (%d rising "
+                "ticks, %d falling)" % (len(rising), len(falling)),
             )
-
-    # Back on the ground for the flight check below.
-    client.position = (client.position[0], ground, client.position[2])
-    client.on_ground = True
-    client.send_position()
-    pump(client, 0.5)
 
     # --- the arrow actually flies, on the wire ------------------------
     #
