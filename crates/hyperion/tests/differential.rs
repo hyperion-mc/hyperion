@@ -290,9 +290,9 @@ fn set_terrain(world: &World, blocks: &[BlockSpec], state_for: impl Fn(&BlockSpe
         for spec in blocks {
             let state = state_for(spec);
             let position = IVec3::new(spec.position[0], spec.position[1], spec.position[2]);
-            store
-                .set_block(position, state)
-                .unwrap_or_else(|error| panic!("could not place {} at {position}: {error:?}", spec.state));
+            store.set_block(position, state).unwrap_or_else(|error| {
+                panic!("could not place {} at {position}: {error:?}", spec.state)
+            });
         }
     });
 }
@@ -341,8 +341,8 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
         trace.in_ground_field_index,
         InGround::INDEX,
         "the pinned jar puts AbstractArrow's IN_GROUND at index {}, and \
-         hyperion::simulation::metadata::arrow says {}; every arrow this server sends is \
-         writing the wrong tracked field",
+         hyperion::simulation::metadata::arrow says {}; every arrow this server sends is writing \
+         the wrong tracked field",
         trace.in_ground_field_index,
         InGround::INDEX,
     );
@@ -480,8 +480,8 @@ fn replay(world: &World, scenario: &Scenario, trace: &Trace) -> Result<Headroom,
                 let in_ground = entity.try_get::<&InGround>(|flag| **flag);
                 if in_ground != Some(expected_in_ground) {
                     outcome = Err(format!(
-                        "{}: {id} inGround diverges at tick {}\n  vanilla:  {expected_in_ground}\n  \
-                         hyperion: {in_ground:?}",
+                        "{}: {id} inGround diverges at tick {}\n  vanilla:  \
+                         {expected_in_ground}\n  hyperion: {in_ground:?}",
                         scenario.name, sample.tick,
                     ));
                 }
