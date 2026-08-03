@@ -21,6 +21,7 @@ crate-type = ["dylib", "rlib"]
 [dependencies]
 flecs_ecs.workspace = true
 libloading = "0.9.0"
+tracing.workspace = true
 
 [lints]
 workspace = true
