@@ -114,7 +114,11 @@ let
     );
 
   common = {
-    inherit nativeBuildInputs;
+    # The toolchain explicitly: flake.nix's `nativeBuildInputs` is the C and
+    # build-tool half and does not carry cargo. Every other cargo build in this
+    # flake reaches it through a `writeShellApplication`'s `runtimeInputs`,
+    # which these derivations do not go through.
+    nativeBuildInputs = nativeBuildInputs ++ [ rustToolchain ];
     # Every C build script in the graph answers `_FORTIFY_SOURCE` with a
     # `#warning` at -O0, and an autoconf probe reading stderr then misreads its
     # own test as a compile failure. `checks.clippy` met this first.
