@@ -236,12 +236,7 @@ fn melee_damage_changes_what_a_swing_takes_off() {
     // so a `melee_damage` that stopped reading the kit is a failure here rather
     // than a formula compared against a copy of itself.
     gate.each(|gate, side| {
-        let clock = gate
-            .game
-            .world
-            .cloned::<&smash::module::damage::MatchClock>()
-            .0;
-        let amount = smash::input::melee_damage(gate.view(side.player), side.foe, clock);
+        let amount = smash::input::melee_damage(gate.view(side.player), side.foe);
         gate.hit(side.foe, amount, DamageKind::Melee);
     });
     gate.advance(0.05);
