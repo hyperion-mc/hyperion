@@ -604,73 +604,7 @@ impl<'a> Decode<'a> for UpdateTags<'a> {
     }
 }
 
-// --- keep alive, ping, disconnect -----------------------------------------
-
-/// `minecraft:keep_alive`, both directions (`Clientbound`- and
-/// `ServerboundKeepAlivePacket`).
-///
-/// The two classes have the same one-field body, so one type covers both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KeepAlive {
-    /// Opaque value the client echoes back.
-    pub id: i64,
-}
-
-impl Encode for KeepAlive {
-    fn encode(&self, writer: &mut Writer) -> Result<()> {
-        writer.i64(self.id);
-        Ok(())
-    }
-}
-
-impl Decode<'_> for KeepAlive {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
-        Ok(Self { id: reader.i64()? })
-    }
-}
-
-/// `minecraft:ping`, clientbound (`ClientboundPingPacket`).
-///
-/// Distinct from the status-state ping: this one is a plain `int`, not the
-/// `long` [`crate::packets::status::PingRequest`] carries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ping {
-    /// Opaque value returned in the [`Pong`].
-    pub id: i32,
-}
-
-impl Encode for Ping {
-    fn encode(&self, writer: &mut Writer) -> Result<()> {
-        writer.i32(self.id);
-        Ok(())
-    }
-}
-
-impl Decode<'_> for Ping {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
-        Ok(Self { id: reader.i32()? })
-    }
-}
-
-/// `minecraft:pong`, serverbound (`ServerboundPongPacket`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pong {
-    /// The value from the matching [`Ping`].
-    pub id: i32,
-}
-
-impl Encode for Pong {
-    fn encode(&self, writer: &mut Writer) -> Result<()> {
-        writer.i32(self.id);
-        Ok(())
-    }
-}
-
-impl Decode<'_> for Pong {
-    fn decode(reader: &mut Reader<'_>) -> Result<Self> {
-        Ok(Self { id: reader.i32()? })
-    }
-}
+// --- disconnect -----------------------------------------------------------
 
 /// `minecraft:disconnect`, clientbound (`ClientboundDisconnectPacket`).
 ///
