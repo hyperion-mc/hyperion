@@ -21,9 +21,11 @@ use hyperion_minecraft_proto::{
     nbt::{Compound, Tag},
     packets::configuration::{
         AcceptCodeOfConduct, ChatVisiblity, ClientInformation, CodeOfConduct, CustomPayload,
-        Disconnect, FinishConfiguration, FinishConfigurationAck, HumanoidArm, KeepAlive, KnownPack,
-        ParticleStatus, Ping, Pong, RegistryData, RegistryEntry, RegistryTags, ResetChat,
-        SelectKnownPacks, TagEntry, UpdateEnabledFeatures, UpdateTags,
+        Disconnect, FinishConfiguration, FinishConfigurationAck, HumanoidArm, KnownPack,
+        ParticleStatus, RegistryData, RegistryEntry, RegistryTags, ResetChat, SelectKnownPacks,
+        TagEntry, UpdateEnabledFeatures, UpdateTags,
+        clientbound::{KeepAlive as ClientboundKeepAlive, Ping},
+        serverbound::{KeepAlive as ServerboundKeepAlive, Pong},
     },
     text::Component,
 };
@@ -376,23 +378,24 @@ fn empty_update_tags_matches_vanilla() {
 // --- keep alive, ping, disconnect, code of conduct ------------------------
 
 #[test]
-fn keep_alive_matches_vanilla() {
-    // Both ClientboundKeepAlivePacket and ServerboundKeepAlivePacket printed
-    // the same bytes for the same id, which is why one type covers both.
-    round_trip(
-        &KeepAlive {
-            id: 0x0123_4567_89ab_cdef,
-        },
-        &hex("0123456789abcdef"),
-    );
+fn keep_alive_matches_vanilla_in_both_directions() {
+    // Both ClientboundKeepAlivePacket and ServerboundKeepAlivePacket print the
+    // same bytes for the same id. That used to be asserted by *asserting it*:
+    // one hand-written type stood in for both classes, and the claim that they
+    // agree was the comment above it rather than anything a test ran. The
+    // generator emits one type per direction, so both go through the same
+    // fixture and the agreement is checked instead of assumed.
+    let bytes = hex("0123456789abcdef");
+    round_trip(&ClientboundKeepAlive(0x0123_4567_89ab_cdef), &bytes);
+    round_trip(&ServerboundKeepAlive(0x0123_4567_89ab_cdef), &bytes);
 }
 
 #[test]
 fn ping_and_pong_are_ints_not_longs() {
     // The configuration-state ping is an int; the status-state one is a long.
     let bytes = hex("0abcdef1");
-    round_trip(&Ping { id: 0x0abc_def1 }, &bytes);
-    round_trip(&Pong { id: 0x0abc_def1 }, &bytes);
+    round_trip(&Ping(0x0abc_def1), &bytes);
+    round_trip(&Pong(0x0abc_def1), &bytes);
 }
 
 #[test]
