@@ -1550,6 +1550,11 @@
             # and it exercises the dynamic loader, every static initialiser and
             # the first few thousand allocations -- which is where a binary
             # that cannot start dies.
+            #
+            # THE REASON THIS EXISTS, IN ONE LINE: a derivation that is only
+            # ever inspected is not a derivation that is known to work. The
+            # store-path diffs, the `readelf` and the `ldd` were all correct,
+            # and all correct about something other than whether it runs.
             hot-reload-server-starts =
               pkgs.runCommand "hyperion-hot-reload-server-starts" { }
                 (
