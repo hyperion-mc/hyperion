@@ -386,48 +386,24 @@ def main():
         "old seconds-as-charge produced (got %.3f)" % (MAX_ARROW_SPEED, speed),
     )
 
-    # The impact, read off the velocity stream.
+    # Nothing about the impact is asserted here, and that is a measurement
+    # rather than an omission. A level shot from the ground meets something
+    # within a tick or two, which is before the client's subscription to the
+    # arrow's channel has landed, so it receives **zero** `SetEntityMotion` for
+    # this arrow -- the run that established this printed `0 velocity
+    # broadcasts`. There is no impact to see from here.
     #
-    # This used to look for a *second* `AddEntity` carrying |v| == 0, on the
-    # stated grounds that the server re-sends a pinned arrow. It does not, and
-    # never did: the second AddEntity is `send_subscribe_channel_packets`
-    # answering the client's subscription to the arrow's channel, which lands
-    # whenever the arrow enters view -- usually one tick after launch, carrying
-    # 3.0 * 0.99 == 2.970. So the check passed only in the minority of runs
-    # where the subscription happened to arrive after the arrow had already
-    # stopped, which is why it read as a 3-in-4 flake rather than as a wrong
-    # question (ENG-12085).
+    # What used to be asserted here was a *second* `AddEntity` carrying
+    # |v| == 0, on the stated grounds that the server re-sends a pinned arrow.
+    # It does not and never did: the second `AddEntity` is
+    # `send_subscribe_channel_packets` replaying the spawn for a client that
+    # has just subscribed, and it carries whatever the arrow's velocity is at
+    # that moment. On this shot that is one tick after launch, 3.0 * 0.99 ==
+    # 2.970 -- exactly the number the failures printed, about three runs in
+    # four (ENG-12085). It was a race between the subscription and the wall,
+    # not a flake, and it is still a race whichever value the replay carries.
     #
-    # `onHitBlock` zeroes the velocity in the tick of the hit and broadcasts it
-    # (`AbstractArrow.java:499` and the `needsSync` at line 253), so a zero
-    # `SetEntityMotion` is the impact as a client sees it, and it is the packet
-    # that stops the client dead-reckoning the arrow onwards through the block.
-    #
-    # A non-zero broadcast has to come first. That is the whole discrimination:
-    # "every broadcast at rest" is also what an arrow that never moved looks
-    # like, and a check that cannot tell those apart is evidence of neither
-    # (the same vacuity as ENG-12082).
-    flight = client.motions.get(launch["id"], [])
-    speeds = [(vx * vx + vy * vy + vz * vz) ** 0.5 for vx, vy, vz in flight]
-    first_stop = next((i for i, v in enumerate(speeds) if v == 0.0), None)
-    print(
-        "impact: %d velocity broadcasts, first zero at %s, speeds %s"
-        % (len(speeds), first_stop, ["%.3f" % v for v in speeds[:8]]),
-        flush=True,
-    )
-    check(
-        first_stop is not None and first_stop >= 1,
-        "an arrow that hits a block stops, and was seen moving first: %d "
-        "velocity broadcasts, first zero at index %s"
-        % (len(speeds), first_stop),
-    )
-    if first_stop is not None:
-        after = speeds[first_stop:]
-        check(
-            all(v == 0.0 for v in after),
-            "a stopped arrow stays stopped: %d broadcasts after the first zero, "
-            "%s" % (len(after), ["%.3f" % v for v in after[:8]]),
-        )
+    # The impact is asserted below instead, from a shot with room to be seen.
 
     pump(client, 0.5)
     after = client.count_of("minecraft:arrow")
@@ -518,6 +494,91 @@ def main():
             "the wire yaw is not the shooter's look yaw of 35 (the mirrored-"
             "heading bug); got %.1f" % wire_yaw,
         )
+
+    # --- the arrow stops in the ground it was fired into ---------------
+    #
+    # From up in the air, aimed straight down, with a short draw. Every part of
+    # that is load bearing. Standing on the ground there is one eye height of
+    # clearance and the flight is over before the client has subscribed to the
+    # arrow's channel, so nothing about it reaches the wire at all; climbing
+    # buys a fall long enough to watch, and a short draw makes it last tens of
+    # ticks rather than four.
+    #
+    # hyperion takes the client's own position, so the climb is only position
+    # packets. It is checked rather than assumed, because a server that
+    # rubber-banded would leave every assertion below measuring the old
+    # invisible shot again.
+    client.aim(0.0, 90.0)
+    ground = client.position[1]
+    for step in range(1, 16):
+        client.position = (client.position[0], ground + step, client.position[2])
+        client.on_ground = False
+        client.send_position()
+        pump(client, 0.1)
+    climbed = client.position[1] - ground
+    print("climbed %.2f blocks above the ground (y %.2f -> %.2f)"
+          % (climbed, ground, client.position[1]), flush=True)
+    check(
+        climbed > 12.0,
+        "the shooter can get above the ground, so the downward shot has room "
+        "to be seen flying (climbed %.2f blocks)" % climbed,
+    )
+
+    client.motions.clear()
+    down = draw(0.25, "(quarter draw, straight down)")
+    check(len(down) == 1, "the downward draw fires one arrow (got %d)" % len(down))
+    if down:
+        down_id = down[0][0]["id"]
+        pump(client, 1.5)
+        flight = client.motions.get(down_id, [])
+        speeds = [(vx * vx + vy * vy + vz * vz) ** 0.5 for vx, vy, vz in flight]
+        first_stop = next((i for i, v in enumerate(speeds) if v == 0.0), None)
+        print(
+            "impact: %d velocity broadcasts, first zero at %s, speeds %s"
+            % (len(speeds), first_stop, ["%.3f" % v for v in speeds[:8]]),
+            flush=True,
+        )
+        # `onHitBlock` zeroes the velocity in the tick of the hit and broadcasts
+        # it (`AbstractArrow.java:499`, and the `needsSync` at line 253), so a
+        # zero `SetEntityMotion` is the impact as a client sees it -- and it is
+        # the packet that stops the client dead-reckoning the arrow onwards
+        # through the block.
+        #
+        # A non-zero broadcast has to come first, and that is the whole
+        # discrimination: "every broadcast at rest" is also what an arrow that
+        # never moved looks like, and a check that cannot tell those apart is
+        # evidence of neither. That vacuity is ENG-12082 on the smash side.
+        check(
+            first_stop is not None and first_stop >= 1,
+            "an arrow that hits the ground stops, and was seen moving first: "
+            "%d velocity broadcasts, first zero at index %s"
+            % (len(speeds), first_stop),
+        )
+        if first_stop is not None:
+            after = speeds[first_stop:]
+            check(
+                all(v == 0.0 for v in after),
+                "a stopped arrow stays stopped: %d broadcasts after the first "
+                "zero, %s" % (len(after), ["%.3f" % v for v in after[:8]]),
+            )
+            # The fall it can be seen making is bounded by the clearance it had.
+            # An arrow that was never stopped keeps accelerating for the whole
+            # sampling window, which is far more than this.
+            drop = -sum(vy for _, vy, _ in flight)
+            ceiling = climbed + 2.0
+            print("downward arrow: fell %.2f blocks over %d ticks (clearance ~%.2f)"
+                  % (drop, len(flight), climbed), flush=True)
+            check(
+                drop < ceiling,
+                "the arrow stopped in the ground rather than falling through it "
+                "(fell %.2f blocks against %.2f of clearance)" % (drop, ceiling),
+            )
+
+    # Back on the ground for the flight check below.
+    client.position = (client.position[0], ground, client.position[2])
+    client.on_ground = True
+    client.send_position()
+    pump(client, 0.5)
 
     # --- the arrow actually flies, on the wire ------------------------
     #
