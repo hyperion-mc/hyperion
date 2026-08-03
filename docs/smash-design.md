@@ -511,12 +511,25 @@ Honest list.
 Judged against readability at each step, and where they conflicted the choice is
 recorded.
 
-**Reads do not cross the seam.** Position, rotation and ground state are mirror
-components written by the adapter once per tick, so the per-tick hot paths — the
-cooldown tick, the arena bounds check, projectile integration — are plain
-component iteration with no virtual calls. Only writes go through the `Server`
-trait, and writes happen on hit, on death and on kit change, never per entity
-per tick.
+**Reads do not cross the `Server` seam.** Position, rotation and ground state
+are mirror components written by the adapter once per tick, so the per-tick hot
+paths — the cooldown tick, the arena bounds check, projectile integration — are
+plain component iteration with no virtual calls. Only writes go through the
+`Server` trait, and writes happen on hit, on death and on kit change, never per
+entity per tick.
+
+**The one read that does cross a seam is terrain**, and it has its own:
+`BlockWorld` in `src/module/blocks.rs`, one method, defaulting to `OpenAir`.
+Terrain is the case the mirror cannot serve — millions of blocks, a handful
+looked at per tick, and an authoritative copy that already exists on the host,
+so copying it would be maintaining a second one that drifts the moment anybody
+places a block. It is a separate trait rather than a tenth `Server` method
+because `Server` is a list of things the game asks the host to *do*, and because
+a default of "nothing is solid" means every test that is not about terrain, and
+the whole of the mock, needs no implementation at all. The cost is one virtual
+call per projectile per tick, and the call answers the whole segment rather than
+one block, so the traversal stays in `geometry::sweep` where the host's block
+store and the tests' `Cubes` share it.
 
 **Ability behaviour is a function pointer.** Zero allocation, one indirect call
 per activation.
@@ -542,11 +555,15 @@ per hit.
 
 Stated plainly, because these are the parts nobody can see from the code.
 
-1. **No block world.** Projectiles expire on a timer and on entity contact only;
-   they do not collide with terrain. Fissure resolves its fourteen columns
-   immediately instead of walking a block wall. Enderman's Block Toss does not
-   check that there is air above the block it picks up. All three need hyperion's
-   `Blocks`.
+1. **Only projectiles read the block world.** Projectiles now sweep their
+   tick's travel against terrain and stop at the first surface, through the
+   read seam in `src/module/blocks.rs`; the rest of the list here still does
+   not. Fissure resolves its fourteen columns immediately instead of walking a
+   block wall, and Enderman's Block Toss does not check that there is air above
+   the block it picks up. Both want the same seam, which now exists. What a
+   projectile does *about* an impact is also still one thing for every kind --
+   it sticks and expires -- so a Sulphur Bomb that meets a wall stops there
+   rather than detonating (ENG-12055).
 2. **No Smash Crystal spawning.** The ultimates exist and are granted through the
    ordinary relationship; the beacon, the descent and the pickup are not built.
 3. **Assists.** Only the last hit is tracked.

@@ -543,10 +543,15 @@ impl Module for EntityStateSyncModule {
                 if velocity.0 != Vec3::ZERO {
                     let center = **position;
 
-                    // getting max distance
-                    let distance = velocity.0.length();
-
-                    let ray = geometry::ray::Ray::new(center, velocity.0) * distance;
+                    // The ray *is* this tick's travel: `Velocity` is blocks per
+                    // tick, so the segment runs from here to here-plus-velocity
+                    // and `t == 1` is the far end of it. It used to be scaled by
+                    // the velocity's own length as well, which asked about a
+                    // segment `|v|` times too long, and against an unbounded
+                    // block scan that meant an arrow stopped dead as soon as
+                    // anything was ahead of it on its heading rather than when
+                    // it got there.
+                    let ray = geometry::ray::Ray::new(center, velocity.0);
 
                     let Some(collision) = get_first_collision(ray, &world, Some(owner.entity))
                     else {
