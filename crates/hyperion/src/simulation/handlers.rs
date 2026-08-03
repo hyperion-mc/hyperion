@@ -149,6 +149,7 @@ pub fn route(id: i32) -> Route {
         PacketId::ClientInformation => Route::Act(client_information),
         PacketId::CommandSuggestion => Route::Act(command_suggestion),
         PacketId::Interact => Route::Act(interact),
+        PacketId::KeepAlive => Route::Act(keep_alive),
         PacketId::ContainerClose => Route::Act(container_close),
         PacketId::MovePlayerPos => Route::Act(move_player_pos),
         PacketId::MovePlayerPosRot => Route::Act(move_player_pos_rot),
@@ -169,8 +170,9 @@ pub fn route(id: i32) -> Route {
         //
         // - `client_tick_end` arrives every tick, `chunk_batch_received` after
         //   every batch, and this server sends chunks without pacing them.
-        // - `keep_alive`, `pong` and `ping_request` are liveness only; nothing
-        //   here times a connection out on them yet.
+        // - `pong` and `ping_request` are liveness only; nothing here times a
+        //   connection out on them yet. `keep_alive` used to be in this list
+        //   and is not any more: it is what `egress::ping` measures with.
         // - `chat_ack` and `chat_session_update` belong to signed chat, which
         //   this server does not verify.
         // - `player_loaded` is the client saying its terrain finished loading,
@@ -184,7 +186,6 @@ pub fn route(id: i32) -> Route {
         | PacketId::ClientTickEnd
         | PacketId::CookieResponse
         | PacketId::CustomPayload
-        | PacketId::KeepAlive
         | PacketId::PingRequest
         | PacketId::PlayerLoaded
         | PacketId::Pong
@@ -375,6 +376,20 @@ fn command_suggestion(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow:
         },
         query,
     )
+}
+
+/// A client's answer to the keep-alive [`crate::egress::ping`] sent it.
+///
+/// The clock is read here, at the first point in the process that has the
+/// answer, because everything between this and the probe is what the number
+/// is meant to contain. What it cannot see is the wait before this system ran
+/// at all, which is up to one tick and is named in that module's docs.
+fn keep_alive(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {
+    let c2s::KeepAlive(id) = decode_body(body)?;
+
+    crate::egress::ping::absorb_answer(query.view, id);
+
+    Ok(())
 }
 
 fn container_close(body: &[u8], query: &mut PacketSwitchQuery<'_>) -> anyhow::Result<()> {

@@ -64,6 +64,7 @@ use tracing::error;
 use crate::{
     egress::{
         metadata::show_all,
+        ping::{self, Ping},
         player_join::{PlayerInfoActions, PlayerList, PlayerListEntry, SkinProperty},
     },
     net::{Channel, Compose, ConnectionId, DataBundle, protocol::Clientbound},
@@ -100,7 +101,13 @@ pub fn entry_of(entity: EntityView<'_>) -> Option<PlayerListEntry> {
         username,
         properties,
         listed: true,
-        ping: 0,
+        // The measurement, or `UNKNOWN` when there is not one yet, which is
+        // the state a player is in for their first couple of seconds. A `0`
+        // here used to draw five full bars for a reading nothing had taken;
+        // see `egress::ping`.
+        ping: entity
+            .try_get::<&Ping>(Ping::latency)
+            .unwrap_or(ping::UNKNOWN),
         game_mode: gamemode::of(entity).to_game_type(),
         // `None` makes the client fall back to the profile name, which is what
         // the player typed. Two players may share it; nothing on the wire is

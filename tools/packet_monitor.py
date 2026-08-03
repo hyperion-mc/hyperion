@@ -103,6 +103,21 @@ SKIN_PART_HAT = 0x40
 ALL_SKIN_PARTS = 0x7F
 
 
+def take_var_int_signed(payload, offset=0):
+    """One VarInt read back as the signed 32-bit value it was written from.
+
+    Minecraft VarInts are two's complement and not zigzag, so `-1` goes on the
+    wire as five bytes and `take_var_int` hands it back as 4294967295. That is
+    the right answer for every count and id in this file and the wrong one for
+    a latency, where `-1` is the "no reading" the client draws its unknown ping
+    sprite for.
+    """
+    value, offset = take_var_int(payload, offset)
+    if value >= 1 << 31:
+        value -= 1 << 32
+    return value, offset
+
+
 def _take_optional_string(payload, offset):
     present = payload[offset]
     offset += 1
@@ -141,7 +156,7 @@ def parse_player_info_update(payload):
             entry["listed"] = bool(payload[offset])
             offset += 1
         if actions & UPDATE_LATENCY:
-            _, offset = take_var_int(payload, offset)
+            entry["latency"], offset = take_var_int_signed(payload, offset)
         if actions & UPDATE_DISPLAY_NAME:
             present = payload[offset]
             offset += 1

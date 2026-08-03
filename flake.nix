@@ -1687,6 +1687,38 @@
               timeout = 180;
             };
 
+            # The tab list's two new numbers, and the one claim about them that
+            # no Rust test can settle.
+            #
+            # The tick rate half is ordinary: `tab-list-check.py` joins, reads
+            # the `TabList` (id 122) footer back, and checks it carries a
+            # measured rate against the rate the loop is paced to. smash sent no
+            # `TabList` at all before this, so the first assertion is red on an
+            # unpatched tree.
+            #
+            # The ping half is why this is a gate and not a unit test. hyperion
+            # measures round trip time by sending a keep-alive and timing the
+            # answer, and there is a proxy in between. If the proxy answered
+            # keep-alives itself, the game server would be timing the proxy and
+            # the number would look completely plausible -- a lie nothing in the
+            # crate could detect. So the client answers keep-alives, watches a
+            # real latency arrive, then **stops answering** while staying
+            # otherwise busy: the reading has to fall back to -1, which it can
+            # only do if the thing answering was the client. Then it answers
+            # again and the reading comes back, so the fallback is a timeout and
+            # not a dead connection.
+            #
+            # The mute window is `Global::keep_alive_timeout` (20 s) plus room
+            # for a probe to be sent and time out inside it, so this gate is
+            # slower than its neighbours by construction.
+            tab-list-e2e = e2e.mkCheck {
+              name = "hyperion-tab-list-e2e";
+              gameServer = gameBinaries.smash;
+              proxy = gameBinaries.hyperion-proxy;
+              client = "tab-list-check.py";
+              timeout = 300;
+            };
+
             # The dev-profile boot gate. ENG-11000 shipped a singleton that was
             # `world.set` but never registered as a component; a release build
             # compiles the flecs "component is not registered" assert out, so

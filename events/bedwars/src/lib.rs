@@ -14,7 +14,7 @@ use valence_text::IntoText;
 use crate::module::{
     attack::AttackModule, block::BlockModule, bow::BowModule, chat::ChatModule,
     damage::DamageModule, regeneration::RegenerationModule, spawn::SpawnModule,
-    tab_list::TabListModule, vanish::VanishModule,
+    tab_list::BedwarsTabListModule, vanish::VanishModule,
 };
 
 mod command;
@@ -119,7 +119,7 @@ impl Module for BedwarsModule {
 
         world.import::<SpawnModule>();
         world.import::<ChatModule>();
-        world.import::<TabListModule>();
+        world.import::<BedwarsTabListModule>();
         world.import::<BlockModule>();
         world.import::<AttackModule>();
         world.import::<BowModule>();
