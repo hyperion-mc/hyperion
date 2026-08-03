@@ -1172,6 +1172,16 @@
             }
           );
 
+          # The hot-reload packaging: the engine's dylibs, the server binary
+          # `ExecStart` names, and the rules dylib `X-Reload-Triggers` names.
+          # Kept out of `cargoUnit` because that builder is rlib-only, and split
+          # across three derivations because a rules edit has to move exactly
+          # one store path. See nix/hot-reload/packaging.nix.
+          hotReload = import ./nix/hot-reload/packaging.nix {
+            inherit lib pkgs workspace rustToolchain nativeBuildInputs;
+            root = ./.;
+          };
+
           # The same game servers, compiled with `debug_assertions` on -- the
           # dev profile `nix run .#smash` runs and the operator actually plays.
           # This exists only for the boot gate: a release build compiles out the
@@ -1417,6 +1427,43 @@
             # sandbox, shared with nothing. Same shape as `clippy` above and
             # for the same reason -- prefer-dynamic artifacts are not the
             # release rlibs `cargoUnit` produces, so there is nothing to reuse.
+            # The source split the reload boundary is made of, asserted on the
+            # trees themselves rather than on a rebuild.
+            #
+            # `ExecStart` must not move when only the rules change, and a store
+            # path is a function of a derivation's inputs, so the question is
+            # exactly whether the rules crate's code is an input to the server.
+            # Checking that directly costs a `diff` and no compile, and it fails
+            # for the same reason the feature would: if this stub is ever the
+            # real file, every rules edit moves `ExecStart` and every apply
+            # restarts, dropping every connected player while the pipeline stays
+            # green.
+            hot-reload-source-split = pkgs.runCommand "hyperion-hot-reload-source-split" { } ''
+              set -eu
+              server=${hotReload.serverSource}/events/smash-rules/src/lib.rs
+              rules=${hotReload.rulesSource}/events/smash-rules/src/lib.rs
+              engine=${hotReload.dylibSource}/events/smash/src/lib.rs
+
+              if [ -s "$server" ]; then
+                echo "smash-server's source carries the real rules crate." >&2
+                echo "Every rules edit would move ExecStart and restart the server." >&2
+                exit 1
+              fi
+              if [ ! -s "$rules" ]; then
+                echo "smash-rules' source carries a stub, not the rules crate." >&2
+                exit 1
+              fi
+              if [ -s "$engine" ]; then
+                echo "hyperion-dylibs' source carries the smash host crate." >&2
+                echo "A host edit would move the engine dylibs and restart." >&2
+                exit 1
+              fi
+              # The real file has to actually be the one in the tree, not merely
+              # non-empty: a stub that grew a comment would pass the size test.
+              cmp "$rules" ${./events/smash-rules/src/lib.rs}
+              touch $out
+            '';
+
             hot-reload-index-probe = pkgs.runCommandCC "hyperion-hot-reload-index-probe" {
               inherit nativeBuildInputs;
               # Dev profile, so every C build script in the graph compiles at
@@ -1953,6 +2000,7 @@
             smash = stamped gameBinaries.smash;
             inherit (gameBinaries) bedwars hyperion-proxy;
             rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
+            inherit (hotReload) hyperion-dylibs smash-server smash-rules;
 
             minecraft-server-jar = minecraft.serverJar;
             minecraft-data = minecraft.generatedData;

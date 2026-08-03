@@ -1,0 +1,21 @@
+[package]
+authors = ["Andrew Gazelka <andrew.gazelka@gmail.com>"]
+edition.workspace = true
+name = "smash-rules"
+publish = false
+version.workspace = true
+
+# A dylib and not a cdylib. `cdylib` would give this its own copy of every Rust
+# dependency, including `flecs_ecs`, and two `flecs_ecs` copies in one process
+# is two `INDEX_POOL`s indexing one world two different ways --
+# `checks.hot-reload-index-probe` exists to catch exactly that.
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+flecs_ecs = { workspace = true }
+hyperion-hot-reload = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
