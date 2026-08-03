@@ -337,10 +337,14 @@ def main():
     def arrows_seen():
         """Every distinct arrow entity, as (launch, latest).
 
-        One arrow shows up in more than one `AddEntity`: the launch, and then
-        another when `arrow_block_hit` pins it into whatever it ran into. They
-        share an entity id, so the id is what counts an arrow and the order
-        gives the before and after.
+        One arrow can show up in more than one `AddEntity`: the launch, and
+        then again whenever a client subscribes to its channel and
+        `send_subscribe_channel_packets` replays the spawn. They share an
+        entity id, so the id is what counts an arrow.
+
+        The second one is a subscription and not an impact -- reading it as one
+        is ENG-12085 -- so nothing below asserts on `latest`. What an impact
+        looks like on the wire is a zero `SetEntityMotion`, in `client.motions`.
         """
         out = {}
         for entry in client.spawned:
@@ -374,7 +378,7 @@ def main():
         print("RESULT: failure (nothing was fired)", flush=True)
         return 1
 
-    launch, latest = full[0]
+    launch, _latest = full[0]
     speed = launch["speed"]
     check(
         abs(speed - MAX_ARROW_SPEED) < 0.05,
@@ -382,15 +386,48 @@ def main():
         "old seconds-as-charge produced (got %.3f)" % (MAX_ARROW_SPEED, speed),
     )
 
-    # `arrow_block_hit` zeroes the velocity and pins the arrow at the collision
-    # point, and the client is told again. Free to assert here because the
-    # world bedwars loads has something to hit in every direction.
-    check(
-        latest is not launch and latest["speed"] == 0.0,
-        "an arrow that hits a block stops: it was re-sent at (%.2f, %.2f, "
-        "%.2f) with |v|=%.3f"
-        % (latest["position"] + (latest["speed"],)),
+    # The impact, read off the velocity stream.
+    #
+    # This used to look for a *second* `AddEntity` carrying |v| == 0, on the
+    # stated grounds that the server re-sends a pinned arrow. It does not, and
+    # never did: the second AddEntity is `send_subscribe_channel_packets`
+    # answering the client's subscription to the arrow's channel, which lands
+    # whenever the arrow enters view -- usually one tick after launch, carrying
+    # 3.0 * 0.99 == 2.970. So the check passed only in the minority of runs
+    # where the subscription happened to arrive after the arrow had already
+    # stopped, which is why it read as a 3-in-4 flake rather than as a wrong
+    # question (ENG-12085).
+    #
+    # `onHitBlock` zeroes the velocity in the tick of the hit and broadcasts it
+    # (`AbstractArrow.java:499` and the `needsSync` at line 253), so a zero
+    # `SetEntityMotion` is the impact as a client sees it, and it is the packet
+    # that stops the client dead-reckoning the arrow onwards through the block.
+    #
+    # A non-zero broadcast has to come first. That is the whole discrimination:
+    # "every broadcast at rest" is also what an arrow that never moved looks
+    # like, and a check that cannot tell those apart is evidence of neither
+    # (the same vacuity as ENG-12082).
+    flight = client.motions.get(launch["id"], [])
+    speeds = [(vx * vx + vy * vy + vz * vz) ** 0.5 for vx, vy, vz in flight]
+    first_stop = next((i for i, v in enumerate(speeds) if v == 0.0), None)
+    print(
+        "impact: %d velocity broadcasts, first zero at %s, speeds %s"
+        % (len(speeds), first_stop, ["%.3f" % v for v in speeds[:8]]),
+        flush=True,
     )
+    check(
+        first_stop is not None and first_stop >= 1,
+        "an arrow that hits a block stops, and was seen moving first: %d "
+        "velocity broadcasts, first zero at index %s"
+        % (len(speeds), first_stop),
+    )
+    if first_stop is not None:
+        after = speeds[first_stop:]
+        check(
+            all(v == 0.0 for v in after),
+            "a stopped arrow stays stopped: %d broadcasts after the first zero, "
+            "%s" % (len(after), ["%.3f" % v for v in after[:8]]),
+        )
 
     pump(client, 0.5)
     after = client.count_of("minecraft:arrow")

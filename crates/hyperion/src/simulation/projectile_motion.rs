@@ -49,7 +49,9 @@ pub enum MotionOrder {
 pub struct ProjectileMotion {
     /// The velocity is multiplied by this every tick, out of water.
     ///
-    /// `AbstractArrow.getAirDrag` and `ThrowableProjectile.getAirDrag` both
+    /// `AbstractArrow.getAirDrag` (`AbstractArrow.java:234-236`, returning the
+    /// `INERTIA` constant declared at line 65) and
+    /// `ThrowableProjectile.getAirDrag` (`ThrowableProjectile.java:80-83`) both
     /// return the `float` 0.99, and vanilla widens that to a `double` before
     /// multiplying, so the value it actually applies is 0.990000009536743.
     /// Stored as an `f32` here for the same reason: hyperion's velocities are
@@ -59,7 +61,8 @@ pub struct ProjectileMotion {
     /// Subtracted from the vertical velocity every tick.
     ///
     /// `Entity.applyGravity` reads `getDefaultGravity`, which is 0.05 for
-    /// arrows and 0.03 for anything thrown.
+    /// arrows (`AbstractArrow.java:286-289`) and 0.03 for anything thrown
+    /// (`ThrowableProjectile.java:95-98`).
     pub gravity: f32,
     /// Which of the two tick shapes above this kind uses.
     pub order: MotionOrder,
@@ -191,17 +194,92 @@ pub fn lerp_rotation(mut current: f32, target: f32) -> f32 {
     current + 0.2 * (target - current)
 }
 
-/// Everything that reaches `AbstractArrow.tick`.
+/// How long an arrow shakes after it embeds itself, in ticks.
+///
+/// `AbstractArrow.SHAKE_TIME` (`AbstractArrow.java:63`), written by
+/// `onHitBlock` (line 502) and counted down at the top of every tick (lines
+/// 178-180). Never sent: a client sets its own copy from the `IN_GROUND` edge
+/// (lines 157-159). What the server's copy is for is the pickup gate at line
+/// 621, which refuses an arrow that is still shaking.
+pub const SHAKE_TICKS: u8 = 7;
+
+/// How far back along its own heading an arrow is pushed when it embeds itself,
+/// in blocks.
+///
+/// `onHitBlock` scales `signum(movement)` by this and subtracts it from the
+/// impact point (`AbstractArrow.java:495-498`), so the arrow's origin ends up
+/// just outside the block it struck rather than exactly on its face. Without
+/// it a resting arrow sits in the plane of the surface and z-fights it.
+pub const GROUND_BACKOFF: f32 = 0.05;
+
+/// Ticks an arrow has left to shake, counted down by the integrator.
+///
+/// A component and not a field of [`ProjectileMotion`], because it is state
+/// rather than configuration: two arrows of one kind disagree about it.
+/// Registered by [`ProjectileComponentsModule`].
+#[derive(Component, Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct ShakeTime(pub u8);
+
+/// `java.lang.Math.signum`, which is not [`f32::signum`].
+///
+/// Java answers zero for either zero and Rust answers ±1.0, and the difference
+/// is not academic here: an arrow flying dead flat has `movement.y == 0`, so
+/// [`f32::signum`] would back it off a twentieth of a block *downwards* as well
+/// as along its heading, and every flat shot in the game would rest below the
+/// face it hit.
+fn java_signum(value: f32) -> f32 {
+    if value > 0.0 {
+        1.0
+    } else if value < 0.0 {
+        -1.0
+    } else {
+        // Java returns the argument itself for ±0.0 and for NaN, which keeps
+        // the sign of a negative zero. Multiplying by it below gives zero
+        // either way, so the distinction never reaches a position.
+        value
+    }
+}
+
+/// Where an arrow that struck a block comes to rest, given the impact point and
+/// the velocity it arrived with.
+///
+/// The whole of `AbstractArrow.onHitBlock`'s position statement
+/// (`AbstractArrow.java:495-498`). Split out rather than inlined into the
+/// integrator so it can be checked on its own: the interesting cases are a flat
+/// shot and one that arrives exactly along an axis, and neither needs a world.
+#[must_use]
+pub fn embed_point(impact: Vec3, velocity: Vec3) -> Vec3 {
+    let offset_direction = Vec3::new(
+        java_signum(velocity.x),
+        java_signum(velocity.y),
+        java_signum(velocity.z),
+    );
+    impact - offset_direction * GROUND_BACKOFF
+}
+
+/// Everything that reaches `AbstractArrow.tick` (`AbstractArrow.java:162-231`).
+///
+/// These are the defaults, not a smash or bedwars tuning: an ability that
+/// wants something else overrides [`ProjectileMotion`] on the one projectile it
+/// fired, at the call site, where the deviation is visible. Nothing in
+/// `events/` relies on the numbers here being anything but vanilla's.
 const ARROW: ProjectileMotion = ProjectileMotion {
+    // AbstractArrow.java:65 (`INERTIA`), returned by getAirDrag at line 235.
     drag: 0.99,
+    // AbstractArrow.java:288 (`getDefaultGravity`).
     gravity: 0.05,
+    // AbstractArrow.java:218-229: clip and move, then drag, then gravity.
     order: MotionOrder::MoveThenDecay,
 };
 
-/// Everything that reaches `ThrowableProjectile.tick`.
+/// Everything that reaches `ThrowableProjectile.tick`
+/// (`ThrowableProjectile.java:48-62`).
 const THROWN: ProjectileMotion = ProjectileMotion {
+    // ThrowableProjectile.java:82 (`getAirDrag`).
     drag: 0.99,
+    // ThrowableProjectile.java:97 (`getDefaultGravity`).
     gravity: 0.03,
+    // ThrowableProjectile.java:51-55: gravity, then drag, then the move.
     order: MotionOrder::DecayThenMove,
 };
 
@@ -253,6 +331,7 @@ impl Module for ProjectileComponentsModule {
     fn module(world: &World) {
         world.import::<super::KinematicsComponentsModule>();
         world.component::<ProjectileMotion>();
+        world.component::<ShakeTime>();
     }
 }
 
@@ -290,7 +369,9 @@ impl Module for ProjectilePhysicsModule {
 
 #[cfg(test)]
 mod tests {
-    use super::{MotionOrder, SIMULATED};
+    use glam::Vec3;
+
+    use super::{GROUND_BACKOFF, MotionOrder, SIMULATED, embed_point};
 
     /// Every simulated kind must be something a client can be told about,
     /// since an entity nobody can see is not worth integrating.
@@ -302,6 +383,46 @@ mod tests {
                 "{kind:?} is simulated but has no entity type in this protocol version"
             );
         }
+    }
+
+    /// The case `f32::signum` gets wrong, and the common one: a flat shot has
+    /// `movement.y == 0`, and Java's `Math.signum` answers 0 there where Rust's
+    /// answers +1. Taking Rust's would sink every arrow in the game a
+    /// twentieth of a block below the face it hit.
+    #[test]
+    fn a_flat_shot_is_backed_off_along_its_heading_only() {
+        let impact = Vec3::new(10.0, 65.0, 0.0);
+        let resting = embed_point(impact, Vec3::new(3.0, 0.0, 0.0));
+
+        assert_eq!(
+            resting,
+            Vec3::new(10.0 - GROUND_BACKOFF, 65.0, 0.0),
+            "a flat shot should come to rest short of the wall on x alone"
+        );
+    }
+
+    /// Every axis the arrow was actually moving along backs off, and the sign
+    /// follows the heading rather than the geometry: an arrow travelling down
+    /// and west rests above and east of where it struck.
+    #[test]
+    fn the_back_off_follows_the_sign_of_every_moving_axis() {
+        let resting = embed_point(Vec3::ZERO, Vec3::new(-2.0, -1.0, 4.0));
+
+        assert_eq!(
+            resting,
+            Vec3::new(GROUND_BACKOFF, GROUND_BACKOFF, -GROUND_BACKOFF),
+            "the offset should be signum(velocity) * 0.05 subtracted from the impact"
+        );
+    }
+
+    /// The magnitude is `signum`, not the velocity: an arrow at three blocks a
+    /// tick and one at a tenth of a block a tick rest the same distance out.
+    #[test]
+    fn the_back_off_does_not_scale_with_speed() {
+        let fast = embed_point(Vec3::ZERO, Vec3::new(60.0, 0.0, 0.0));
+        let slow = embed_point(Vec3::ZERO, Vec3::new(0.01, 0.0, 0.0));
+
+        assert_eq!(fast, slow, "onHitBlock scales signum, not the movement");
     }
 
     /// The two orders are the reason this module exists, so a table that

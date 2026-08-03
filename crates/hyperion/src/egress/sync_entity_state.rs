@@ -35,8 +35,11 @@ use crate::{
         entity_kind::EntityKind,
         event::{self, HitGroundEvent},
         handlers::is_grounded,
-        metadata::{MetadataChanges, get_and_clear_metadata},
-        projectile_motion::{MotionOrder, ProjectileMotion, lerp_rotation, look_angles},
+        metadata::{MetadataChanges, arrow::InGround, get_and_clear_metadata},
+        projectile_motion::{
+            MotionOrder, ProjectileMotion, SHAKE_TICKS, ShakeTime, embed_point, lerp_rotation,
+            look_angles,
+        },
     },
     spatial::get_first_collision,
     storage::Events,
@@ -515,18 +518,40 @@ impl Module for EntityStateSyncModule {
             &Owner,
             ?&ConnectionId,
             ?&mut Yaw,
-            ?&mut Pitch
+            ?&mut Pitch,
+            ?&mut InGround,
+            ?&mut ShakeTime
         )
         .kind(id::<flecs::pipeline::OnUpdate>())
         .with_enum_wildcard::<EntityKind>()
         .each_iter(
-            |it, row, (position, velocity, owner, connection_id, yaw, pitch)| {
+            |it,
+             row,
+             (position, velocity, owner, connection_id, yaw, pitch, in_ground, mut shake)| {
                 if let Some(_connection_id) = connection_id {
                     return;
                 }
 
                 let world = it.world();
                 let arrow_entity = it.entity(row);
+
+                // `AbstractArrow.tick:178-180`: the shake counts down at the
+                // top of the tick, before the early return below, so an
+                // embedded arrow's clock still runs.
+                if let Some(shake) = shake.as_deref_mut()
+                    && shake.0 > 0
+                {
+                    shake.0 -= 1;
+                }
+
+                // `AbstractArrow.tick:184-200`: an arrow in the ground does not
+                // move, does not lose speed to drag and does not fall. Vanilla
+                // returns here; so does this. It is also what stops the sweep
+                // re-reporting the face the arrow is resting on, every tick,
+                // forever.
+                if in_ground.as_ref().is_some_and(|flag| ***flag) {
+                    return;
+                }
                 // Prefer the per-instance `ProjectileMotion` that
                 // `seed_projectile_motion` puts on every simulated kind, so an
                 // ability can override one projectile's gravity or drag; fall
@@ -625,7 +650,45 @@ impl Module for EntityStateSyncModule {
                             });
                         }
                         Either::Right(collision) => {
-                            // send event
+                            // `AbstractArrow.onHitBlock`
+                            // (`AbstractArrow.java:484-502`), which is the whole
+                            // of what an arrow does when it meets terrain:
+                            // stand at the impact point backed off along the
+                            // heading, stop dead, and go into the ground.
+                            //
+                            // In the engine and not left to each game module,
+                            // because the three statements are one state: a
+                            // module that zeroed the velocity a stage later --
+                            // which is what bedwars did -- left a tick in which
+                            // the arrow was stopped by the world and still
+                            // carrying its flight speed, and anything that read
+                            // it in between got the stale one.
+                            **position = embed_point(collision.point, velocity.0);
+                            velocity.0 = Vec3::ZERO;
+                            if let Some(in_ground) = in_ground {
+                                **in_ground = true;
+                            }
+                            if let Some(shake) = shake {
+                                shake.0 = SHAKE_TICKS;
+                            }
+
+                            // `stepMoveAndHit` sets `needsSync` on a hit
+                            // (`AbstractArrow.java:253`) so the stop reaches
+                            // every watcher this tick. Without it the client
+                            // keeps dead-reckoning the arrow it was last told
+                            // about -- `AbstractArrow.tick` runs on the client
+                            // too -- and draws it sailing on through the block
+                            // the server stopped it at.
+                            let id = arrow_entity.minecraft_id();
+                            world.get::<&Compose>(|compose| {
+                                broadcast_projectile_velocity(
+                                    compose,
+                                    arrow_entity.into(),
+                                    id,
+                                    Vec3::ZERO,
+                                );
+                            });
+
                             world.get::<&mut Events>(|events| {
                                 events.push(
                                     event::ProjectileBlockEvent {
