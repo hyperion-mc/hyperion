@@ -10,7 +10,7 @@ use hyperion::{
         text::{Component, NamedColor, Style, TextColor},
     },
     net::{ConnectionId, protocol::Clientbound},
-    simulation::{Name, Player, Position, event},
+    simulation::{Name, Player, Position, chat::strip_formatting, event},
     storage::EventQueue,
 };
 use tracing::info_span;
@@ -111,7 +111,12 @@ impl Module for ChatModule {
                                     .with_style(colored(TextColor::Rgb(team.rgb()))),
                             )
                             .append(Component::text("> ").with_style(colored(BRACKET_COLOR)))
-                            .append(Component::text(msg));
+                            // Not `msg`. The client renders a literal string
+                            // through its legacy formatter, so a section sign
+                            // a player typed recolours their own text and lets
+                            // them draw something that looks like a server
+                            // notice.
+                            .append(Component::text(strip_formatting(msg)));
 
                         let packet = SystemChat {
                             content: chat.to_tag(),

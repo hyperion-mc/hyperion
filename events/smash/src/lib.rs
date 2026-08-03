@@ -9,6 +9,7 @@
 //! [`adapter`], [`mirror`], [`input`] and [`command`].
 
 pub mod adapter;
+pub mod chat;
 pub mod command;
 pub mod draw;
 pub mod flecs_ext;
@@ -104,6 +105,10 @@ impl Module for SmashHost {
         world.import::<hyperion_item::ItemModule>();
 
         world.import::<crate::adapter::SmashAdapterModule>();
+        // Chat: hyperion decodes it and broadcasts nothing, so without this a
+        // player's message reaches no one. Host-side because it reads a
+        // hyperion event queue; see `crate::chat`.
+        world.import::<crate::chat::SmashChatModule>();
         // After the adapter, because building the maps writes the `Arena`
         // singleton the game half registered.
         world.import::<crate::terrain::MapModule>();
