@@ -253,7 +253,6 @@ dependencies = [
  "rayon",
  "roaring",
  "rustc-hash 2.1.3",
- "tikv-jemallocator",
  "tracing",
  "uuid",
  "valence_protocol",
@@ -2004,7 +2003,6 @@ version = "0.1.0"
 dependencies = [
  "flecs_ecs",
  "libloading 0.9.0",
- "tracing",
 ]
 
 [[package]]
@@ -2155,6 +2153,10 @@ dependencies = [
  "glam",
  "rkyv",
 ]
+
+[[package]]
+name = "hyperion-reload-client"
+version = "0.1.0"
 
 [[package]]
 name = "hyperion-utils"
@@ -3895,14 +3897,13 @@ dependencies = [
  "hyperion",
  "hyperion-clap",
  "hyperion-event-runner",
+ "hyperion-hot-reload",
  "hyperion-inventory",
  "hyperion-item",
  "hyperion-minecraft-proto",
  "hyperion-permission",
  "hyperion-utils",
  "proptest",
- "rayon",
- "tikv-jemallocator",
  "tracing",
  "valence_nbt",
  "valence_protocol",

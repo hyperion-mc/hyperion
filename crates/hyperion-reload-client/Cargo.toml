@@ -1,0 +1,21 @@
+[package]
+edition.workspace = true
+license.workspace = true
+name = "hyperion-reload-client"
+publish = false
+repository.workspace = true
+version.workspace = true
+
+# NO DEPENDENCIES, AND THAT IS THE POINT OF A SEPARATE CRATE.
+#
+# This is what `ExecReload` runs, so it is the process that has to start in
+# order for a reload to be attempted at all. Linking it against `flecs_ecs`
+# -- directly, or through `hyperion-hot-reload` -- would make a mismatched
+# engine dylib turn "the reload was refused, here is why" into "the client
+# could not start", which is the one failure mode a reload client must not
+# have. It speaks the protocol over a socket and knows nothing else.
+
+[dependencies]
+
+[lints]
+workspace = true

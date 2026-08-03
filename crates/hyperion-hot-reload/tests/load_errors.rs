@@ -21,9 +21,11 @@ fn a_missing_dylib_names_the_path_the_loader_tried() {
         .load(&world, path)
         .expect_err("loading a path that does not exist must fail");
 
+    // Staging, not `dlopen`: every candidate is copied to a name `dlopen` has never
+    // been given (see `host::stage`), so a path that is not there fails on the read.
     assert!(
-        matches!(error, LoadError::Dlopen(_)),
-        "expected a dlopen failure, got {error:?}"
+        matches!(error, LoadError::Stage { .. }),
+        "expected a staging failure, got {error:?}"
     );
 
     let message = error.to_string();

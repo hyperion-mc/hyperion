@@ -18,10 +18,31 @@ version.workspace = true
 [lib]
 crate-type = ["dylib", "rlib"]
 
+# NO `tracing`, AND NOTHING ELSE THAT `hyperion` ALSO STATICALLY LINKS.
+#
+# This crate and `crates/hyperion` are both dylibs, and under the packaged build's
+# `-C prefer-dynamic` they are SIBLINGS in the graph: neither depends on the other, so
+# each statically includes its own copy of every rlib it uses. A binary linking both is
+# then refused outright, naming the shared crates:
+#
+#     error: cannot satisfy dependencies so `tracing` only shows up once
+#     error: cannot satisfy dependencies so `tracing_core` only shows up once
+#     error: cannot satisfy dependencies so `once_cell` only shows up once
+#     error: cannot satisfy dependencies so `pin_project_lite` only shows up once
+#
+# Those four are `tracing` and its dependencies, and they were the entire list --
+# everything else this crate uses arrives inside `libflecs_ecs.so`, which is a dylib and
+# therefore one copy. So this crate reports rather than logs: `service::Outcome` carries
+# what happened to the host, and the host writes it wherever hosts write things.
+#
+# The obvious alternative -- making `hyperion` depend on this crate, which turns the
+# siblings into a chain -- was tried and reverted. It fixes the packaged link and breaks
+# a plain one: `cargo test -p hyperion-hot-reload -p smash` then builds `libhyperion.so`
+# against `libhyperion_hot_reload.so`, neither with `prefer-dynamic`, and `std` is
+# duplicated instead.
 [dependencies]
 flecs_ecs.workspace = true
 libloading = "0.9.0"
-tracing.workspace = true
 
 [lints]
 workspace = true

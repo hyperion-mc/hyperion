@@ -36,6 +36,3 @@ name = "bedwars"
 publish = false
 readme = "README.md"
 version.workspace = true
-
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-tikv-jemallocator.workspace = true

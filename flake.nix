@@ -1248,10 +1248,13 @@
 
           # Named once and used by both `packages` and the sandboxed checks, so
           # a gate runs the same binary the flake publishes rather than a second
-          # build of it. `packages.smash` wraps this one in the build stamp's
-          # environment rather than replacing it: the executable a gate runs and
-          # the executable a host runs are the same file, and what differs is
-          # three variables. See `stamped` for why the gates are left unwrapped.
+          # build of it.
+          #
+          # These are `cargoUnit` builds with no `-C prefer-dynamic`, so they
+          # link nothing from the workspace dynamically and a module loaded into
+          # one would get its own component-index pool. They are the developer's
+          # server and the gates' server; what a host runs is
+          # `hotReloadPackages.<event>-server`. See nix/hot-reload/packaging.nix.
           gameBinaries = {
             bedwars = named "bedwars" workspace.binaries.bedwars;
             smash = named "smash" workspace.binaries.smash;
@@ -1265,102 +1268,6 @@
             bedwars = named "bedwars" devWorkspace.binaries.bedwars;
             smash = named "smash" devWorkspace.binaries.smash;
           };
-
-          # What build this is, for the strip across a player's screen. Read by
-          # `events/smash/src/module/build_stamp.rs`.
-          buildStamp =
-            let
-              # `self.shortRev` exists only on a clean tree and
-              # `self.dirtyShortRev` only on a dirty one, and a source with no
-              # git in it -- a plain directory, a tarball -- has neither.
-              # Dirtiness is carried by its own variable rather than by the
-              # `-dirty` suffix nix appends, so the game states the fact instead
-              # of parsing a string for it, and so the rev on screen is a hash a
-              # person can paste into `git show`.
-              rev = self.shortRev or (lib.removeSuffix "-dirty" (self.dirtyShortRev or ""));
-            in
-            {
-              inherit rev;
-
-              # `self.lastModified` is the commit's COMMITTER date, and it is
-              # the same number on a dirty tree as on a clean one: nix asks git
-              # for the commit either way rather than falling back to a file
-              # mtime. Measured on this repo at d55a336 -- 1785386760 clean,
-              # 1785386760 dirty, `git log -1 --format=%ct` 1785386760.
-              #
-              # Committer and not author, which are 1785385579 and 1785386760 on
-              # that same commit because it was amended. So a rebased commit's
-              # bar reads when the rebase landed rather than when the work was
-              # written. That is the right answer for the question this bar
-              # exists for -- which build is deployed, and how long ago did that
-              # build come into being -- and it is the wrong answer for "when
-              # was this change authored", which the bar does not claim.
-              #
-              # Nothing at all when there is no rev, and that is the point of
-              # the conditional rather than a nicety. `lastModified` on a
-              # non-git source is the directory's mtime, so without this the bar
-              # renders `build unpackaged build · 2026-07-29 20:41 UTC`: a stamp
-              # that has just admitted it does not know what it is, timed to the
-              # minute. An empty string parses as absent in `BuildStamp::parse`
-              # and the bar drops the whole clause.
-              time = if rev == "" then "" else toString (self.lastModified or 0);
-
-              dirty = if self ? dirtyShortRev then "1" else "0";
-            };
-
-          # The stamp, as an environment a binary is started in.
-          #
-          # A wrapper and not `env!` in a build script, and the difference is
-          # the whole reason this exists: a commit hash compiled into a crate
-          # invalidates that crate and everything downstream on every commit, so
-          # every push would rebuild the workspace. This derivation is a symlink
-          # and three assignments, and it is the only thing a new commit
-          # rebuilds.
-          #
-          # Applied to `packages` and deliberately NOT to the binaries the e2e
-          # gates run. cargoUnit content-addresses every crate unit, so a commit
-          # that changes no smash source leaves the gate's binary bit for bit
-          # identical and the whole gate is reused from the store. Stamping it
-          # would move its path on every commit and re-run all fourteen e2e
-          # gates for a string none of them reads. The gates cover the *reading*
-          # of these variables instead, which is the half that can be wrong in
-          # Rust; `checks.build-stamp` below covers the writing.
-          #
-          # THE COST, AND IT LANDS ON PLAYERS RATHER THAN ON CI. This wrapper's
-          # store path moves on every commit, `packages.smash` is it, and
-          # `nix/modules/game-server.nix` builds `ExecStart` out of
-          # `packages.smash`. So the unit file changes on every commit and
-          # `switch-to-configuration` restarts `hyperion-game-server` on every
-          # deploy -- including deploys of commits that touch nothing in smash,
-          # which used to leave `ExecStart` byte-identical and the running
-          # server alone. A restart drops every connected player.
-          #
-          # The restart is required by the feature: a server cannot report a
-          # commit it was not started with. The SCOPE is not. Narrowing it means
-          # decoupling the stamp from the unit -- an `EnvironmentFile` the
-          # deploy writes, or a stamp read from a path rather than baked into
-          # `ExecStart` -- and that is a different change with its own failure
-          # mode, namely a stamp that can disagree with the binary beside it.
-          # Written down here rather than left to be discovered, because with
-          # continuous apply on, "redeployed as main moves" now means every
-          # player is dropped as main moves.
-          stamped = drv:
-            let
-              main = drv.meta.mainProgram;
-            in
-            pkgs.runCommand "${drv.name}-stamped"
-              {
-                inherit (drv) meta;
-                nativeBuildInputs = [ pkgs.makeWrapper ];
-                passthru = (drv.passthru or { }) // { unstamped = drv; };
-              }
-              ''
-                makeWrapper ${drv}/bin/${main} "$out/bin/${main}" \
-                  --set HYPERION_BUILD_REV ${lib.escapeShellArg buildStamp.rev} \
-                  --set HYPERION_BUILD_TIME ${lib.escapeShellArg buildStamp.time} \
-                  --set HYPERION_BUILD_DIRTY ${lib.escapeShellArg buildStamp.dirty}
-              '';
-
           # `nix run .#fmt -- --check` and `nix run .#lint`, as derivations the
           # gate realises. ENG-11424.
           #
@@ -1503,6 +1410,153 @@
                     touch $out
                   ''
                 );
+
+            # THE PACKAGED SERVER STARTS. Nothing else here runs it.
+            #
+            # Every gate that boots a game server boots `gameBinaries.smash`, a
+            # `cargoUnit` build with no `-C prefer-dynamic`. The binary a host
+            # actually runs is `smash-server`, and until this check existed it
+            # was only ever `readelf`-ed, `ldd`-ed and store-path-diffed --
+            # never executed. It had been segfaulting on startup since the day
+            # it was first built, in every build, and every gate was green
+            # (ENG-12112): a `#[global_allocator]` cannot coexist with the
+            # dylib split, because rustc makes each dylib's `__rust_alloc`
+            # local and the process ends up with two allocators.
+            #
+            # `--help` is the whole test, and that is the point: it costs
+            # milliseconds, it needs no certificates, no world and no network,
+            # and it exercises the dynamic loader, every static initialiser and
+            # the first few thousand allocations -- which is where a binary
+            # that cannot start dies.
+            #
+            # THE REASON THIS EXISTS, IN ONE LINE: a derivation that is only
+            # ever inspected is not a derivation that is known to work. The
+            # store-path diffs, the `readelf` and the `ldd` were all correct,
+            # and all correct about something other than whether it runs.
+            hot-reload-server-starts =
+              pkgs.runCommand "hyperion-hot-reload-server-starts" { }
+                (
+                  lib.concatMapStrings (event: ''
+                    server=${hotReload.events.${event.name}.server}
+                    main=${hotReload.events.${event.name}.server.meta.mainProgram}
+                    echo "starting ${event.name}: $server/bin/$main --help"
+                    if ! "$server/bin/$main" --help > help.txt 2>&1; then
+                      status=$?
+                      echo "${event.name}-server could not even print its usage" >&2
+                      echo "(exit $status; 139 is SIGSEGV). See ENG-12112." >&2
+                      cat help.txt >&2
+                      exit 1
+                    fi
+                    # A binary that exits 0 having printed nothing is not one
+                    # that started; `--help` has to have reached clap.
+                    grep -q -- "--reload-socket" help.txt || {
+                      echo "${event.name}-server printed usage without the" >&2
+                      echo "deployment flags, so it is not the binary the" >&2
+                      echo "NixOS module builds an ExecStart out of." >&2
+                      cat help.txt >&2
+                      exit 1
+                    }
+                  '') hotReloadEvents
+                  + ''
+                    touch "$out"
+                  ''
+                );
+
+            # The other half of the boundary, one layer up. `source-split`
+            # proves a rules edit moves only the rules derivation; this proves
+            # that a moved rules derivation reaches a running server as a reload
+            # rather than as a restart.
+            #
+            # `switch-to-configuration` reloads a unit whose `[Service]` section
+            # is byte-identical and whose `X-Reload-Triggers` moved, and restarts
+            # it otherwise. So the property is not "the dylib is mentioned in the
+            # right place" -- nixpkgs hashes the triggers into a file of their
+            # own and the unit names that file, so the dylib path is not in the
+            # unit at all. The property is that changing the dylib moves exactly
+            # that one line. One stray reference anywhere else turns every
+            # invisible deploy into a mass disconnection, with every other gate
+            # green, the apply exiting 0 and the server coming back up.
+            #
+            # Costs an evaluation and not a build: `hello` stands in for the game
+            # binary, and each rendered unit's string context is discarded, so
+            # nothing here realises the engine or the event.
+            hot-reload-unit-split =
+              let
+                unitWithRules =
+                  rules:
+                  builtins.unsafeDiscardStringContext
+                    (nixpkgs.lib.nixosSystem {
+                      system = "x86_64-linux";
+                      modules = [
+                        self.nixosModules.game-server
+                        {
+                          boot.loader.grub.enable = false;
+                          fileSystems."/" = {
+                            device = "/dev/disk/by-label/nixos";
+                            fsType = "ext4";
+                          };
+                          system.stateVersion = "25.05";
+                          nixpkgs.hostPlatform = "x86_64-linux";
+
+                          services.hyperion-game-server = {
+                            inherit rules;
+                            enable = true;
+                            event = "under-test";
+                            # Stand-ins, so this check answers a question about
+                            # an ini file without waiting thirteen minutes for a
+                            # build. What it must NOT stand in for is the thing
+                            # under test: `rules` is the only option that differs
+                            # between the two renderings below.
+                            package = pkgs.hello;
+                            reloadClient = pkgs.hello;
+                            pki = {
+                              rootCaCert = "/var/lib/hyperion-pki/root_ca.crt";
+                              cert = "/var/lib/hyperion-pki/node.crt";
+                              privateKey = "/var/lib/hyperion-pki/node_private_key.pem";
+                            };
+                          };
+                        }
+                      ];
+                    }).config.systemd.units."hyperion-game-server.service".text;
+              in
+              pkgs.runCommand "hyperion-hot-reload-unit-split"
+                {
+                  before = unitWithRules "/nix/store/00000000000000000000000000000000-rules-before/lib/librules.so";
+                  after = unitWithRules "/nix/store/11111111111111111111111111111111-rules-after/lib/librules.so";
+                }
+                ''
+                  printf '%s\n' "$before" > before.ini
+                  printf '%s\n' "$after" > after.ini
+
+                  # The control. Two identical units would satisfy every
+                  # assertion below about what did not change, so the one thing
+                  # that has to move is checked first.
+                  if cmp -s before.ini after.ini; then
+                    echo "a new build of the rules did not change the unit at all," >&2
+                    echo "so systemd would never be told to reload it." >&2
+                    exit 1
+                  fi
+
+                  if ! diff before.ini after.ini > delta; then :; fi
+                  if grep -E '^[<>]' delta | grep -v '^[<>] X-Reload-Triggers='; then
+                    echo "" >&2
+                    echo "a new build of the rules moved something other than" >&2
+                    echo "X-Reload-Triggers. switch-to-configuration restarts a unit" >&2
+                    echo "whose [Service] changed, so this deploy would drop every" >&2
+                    echo "connected player. See nix/modules/game-server.nix." >&2
+                    exit 1
+                  fi
+
+                  # A reload trigger with nothing to run it is a restart with
+                  # extra steps: systemd refuses `systemctl reload` on a unit
+                  # with no ExecReload.
+                  grep -q '^ExecReload=' before.ini || {
+                    echo "the unit has no ExecReload, so a reload cannot happen." >&2
+                    exit 1
+                  }
+
+                  cp before.ini "$out"
+                '';
 
             hot-reload-index-probe = pkgs.runCommandCC "hyperion-hot-reload-index-probe" {
               inherit nativeBuildInputs;
@@ -1889,77 +1943,6 @@
             e2e-ports-distinct = e2ePortsDistinct;
             test-util-is-dev-only = testUtilIsDevOnly;
 
-            # The deployed smash binary starts in an environment that says what
-            # build it is. See `stamped` and
-            # `events/smash/src/module/build_stamp.rs`.
-            #
-            # The Rust half is covered by `cargo test -p smash --test
-            # build_stamp`, which pins what each of these three values turns
-            # into on screen. Nothing covered that half's *input* until this:
-            # a rename, a dropped `--set`, or a `buildStamp` attribute that
-            # stopped being threaded all read as a server quietly saying
-            # "unpackaged build" to every player, which is exactly the state
-            # this whole change exists to end and is invisible from any test
-            # that does not look at the wrapper.
-            build-stamp =
-              pkgs.runCommand "hyperion-build-stamp"
-                {
-                  wrapper = lib.getExe (stamped gameBinaries.smash);
-                  binary = lib.getExe gameBinaries.smash;
-                  inherit (buildStamp) rev time dirty;
-                }
-                ''
-                  fail() { echo "FAIL: $1" >&2; exit 1; }
-
-                  # The control. Everything below is a grep, and a grep against
-                  # a file that is not there, or is a binary, or is empty,
-                  # fails for reasons that have nothing to do with the stamp.
-                  [ -f "$wrapper" ] || fail "no wrapper at $wrapper"
-                  grep -qF -- "$binary" "$wrapper" \
-                    || fail "the wrapper does not exec $binary"
-
-                  for name in REV TIME DIRTY; do
-                    grep -q "HYPERION_BUILD_$name=" "$wrapper" \
-                      || fail "the wrapper sets no HYPERION_BUILD_$name"
-                  done
-
-                  # A rev is empty exactly when nix had no git to ask, which is
-                  # true of a tarball and of a plain directory, and is not a
-                  # failure.
-                  if [ -n "$rev" ]; then
-                    # Hex and nothing else. Every other assertion here compares
-                    # the wrapper against the same expression that built it, so
-                    # on VALUES they are tautologies -- if nix changed the
-                    # suffix `removeSuffix` strips, both sides would move
-                    # together and this file would stay green while the bar read
-                    # `abc1234-dirty + uncommitted changes`. What a short commit
-                    # hash looks like is the one property of the value that does
-                    # not come from the expression, so it is the only thing here
-                    # that can catch a wrong one.
-                    case "$rev" in
-                      *[!0-9a-f]*)
-                        fail "the rev is not a short commit hash: $rev" ;;
-                    esac
-                    [ -n "$time" ] \
-                      || fail "there is a rev but no timestamp beside it"
-                    grep -q "HYPERION_BUILD_REV=.*$rev" "$wrapper" \
-                      || fail "the wrapper does not carry the rev $rev"
-                    grep -q "HYPERION_BUILD_TIME=.*$time" "$wrapper" \
-                      || fail "the wrapper does not carry the timestamp $time"
-                  else
-                    # And no timestamp either. A precise minute next to a stamp
-                    # that has just said it does not know what build it is comes
-                    # from `lastModified` falling back to a directory mtime, and
-                    # is worse than saying nothing.
-                    [ -z "$time" ] \
-                      || fail "no rev, but a timestamp of $time: that is a directory mtime dressed as a commit"
-                    echo "no rev: this flake source is not a git tree" >&2
-                  fi
-                  grep -q "HYPERION_BUILD_DIRTY=.*'$dirty'" "$wrapper" \
-                    || fail "the wrapper does not carry dirty=$dirty"
-
-                  echo "rev=$rev time=$time dirty=$dirty" > "$out"
-                '';
 
             # A colour reaches a client as a component field or not at all.
             smash-text-no-legacy-formatting = textGate;
@@ -2099,12 +2082,11 @@
 
           packages = hotReloadPackages // {
             default = gameBinaries.bedwars;
-            # smash is stamped and the other two are not, because smash is the
-            # only one that reads the stamp: `nix/modules/game-server.nix`
-            # builds its ExecStart out of this package, so this is what puts a
-            # commit on a player's screen on the deployed server.
-            smash = stamped gameBinaries.smash;
-            inherit (gameBinaries) bedwars hyperion-proxy;
+            # `nix run .#smash` and the e2e gates. It says "unpackaged build" on
+            # its boss bar, which is the truth: the stamp is three files in a
+            # directory a deployment names on the command line, and nobody named
+            # one. `packages.smash-server` is what a host runs.
+            inherit (gameBinaries) smash bedwars hyperion-proxy;
             rust-mc-bot = named "rust-mc-bot" workspace.binaries.rust-mc-bot;
             inherit (hotReload) hyperion-dylibs;
 
@@ -2152,12 +2134,65 @@
       # machine evaluates them. Taken from `mkSystem` rather than from
       # `self.packages` so the fleet does not depend on the attribute set it
       # contributes to.
+      # What build this is, for the strip across a player's screen. Written into
+      # `/etc/hyperion` by `nix/modules/game-server.nix` and read at runtime by
+      # `events/smash/src/module/build_stamp.rs`.
+      #
+      # Out here rather than inside `mkSystem` because it is a property of this
+      # source and not of any machine, and because the fleet needs it: a stamp
+      # that were computed per system could disagree with itself across two
+      # evaluations of the same commit.
+      #
+      # FILES AND NOT AN ENVIRONMENT, and the difference is the whole reason
+      # this moved. It used to be three `--set`s on a `makeWrapper` around the
+      # smash binary, which put a per-commit store path inside `ExecStart` and
+      # therefore restarted the game server on every deploy -- including deploys
+      # of commits that touch nothing in smash. A restart drops every connected
+      # player. Now the stamp is beside the unit rather than inside it, so a
+      # commit can change what the bar says without changing `[Service]`.
+      buildStamp =
+        let
+          # `self.shortRev` exists only on a clean tree and `self.dirtyShortRev`
+          # only on a dirty one, and a source with no git in it -- a plain
+          # directory, a tarball -- has neither. Dirtiness is carried on its own
+          # rather than by the `-dirty` suffix nix appends, so the game states
+          # the fact instead of parsing a string for it, and so the rev on
+          # screen is a hash a person can paste into `git show`.
+          rev = self.shortRev or (nixpkgs.lib.removeSuffix "-dirty" (self.dirtyShortRev or ""));
+        in
+        {
+          inherit rev;
+
+          # `self.lastModified` is the commit's COMMITTER date, and it is the
+          # same number on a dirty tree as on a clean one: nix asks git for the
+          # commit either way rather than falling back to a file mtime. Measured
+          # on this repo at d55a336 -- 1785386760 clean, 1785386760 dirty,
+          # `git log -1 --format=%ct` 1785386760.
+          #
+          # Committer and not author, which are 1785385579 and 1785386760 on
+          # that same commit because it was amended. So a rebased commit's bar
+          # reads when the rebase landed rather than when the work was written.
+          # That is the right answer for the question this bar exists for --
+          # which build is deployed, and how long ago did that build come into
+          # being -- and it is the wrong answer for "when was this change
+          # authored", which the bar does not claim.
+          #
+          # Null when there is no rev, and that is the point of the conditional
+          # rather than a nicety. `lastModified` on a non-git source is the
+          # directory's mtime, so without this the bar renders `build unpackaged
+          # build · 3d ago`: a stamp that has just admitted it does not know what
+          # it is, aged to the day.
+          committedAt = if rev == "" then null else self.lastModified or 0;
+
+          dirty = self ? dirtyShortRev;
+        };
+
       fleet =
         let
           guest = mkSystem "x86_64-linux";
         in
         import ./nix/fleet {
-          inherit index;
+          inherit index buildStamp;
           guestPackages = guest.packages;
           guestDevEnvironment = guest.devEnvironment;
           inherit (self) nixosModules;

@@ -114,7 +114,18 @@ let
   # The engine packages every event links, ahead of the events themselves so
   # that a one-event workspace produces the selection string this was measured
   # against.
-  enginePackages = [ "hyperion" "hyperion-hot-reload" ];
+  #
+  # `hyperion-reload-client` is here rather than in its own derivation because
+  # it has to be built under the same selection string as everything else -- see
+  # `selection` below, which is a property of the whole list and not of any one
+  # package. It links none of the engine (it has no dependencies at all), so
+  # putting it in this list costs a compile of one small binary and buys the
+  # guarantee that adding it did not move anybody else's `-C metadata`.
+  enginePackages = [ "hyperion" "hyperion-hot-reload" "hyperion-reload-client" ];
+
+  # What `ExecReload` runs. Named once so the NixOS module and this file cannot
+  # disagree about it.
+  reloadClient = "hyperion-reload-client";
   eventPackages = lib.concatMap (event: [
     (packageNameOf event.hostCrate)
     (packageNameOf event.rulesCrate)
@@ -286,7 +297,14 @@ let
       fi
     done
 
-    mkdir -p "$out/lib" "$out/share"
+    mkdir -p "$out/bin" "$out/lib" "$out/share"
+
+    # The reload client ships from here, with the engine, and not from an
+    # event's derivation. `ExecReload` names it, and `[Service]` moving is
+    # exactly what turns a reload into a restart -- so the path in it must not
+    # be a function of any event's source. This output moves only on an engine
+    # change, which moves `ExecStart` too and is a restart anyway.
+    cp target/${profile}/${reloadClient} "$out/bin/${reloadClient}"
     # `deps/` as well as the profile directory: cargo leaves an unhashed copy of
     # a workspace member's dylib in `target/${profile}`, but a dependency's
     # dylib only in `deps/`, under the metadata hash DT_NEEDED actually names.
@@ -305,6 +323,9 @@ let
         patchelf --set-rpath '$ORIGIN':${sysrootLib} "$shared"
       done
     ''}
+    ${setRunPath [ ] ''"$out/bin/${reloadClient}"''}
+    ${requireResolved ''"$out/bin/${reloadClient}"''}
+
     tar -C target -cf "$out/share/cargo-target.tar" ${profile}
   '';
 
@@ -350,7 +371,11 @@ let
 
       # What `X-Reload-Triggers` names, and the only path a rules-only change is
       # allowed to move.
-      rules = pkgs.runCommandCC "${event.name}-rules" common ''
+      #
+      # `dylibName` is passthru rather than a convention a consumer has to know,
+      # because cargo spells the file after the crate and `nix/fleet` would
+      # otherwise be a second place that has to agree with cargo about it.
+      rules = pkgs.runCommandCC "${event.name}-rules" (common // { passthru.dylibName = rulesLib; }) ''
         ${setup rulesSource}
         ${seed}
         export RUSTFLAGS=${lib.escapeShellArg rustFlags}
@@ -373,7 +398,7 @@ let
     };
 in
 {
-  inherit hyperion-dylibs dylibSource;
+  inherit hyperion-dylibs dylibSource reloadClient;
   # Keyed by event name so a consumer names the game rather than a path.
   events = lib.listToAttrs (
     map (event: lib.nameValuePair event.name (forEvent event)) events

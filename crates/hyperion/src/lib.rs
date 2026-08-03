@@ -80,6 +80,7 @@ pub mod net;
 pub mod simulation;
 pub mod spatial;
 pub mod storage;
+pub mod tick_loop;
 
 /// Relationship for previous values
 #[derive(Component)]
