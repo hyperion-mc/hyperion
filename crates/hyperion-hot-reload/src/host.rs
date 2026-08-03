@@ -30,6 +30,14 @@ struct Loaded {
 /// Why a load could not even be attempted.
 #[derive(Debug)]
 pub enum LoadError {
+    /// The candidate could not be copied somewhere `dlopen` has not seen before.
+    ///
+    /// Carries the path because `std::fs::copy`'s error does not: "No such file or
+    /// directory" with no name in it is the least useful thing a failed deploy can say.
+    Stage {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
     Dlopen(libloading::Error),
     MissingEntry(libloading::Error),
     /// The module and the host disagree about the runtime they share.
@@ -47,6 +55,13 @@ fn platform_detail(e: &libloading::Error) -> String {
 impl core::fmt::Display for LoadError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::Stage { path, source } => {
+                write!(
+                    f,
+                    "could not read the module at {}: {source}",
+                    path.display()
+                )
+            }
             Self::Dlopen(e) => write!(f, "could not open module: {}", platform_detail(e)),
             Self::MissingEntry(e) => {
                 write!(
@@ -64,6 +79,7 @@ impl core::fmt::Display for LoadError {
 impl std::error::Error for LoadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Stage { source, .. } => Some(source),
             Self::Dlopen(e) | Self::MissingEntry(e) => Some(e),
             Self::Abi(_) | Self::Refused(_) => None,
         }
@@ -95,6 +111,45 @@ pub struct HotReloader {
     /// So the handles are forgotten rather than stored. The cost is address-space growth
     /// proportional to the number of reloads.
     retained: Vec<std::path::PathBuf>,
+}
+
+/// Copies `candidate` to a path `dlopen` has never been given before, and returns it.
+///
+/// # Why a copy, and not the path the caller asked for
+///
+/// **`dlopen` dedupes on the name it is handed, before it ever looks at the file.** glibc
+/// searches its list of loaded objects by name first; a match returns the existing image
+/// and the file on disk is never opened. So a host that loads its module through a stable
+/// path -- which is exactly what `nix/modules/game-server.nix` arranges, because a path
+/// that moves is a `[Service]` that moves and a restart instead of a reload -- would
+/// `dlopen` `/etc/hyperion/smash-rules.so`, get back the image it loaded at startup, run
+/// the OLD entry point, and report success.
+///
+/// That is not hypothetical and it is not visible from anything but a running server. On
+/// dev-compute-6 the reload answered `accepted smash-rules bbbbbbb`, `MainPID` and
+/// `NRestarts` were unchanged, the journal said `hot reload accepted` -- and
+/// `/proc/<pid>/maps` still showed only the first build, with the old code still logging
+/// its old string. Every signal said the deploy landed.
+///
+/// Resolving the symlink instead of copying would work in this deployment, because the nix
+/// store gives every build its own path. It would keep the bug for anybody rebuilding to a
+/// fixed path outside the store, which is what a developer's inner loop looks like, and the
+/// symptom would again be silence. A copy is a hundred kilobytes and has no such case.
+///
+/// The copies are never removed, for the same reason the libraries are never `dlclose`d
+/// (see [`HotReloader::retained`]). Under the deployed unit they live in the private `/tmp`
+/// systemd tears down with the service.
+fn stage(candidate: &Path, generation: usize) -> std::io::Result<std::path::PathBuf> {
+    let name = candidate
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("module"));
+    // The pid, because two servers on one machine share `/tmp` unless something gives them
+    // private ones, and a collision here would hand one of them the other's module.
+    let dir = std::env::temp_dir().join(format!("hyperion-hot-reload-{}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    let staged = dir.join(format!("{generation}-{}", name.to_string_lossy()));
+    std::fs::copy(candidate, &staged)?;
+    Ok(staged)
 }
 
 impl Default for HotReloader {
@@ -129,7 +184,13 @@ impl HotReloader {
     /// # Panics
     /// Panics if the module's registration panics.
     pub fn load(&mut self, world: &World, path: &Path) -> Result<Applied, LoadError> {
-        let lib = unsafe { libloading::Library::new(path) }.map_err(LoadError::Dlopen)?;
+        // Never the caller's path: see `stage`, which is the difference between a reload
+        // and a reload-shaped no-op that reports success.
+        let staged = stage(path, self.retained.len()).map_err(|source| LoadError::Stage {
+            path: path.to_owned(),
+            source,
+        })?;
+        let lib = unsafe { libloading::Library::new(&staged) }.map_err(LoadError::Dlopen)?;
         let descriptor = {
             let entry: libloading::Symbol<'_, ModuleEntry> =
                 unsafe { lib.get(ENTRY_SYMBOL) }.map_err(LoadError::MissingEntry)?;
@@ -139,7 +200,7 @@ impl HotReloader {
         // Leaked before any of its code runs, so an early return still leaves the mapping
         // alive for whatever already holds a pointer into it.
         core::mem::forget(lib);
-        self.retained.push(path.to_owned());
+        self.retained.push(staged);
 
         if let Some(reason) = descriptor.token.incompatibility() {
             return Err(LoadError::Abi(reason));
@@ -365,5 +426,58 @@ pub fn read_raw(world: &World, entity: EntityView<'_>, component: &str) -> Optio
             return None;
         }
         Some(std::slice::from_raw_parts(ptr.cast::<u8>(), size).to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The property the deployment rests on: one path, handed to the loader twice, is two
+    /// different names by the time `dlopen` sees it.
+    ///
+    /// Watched failing. Returning `candidate.to_owned()` from `stage` makes this report the
+    /// same path twice, which is precisely the state in which a reload runs the old build
+    /// and answers `accepted`.
+    #[test]
+    fn one_path_loaded_twice_becomes_two_names() {
+        let dir = std::env::temp_dir().join("hyperion-hot-reload-stage-test");
+        drop(std::fs::remove_dir_all(&dir));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let stable = dir.join("rules.so");
+
+        std::fs::write(&stable, b"first build").expect("write");
+        let first = stage(&stable, 0).expect("stage the first build");
+
+        // What a deploy does: the same path, different bytes behind it.
+        std::fs::write(&stable, b"second build").expect("rewrite");
+        let second = stage(&stable, 1).expect("stage the second build");
+
+        assert_ne!(
+            first, second,
+            "both builds would reach dlopen under one name, and the second would be ignored"
+        );
+        assert_eq!(std::fs::read(&first).expect("read"), b"first build");
+        assert_eq!(std::fs::read(&second).expect("read"), b"second build");
+
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    /// A path that is not there fails here rather than at `dlopen`, and says which path.
+    #[test]
+    fn a_path_that_is_not_there_is_named_in_the_error() {
+        let mut reloader = HotReloader::new();
+        let world = World::new();
+        let error = reloader
+            .load(&world, Path::new("/nonexistent/hyperion-no-such-module.so"))
+            .expect_err("a module that is not there cannot load");
+        assert!(
+            matches!(error, LoadError::Stage { .. }),
+            "expected a staging failure, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains("hyperion-no-such-module"),
+            "the message does not name the path: {error}"
+        );
     }
 }

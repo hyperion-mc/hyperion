@@ -14,13 +14,13 @@ geometry = { workspace = true }
 glam = { workspace = true }
 hyperion = { workspace = true }
 hyperion-event-runner = { workspace = true }
+hyperion-hot-reload = { workspace = true }
 hyperion-clap = { workspace = true }
 hyperion-inventory = { workspace = true }
 hyperion-item = { workspace = true }
 hyperion-minecraft-proto = { workspace = true }
 hyperion-permission = { workspace = true }
 hyperion-utils = { workspace = true }
-rayon = { workspace = true }
 tracing = { workspace = true }
 valence_nbt = { workspace = true }
 valence_protocol = { workspace = true }
@@ -37,6 +37,3 @@ proptest = { workspace = true }
 
 [lints]
 workspace = true
-
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-tikv-jemallocator.workspace = true

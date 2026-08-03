@@ -647,8 +647,8 @@ looking like it recovers the current one.
 
 ## Apply from a checkout of `main`, not from a branch
 
-`nix build` and `ix apply` from a feature branch stamp that branch's commit into
-`HYPERION_BUILD_REV`, and the game puts it on a boss bar in front of every
+`nix build` and `ix apply` from a feature branch write that branch's commit into
+`/etc/hyperion/build-rev`, and the game puts it on a boss bar in front of every
 player. A branch commit is not reachable from `main`, so `git show <rev>` on a
 fresh clone returns nothing and the natural conclusion is that the clone is
 stale rather than that the stamp is meaningless.
@@ -656,17 +656,23 @@ stale rather than that the stamp is meaningless.
 It happened on 2026-07-30: the live server advertised `33e0d33` for ten minutes.
 **Every other signal was green** -- apply exit 0, four `✓ ready`,
 `NRestarts=0`, the `drv^out` identity check matching, the endpoint serving.
-Nothing surfaces this except reading the deployed wrapper:
+Nothing surfaces this except reading the stamp on the host:
 
 ```sh
-ix shell hyperion-game -- sh -c \
-  'E=$(systemctl cat hyperion-game-server.service | grep -o "/nix/store/[^ ]*-smash-0.1.0-stamped");
-   grep -o "HYPERION_BUILD_[A-Z]*=.[^\x27]*." "$E/bin/smash"'
+ix shell hyperion-game -- sh -c 'head -n1 /etc/hyperion/build-rev'
 ```
 
 Treat that as a standing post-apply check, and confirm the rev is one
 `git merge-base --is-ancestor <rev> origin/main` accepts. ENG-11491 tracks
 making the apply refuse an unreachable rev rather than relying on the habit.
+
+**The file is what the deploy wrote; the bar is what the server has read.** They
+are the same as of the last reload or restart, and only then. A deploy whose
+rules dylib did not move still reloads -- the stamp is one of the unit's reload
+triggers for exactly this reason -- so in practice the two agree within a
+second of the apply. If they disagree for longer, the reload was refused, and
+`journalctl -u hyperion-game-server -p err` has the reason in the gate's own
+words.
 
 ## A dev machine in the fleet
 

@@ -618,9 +618,152 @@ Three pieces make that hold:
   A refused reload then surfaces as a failed activation with the reason in the deploy
   output, rather than as a silent no-op, and the world keeps running on the old build.
 
-Not built. `app.run()` in an event's `init_game` is flecs's own main loop and offers no
-per-tick Rust hook; it would become an explicit `while world.progress()` so reloads land
-between ticks, which is also what the "reloads must happen between ticks" gap above needs.
+All three are built. `nix/modules/game-server.nix` is the unit,
+`crates/hyperion-reload-client` is the client, and `events/smash`'s `init_game` no longer
+calls `app.run()` — see below.
+
+### What replaced `app.run()`, and what had to be reproduced by hand
+
+`App::run` is flecs's `ecs_app_run`, which does not return until the world quits and offers
+no per-tick Rust hook. The host therefore calls `world.progress()` itself, which means
+everything `ecs_app_run` does to a world *before* its loop has to be done by somebody. Read
+out of flecs's own `addons/app.c` at the pinned `flecs_ecs_sys`, in order:
+
+| `ecs_app_run` | where it lives now |
+| --- | --- |
+| `ecs_set_target_fps(world, desc->target_fps)` | `hyperion::tick_loop::prepare` refuses a world with none |
+| `ecs_set_threads(world, desc->threads)` | `HyperionCore`, which already did it |
+| `ECS_IMPORT(FlecsRest)` + `ecs_set(EcsWorld, EcsRest, {port})` | `hyperion::tick_loop::prepare` |
+| `ECS_IMPORT(FlecsStats)` | `hyperion::tick_loop::prepare` |
+| `while (ecs_progress(world, 0)) {}` | `hyperion_hot_reload::service::run` |
+
+Two rows deserve a note, because both look like omissions and neither is.
+
+**Threads.** `HyperionCore` calls `world.set_threads(rayon::current_num_threads())` while it
+is being imported. Every event's `init_game` then called `App::set_threads` with the *same
+expression*, and flecs's `flecs_set_threads_internal` returns without doing anything when
+the stage count already equals the request — so that second call was provably a no-op, and
+deleting it changes nothing.
+
+**Target frame rate.** `HyperionCore` sets it to `TICKS_PER_SECOND`. `App::new` read that
+same value back out of the world and set it again; what it *also* did was substitute 60
+when nothing had set one. `prepare` refuses instead of substituting, because a world with a
+target rate of zero does not run slowly — it spins a core per stage as fast as
+`ecs_progress` returns, and the only outward symptom is a host that is hot.
+
+The one thing a release gate cannot check here is the flecs registration asserts, which are
+compiled out of release builds (CLAUDE.md, ENG-11000). `checks.smash-dev-boot-e2e` boots the
+dev-profile binary for that reason, and it covers this loop.
+
+### The unit, as deployed
+
+```ini
+[Unit]
+X-Reload-Triggers=/nix/store/...-X-Reload-Triggers-hyperion-game-server
+
+[Service]
+ExecStart=/nix/store/...-smash-server/bin/smash --ip :: --port 35565 \
+  --root-ca-cert ... --cert ... --private-key ... \
+  --rules /etc/hyperion/smash-rules.so \
+  --reload-socket /run/hyperion-game-server/reload.sock \
+  --build-stamp /etc/hyperion
+ExecReload=/nix/store/...-hyperion-dylibs/bin/hyperion-reload-client /run/hyperion-game-server/reload.sock
+RuntimeDirectory=hyperion-game-server
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+```
+
+Four things in there are load bearing and none of them is obvious:
+
+- **Every path on `ExecStart` is stable.** The rules dylib's store path is in
+  `X-Reload-Triggers` and nowhere else — and note that nixpkgs does not inline the triggers,
+  it hashes them into a file of their own and names *that*. So "is the dylib in the right
+  line" is not a checkable property; "does changing the dylib move exactly one line" is, and
+  that is what `checks.hot-reload-unit-split` asserts, by rendering the unit twice.
+- **`AF_UNIX` had to be granted.** `nix/modules/common.nix` hardens both services down to
+  `AF_INET` and `AF_INET6`. The reload socket is a unix socket, so without this the server
+  dies at startup on `Address family not supported by protocol` — on a real host, and
+  nowhere else, because nothing in a test or a gate runs under that filter.
+- **`ExecReload` ships with the engine, not with the event.** It is part of `[Service]`, so a
+  client whose path moved when the rules moved would restart the server on exactly the
+  deploys this exists to make invisible. `hyperion-dylibs` moves only on an engine change,
+  which restarts anyway.
+- **The build stamp is a reload trigger too.** A commit that changes nothing the server
+  links still changes `/etc/hyperion/build-rev`, and without a reload the bar would go on
+  naming the previous commit — the one question it exists to answer. That reload re-opens a
+  byte-identical dylib and cannot be refused, because a schema can only move when the dylib
+  does.
+
+### Three things only a running server said, and one gate each
+
+The deployment was built against static evidence -- store paths, `readelf`, `ldd`, rendered
+unit files -- and all of it was green. Starting the thing on dev-compute-6 found three
+defects in an afternoon, every one of them silent and two of them already shipped.
+
+**The packaged binary segfaulted on startup, in every build ever made of it.** Not under
+load: `smash-server/bin/smash --help` exited 139. `#[global_allocator]` and
+`-C prefer-dynamic` cannot coexist, because rustc gives each Rust dylib a version script
+ending `local: *` -- the same fact this document already records about LMDB -- so each
+dylib's `__rust_alloc` is local and uninterposable, and the process runs the system
+allocator inside the dylibs and jemalloc inside the binary. The first pointer to cross
+takes it out, inside clap, before `main`. Nothing caught it because the fourteen end-to-end
+gates boot `gameBinaries.smash`, a `cargoUnit` build with no dylibs at all; the packaged
+binary was inspected and never executed. `checks.hot-reload-server-starts` now runs
+`--help` on it, which costs milliseconds and needs no certificates, no world and no
+network. ENG-12112.
+
+**The reload loaded nothing and said `accepted`.** `dlopen` searches its list of loaded
+objects by name before it stats the file, and the loader deliberately never `dlclose`s, so
+a second load through `/etc/hyperion/<event>-rules.so` returned the image from the first
+and re-ran the old entry point. `MainPID` unchanged, `NRestarts` unchanged, the journal
+saying `hot reload accepted`, the client printing `accepted smash-rules bbbbbbb`, the `/etc`
+symlink pointing at the new build -- and `/proc/<pid>/maps` naming only the old one. The
+trigger is the very thing that makes reload-not-restart work: the path has to be stable,
+so the deployed configuration is exactly the one `dlopen` dedupes. `HotReloader::load` now
+copies each candidate to a fresh name first. ENG-12113.
+
+**The deployed server logged nothing at all.** `EnvFilter::from_default_env()` with
+`RUST_LOG` unset builds a filter with no directives, which passes nothing, and a unit sets
+no `RUST_LOG`. So `hot reload accepted` -- the one line that says an invisible deploy
+landed -- would never have reached the journal. Measured both ways on the same binary and
+unit: zero lines against every line. The default is now `info`, and ANSI is dropped when
+stdout is not a terminal, because a service was writing `\x1b[32m INFO\x1b[0m` into the
+journal and every severity grep over it matched nothing.
+
+The shape they share is worth more than any of them: **a derivation that is only ever
+inspected is not a derivation that is known to work.** Two of the three were introduced by
+changes whose evidence sections were entirely static analysis, and static analysis is what
+they were correct about.
+
+### Two sibling dylibs may not share an rlib
+
+`crates/hyperion` and `crates/hyperion-hot-reload` are both dylibs and neither depends on
+the other, so under `prefer-dynamic` each statically includes its own copy of every rlib it
+uses, and a binary linking both is refused:
+
+```
+error: cannot satisfy dependencies so `tracing` only shows up once
+error: cannot satisfy dependencies so `tracing_core` only shows up once
+error: cannot satisfy dependencies so `once_cell` only shows up once
+error: cannot satisfy dependencies so `pin_project_lite` only shows up once
+```
+
+Those four are `tracing` and its dependencies, and they were the whole list: everything else
+`hyperion-hot-reload` uses arrives inside `libflecs_ecs.so`, which is a dylib and therefore
+one copy. Three ways out, and only one of them is right here:
+
+- **Make one depend on the other.** Tried and reverted. It fixes the packaged link and
+  breaks a plain one -- `cargo test -p hyperion-hot-reload -p smash` then builds
+  `libhyperion.so` against `libhyperion_hot_reload.so`, neither with `prefer-dynamic`, and
+  duplicates `std` instead.
+- **Make the shared crate a dylib.** Not available for a crate we do not own.
+- **Stop sharing it.** `hyperion-hot-reload` gave up `tracing` and now returns
+  `service::Outcome::{Applied, Refused}` for the host to log. Better layering anyway: a
+  library that logs has decided your format, and the severities belong to whoever runs the
+  query.
+
+So: before adding a dependency to `hyperion-hot-reload`, check whether `hyperion` has it
+too. `cargo tree -p hyperion-hot-reload` intersected with `cargo tree -p hyperion`, minus
+whatever `libflecs_ecs.so` already carries, is the list that must stay empty.
 
 ### What a reload costs
 
@@ -678,9 +821,10 @@ above.
 **2. Package it.** No longer the unknown it was; see "Packaging: three derivations, because
 two would restart" below, which replaces the guesswork with a measured design.
 
-**3. Wire the NixOS module and the fleet spec.** Designed in "Deploying a reload" above:
-`reloadTriggers`, the stable `/etc` path, and an `ExecReload` client that exits non-zero on
-a refusal. Small, and the design is settled.
+**Done: wire the NixOS module and the fleet spec.** `reloadTriggers`, the stable `/etc`
+path, and an `ExecReload` client that exits non-zero on a refusal, all as designed in
+"Deploying a reload" above. `checks.hot-reload-unit-split` renders the unit for two builds
+of the rules and asserts that the only line which moved is `X-Reload-Triggers`.
 
 ### Do the deployment half first, against a module with nothing in it
 
@@ -691,8 +835,8 @@ build them in. Reversed:
   calls and 30 system declarations, moved across a crate boundary. Large, mechanical, and
   nothing about it can surprise anyone.
 - **The deployment half has all of them.** systemd's reload-versus-restart decision, the
-  `/etc` indirection, rpaths that resolve in the store, the `stamped` wrapper that puts a
-  per-commit path inside `[Service]`, and whether a title reaches a connected player at
+  `/etc` indirection, rpaths that resolve in the store, the `makeWrapper` that used to put
+  a per-commit path inside `[Service]`, and whether a title reaches a connected player at
   all. Every one of those is a fact about a running host.
 
 So build the loader, the socket, the `ExecReload` client, the title and the NixOS wiring
@@ -768,7 +912,7 @@ it is the source split.
 Each derivation needs a `src` narrow enough that an unrelated commit does not move it, and
 wide enough that cargo can resolve the workspace: the root `Cargo.toml`, `Cargo.lock`, and
 the member directories in that crate's dependency graph. Get it wrong in the loose
-direction and `smash-server` moves on every commit, which is the `stamped` wrapper's bug
+direction and `smash-server` moves on every commit, which is the build-stamp wrapper's bug
 wearing a different hat, and every apply restarts. There is a cheap gate for it: build the
 three derivations, touch a file in the rules crate, rebuild, and assert that exactly one of
 the three paths changed.
