@@ -183,8 +183,8 @@ let
       cd classes
 
       # The projectile package is the whole of an arrow's, snowball's and
-      # trident's flight. The four named classes are the types that package's
-      # tick reaches for the numbers the parity work checks:
+      # trident's flight. The named classes are the types that package's tick
+      # reaches for the numbers the parity work checks:
       #
       #   util/Mth              the sine table and atan2 the launch heading and
       #                         the per-tick orientation are built from
@@ -192,10 +192,46 @@ let
       #                         ops shoot and updateRotation call
       #   world/entity/Entity   applyGravity/getDefaultGravity and the base tick
       #   world/item/BowItem    getPowerForTime and the f * 3.0 launch speed
+      #
+      # The rest are what an arrow hits. `AbstractArrow.tick` resolves its
+      # movement through `level().clipIncludingBorder(new ClipContext(from, to,
+      # ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this))`, so being
+      # 1:1 about where an arrow stops means reading that path rather than
+      # reimplementing a plausible one. None of it was in this set before,
+      # which is why the collision half was the part taken on trust:
+      #
+      #   world/level/Level             clip and clipIncludingBorder
+      #   world/level/BlockGetter       traverseBlocks, the voxel walk itself,
+      #                                 including the epsilon it nudges the
+      #                                 start point by
+      #   world/level/ClipContext       Block.COLLIDER vs OUTLINE vs VISUAL --
+      #                                 which shape a clip asks a block for
+      #   world/level/EmptyBlockGetter  the neighbourless view a collision shape
+      #                                 is extracted against
+      #   world/phys/shapes/VoxelShape  toAabbs and clip, the box list a state's
+      #                                 collision shape actually is
+      #   world/phys/shapes/Shapes      the shape constants blocks are built from
+      #   world/phys/AABB               clip, the slab test under all of it
+      #   world/phys/BlockHitResult     what a clip returns, and its face
+      #   world/level/block/state/BlockBehaviour
+      #                                 getCollisionShape, the per-state entry
+      #                                 point the shape table is extracted from
+      #   world/level/block/Block       BLOCK_STATE_REGISTRY, the global id ->
+      #                                 state mapping the extractor walks
       required="net/minecraft/util/Mth.class \
                 net/minecraft/world/phys/Vec3.class \
                 net/minecraft/world/entity/Entity.class \
-                net/minecraft/world/item/BowItem.class"
+                net/minecraft/world/item/BowItem.class \
+                net/minecraft/world/level/Level.class \
+                net/minecraft/world/level/BlockGetter.class \
+                net/minecraft/world/level/ClipContext.class \
+                net/minecraft/world/level/EmptyBlockGetter.class \
+                net/minecraft/world/phys/shapes/VoxelShape.class \
+                net/minecraft/world/phys/shapes/Shapes.class \
+                net/minecraft/world/phys/AABB.class \
+                net/minecraft/world/phys/BlockHitResult.class \
+                net/minecraft/world/level/block/state/BlockBehaviour.class \
+                net/minecraft/world/level/block/Block.class"
       for class in $required; do
         if [ ! -e "$class" ]; then
           echo "expected physics class missing from the jar: $class" >&2
@@ -230,6 +266,22 @@ let
       fi
       if ! grep -q "shootFromRotation" "$projectile"; then
         echo "shootFromRotation missing from decompiled Projectile.java" >&2
+        exit 1
+      fi
+
+      # The same landmark check for the collision half. `traverseBlocks` is the
+      # voxel walk every clip goes through and `getCollisionShape` is where a
+      # state's boxes come from; a jar bump that renames or moves either would
+      # otherwise leave the Rust citing an empty file, which is exactly the
+      # failure this check exists to make loud.
+      blockGetter="$out/net/minecraft/world/level/BlockGetter.java"
+      if ! grep -q "traverseBlocks" "$blockGetter"; then
+        echo "traverseBlocks missing from decompiled BlockGetter.java" >&2
+        exit 1
+      fi
+      behaviour="$out/net/minecraft/world/level/block/state/BlockBehaviour.java"
+      if ! grep -q "getCollisionShape" "$behaviour"; then
+        echo "getCollisionShape missing from decompiled BlockBehaviour.java" >&2
         exit 1
       fi
     '';
@@ -357,6 +409,62 @@ let
 
       makeWrapper ${lib.getExe' jdk "java"} $out/bin/minecraft-encode \
         --add-flags "-cp $out/share/java:$classpath VanillaEncoder"
+    '';
+
+  # Every block state's collision shape, read out of the server's own
+  # `getCollisionShape`.
+  #
+  # Not part of `generatedData`, because Mojang's data generator does not carry
+  # it: a state in `reports/blocks.json` is an id and a property map, and a
+  # collision shape is a `VoxelShape` constant compiled into a block class. The
+  # only source is the running game, so this is a harness like `vanillaEncoder`
+  # rather than another report to parse. See the header of VanillaShapes.java
+  # for what that replaces and why it needs no world.
+  vanillaShapes = pkgs.runCommand "minecraft-vanilla-shapes-${pin.id}"
+    {
+      nativeBuildInputs = [ jdk pkgs.makeWrapper ];
+      meta = {
+        description = "Harness dumping Minecraft ${pin.id} block collision shapes";
+        license = lib.licenses.unfree;
+        mainProgram = "minecraft-shapes";
+      };
+    }
+    ''
+      mkdir -p $out/share/java $out/bin
+      classpath=$(cat ${serverClasspath}/classpath)
+
+      # javac insists a public class live in a file named after it, and a store
+      # path is prefixed with its hash, so the source is copied first. Mirrors
+      # `vanillaEncoder` above.
+      cp ${./java/VanillaShapes.java} VanillaShapes.java
+      javac -nowarn -cp "$classpath" -d $out/share/java VanillaShapes.java
+
+      makeWrapper ${lib.getExe' jdk "java"} $out/bin/minecraft-shapes \
+        --add-flags "-cp $out/share/java:$classpath VanillaShapes"
+    '';
+
+  # The extracted table, as a build product rather than a command someone
+  # remembers to run. Keyed on the jar, so a version bump moves it and anything
+  # generated from it moves with it.
+  collisionShapes = pkgs.runCommand "minecraft-collision-shapes-${pin.id}"
+    {
+      nativeBuildInputs = [ vanillaShapes ];
+      meta.description = "Per-state block collision shapes for Minecraft ${pin.id}";
+    }
+    ''
+      mkdir -p $out
+      minecraft-shapes $out/collision-shapes.json
+
+      # A state count that disagrees with the block state table is a table that
+      # cannot be indexed by a state id, which is the whole point of it. Checked
+      # here rather than in Rust so the failure names the jar rather than
+      # surfacing as an out-of-bounds much later.
+      count=$(${lib.getExe pkgs.jq} -r '.stateCount' $out/collision-shapes.json)
+      if [ "$count" -lt 1000 ]; then
+        echo "only $count states extracted; the registry did not bootstrap" >&2
+        exit 1
+      fi
+      echo "extracted collision shapes for $count states" >&2
     '';
 
   # Named hex strings the Rust tests compare against. Regenerating them is a
@@ -1028,6 +1136,8 @@ in
     generatedBlockStates
     generatedParticles
     extractor
+    vanillaShapes
+    collisionShapes
     codegen
     registryCodegen
     tagDataCodegen

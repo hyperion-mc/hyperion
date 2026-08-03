@@ -2045,6 +2045,12 @@
             minecraft-data = minecraft.generatedData;
             minecraft-decompiled = minecraft.decompiledSources;
             minecraft-physics-sources = minecraft.physicsSources;
+            # The extracted per-state collision shapes, and the harness that
+            # reads them out of the jar. `nix build .#minecraft-collision-shapes`
+            # is what a reader inspects; the harness is exposed too so a shape
+            # can be dumped by hand while debugging a clip.
+            minecraft-collision-shapes = minecraft.collisionShapes;
+            minecraft-shapes = minecraft.vanillaShapes;
             minecraft-client-skin-sources = minecraft.clientSkinSources;
             minecraft-protocol = minecraft.protocolJson;
             minecraft-proto-rust = minecraft.generatedRust;
