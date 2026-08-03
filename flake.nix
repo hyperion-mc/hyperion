@@ -122,6 +122,15 @@
             pkgs.pkg-config
           ];
 
+          # What it takes to build this repository, named once. `devShells.default`
+          # below installs it, and so does the `hyperion-dev` fleet node
+          # (nix/fleet/dev.nix), so a VM built to develop hyperion on cannot come
+          # up with a different compiler than `nix develop` hands a contributor.
+          devEnvironment = {
+            packages = nativeBuildInputs ++ cargoTools ++ [ rustToolchain ];
+            rustSrcPath = "${rustToolchain}/lib/rustlib/src/rust/library";
+          };
+
           # Every dev command carries the tools it needs, so `nix run .#lint`
           # works on a machine with nothing but nix installed.
           mkScript = name: { text, deps ? [ ], toolchain ? rustToolchain }:
@@ -1996,8 +2005,8 @@
         in
         {
           devShells.default = pkgs.mkShell {
-            nativeBuildInputs = nativeBuildInputs ++ cargoTools ++ [ rustToolchain ];
-            RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+            nativeBuildInputs = devEnvironment.packages;
+            RUST_SRC_PATH = devEnvironment.rustSrcPath;
           };
 
           apps = lib.mapAttrs
@@ -2062,6 +2071,10 @@
           # What CI enforces of this set is nix/ci/flake-gate.nix.
           inherit checks;
 
+          # Not a flake output: the fleet reads it to build the dev node, and
+          # `nix build .#devEnvironment` would be a name for something that is
+          # already `nix develop`.
+          inherit devEnvironment;
         };
 
       # The deployed fleet. `nix/fleet/default.nix` says at length why it lives
@@ -2073,11 +2086,16 @@
       # machine evaluates them. Taken from `mkSystem` rather than from
       # `self.packages` so the fleet does not depend on the attribute set it
       # contributes to.
-      fleet = import ./nix/fleet {
-        inherit index;
-        guestPackages = (mkSystem "x86_64-linux").packages;
-        inherit (self) nixosModules;
-      };
+      fleet =
+        let
+          guest = mkSystem "x86_64-linux";
+        in
+        import ./nix/fleet {
+          inherit index;
+          guestPackages = guest.packages;
+          guestDevEnvironment = guest.devEnvironment;
+          inherit (self) nixosModules;
+        };
 
       # Force every fleet node's toplevel and record what it resolved to,
       # WITHOUT building any of them. `unsafeDiscardStringContext` is what buys
