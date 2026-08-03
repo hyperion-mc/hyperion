@@ -63,9 +63,38 @@ impl Ray {
 
     /// Efficiently traverse through grid cells that the ray intersects using the Amanatides and Woo algorithm.
     /// Returns an iterator over the grid cells ([`IVec3`]) that the ray passes through.
+    ///
+    /// Unbounded in `t`: it runs until it leaves the box. Anything asking about
+    /// a finite length of ray -- one tick of a projectile, a player's reach --
+    /// wants [`Self::voxel_traversal_until`] instead, which is the difference
+    /// between walking four cells and walking to the edge of the coordinate
+    /// space.
     #[inline]
     pub fn voxel_traversal(&self, bounds_min: IVec3, bounds_max: IVec3) -> VoxelTraversal {
-        let current_pos = self.origin.as_ivec3();
+        self.voxel_traversal_until(bounds_min, bounds_max, f32::INFINITY)
+    }
+
+    /// The same traversal, stopping once the ray has travelled `max_t`.
+    ///
+    /// `t` is in units of [`Self::direction`], so a ray built with
+    /// [`Self::from_points`] is bounded to the segment by `max_t == 1.0`.
+    ///
+    /// The bound is a real cost, not a tidiness: an axis-aligned ray in an
+    /// empty world visits every cell out to the coordinate bound, and the only
+    /// reason that was survivable was that it usually found *something*.
+    #[inline]
+    pub fn voxel_traversal_until(
+        &self,
+        bounds_min: IVec3,
+        bounds_max: IVec3,
+        max_t: f32,
+    ) -> VoxelTraversal {
+        // `floor`, not `as_ivec3`. The cast truncates towards zero, which is
+        // the same thing for a positive coordinate and one cell out for a
+        // negative one -- so every traversal that began at a negative
+        // coordinate began in the wrong cell, and half of any Minecraft map is
+        // at a negative coordinate.
+        let current_pos = self.origin.floor().as_ivec3();
 
         // Determine stepping direction for each axis
         let step = IVec3::new(
@@ -104,6 +133,8 @@ impl Ray {
             t_delta,
             bounds_min,
             bounds_max,
+            t_entry: 0.0,
+            max_t,
         }
     }
 }
@@ -117,12 +148,21 @@ pub struct VoxelTraversal {
     t_delta: Vec3,
     bounds_min: IVec3,
     bounds_max: IVec3,
+    /// How far along the ray the current cell was entered.
+    t_entry: f32,
+    /// The last `t` worth reporting a cell for.
+    max_t: f32,
 }
 
 impl Iterator for VoxelTraversal {
     type Item = IVec3;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // Past the end of the ray the caller asked about.
+        if self.t_entry > self.max_t {
+            return None;
+        }
+
         // Check if current position is within bounds
         if self.current_pos.x < self.bounds_min.x
             || self.current_pos.x > self.bounds_max.x
@@ -136,19 +176,26 @@ impl Iterator for VoxelTraversal {
 
         let current = self.current_pos;
 
-        // Determine which axis to step along (the one with minimum t_max)
+        // Determine which axis to step along (the one with minimum t_max).
+        // Exactly one axis per step, never two at once: stepping both across a
+        // shared corner would skip the two cells that meet there, which is a
+        // projectile passing through a corner it could not fit through.
         if self.t_max.x < self.t_max.y {
             if self.t_max.x < self.t_max.z {
+                self.t_entry = self.t_max.x;
                 self.current_pos.x += self.step.x;
                 self.t_max.x += self.t_delta.x;
             } else {
+                self.t_entry = self.t_max.z;
                 self.current_pos.z += self.step.z;
                 self.t_max.z += self.t_delta.z;
             }
         } else if self.t_max.y < self.t_max.z {
+            self.t_entry = self.t_max.y;
             self.current_pos.y += self.step.y;
             self.t_max.y += self.t_delta.y;
         } else {
+            self.t_entry = self.t_max.z;
             self.current_pos.z += self.step.z;
             self.t_max.z += self.t_delta.z;
         }
@@ -186,6 +233,66 @@ mod tests {
             for (a, b) in voxels.iter().tuple_windows() {
                 assert_eq!(b - a, direction);
             }
+        }
+    }
+
+    #[test]
+    fn traversal_starts_in_the_cell_containing_a_negative_origin() {
+        // `as_ivec3` truncates towards zero, so this used to start at cell 0.
+        let ray = Ray::new(Vec3::new(-0.5, -0.5, -0.5), Vec3::X);
+        let first = ray
+            .voxel_traversal(IVec3::MIN, IVec3::MAX)
+            .next()
+            .expect("a traversal yields the cell it starts in");
+        assert_eq!(first, IVec3::new(-1, -1, -1));
+    }
+
+    #[test]
+    fn a_bounded_traversal_stops_at_the_end_of_the_segment() {
+        // The bound is closed: a cell entered at exactly `t == max_t` is
+        // reported, because the segment does touch it and a collision box
+        // flush against that boundary is a real contact. Here the far end is
+        // x == 4.0, so cell 4 is the last one, and cell 5 is not.
+        let ray = Ray::from_points(Vec3::new(0.5, 0.5, 0.5), Vec3::new(4.0, 0.5, 0.5));
+        let voxels = ray
+            .voxel_traversal_until(IVec3::MIN, IVec3::MAX, 1.0)
+            .collect::<Vec<_>>();
+        assert_eq!(voxels, vec![
+            IVec3::new(0, 0, 0),
+            IVec3::new(1, 0, 0),
+            IVec3::new(2, 0, 0),
+            IVec3::new(3, 0, 0),
+            IVec3::new(4, 0, 0),
+        ]);
+    }
+
+    #[test]
+    fn a_zero_length_ray_yields_only_the_cell_it_is_in() {
+        let ray = Ray::new(Vec3::new(0.5, 0.5, 0.5), Vec3::ZERO);
+        let voxels = ray
+            .voxel_traversal_until(IVec3::MIN, IVec3::MAX, 1.0)
+            .collect::<Vec<_>>();
+        assert_eq!(voxels, vec![IVec3::ZERO]);
+    }
+
+    #[test]
+    fn a_diagonal_traversal_steps_one_axis_at_a_time() {
+        // Never two axes in one step: a segment that stepped x and y together
+        // would jump the corner and skip both cells that meet there.
+        let ray = Ray::from_points(Vec3::new(0.5, 0.5, 0.5), Vec3::new(3.5, 3.5, 0.5));
+        for pair in ray
+            .voxel_traversal_until(IVec3::MIN, IVec3::MAX, 1.0)
+            .collect::<Vec<_>>()
+            .windows(2)
+        {
+            let delta = pair[1] - pair[0];
+            assert_eq!(
+                delta.abs().element_sum(),
+                1,
+                "stepped {delta} in one move, from {} to {}",
+                pair[0],
+                pair[1]
+            );
         }
     }
 }

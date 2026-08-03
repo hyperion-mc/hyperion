@@ -60,6 +60,10 @@ pub enum TrySetBlockDeltaError {
 
 #[derive(Debug, Copy, Clone)]
 pub struct RayCollision {
+    /// How far along the ray contact happened, in units of the ray's
+    /// direction: `0.0` at the origin and `1.0` at `origin + direction`. A
+    /// fraction and not a count of blocks, so it compares directly against
+    /// what [`geometry::aabb::Aabb::intersect_ray`] returns for the same ray.
     pub distance: f32,
     pub location: IVec3,
     pub point: Vec3,
@@ -120,42 +124,43 @@ impl Blocks {
         })
     }
 
+    /// The first block surface on the segment `ray.origin()` ->
+    /// `ray.origin() + ray.direction()`, or `None` if it is clear.
+    ///
+    /// **The direction is the whole of the length asked about.** A caller with
+    /// a start and an end builds the ray with [`Ray::from_points`]; a caller
+    /// with a reach scales a unit direction by it. Anything beyond that is a
+    /// hit on a later tick and is not reported, which is the difference between
+    /// an arrow stopping at the wall in front of it and an arrow stopping in
+    /// mid-air because there is a wall somewhere out along its heading.
+    ///
+    /// Full block collision shapes, so a slab, a stair and a fence are each hit
+    /// where they actually are rather than anywhere in their cell.
     #[must_use]
     pub fn first_collision(&self, ray: Ray) -> Option<RayCollision> {
-        // Define bounds for the voxel traversal
-        let bounds_min = IVec3::new(i32::MIN / 2, -64, i32::MIN / 2);
-        let bounds_max = IVec3::new(i32::MAX / 2, 320, i32::MAX / 2);
+        let hit = geometry::sweep::first_block_hit(
+            ray.origin(),
+            ray.origin() + ray.direction(),
+            |cell| {
+                self.get_block(cell).into_iter().flat_map(|block| {
+                    block
+                        .collision_shapes()
+                        .map(|shape| Aabb::new(shape.min().as_vec3(), shape.max().as_vec3()))
+                })
+            },
+        )?;
 
-        // Use voxel traversal to efficiently walk through blocks
-        for cell in ray.voxel_traversal(bounds_min, bounds_max) {
-            if let Some(block) = self.get_block(cell) {
-                let origin = cell.as_vec3();
-
-                // Check collision with block shapes
-                let collision = block
-                    .collision_shapes()
-                    .map(|shape| Aabb::new(shape.min().as_vec3(), shape.max().as_vec3()))
-                    .map(|shape| shape + origin)
-                    .filter_map(|shape| shape.intersect_ray(&ray))
-                    .min();
-
-                if let Some(distance) = collision {
-                    let distance = distance.into_inner();
-                    let collision_point = ray.origin() + ray.direction() * distance;
-                    let collision_normal = (collision_point - origin).normalize();
-
-                    return Some(RayCollision {
-                        distance,
-                        location: cell,
-                        point: collision_point,
-                        normal: collision_normal,
-                        block,
-                    });
-                }
-            }
-        }
-
-        None
+        Some(RayCollision {
+            distance: hit.time,
+            location: hit.block,
+            point: hit.point,
+            normal: hit.normal,
+            // A second lookup rather than carrying the state out through the
+            // traversal: the shape source is a `BlockState` here and a set of
+            // coordinates in a test, and threading a payload through
+            // `first_block_hit` for one of the two would buy one map lookup.
+            block: self.get_block(hit.block)?,
+        })
     }
 
     #[must_use]

@@ -83,6 +83,15 @@ pub fn get_first_collision(
             (entity, distance_to_entity)
         });
 
+    // The same length of ray both sides. `Blocks::first_collision` reports
+    // nothing past `t == 1`, and the BVH has no such bound, so without this an
+    // entity thirty blocks along the heading beats the wall a metre ahead --
+    // and beats it *because* the block side was fixed, which is the shape of
+    // regression that arrives looking like a fix.
+    if distance_to_entity > 1.0 {
+        return block.map(Either::Right);
+    }
+
     match block {
         Some(block_collision) if block_collision.distance <= distance_to_entity => {
             Some(Either::Right(block_collision))

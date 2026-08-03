@@ -18,6 +18,7 @@ pub mod mirror;
 pub mod module;
 pub mod server;
 pub mod terrain;
+pub mod terrain_seam;
 
 use std::net::SocketAddr;
 
@@ -106,6 +107,10 @@ impl Module for SmashHost {
         // After the adapter, because building the maps writes the `Arena`
         // singleton the game half registered.
         world.import::<crate::terrain::MapModule>();
+        // Points the game's terrain reads at hyperion's block store. Without
+        // it the game half keeps its `OpenAir` default and projectiles fly
+        // through the arena, which is what they did before this existed.
+        world.import::<crate::terrain_seam::TerrainSeamModule>();
         // After the adapter too: it draws the game half's projectiles, whose
         // `Projectile`, `Visual` and `Flight` the adapter's `SmashModule`
         // import is what registers.
