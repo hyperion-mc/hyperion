@@ -70,7 +70,7 @@ bytes = "1.12.1"
 cfb8 = '0.9.1'
 colored = "3.1.1"
 compact_str = "0.10.0"
-convert_case = "0.11.0"
+convert_case = "0.12.0"
 criterion = "0.8.2"
 derive-build = '0.1.1'
 directories = "6.0.0"
@@ -90,7 +90,7 @@ futures-util = "0.3.33"
 # means bumping glam in TestingPlant/valence first, on both pinned branches.
 glam = "0.29.3"
 heapless = "0.9.3"
-heed = "0.22.1"
+heed = "0.23.1"
 hex = '0.4.3'
 humantime = "2.4.0"
 # The console's web server. hyper and its two helper crates are already
@@ -143,7 +143,7 @@ serial_test = "4.0.1"
 slotmap = "1.1.1"
 snafu = "0.9.2"
 syn = "3.0.3"
-tango-bench = "0.7.2"
+tango-bench = "0.9.0"
 tar = "0.4.46"
 thiserror = "2.0.19"
 thread_local = "1.1.10"
